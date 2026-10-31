@@ -67,6 +67,7 @@ export class PublicationQueryService {
             visibility_label: await this.assets.formatVisibility(current.distribution),
             release: current,
             version_label: previous?.version_label,
+            content_digest: previous?.content_digest,
             manifest: previous?.manifest,
           }
         : null,

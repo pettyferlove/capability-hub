@@ -1,3 +1,5 @@
+import { shortVersion } from './version-label.js';
+import { Glyph } from '../../shared/components/Glyph.js';
 import {
   reviewPageStyles,
   reviewStatusbarStyles,
@@ -32,20 +34,14 @@ import { ReviewSkeleton } from '../../shared/components/Skeleton.js';
 import { QueryRegion } from '../../shared/components/QueryRegion.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { dateLabel } from '../../shared/format/labels.js';
-import {
-  pageHref,
-  parseHistoryRoute,
-  reviewLocation,
-} from '../../shared/navigation/history-route.js';
+import { pageHref, reviewLocation } from '../../shared/navigation/history-route.js';
 import { navigate } from '../../shared/navigation/history-navigation.js';
 import { ReviewDetail } from './ReviewDetail.js';
 import { ReviewStatusTabs } from './ReviewStatusTabs.js';
 import type { ChangeFile } from './types.js';
-export default function ReviewPage() {
+export default function ReviewPage({ query = location.search }: { query?: string }) {
   const { refresh, reload } = useHub();
-  const { state, request: selected } = reviewLocation(
-    parseHistoryRoute(location.pathname, location.search).query,
-  );
+  const { state, request: selected } = reviewLocation(query);
   const { data, error, loading, isPreviousData } = useQuery<{ items: ReviewResponse[] }>(
     '/api/publication-requests?state=' + state,
     refresh,
@@ -127,12 +123,21 @@ export default function ReviewPage() {
                       </span>
                       <small>{dateLabel(r.created_at)}</small>
                     </div>
-                    <strong>{r.asset.slug}</strong>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Glyph
+                        seed={r.candidate.content_digest}
+                        kind={r.asset.kind}
+                        size={36}
+                        diffWith={r.current?.content_digest}
+                      />
+                      <strong className="break-all">{r.asset.slug}</strong>
+                    </div>
                     <div className={inboxMetadataStyles}>
-                      <span className={inboxVersionStyles}>
-                        {r.candidate.version_label.startsWith('git.')
-                          ? r.candidate.version_label.slice(0, 16) + '…'
-                          : r.candidate.version_label}
+                      <span className={cn(inboxVersionStyles, 'min-w-0 break-all')}>
+                        {r.current?.version_label
+                          ? `${shortVersion(r.current.version_label)} → `
+                          : '首次发布 · '}
+                        {shortVersion(r.candidate.version_label)}
                       </span>
                       {r.asset.kind === 'skill' && r.requires_api_key && <ApiKeyBadge />}
                       {r.nomination && (

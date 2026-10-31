@@ -1,3 +1,4 @@
+import { VersionComparison } from '../../shared/components/VersionComparison.js';
 import {
   reviewOverviewStyles,
   reviewAssetHeadingStyles,
@@ -177,7 +178,15 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
           </span>
           <div>
             <div className={reviewAssetKickerStyles}>
-              <span>{r.nomination ? '通用提名' : r.current ? '版本 / 分发更新' : '首次发布'}</span>
+              <span>
+                {r.nomination
+                  ? '通用提名'
+                  : !r.current
+                    ? '首次发布'
+                    : r.current.content_digest === r.candidate.content_digest
+                      ? '分发与发布信息调整'
+                      : '内容版本更新'}
+              </span>
               <span>·</span>
               <span>{r.submitter} 提交</span>
             </div>
@@ -196,6 +205,20 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
             {stateLabel(r.state)}
           </span>
         </div>
+        <VersionComparison
+          kind={r.asset.kind}
+          previous={
+            r.current
+              ? {
+                  version_label: r.current.version_label ?? '历史版本',
+                  content_digest: r.current.content_digest ?? '',
+                }
+              : null
+          }
+          candidate={r.candidate}
+          previousLabel="提交时发布"
+          candidateLabel="申请发布"
+        />
         <div className={reviewSummaryGridStyles}>
           <div>
             <span>内容版本</span>

@@ -10,6 +10,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { useQuery } from '../../shared/api/use-query.js';
+import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Message } from '../../shared/components/Message.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { Submit } from '../../shared/components/Submit.js';
@@ -40,7 +41,11 @@ export function FeedbackForm({
   const [error, setError] = useState('');
   const pending = useRef(false);
   const retry = useRef<{ body: string; key: string } | null>(null);
-  const { data: versions } = useQuery<VersionHistoryResponse[]>(`/api/assets/${assetId}/versions`);
+  const [versionsRefresh, setVersionsRefresh] = useState(0);
+  const { data: versions, error: versionsError } = useQuery<VersionHistoryResponse[]>(
+    `/api/assets/${assetId}/versions`,
+    versionsRefresh,
+  );
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending.current) return;
@@ -85,47 +90,94 @@ export function FeedbackForm({
     }
   }
   return (
-    <form className={cn(formStackStyles, feedbackFormStyles)} onSubmit={submit}>
+    <form
+      className={cn(formStackStyles, feedbackFormStyles, '[&_textarea]:min-h-20!')}
+      onSubmit={submit}
+    >
       <fieldset disabled={busy} className={formStackStyles}>
-        <label>
-          反馈版本
-          <SelectField value={version} onValueChange={setVersion} required>
-            {versions ? (
-              versions.map((item) => (
-                <option key={item.version_id} value={item.version_id}>
-                  {item.version_label}
-                </option>
-              ))
-            ) : (
-              <option value={versionId}>当前版本</option>
-            )}
-          </SelectField>
-        </label>
-        <label>
-          反馈类型
-          <SelectField
-            optionIcons={feedbackKindIcons}
-            value={kind}
-            onValueChange={(value) => setKind(value as AssetFeedbackRequest['kind'])}
-          >
-            {Object.entries(feedbackKinds).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </SelectField>
-        </label>
-        {fields.map(([name, label, max, required]) => (
-          <label key={name}>
-            {label}
-            {required ? '（必填）' : ''}
-            {name === 'title' || name === 'location' ? (
-              <InputField icon="text" name={name} required={required} maxLength={max} />
-            ) : (
-              <textarea name={name} required={required} maxLength={max} rows={3} />
-            )}
+        <div className="grid grid-cols-2 gap-4 max-[520px]:grid-cols-1">
+          <label>
+            反馈版本
+            <SelectField value={version} onValueChange={setVersion} required>
+              {versions ? (
+                versions.map((item) => (
+                  <option key={item.version_id} value={item.version_id}>
+                    {item.version_label}
+                  </option>
+                ))
+              ) : (
+                <option value={versionId}>当前版本</option>
+              )}
+            </SelectField>
           </label>
-        ))}
+          <label>
+            反馈类型
+            <SelectField
+              optionIcons={feedbackKindIcons}
+              value={kind}
+              onValueChange={(value) => setKind(value as AssetFeedbackRequest['kind'])}
+            >
+              {Object.entries(feedbackKinds).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </SelectField>
+          </label>
+        </div>
+        {versionsError && (
+          <ErrorState
+            message={`版本列表加载失败：${versionsError}`}
+            retry={() => setVersionsRefresh((value) => value + 1)}
+          />
+        )}
+        {fields
+          .filter(([, , , required]) => required)
+          .map(([name, label, max, required]) => (
+            <label key={name}>
+              {label}（必填）
+              {name === 'title' ? (
+                <InputField
+                  icon="text"
+                  name={name}
+                  required={required}
+                  maxLength={max}
+                  placeholder="一句话说明问题或改进目标"
+                />
+              ) : (
+                <textarea
+                  name={name}
+                  required={required}
+                  maxLength={max}
+                  rows={2}
+                  placeholder={
+                    name === 'scenario'
+                      ? '你想完成什么任务？'
+                      : name === 'expected'
+                        ? '希望得到什么结果？'
+                        : '目前发生了什么，或缺少什么能力？'
+                  }
+                />
+              )}
+            </label>
+          ))}
+        <details className="rounded-lg border border-[color:var(--line)] p-3">
+          <summary className="cursor-pointer font-medium">补充复现步骤与证据（可选）</summary>
+          <div className={cn(formStackStyles, 'mt-4')}>
+            {fields
+              .filter(([, , , required]) => !required)
+              .map(([name, label, max]) => (
+                <label key={name}>
+                  {label}
+                  {name === 'location' ? (
+                    <InputField icon="text" name={name} maxLength={max} />
+                  ) : (
+                    <textarea name={name} maxLength={max} rows={2} />
+                  )}
+                </label>
+              ))}
+          </div>
+        </details>
         <label className={checkLabelStyles}>
           <input name="blocking" type="checkbox" />
           <span>该问题阻塞当前任务</span>

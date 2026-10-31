@@ -47,7 +47,6 @@ import {
   audienceLabelStyles,
   paginationStyles,
   catalogNoteStyles,
-  assetDetailScrollStyles,
 } from './styles.js';
 import {
   dotgridStyles,
@@ -62,7 +61,6 @@ import {
   tagTealStyles,
   btnStyles,
   textBtnStyles,
-  sheetScrollStyles,
 } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
 import { ApiKeyBadge } from './ApiKeyBadge.js';
@@ -84,25 +82,21 @@ import {
   X,
 } from '../../shared/icons/lucide.js';
 import { AnimatePresence } from 'motion/react';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '../../shared/api/use-query.js';
-import { DialogTitle } from '../../shared/components/DialogTitle.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Glyph } from '../../shared/components/Glyph.js';
 import { Segmented } from '../../shared/components/Segmented.js';
 import { SelectField } from '../../shared/components/SelectField.js';
-import { Overlay } from '../../shared/components/Overlay.js';
-import { CardGridSkeleton, DetailSkeleton } from '../../shared/components/Skeleton.js';
+import { CardGridSkeleton } from '../../shared/components/Skeleton.js';
 import { QueryRegion } from '../../shared/components/QueryRegion.js';
 import { ScriptBadge } from '../../shared/components/ScriptBadge.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { categoryLabel } from '../../shared/format/labels.js';
 import { assetHref } from '../../shared/navigation/history-route.js';
-import { navigate } from '../../shared/navigation/history-navigation.js';
 import { CatalogMotionItem } from './CatalogMotionItem.js';
 import { CatalogEmptyState } from './CatalogEmptyState.js';
-const AssetSheet = lazy(() => import('./AssetSheet.js'));
-export default function DiscoverPage({ openAsset }: { openAsset?: string }) {
+export default function DiscoverPage() {
   const searchInput = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState(''),
     [q, setQ] = useState(''),
@@ -492,21 +486,6 @@ export default function DiscoverPage({ openAsset }: { openAsset?: string }) {
         <ShieldCheck size={15} />
         <span>所有资源均经过审核，并保留来源与版本记录。</span>
       </div>
-      <Overlay
-        open={!!openAsset}
-        onClose={() => navigate('/discover')}
-        label="资源详情"
-        variant="sheet"
-        size="wide"
-        loadingKey={openAsset}
-      >
-        <DialogTitle title="资源详情" onClose={() => navigate('/discover')} />
-        <div className={cn(sheetScrollStyles, assetDetailScrollStyles)}>
-          <Suspense fallback={<DetailSkeleton />}>
-            {openAsset && <AssetSheet key={openAsset} slug={openAsset} />}
-          </Suspense>
-        </div>
-      </Overlay>
     </div>
   );
 }

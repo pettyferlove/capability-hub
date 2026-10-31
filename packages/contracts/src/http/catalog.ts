@@ -66,6 +66,9 @@ export interface ManagementAssetResponse {
   can_lifecycle: boolean;
   can_view_catalog: boolean;
   current_release: ReleaseResponse | null;
+  current_version: Pick<VersionSnapshotResponse, 'version_label' | 'content_digest'> | null;
+  latest_intake: { id: string; version_label: string; state: string } | null;
+  pending_requests: { id: string; version_label: string }[];
 }
 
 export interface KeywordOptionsResponse {

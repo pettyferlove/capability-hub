@@ -4,10 +4,18 @@ import { afterEach, test } from 'node:test';
 import { createElement, type ReactNode } from 'react';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
+import { IntakeDetail } from '../../apps/web/src/features/publishing/IntakeDetail.js';
+import ManagementPanel from '../../apps/web/src/features/catalog/ManagementPanel.js';
+import { VersionComparison } from '../../apps/web/src/shared/components/VersionComparison.js';
 import { UploadPanel } from '../../apps/web/src/features/publishing/UploadPanel.js';
 import { ReviewDetail } from '../../apps/web/src/features/review/ReviewDetail.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
-import { createTestHub, receiveSkill, submitPublication } from '../support/application.js';
+import {
+  createTestHub,
+  receiveSkill,
+  submitPublication,
+  publishSkill,
+} from '../support/application.js';
 
 afterEach(cleanup);
 
@@ -146,4 +154,91 @@ test('审核详情可重复定位 Skill 文件，未声明不推断无需认证'
     within(screen.getByRole('region', { name: '认证与使用要求' })).getByText(/未声明需要 API Key/),
   );
   assert.equal(screen.queryByText('无需 API Key'), null);
+});
+
+test('维护资产显示版本与审核入口，更新链接预选原资产', async (context) => {
+  const f = await createTestHub(context);
+  const first = await publishSkill(f);
+  const next = await receiveSkill(f, { assetId: first.intake.asset_id, version: '1.0.1' });
+  const request = await submitPublication(f, next);
+  const managed = await f.hub.assetManagement.list(f.admin);
+  context.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === '/api/management/assets') return Response.json(managed);
+    if (path.endsWith('/version-plan'))
+      return Response.json(await f.hub.intakeQueries.versionPlan(f.admin, first.intake.asset_id));
+    if (path.startsWith('/api/intakes?'))
+      return Response.json({
+        items: [],
+        total: 0,
+        page: 1,
+        page_size: 5,
+        counts: {},
+        processing_total: 0,
+      });
+    assert.fail('Unexpected fetch: ' + path);
+  });
+  const view = render(page(createElement(ManagementPanel)));
+  const update = await screen.findByRole('link', { name: '更新版本' });
+  assert.equal(
+    new URL(update.getAttribute('href')!, 'https://hub.test').searchParams.get('asset'),
+    first.intake.asset_id,
+  );
+  assert.equal(
+    screen.getByRole('link', { name: '1.0.1' }).getAttribute('href'),
+    '/review?request=' + request.id,
+  );
+  assert(screen.getByText('1.0.0'));
+  const user = userEvent.setup();
+  await user.type(screen.getByRole('searchbox', { name: '搜索维护资产' }), 'missing');
+  assert(screen.getByText('没有匹配的资产'));
+  view.unmount();
+  render(page(createElement(UploadPanel, { initialAssetId: first.intake.asset_id })));
+  await screen.findByText(/正在更新/);
+  await waitFor(() =>
+    assert.equal(
+      (screen.getByRole('textbox', { name: /^发布版本/ }) as HTMLInputElement).value,
+      '1.0.2',
+    ),
+  );
+  assert.equal(
+    screen.getByRole('radio', { name: '已有资产新版本' }).getAttribute('aria-checked'),
+    'true',
+  );
+});
+
+test('版本点阵区分首次发布、相同内容与内容更新', () => {
+  const previous = { version_label: '1.0.0', content_digest: 'sha256:' + 'a'.repeat(64) };
+  const candidate = { version_label: '1.0.1', content_digest: 'sha256:' + 'b'.repeat(64) };
+  const view = render(createElement(VersionComparison, { kind: 'mcp', previous: null, candidate }));
+  assert(screen.getByText('首次发布'));
+  view.rerender(createElement(VersionComparison, { kind: 'mcp', previous, candidate: previous }));
+  assert(screen.getByText('内容未变化'));
+  view.rerender(createElement(VersionComparison, { kind: 'mcp', previous, candidate }));
+  assert(screen.getByText('内容更新'));
+  assert.equal(screen.getAllByRole('img').length, 2);
+  assert(screen.getAllByRole('img')[1].querySelector('rect[stroke="var(--danger)"]'));
+});
+
+test('提交审核沿用已展示基线，成功后链接新申请', async (context) => {
+  const f = await createTestHub(context);
+  const first = await publishSkill(f);
+  const next = await receiveSkill(f, { assetId: first.intake.asset_id, version: '1.0.1' });
+  let submitted: Record<string, unknown> | undefined;
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path === '/api/scenarios') return Response.json([]);
+    if (path === '/api/publication-requests') {
+      submitted = JSON.parse(String(options.body)) as Record<string, unknown>;
+      return Response.json({ id: 'new-review-id' });
+    }
+    assert.fail('Unexpected fetch: ' + path);
+  });
+  render(page(createElement(IntakeDetail, { intake: next })));
+  const user = userEvent.setup();
+  await user.type(screen.getByRole('textbox', { name: '共享目的与授权确认' }), '核对新版本并共享');
+  await user.click(screen.getByRole('button', { name: '确认内容并提交审核' }));
+  assert.equal(
+    (await screen.findByRole('link', { name: '查看审核' })).getAttribute('href'),
+    '/review?request=new-review-id',
+  );
+  assert.equal(submitted?.base_release_id, next.current_release_id);
 });

@@ -25,7 +25,7 @@ import type {
   ManagementAssetResponse,
 } from '@capability-hub/contracts/http';
 import { ArrowRight, FileArchive, Plug } from '../../shared/icons/lucide.js';
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../../shared/api/client.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { KeywordField } from '../../shared/components/KeywordField.js';
@@ -56,10 +56,16 @@ import {
   type UploadVersionMode,
 } from './upload-identity.js';
 
-export function UploadPanel() {
+export function UploadPanel({
+  initialAssetId = '',
+  initialIntakeId = '',
+}: {
+  initialAssetId?: string;
+  initialIntakeId?: string;
+}) {
   const { me, refresh, reload } = useHub();
-  const [target, setTarget] = useState('new');
-  const [assetId, setAssetId] = useState('');
+  const [target, setTarget] = useState(initialAssetId ? 'existing' : 'new');
+  const [assetId, setAssetId] = useState(initialAssetId);
   const [kind, setKind] = useState('skill');
   const [identity, setIdentity] = useState(emptyUploadIdentity);
   const [sourceVersion, setSourceVersion] = useState('');
@@ -74,13 +80,14 @@ export function UploadPanel() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState(false);
-  const [active, setActive] = useState('');
+  const [active, setActive] = useState(initialIntakeId);
   const [suggestion, setSuggestion] = useState('');
   const fileRead = useRef(0);
   const lastRequest = useRef<{ metadata: string; content: File | string; key: string } | null>(
     null,
   );
-  const { data: managedAssets } = useQuery<ManagementAssetResponse[]>(
+  const initialized = useRef(false);
+  const { data: managedAssets, error: assetsError } = useQuery<ManagementAssetResponse[]>(
     '/api/management/assets',
     refresh,
   );
@@ -100,6 +107,24 @@ export function UploadPanel() {
     target === 'existing' && versionMode !== 'manual' && (!versionPlan || !!versionQuery.error);
   const needsFile = kind === 'skill' || mcp.mode === 'file';
   const selectedAsset = assets?.find((asset) => asset.id === assetId);
+  useEffect(() => {
+    if (initialized.current || !initialAssetId || !managedAssets) return;
+    initialized.current = true;
+    const asset = managedAssets.find(
+      (item) =>
+        item.id === initialAssetId &&
+        item.source_kind === 'upload' &&
+        item.can_submit &&
+        item.lifecycle === 'active',
+    );
+    if (asset) {
+      setKind(asset.kind);
+      setRequiresApiKey(asset.requires_api_key);
+    } else {
+      setAssetId('');
+      setError('该资产当前不能上传新版本，请返回维护页核对权限、来源和状态。');
+    }
+  }, [initialAssetId, managedAssets]);
   const documentSlug = target === 'existing' ? (selectedAsset?.slug ?? '') : identity.slug;
   let preview = '';
   if (kind === 'mcp' && !needsFile) {
@@ -180,6 +205,8 @@ export function UploadPanel() {
     event.preventDefault();
     if (
       busy ||
+      (target === 'existing' &&
+        (!selectedAsset?.can_submit || selectedAsset.lifecycle !== 'active')) ||
       reading ||
       waitingForVersion ||
       versionUnavailable ||
@@ -347,7 +374,7 @@ export function UploadPanel() {
                     >
                       <option value="">请选择你维护的资产</option>
                       {assets
-                        ?.filter((asset) => asset.can_submit)
+                        ?.filter((asset) => asset.can_submit && asset.lifecycle === 'active')
                         .map((asset) => (
                           <option value={asset.id} key={asset.id}>
                             {asset.slug} · {asset.kind}
@@ -357,6 +384,16 @@ export function UploadPanel() {
                   </label>
                 )}
               </div>
+              {assetsError && <Message error>资产列表加载失败：{assetsError}</Message>}
+              {error && !assetId && target === 'existing' && <Message error>{error}</Message>}
+              {selectedAsset && target === 'existing' && (
+                <Message>
+                  正在更新 <strong>{selectedAsset.slug}</strong> ·{' '}
+                  {selectedAsset.kind.toUpperCase()}。 当前发布{' '}
+                  {selectedAsset.current_version?.version_label ?? '尚无'} → 本次{' '}
+                  {releaseVersion || '待确认'}。 校验和审核通过前，当前发布保持不变。
+                </Message>
+              )}
               {(target === 'new' || assetId) && (
                 <>
                   <div className={uploadSourceStyles}>
@@ -533,6 +570,8 @@ export function UploadPanel() {
                   <Submit
                     busy={busy}
                     disabled={
+                      (target === 'existing' &&
+                        (!selectedAsset?.can_submit || selectedAsset.lifecycle !== 'active')) ||
                       reading ||
                       waitingForVersion ||
                       versionUnavailable ||

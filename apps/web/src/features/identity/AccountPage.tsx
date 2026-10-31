@@ -17,9 +17,9 @@ import { PersonalSecurity } from '../profile/SecurityPanel.js';
 import { AdministrationPanel } from './AdministrationPanel.js';
 import { AuditPanel } from './AuditPanel.js';
 import { OperationsPanel } from './OperationsPanel.js';
-export default function AccountPage() {
+export default function AccountPage({ query = location.search }: { query?: string }) {
   const { me } = useHub();
-  const requested = new URLSearchParams(location.search).get('tab') ?? 'profile';
+  const requested = new URLSearchParams(query).get('tab') ?? 'profile';
   const allowed = [
     'profile',
     'credentials',

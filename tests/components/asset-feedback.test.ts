@@ -143,3 +143,67 @@ test('匿名访问不请求反馈接口，只展示登录说明', (context) => {
   );
   assert(screen.getByText('登录后可提交和查看反馈。'));
 });
+
+function feedbackPage() {
+  return createElement(
+    HubCtx.Provider,
+    {
+      value: {
+        me: {
+          id: 'reader',
+          username: 'reader',
+          display_name: '读者',
+          csrf_token: '',
+          groups: [],
+          capabilities: {
+            can_admin: false,
+            can_publish: false,
+            can_review: false,
+            can_audit: false,
+          },
+          features: { git_hosts: [] },
+        },
+        refresh: 0,
+        reviewCount: 0,
+        reload: () => {},
+        openPalette: () => {},
+        logout: async () => {},
+      },
+    },
+    createElement(AssetFeedback, { assetId: 'asset-1', versionId: 'version-1' }),
+  );
+}
+
+test('反馈列表与详情切换，表单返回保留草稿，成功后打开新记录', async (context) => {
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path.includes('/feedback?page=')) return Response.json({ items: [feedback], total: 1 });
+    if (path.endsWith('/versions'))
+      return Response.json([{ version_id: 'version-1', version_label: '1.0.0' }]);
+    if (path === '/api/feedback/feedback-1') return Response.json(feedback);
+    if (path === '/api/feedback' && options.method === 'POST') return Response.json(feedback);
+    assert.fail('Unexpected fetch: ' + path);
+  });
+  const user = userEvent.setup();
+  render(feedbackPage());
+  await user.click(await screen.findByRole('button', { name: /导入失败/ }));
+  assert(await screen.findByRole('article', { name: '反馈详情：导入失败' }));
+  assert.equal(screen.queryByRole('button', { name: '上一页' }), null);
+  await user.click(screen.getByRole('button', { name: '返回反馈列表' }));
+  await user.click(screen.getByRole('button', { name: '提交问题或建议' }));
+  await user.type(screen.getByRole('textbox', { name: '反馈标题（必填）' }), '草稿问题');
+  await user.click(screen.getByRole('button', { name: '返回反馈列表（保留草稿）' }));
+  await user.click(screen.getByRole('button', { name: '继续填写反馈' }));
+  assert.equal(
+    (screen.getByRole('textbox', { name: '反馈标题（必填）' }) as HTMLInputElement).value,
+    '草稿问题',
+  );
+  await user.type(screen.getByRole('textbox', { name: '业务场景与目标（必填）' }), '处理空数据');
+  await user.type(screen.getByRole('textbox', { name: '预期行为（必填）' }), '显示提示');
+  await user.type(screen.getByRole('textbox', { name: '实际观察到的现象（必填）' }), '异常退出');
+  await user.click(
+    screen.getByRole('checkbox', { name: '我已检查并脱敏内容，同意提交给资产维护者' }),
+  );
+  await user.click(screen.getByRole('button', { name: '提交反馈' }));
+  assert(await screen.findByText('反馈已提交，可在此查看后续处理结果。'));
+  assert(await screen.findByRole('article', { name: '反馈详情：导入失败' }));
+});

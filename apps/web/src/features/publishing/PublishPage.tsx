@@ -5,16 +5,15 @@ import { Message } from '../../shared/components/Message.js';
 import { PageHead } from '../../shared/components/PageHead.js';
 import { PageTabs } from '../../shared/components/PageTabs.js';
 import { useHub } from '../../shared/context/HubContext.js';
-import { pageHref, parseHistoryRoute } from '../../shared/navigation/history-route.js';
+import { pageHref } from '../../shared/navigation/history-route.js';
 import { navigate } from '../../shared/navigation/history-navigation.js';
 import ManagementPanel from '../catalog/ManagementPanel.js';
 import SourcesPanel from '../sources/SourcesPanel.js';
 import { UploadPanel } from './UploadPanel.js';
-export default function PublishPage() {
+export default function PublishPage({ query = location.search }: { query?: string }) {
   const { me } = useHub();
-  const requested = new URLSearchParams(
-    parseHistoryRoute(location.pathname, location.search).query,
-  ).get('tab');
+  const params = new URLSearchParams(query);
+  const requested = params.get('tab');
   const tab = requested && ['upload', 'git', 'manage'].includes(requested) ? requested : 'upload';
   return (
     <div className={publishPageStyles}>
@@ -72,7 +71,11 @@ export default function PublishPage() {
           ) : !me?.capabilities.can_publish ? (
             <Message>当前账号没有资产创建或维护权限，请联系管理员授权。</Message>
           ) : tab === 'upload' ? (
-            <UploadPanel />
+            <UploadPanel
+              key={(params.get('asset') ?? '') + ':' + (params.get('intake') ?? '')}
+              initialAssetId={params.get('asset') ?? ''}
+              initialIntakeId={params.get('intake') ?? ''}
+            />
           ) : (
             <SourcesPanel />
           )}

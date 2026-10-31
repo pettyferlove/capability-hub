@@ -345,3 +345,33 @@ test('旧规则通过的扫描不能提交新的发布申请，必须取得当�
   await assert.rejects(() => submitPublication(fixture, intake), errorCode('SCAN_REQUIRED'));
   assert.equal((await fixture.store.all('requests')).length, 0);
 });
+
+test('更新摘要展示当前发布与待审版本，历史审核保持提交基线', async (context) => {
+  const f = await createTestHub(context);
+  const first = await publishSkill(f);
+  const next = await receiveSkill(f, {
+    assetId: first.intake.asset_id,
+    version: '1.0.1',
+    body: '# 更新后的工程实践',
+  });
+  assert.equal(next.current_version?.version_label, '1.0.0');
+  assert.equal(next.current_version?.content_digest, first.intake.version?.content_digest);
+  const request = await submitPublication(f, next);
+  const [managed] = await f.hub.assetManagement.list(f.admin);
+  assert.equal(managed.current_version?.version_label, '1.0.0');
+  assert.deepEqual(managed.pending_requests, [{ id: request.id, version_label: '1.0.1' }]);
+  assert.equal(managed.latest_intake?.id, next.id);
+  assert.equal(managed.latest_intake?.state, 'pending');
+  assert.deepEqual(await f.hub.assetManagement.list(f.reader), []);
+  await f.hub.publications.decide(f.reviewer, request.id, approval(request), '"1"', randomUUID());
+  const review = await f.hub.publicationQueries.getReview(f.admin, request.id);
+  assert.equal(review.current?.content_digest, first.intake.version?.content_digest);
+  assert.equal(review.current?.version_label, '1.0.0');
+  const [published] = await f.hub.assetManagement.list(f.admin);
+  assert.equal(published.current_version?.version_label, '1.0.1');
+  assert.equal(published.latest_intake?.state, 'approved');
+  assert.deepEqual(published.pending_requests, []);
+  const refreshed = await f.hub.intakeQueries.getDetail(f.admin, next.id);
+  assert.equal(refreshed.current_version?.version_label, '1.0.1');
+  assert.notEqual(refreshed.current_release_id, next.current_release_id);
+});

@@ -1,3 +1,9 @@
+import { Overlay } from '../shared/components/Overlay.js';
+import { DialogTitle } from '../shared/components/DialogTitle.js';
+import { DetailSkeleton } from '../shared/components/Skeleton.js';
+import { sheetScrollStyles } from '../shared/styles/recipes.js';
+import { assetDetailScrollStyles } from '../features/catalog/styles.js';
+import { cn } from '../shared/styles/cn.js';
 import { bootErrorStyles, skipLinkStyles, mainShellStyles, appFooterStyles } from './styles.js';
 import { pageContentStyles } from '../shared/styles/recipes.js';
 import type { ReviewResponse } from '@capability-hub/contracts/http';
@@ -12,13 +18,14 @@ import { Loading } from '../shared/components/Loading.js';
 import { LoadingScope } from '../shared/components/LoadingScope.js';
 import { HubCtx } from '../shared/context/HubContext.js';
 import { loginReturnPath, reviewLocation } from '../shared/navigation/history-route.js';
-import { navigate } from '../shared/navigation/history-navigation.js';
+import { navigate, closeAsset } from '../shared/navigation/history-navigation.js';
 import { useAppRoute } from './use-app-route.js';
 import { useSession } from './use-session.js';
 import { useTheme } from './theme.js';
 import { AppHeader } from './AppHeader.js';
 import { CommandPalette } from './CommandPalette.js';
 import { PageBoundary } from './PageBoundary.js';
+const AssetSheet = lazy(() => import('../features/catalog/AssetSheet.js'));
 const Publish = lazy(() => import('../features/publishing/PublishPage.js'));
 const Review = lazy(() => import('../features/review/ReviewPage.js'));
 const Connect = lazy(() => import('../features/connect/ConnectPage.js'));
@@ -137,11 +144,11 @@ export default function App() {
               }
             >
               <div className={pageContentStyles} key={view.page}>
-                {view.page === 'discover' && <Discover openAsset={view.asset} />}{' '}
-                {view.page === 'publish' && <Publish />}
-                {view.page === 'review' && <Review />}
-                {view.page === 'connect' && <Connect />}
-                {view.page === 'account' && <Account />}
+                {view.page === 'discover' && <Discover />}{' '}
+                {view.page === 'publish' && <Publish query={view.query} />}
+                {view.page === 'review' && <Review query={view.query} />}
+                {view.page === 'connect' && <Connect routeQuery={view.query} />}
+                {view.page === 'account' && <Account query={view.query} />}
               </div>
             </Suspense>
           </PageBoundary>
@@ -153,6 +160,21 @@ export default function App() {
             <a href="/connect">安装与接入</a>
           </nav>
         </footer>
+        <Overlay
+          open={!!view.asset}
+          onClose={closeAsset}
+          label="资源详情"
+          variant="sheet"
+          size="wide"
+          loadingKey={view.asset}
+        >
+          <DialogTitle title="资源详情" onClose={closeAsset} />
+          <div className={cn(sheetScrollStyles, assetDetailScrollStyles)}>
+            <Suspense fallback={<DetailSkeleton />}>
+              {view.asset && <AssetSheet key={view.asset} slug={view.asset} />}
+            </Suspense>
+          </div>
+        </Overlay>
         <CommandPalette open={palette} onClose={() => setPalette(false)} />
       </HubCtx.Provider>
     </LoadingScope>

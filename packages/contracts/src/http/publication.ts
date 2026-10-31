@@ -69,6 +69,7 @@ export type ReviewResponse = PublicationRequestResponse & {
     visibility_label: string;
     release: ReleaseResponse;
     version_label?: string;
+    content_digest?: string;
     manifest?: Manifest;
   } | null;
   scan?: ScanResponse;

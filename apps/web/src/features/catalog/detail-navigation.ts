@@ -1,4 +1,4 @@
-export type DetailTab = 'overview' | 'files' | 'installation' | 'versions';
+export type DetailTab = 'overview' | 'files' | 'installation' | 'versions' | 'feedback';
 export interface DetailLocation {
   tab: DetailTab;
   path: string;

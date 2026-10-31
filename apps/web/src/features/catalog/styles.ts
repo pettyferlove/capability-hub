@@ -452,10 +452,10 @@ export const feedbackFormStyles = cn(
   '[&_fieldset]:mt-0 [&_fieldset]:mr-0 [&_fieldset]:mb-0 [&_fieldset]:ml-0 [&_fieldset]:min-w-0',
 );
 
-export const managementGridStyles = 'items-stretch';
+export const managementGridStyles = 'grid grid-cols-2 items-start gap-4 max-[900px]:grid-cols-1';
 
 export const managementCardStyles = cn(
-  'group/management-card flex flex-col min-w-0 [&_h3]:[overflow-wrap:anywhere]',
+  'group/management-card flex flex-col gap-3 min-w-0 [&_h3]:[overflow-wrap:anywhere] [&_h3]:my-1 [&_p]:my-0',
   "[&_[class~='group/source-actions']]:mt-auto [&_[class~='group/source-actions']]:pt-5",
 );
 

@@ -56,9 +56,9 @@ import { ConversationInstallIntro } from './ConversationInstallIntro.js';
 import { AgentConversationDemo } from './AgentConversationDemo.js';
 import { HubToolbox } from './HubToolbox.js';
 
-export default function ConnectPage() {
+export default function ConnectPage({ routeQuery = location.search }: { routeQuery?: string }) {
   const { me } = useHub();
-  const query = new URLSearchParams(location.search);
+  const query = new URLSearchParams(routeQuery);
   const authorization = query.get('authorization');
   const code = query.get('code');
   const approving = !!authorization || !!code;

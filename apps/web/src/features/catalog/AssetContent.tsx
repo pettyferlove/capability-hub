@@ -1,3 +1,4 @@
+import { AssetFeedback } from './AssetFeedback.js';
 import {
   assetContentStyles,
   detailActionsStyles,
@@ -26,6 +27,7 @@ import {
   BookOpen,
   Download,
   History,
+  MessageSquare,
   Terminal,
 } from '../../shared/icons/lucide.js';
 import { useId, useLayoutEffect, useReducer, useRef, useState } from 'react';
@@ -57,8 +59,14 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
     '/api/assets/' + encodeURIComponent(asset.slug) + '/versions',
     refresh,
   );
+  const params = new URLSearchParams(window.location.search);
   const [navigation, dispatch] = useReducer(detailNavigation, {
-    entries: [{ tab: 'overview', path: entry }],
+    entries: [
+      {
+        tab: params.has('feedback') || params.get('tab') === 'feedback' ? 'feedback' : 'overview',
+        path: entry,
+      },
+    ],
     index: 0,
   });
   const view = navigation.entries[navigation.index];
@@ -76,6 +84,7 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
     { id: 'files', label: `文件清单 ${asset.files.length}` },
     { id: 'installation', label: '使用与安装' },
     { id: 'versions', label: '版本历史' },
+    { id: 'feedback', label: '问题与建议' },
   ];
   function remember(focus = false, scroll: 'restore' | 'start' = 'restore') {
     const scroller = root.current?.closest<HTMLElement>('.sheet-scroll');
@@ -142,6 +151,14 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
           <Download size={16} />
           下载固定版本
         </a>
+        <button
+          type="button"
+          className={btnStyles}
+          onClick={() => open({ tab: 'feedback', path: entry }, true, 'start')}
+        >
+          <MessageSquare size={16} />
+          问题与建议
+        </button>
         <span className={subtleStyles}>
           {asset.files.length} 个文件 ·{' '}
           {bytesLabel(asset.files.reduce((size, file) => size + file.size, 0))}
@@ -187,7 +204,9 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
               ? view.path
               : view.tab === 'installation'
                 ? '使用与安装'
-                : '版本历史'}
+                : view.tab === 'feedback'
+                  ? '问题与建议'
+                  : '版本历史'}
           </span>
           {view.tab === 'files' && (
             <button
@@ -248,6 +267,11 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
         </div>
         <div hidden={view.tab !== 'installation'}>
           <ResourceInstallation asset={asset} origin={location.origin} />
+        </div>
+        <div hidden={view.tab !== 'feedback'}>
+          {navigation.entries.some((location) => location.tab === 'feedback') && (
+            <AssetFeedback assetId={asset.asset_id} versionId={asset.current_release.version_id} />
+          )}
         </div>
         <div hidden={view.tab !== 'versions'}>
           {history.error ? (

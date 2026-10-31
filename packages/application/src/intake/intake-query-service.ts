@@ -153,6 +153,9 @@ export class IntakeQueryService {
       this.context.store.get('releases', asset.current_release_id),
       this.context.store.get('scans', intake.scan_run_id),
     ]);
+    const currentVersion = release
+      ? await this.context.store.get('versions', release.version_id)
+      : null;
     const selectedPolicy = binding ?? release;
     const policy: Policy = selectedPolicy
       ? {
@@ -169,6 +172,13 @@ export class IntakeQueryService {
     return {
       ...toIntakeDetails(intake),
       asset_slug: asset.slug,
+      current_release_id: release?.id ?? null,
+      current_version: currentVersion
+        ? {
+            version_label: currentVersion.version_label,
+            content_digest: currentVersion.content_digest,
+          }
+        : null,
       asset_lifecycle: asset.lifecycle,
       asset_lifecycle_reason: asset.deprecation_reason ?? '',
       can_view_catalog: await this.assets.canViewCatalog(principal, asset),

@@ -1,3 +1,4 @@
+import { VersionComparison } from '../../shared/components/VersionComparison.js';
 import { intakeDetailStyles, intakeSnapshotStyles, intakePublishedStyles } from './styles.js';
 import {
   tagStyles,
@@ -11,10 +12,10 @@ import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { PublicationPolicyFields } from './PublicationPolicyFields.js';
 import type { Policy } from '@capability-hub/contracts';
-import type { IntakeResponse, ManagementAssetResponse } from '@capability-hub/contracts/http';
+import type { IntakeResponse } from '@capability-hub/contracts/http';
 import { ArrowRight, ShieldCheck } from '../../shared/icons/lucide.js';
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, mutate } from '../../shared/api/client.js';
+import { mutate } from '../../shared/api/client.js';
 import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { assetHref } from '../../shared/navigation/history-route.js';
@@ -45,13 +46,13 @@ export function IntakeDetail({
     [purpose, setPurpose] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
-    [submitted, setSubmitted] = useState(false),
+    [submitted, setSubmitted] = useState(''),
     [reapplying, setReapplying] = useState(false);
   useEffect(() => {
     setValue(i.proposed_policy);
     setAppliesTo(i.publication?.applies_to ?? i.proposed_applies_to);
     setRequiresApiKey(i.publication?.requires_api_key ?? i.proposed_requires_api_key);
-    setSubmitted(false);
+    setSubmitted('');
     setReapplying(false);
     setError('');
     setPurpose('');
@@ -61,17 +62,16 @@ export function IntakeDetail({
     setBusy(true);
     setError('');
     try {
-      const assets = await api<ManagementAssetResponse[]>('/api/management/assets');
-      await mutate('/api/publication-requests', {
+      const result = await mutate<{ id: string }>('/api/publication-requests', {
         source_intake_id: i.id,
         version_id: i.version_id,
         ...value,
         applies_to: appliesTo,
         ...(i.version?.manifest.kind === 'skill' ? { requires_api_key: requiresApiKey } : {}),
         purpose,
-        base_release_id: assets.find((a) => a.id === i.asset_id)?.current_release_id ?? null,
+        base_release_id: i.current_release_id,
       });
-      setSubmitted(true);
+      setSubmitted(result.id);
       reload();
     } catch (e) {
       setError(errorMessage(e));
@@ -113,6 +113,13 @@ export function IntakeDetail({
         </Submit>
       )}
       {error && <Message error>{error}</Message>}
+      {i.version && (
+        <VersionComparison
+          kind={i.version.manifest.kind}
+          previous={i.current_version}
+          candidate={i.version}
+        />
+      )}
       {i.scan && <IntakeScan scan={i.scan} />}
       {i.version && (
         <details className={intakeSnapshotStyles}>
@@ -165,9 +172,11 @@ export function IntakeDetail({
             已提交人工审核。当前发布在审核通过前保持原样。
             <a
               href={
-                i.publication
-                  ? `/review?state=${i.publication.state}&request=${i.publication.id}`
-                  : '/review'
+                submitted
+                  ? `/review?request=${submitted}`
+                  : i.publication
+                    ? `/review?state=${i.publication.state}&request=${i.publication.id}`
+                    : '/review'
               }
             >
               查看审核
@@ -196,6 +205,12 @@ export function IntakeDetail({
           </div>
         ) : (
           <form onSubmit={submit} className={formStackStyles}>
+            {i.publication && ['rejected', 'stale', 'cancelled'].includes(i.publication.state) && (
+              <Message>
+                {i.publication.decision_reason || i.publication.stale_reason || '上次申请未发布。'}{' '}
+                请核对后重新提交。
+              </Message>
+            )}
             <PublicationPolicyFields value={value} onChange={setValue} />
             <KeywordField
               value={appliesTo.keywords ?? []}
@@ -218,6 +233,7 @@ export function IntakeDetail({
                 placeholder="说明内容适用范围，并确认你有权将此快照共享给所选受众。"
               />
             </label>
+            <p className={subtleStyles}>提交后进入人工审核；审核通过前，目录继续使用当前发布。</p>
             <Submit busy={busy}>
               确认内容并提交审核
               <ArrowRight size={16} />

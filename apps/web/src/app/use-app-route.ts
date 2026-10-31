@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react';
-import { parseHistoryRoute } from '../shared/navigation/history-route.js';
-import { handlePageLink, navigationEvent } from '../shared/navigation/history-navigation.js';
+import {
+  appRoute,
+  handlePageLink,
+  navigationEvent,
+} from '../shared/navigation/history-navigation.js';
 
 export function useAppRoute() {
-  const [view, setView] = useState(() => parseHistoryRoute(location.pathname, location.search));
+  const [view, setView] = useState(() =>
+    appRoute(location.pathname, location.search, window.history.state),
+  );
   useEffect(() => {
-    const changed = () => setView(parseHistoryRoute(location.pathname, location.search));
+    const changed = () =>
+      setView(appRoute(location.pathname, location.search, window.history.state));
     window.addEventListener('popstate', changed);
     window.addEventListener(navigationEvent, changed);
     document.addEventListener('click', handlePageLink);

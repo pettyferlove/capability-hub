@@ -37,6 +37,8 @@ export interface IntakeDetails {
 
 export interface IntakeResponse extends IntakeDetails {
   asset_slug: string;
+  current_release_id: string | null;
+  current_version: ManagementAssetResponse['current_version'];
   asset_lifecycle: ManagementAssetResponse['lifecycle'];
   asset_lifecycle_reason: string;
   can_view_catalog: boolean;

@@ -20,23 +20,66 @@ export class AssetManagementQueryService {
             this.access.canMaintain(principal, asset) ||
             has(principal, 'asset:lifecycle', this.access.assetContext(asset)),
         )
-        .map(async (asset) => ({
-          id: asset.id,
-          slug: asset.slug,
-          kind: asset.kind,
-          requires_api_key: asset.requires_api_key === true,
-          owner_group_id: asset.owner_group_id,
-          source_id: asset.source_id,
-          source_kind: (await this.context.store.get('sources', asset.source_id))!.kind,
-          lifecycle: asset.lifecycle,
-          can_submit: this.access.canMaintain(principal, asset),
-          can_lifecycle: has(principal, 'asset:lifecycle', this.access.assetContext(asset)),
-          can_view_catalog: await this.access.canViewCatalog(principal, asset),
-          current_release:
-            (await this.context.store.get('releases', asset.current_release_id)) ?? null,
-          current_release_id: asset.current_release_id,
-          revision: asset.revision,
-        })),
+        .map(async (asset) => {
+          const release = await this.context.store.get('releases', asset.current_release_id);
+          const version = release
+            ? await this.context.store.get('versions', release.version_id)
+            : null;
+          const canSubmit = this.access.canMaintain(principal, asset);
+          const intakes = canSubmit
+            ? await this.context.store.where('intakes', 'asset_id', asset.id)
+            : [];
+          const latest = intakes.sort(
+            (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
+          )[0];
+          const requests = canSubmit
+            ? await this.context.store.where('requests', 'asset_id', asset.id)
+            : [];
+          const latestRequest = requests
+            .filter((r) => r.source_intake_id === latest?.id)
+            .sort(
+              (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
+            )[0];
+          const pending = await Promise.all(
+            requests
+              .filter((r) => r.state === 'pending')
+              .map(async (r) => ({
+                id: r.id,
+                version_label: (await this.context.store.get('versions', r.version_id))!
+                  .version_label,
+              })),
+          );
+          return {
+            id: asset.id,
+            slug: asset.slug,
+            kind: asset.kind,
+            requires_api_key: asset.requires_api_key === true,
+            owner_group_id: asset.owner_group_id,
+            source_id: asset.source_id,
+            source_kind: (await this.context.store.get('sources', asset.source_id))!.kind,
+            lifecycle: asset.lifecycle,
+            can_submit: this.access.canMaintain(principal, asset),
+            can_lifecycle: has(principal, 'asset:lifecycle', this.access.assetContext(asset)),
+            can_view_catalog: await this.access.canViewCatalog(principal, asset),
+            current_release: release ?? null,
+            current_version: version
+              ? { version_label: version.version_label, content_digest: version.content_digest }
+              : null,
+            latest_intake: latest
+              ? {
+                  id: latest.id,
+                  version_label: latest.version_label,
+                  state:
+                    latest.state === 'ready'
+                      ? (latestRequest?.state ?? latest.state)
+                      : latest.state,
+                }
+              : null,
+            pending_requests: pending,
+            current_release_id: asset.current_release_id,
+            revision: asset.revision,
+          };
+        }),
     );
   }
   async keywordOptions(principal: Principal, query: KeywordOptionsQuery) {

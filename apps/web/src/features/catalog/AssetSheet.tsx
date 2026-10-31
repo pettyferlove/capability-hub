@@ -35,7 +35,6 @@ import { ScriptBadge } from '../../shared/components/ScriptBadge.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { categoryLabel, dateLabel } from '../../shared/format/labels.js';
 import { assetHref, loginHref } from '../../shared/navigation/history-route.js';
-import { AssetFeedback } from './AssetFeedback.js';
 import { AssetContent } from './AssetContent.js';
 import { ApiKeyBadge } from './ApiKeyBadge.js';
 import { SkillUsageForm } from './SkillUsageForm.js';
@@ -146,11 +145,7 @@ export default function AssetSheet({ slug }: { slug: string }) {
               </span>
             </div>
             <AssetContent key={a.current_release.version_id} asset={a} />
-            <AssetFeedback
-              key={a.asset_id}
-              assetId={a.asset_id}
-              versionId={a.current_release.version_id}
-            />
+
             {(a.permissions.can_lifecycle ||
               a.permissions.can_revoke ||
               a.permissions.can_submit) && (
