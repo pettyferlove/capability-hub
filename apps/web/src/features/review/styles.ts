@@ -92,6 +92,8 @@ export const reviewFileViewerStyles = cn(
 );
 
 export const fileViewerTitleStyles = cn(
+  'scroll-mt-25 outline-none data-[highlighted=true]:bg-brand-soft',
+  'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
   'flex justify-between items-center gap-2.5 pt-3 pr-3.5 pb-3 pl-3.5',
   'border-b [border-bottom-style:solid] border-b-[color:var(--line)] shrink-0 [&_>_div:first-child]:flex',
   '[&_>_div:first-child]:items-center [&_>_div:first-child]:gap-[7px] [&_>_div:first-child]:min-w-0',
@@ -247,6 +249,18 @@ export const reviewInlineWarningStyles = cn(
   '[background:color-mix(in_srgb,_var(--warning),_transparent_94%)] pt-2.5 pr-3 pb-2.5 pl-3',
   'rounded-[7px] mb-[15px] text-[length:11px] [&_svg]:shrink-0 [&_svg]:mt-0.5',
 );
+
+export const reviewUsageStyles =
+  'mb-4 flex min-w-0 flex-col gap-2 rounded-[10px] bg-page px-3.5 py-3';
+
+export const reviewUsageHeadingStyles = cn(
+  'flex flex-wrap items-center justify-between gap-x-4 gap-y-2',
+  '[&_h3]:text-label [&_h3]:font-medium [&_h3]:leading-normal',
+);
+
+export const reviewUsageDeclarationStyles = 'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5';
+
+export const reviewUsageDescriptionStyles = 'text-caption text-muted-ink leading-[1.7]';
 
 export const reviewStageTabsStyles = cn(
   'flex gap-[21px] border-t [border-top-style:solid] border-t-[color:var(--line)] [&_>_button]:flex [&_>_button]:items-center',
@@ -594,6 +608,8 @@ export const inboxItemsStyles = cn(
   "max-[600px]:[&_>_button:only-child]:[grid-template-areas:'kind_kind'_'name_version'_'foot_foot']",
   'max-[600px]:[&_>_button:only-child]:gap-x-3',
 );
+
+export const inboxMetadataStyles = 'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5';
 
 export const inboxKindStyles = cn(
   'group/inbox-kind flex items-center justify-between gap-[7px] [&_small]:text-caption',

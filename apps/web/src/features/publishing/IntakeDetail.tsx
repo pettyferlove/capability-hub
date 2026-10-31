@@ -25,6 +25,7 @@ import { IntakeProgress } from './IntakeProgress.js';
 import type { IntakeConnection } from './use-intake-detail.js';
 import { IntakeScan } from './IntakeScan.js';
 import { KeywordField } from '../../shared/components/KeywordField.js';
+import { SkillApiKeyField } from '../../shared/components/SkillApiKeyField.js';
 export function IntakeDetail({
   intake: i,
   onSelect,
@@ -36,6 +37,9 @@ export function IntakeDetail({
 }) {
   const { reload } = useHub();
   const inactive = i.asset_lifecycle !== 'active';
+  const [requiresApiKey, setRequiresApiKey] = useState(
+    i.publication?.requires_api_key ?? i.proposed_requires_api_key,
+  );
   const [value, setValue] = useState<Policy>(i.proposed_policy),
     [appliesTo, setAppliesTo] = useState(i.proposed_applies_to),
     [purpose, setPurpose] = useState(''),
@@ -46,6 +50,7 @@ export function IntakeDetail({
   useEffect(() => {
     setValue(i.proposed_policy);
     setAppliesTo(i.publication?.applies_to ?? i.proposed_applies_to);
+    setRequiresApiKey(i.publication?.requires_api_key ?? i.proposed_requires_api_key);
     setSubmitted(false);
     setReapplying(false);
     setError('');
@@ -62,6 +67,7 @@ export function IntakeDetail({
         version_id: i.version_id,
         ...value,
         applies_to: appliesTo,
+        ...(i.version?.manifest.kind === 'skill' ? { requires_api_key: requiresApiKey } : {}),
         purpose,
         base_release_id: assets.find((a) => a.id === i.asset_id)?.current_release_id ?? null,
       });
@@ -195,6 +201,13 @@ export function IntakeDetail({
               value={appliesTo.keywords ?? []}
               onChange={(keywords) => setAppliesTo({ ...appliesTo, keywords })}
             />
+            {i.version?.manifest.kind === 'skill' && (
+              <SkillApiKeyField
+                checked={requiresApiKey}
+                onChange={setRequiresApiKey}
+                disabled={busy}
+              />
+            )}
             <label>
               共享目的与授权确认
               <textarea

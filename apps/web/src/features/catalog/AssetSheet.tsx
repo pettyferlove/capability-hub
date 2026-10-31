@@ -37,6 +37,8 @@ import { categoryLabel, dateLabel } from '../../shared/format/labels.js';
 import { assetHref, loginHref } from '../../shared/navigation/history-route.js';
 import { AssetFeedback } from './AssetFeedback.js';
 import { AssetContent } from './AssetContent.js';
+import { ApiKeyBadge } from './ApiKeyBadge.js';
+import { SkillUsageForm } from './SkillUsageForm.js';
 export default function AssetSheet({ slug }: { slug: string }) {
   const { refresh, reload, me } = useHub();
   const {
@@ -129,6 +131,7 @@ export default function AssetSheet({ slug }: { slug: string }) {
                 </span>
               ))}
               {a.current_release.has_scripts && <ScriptBadge />}
+              {a.kind === 'skill' && a.requires_api_key && <ApiKeyBadge />}
             </div>
             {a.lifecycle === 'deprecated' && <Message>已弃用：{a.deprecation_reason}</Message>}
             <div className={detailMetaStyles}>
@@ -154,6 +157,15 @@ export default function AssetSheet({ slug }: { slug: string }) {
               <details className={managementToolsStyles}>
                 <summary>资产维护与分发控制</summary>
                 <div className={formStackStyles}>
+                  {a.kind === 'skill' && a.permissions.can_submit && (
+                    <SkillUsageForm
+                      key={a.asset_id + ':' + a.revision}
+                      assetId={a.asset_id}
+                      revision={a.revision}
+                      requiresApiKey={a.requires_api_key}
+                      onSaved={reload}
+                    />
+                  )}
                   <label>
                     操作
                     <SelectField

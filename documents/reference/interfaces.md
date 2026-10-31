@@ -22,6 +22,10 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 
 需要修订的修改携带 If-Match，幂等用例携带 Idempotency-Key。Cookie 写入还需 CSRF。具体方法、参数与状态码以 server/http/routes 和 contracts 为准。
 
+`PATCH /api/assets/:id/usage` 更新 Skill 的资产级使用要求，请求体为 `{ "requires_api_key": true }` 或 `false`，需要当前资产维护权限及 `If-Match`。新建资产默认 `false`；目录列表、详情和资产维护列表返回 `requires_api_key`。非 Skill 返回 422，修订冲突返回 412；变更记录审计，不保存实际 API Key。实际变更会递增资产修订，并按现有审核上下文规则使待审申请失效；当前已发布内容保持可用。
+
+Skill 的上传与提交审核请求均可携带布尔字段 `requires_api_key`；MCP 不接受此字段。接收详情返回 `proposed_requires_api_key`，提交时可明确修正，省略时沿用本次接收声明或资产当前声明。审核申请将其纳入 `canonical_policy_json` 与 `policy_digest`，审核响应和发布记录保留提交时的值；通过后将该声明用于资产标签。已有资产上传新版本不会提前修改当前目录标签。
+
 ## Hub MCP
 
 服务器通过官方 SDK 在同一 `/mcp` 入口支持现代 `2026-07-28` 协议及使用 `initialize` 握手的 `2025-03-26`、`2025-06-18`、`2025-11-25` Streamable HTTP 客户端。握手协议采用无会话模式，各版本共用工具定义、令牌作用域与逐请求身份校验。MCP 标准协议兼容不属于项目旧数据或旧业务接口的兼容；不通过伪造版本 Header 转换协议，也不提供旧式 HTTP+SSE 独立端点。

@@ -29,6 +29,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../../shared/api/client.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { KeywordField } from '../../shared/components/KeywordField.js';
+import { SkillApiKeyField } from '../../shared/components/SkillApiKeyField.js';
 import { Segmented } from '../../shared/components/Segmented.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
@@ -65,6 +66,7 @@ export function UploadPanel() {
   const [versionMode, setVersionMode] = useState<UploadVersionMode>('auto');
   const [versionRefresh, setVersionRefresh] = useState(0);
   const [keywords, setKeywords] = useState<string[]>([]);
+  const [requiresApiKey, setRequiresApiKey] = useState(false);
   const [group, setGroup] = useState(me?.groups[0]?.id ?? '');
   const [file, setFile] = useState<File | null>(null);
   const [fileSummary, setFileSummary] = useState('');
@@ -210,6 +212,7 @@ export function UploadPanel() {
             kind,
             version_label: releaseVersion,
             keywords,
+            ...(kind === 'skill' ? { requires_api_key: requiresApiKey } : {}),
           }
         : {
             target,
@@ -217,6 +220,7 @@ export function UploadPanel() {
             version_label: releaseVersion,
             version_mode: versionMode === 'manual' ? 'manual' : 'automatic',
             keywords,
+            ...(kind === 'skill' ? { requires_api_key: requiresApiKey } : {}),
           },
     );
     if (lastRequest.current?.metadata !== metadata || lastRequest.current.content !== content)
@@ -236,6 +240,7 @@ export function UploadPanel() {
       setIdentity(target === 'new' ? emptyUploadIdentity : { ...emptyUploadIdentity, version: '' });
       setVersionMode('auto');
       setKeywords([]);
+      setRequiresApiKey(target === 'existing' && selectedAsset?.requires_api_key === true);
       setMcp({ ...emptyMcpEntry, mode: mcp.mode });
       lastRequest.current = null;
       reload();
@@ -270,6 +275,9 @@ export function UploadPanel() {
                   onChange={(next) => {
                     if (next === target) return;
                     setTarget(next);
+                    setRequiresApiKey(
+                      next === 'existing' && selectedAsset?.requires_api_key === true,
+                    );
                     if (next === 'existing') setKind(selectedAsset?.kind ?? 'skill');
                     setVersionMode('auto');
                     clearFile();
@@ -292,6 +300,7 @@ export function UploadPanel() {
                     onChange={(next) => {
                       if (next === kind) return;
                       setKind(next);
+                      setRequiresApiKey(false);
                       clearFile();
                       setIdentity(emptyUploadIdentity);
                       setMcp(emptyMcpEntry);
@@ -326,6 +335,9 @@ export function UploadPanel() {
                       onValueChange={(next) => {
                         if (next === assetId) return;
                         setAssetId(next);
+                        setRequiresApiKey(
+                          assets?.find((asset) => asset.id === next)?.requires_api_key === true,
+                        );
                         setKind(assets?.find((asset) => asset.id === next)?.kind ?? 'skill');
                         clearFile();
                         setIdentity({ ...emptyUploadIdentity, version: '' });
@@ -507,6 +519,9 @@ export function UploadPanel() {
                       </label>
                     )}
                     <KeywordField value={keywords} onChange={setKeywords} />
+                    {kind === 'skill' && (
+                      <SkillApiKeyField checked={requiresApiKey} onChange={setRequiresApiKey} />
+                    )}
                     {preview && (
                       <details className={mcpDocumentPreviewStyles}>
                         <summary>查看生成的 server.json</summary>

@@ -45,6 +45,7 @@ export interface IntakeResponse extends IntakeDetails {
   publication: PublicationRequestResponse | null;
   proposed_policy: Policy;
   proposed_applies_to: Applicability;
+  proposed_requires_api_key: boolean;
   ruleset_current: boolean;
 }
 

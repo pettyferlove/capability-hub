@@ -178,6 +178,7 @@ export class IntakeQueryService {
       publication: requests[0] ?? null,
       proposed_policy: policy,
       proposed_applies_to: { ...hints, ...(intake.keywords ? { keywords: intake.keywords } : {}) },
+      proposed_requires_api_key: intake.requires_api_key ?? asset.requires_api_key === true,
       ruleset_current: scan?.ruleset_version === contentScanRuleset,
     };
   }

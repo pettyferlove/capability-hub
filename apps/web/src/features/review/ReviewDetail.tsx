@@ -13,6 +13,10 @@ import {
   modifiedStyles,
   removedStyles,
   reviewInlineWarningStyles,
+  reviewUsageStyles,
+  reviewUsageHeadingStyles,
+  reviewUsageDeclarationStyles,
+  reviewUsageDescriptionStyles,
   reviewStageTabsStyles,
   nominationReviewSummaryStyles,
   reviewEvidencePanelsStyles,
@@ -82,6 +86,7 @@ import { FileWorkbench } from './FileWorkbench.js';
 import type { ChangeFile } from './types.js';
 import { shortVersion } from './version-label.js';
 import { audienceChange } from './audience-change.js';
+import { ApiKeyBadge } from '../catalog/ApiKeyBadge.js';
 export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
   const { reload, me } = useHub();
   const [comment, setComment] = useState(''),
@@ -91,7 +96,7 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
     [warnings, setWarnings] = useState<Record<string, string>>({}),
     [section, setSection] = useState('changes'),
     [decisionOpen, setDecisionOpen] = useState(false),
-    [focusPath, setFocusPath] = useState('');
+    [fileFocus, setFileFocus] = useState<{ path: string }>();
   const changed = r.diff.filter((f: ChangeFile) => f.status !== 'unchanged');
   const important = r.scan?.findings.filter((f) => f.severity !== 'info') ?? [];
   const infos = r.scan?.findings.filter((f) => f.severity === 'info') ?? [];
@@ -243,6 +248,43 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
             <span>本次扩大分发范围。即使文件未变，仍需确认来源授权和目标受众。</span>
           </div>
         )}
+        {r.asset.kind === 'skill' && (
+          <section className={reviewUsageStyles} aria-label="认证与使用要求">
+            <div className={reviewUsageHeadingStyles}>
+              <div className={reviewUsageDeclarationStyles}>
+                <h3>认证与使用要求</h3>
+                <span className={reviewUsageDescriptionStyles}>提交者声明：</span>
+                {r.requires_api_key ? (
+                  <ApiKeyBadge />
+                ) : (
+                  <span className={reviewUsageDescriptionStyles}>未声明需要 API Key</span>
+                )}
+              </div>
+              <button
+                type="button"
+                className={cn(textBtnStyles, 'shrink-0')}
+                aria-label="定位到 SKILL.md 文件预览"
+                onClick={() => {
+                  setSection('changes');
+                  setFileFocus({ path: 'SKILL.md' });
+                }}
+              >
+                定位到 SKILL.md
+                <ArrowRight size={14} />
+              </button>
+            </div>
+            {r.current && (
+              <p className={reviewUsageDescriptionStyles}>
+                上次发布声明：
+                {r.current.release.requires_api_key ? '需 API Key' : '未声明需要 API Key'}
+              </p>
+            )}
+            <p className={reviewUsageDescriptionStyles}>
+              请核对 SKILL.md 及引用文件中的认证方式、配置步骤和凭据用途。 未声明 API Key
+              需求不代表没有登录、OAuth 等独立认证流程；静态扫描不验证认证是否可用。
+            </p>
+          </section>
+        )}
         <div
           className={reviewStageTabsStyles}
           role="tablist"
@@ -337,10 +379,7 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
                         className={riskFileLinkStyles}
                         title="在下方预览相关文件"
                         onClick={() => {
-                          setFocusPath(f.file);
-                          document
-                            .getElementById('review-files')
-                            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          setFileFocus({ path: f.file });
                         }}
                       >
                         <code>
@@ -361,7 +400,7 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
               </div>
             )}
           </section>
-          <FileWorkbench request={r} focusPath={focusPath} />
+          <FileWorkbench request={r} focus={fileFocus} />
           {infos.length > 0 && (
             <details className={scanInformationalStyles}>
               <summary>
@@ -520,7 +559,11 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
                     checked={accepted}
                     onChange={(e) => setAccepted(e.target.checked)}
                   />
-                  <span>我已核对变更摘要、相关内容与分发受众，并完成本次审查。</span>
+                  <span>
+                    {r.asset.kind === 'skill'
+                      ? '我已核对变更摘要、相关内容、认证与使用要求及分发受众，并完成本次审查。'
+                      : '我已核对变更摘要、相关内容与分发受众，并完成本次审查。'}
+                  </span>
                 </label>
                 <label className={reviewCommentLabelStyles} htmlFor="review-comment">
                   审核意见 <small>退回必填</small>

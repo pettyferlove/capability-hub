@@ -11,6 +11,7 @@ const reasonLabels: Record<string, string> = {
   'local filesystem owner recovery': '本机文件系统所有者恢复账号访问',
 };
 const changeLabels: Record<string, string> = {
+  requires_api_key: '使用时需要 API Key',
   display_name: '显示名称',
   active: '启用状态',
   name: '名称',

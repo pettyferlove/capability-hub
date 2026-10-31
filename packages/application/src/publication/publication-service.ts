@@ -99,6 +99,8 @@ export class PublicationService {
     if (!v) notFound();
     const a = await this.assets.getAsset(v.asset_id);
     this.assets.requireMaintenance(principal, a);
+    if (a.kind !== 'skill' && b.requires_api_key !== undefined)
+      fail(422, 'NOT_SKILL', '仅 Skill 支持 API Key 需求声明');
     return await this.idempotency.execute(
       principal,
       'publication-requests',
@@ -164,6 +166,12 @@ export class PublicationService {
           approval_policy_digest: rulesDigest,
           base_release_id: a.current_release_id,
           asset_revision: a.revision,
+          ...(a.kind === 'skill'
+            ? {
+                requires_api_key:
+                  b.requires_api_key ?? intake.requires_api_key ?? a.requires_api_key === true,
+              }
+            : {}),
         };
         const bytes = canonical(frozen);
         const request = await this.context.store.insert('requests', {
@@ -231,6 +239,7 @@ export class PublicationService {
           approval_policy_digest: rulesDigest,
           base_release_id: release.id,
           asset_revision: asset.revision,
+          ...(asset.kind === 'skill' ? { requires_api_key: asset.requires_api_key === true } : {}),
           nomination: b,
         };
         const bytes = canonical(frozen);
@@ -367,6 +376,7 @@ export class PublicationService {
           scenario_ids: r.scenario_ids,
           distribution: r.distribution,
           applies_to: r.applies_to,
+          ...(a.kind === 'skill' ? { requires_api_key: r.requires_api_key === true } : {}),
           policy_source_id: r.policy_source_id,
           source_revision: r.source_revision,
           policy_digest: r.policy_digest,
@@ -379,6 +389,7 @@ export class PublicationService {
         await this.context.store.put('assets', {
           ...a,
           current_release_id: release.id,
+          ...(a.kind === 'skill' ? { requires_api_key: r.requires_api_key === true } : {}),
           revision: a.revision + 1,
         });
         const result = await this.context.store.put('requests', {

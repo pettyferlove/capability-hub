@@ -3,6 +3,7 @@ import type { Policy, SourceConsent } from '../policy.js';
 import type { IsoDateTime, VersionedRecord } from './base.js';
 
 export interface PublicationRequestRecord extends VersionedRecord, Policy {
+  requires_api_key?: boolean;
   nomination?: { release_id: string; reason: string };
   applies_to: Applicability;
   asset_id: string;
@@ -31,6 +32,7 @@ export interface PublicationRequestRecord extends VersionedRecord, Policy {
 }
 
 export interface ReleaseRecord extends Policy {
+  requires_api_key?: boolean;
   applies_to: Applicability;
   id: string;
   asset_id: string;

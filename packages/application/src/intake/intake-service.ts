@@ -36,6 +36,8 @@ export class IntakeService {
       metadata.target === 'new'
         ? metadata.kind
         : (await this.assets.getAsset(metadata.asset_id)).kind;
+    if (kind !== 'skill' && metadata.requires_api_key !== undefined)
+      fail(422, 'NOT_SKILL', '仅 Skill 支持 API Key 需求声明');
     if (
       (kind === 'skill' && !filename.toLowerCase().endsWith('.zip')) ||
       (kind === 'mcp' && filename !== 'server.json')
@@ -76,6 +78,7 @@ export class IntakeService {
             id: randomUUID(),
             slug: metadata.slug,
             kind,
+            requires_api_key: metadata.requires_api_key === true,
             source_id: source.id,
             owner_group_id: metadata.owner_group_id,
             lifecycle: 'active',
@@ -109,6 +112,9 @@ export class IntakeService {
           payload_ref,
           filename,
           ...(metadata.keywords ? { keywords: metadata.keywords } : {}),
+          ...(kind === 'skill'
+            ? { requires_api_key: metadata.requires_api_key ?? asset.requires_api_key === true }
+            : {}),
           state: 'received',
           phase: '接收完成，等待校验',
           progress: [{ step: 'received', started_at: now() }],

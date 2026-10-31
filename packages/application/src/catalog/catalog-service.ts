@@ -31,6 +31,7 @@ export class CatalogService {
       asset_id: asset.id,
       slug: asset.slug,
       kind: asset.kind,
+      requires_api_key: asset.requires_api_key === true,
       lifecycle: asset.lifecycle,
       deprecation_reason: asset.deprecation_reason ?? '',
       replacement_asset_id:

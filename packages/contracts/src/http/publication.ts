@@ -5,6 +5,7 @@ import type { ManagementAssetResponse, VersionSnapshotResponse } from './catalog
 import type { ScanResponse } from './intake.js';
 
 export interface PublicationRequestResponse extends Policy {
+  requires_api_key?: boolean;
   id: string;
   revision: number;
   nomination?: { release_id: string; reason: string };
@@ -35,6 +36,7 @@ export interface PublicationRequestResponse extends Policy {
 }
 
 export interface ReleaseResponse extends Policy {
+  requires_api_key?: boolean;
   applies_to: Applicability;
   id: string;
   asset_id: string;

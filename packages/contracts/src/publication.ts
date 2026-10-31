@@ -9,6 +9,7 @@ export const submitPublicationRequestSchema = z
     scenario_ids: z.array(uuidSchema),
     distribution: distributionPolicySchema,
     applies_to: applicabilitySchema,
+    requires_api_key: z.boolean().optional(),
     purpose: z.string().trim().min(1).max(2000),
     base_release_id: uuidSchema.nullable(),
   })

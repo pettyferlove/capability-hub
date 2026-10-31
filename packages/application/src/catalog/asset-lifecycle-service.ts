@@ -16,6 +16,28 @@ export class AssetLifecycleService {
     private readonly assets: AssetAccessService,
     private readonly publications: PublicationService,
   ) {}
+  async updateUsage(p: Principal, id: string, body: unknown, etag: string | undefined) {
+    const b = z.object({ requires_api_key: z.boolean() }).strict().parse(body);
+    return await this.context.store.tx(async () => {
+      const actor = await this.context.identity.principal(p.id);
+      const asset = await this.assets.getAsset(id);
+      this.assets.requireMaintenance(actor, asset);
+      if (asset.kind !== 'skill') fail(422, 'NOT_SKILL', '仅 Skill 支持 API Key 需求标识');
+      matchRevision(asset, etag);
+      const requiresApiKey = asset.requires_api_key === true;
+      if (requiresApiKey === b.requires_api_key) return asset;
+      const next = await this.context.store.put('assets', {
+        ...asset,
+        requires_api_key: b.requires_api_key,
+        revision: asset.revision + 1,
+      });
+      await this.publications.invalidatePending(asset.id, 'ASSET_USAGE_CHANGED');
+      await this.context.store.audit(actor.id, 'asset.usage_updated', asset.id, '', {
+        changes: [{ field: 'requires_api_key', before: requiresApiKey, after: b.requires_api_key }],
+      });
+      return next;
+    });
+  }
   async updateState(p: Principal, id: string, body: unknown, etag: string | undefined) {
     const b = z
       .object({
@@ -203,6 +225,12 @@ export class AssetLifecycleService {
         scenario_ids: current.scenario_ids,
         distribution: current.distribution,
         applies_to: current.applies_to,
+        ...(a.kind === 'skill'
+          ? {
+              requires_api_key:
+                (await this.assets.latestReleaseForVersion(v)).requires_api_key === true,
+            }
+          : {}),
         purpose: b.reason,
         base_release_id: a.current_release_id,
       },

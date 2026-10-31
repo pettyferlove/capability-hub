@@ -6,6 +6,7 @@ export interface AssetResponse {
   asset_id: string;
   slug: string;
   kind: 'skill' | 'mcp';
+  requires_api_key: boolean;
   lifecycle: 'active' | 'deprecated' | 'blocked';
   description: string;
   owner: { id: string; name: string };
@@ -55,6 +56,7 @@ export interface ManagementAssetResponse {
   revision: number;
   slug: string;
   kind: 'skill' | 'mcp';
+  requires_api_key: boolean;
   owner_group_id: string;
   source_id: string;
   source_kind: 'upload' | 'git';

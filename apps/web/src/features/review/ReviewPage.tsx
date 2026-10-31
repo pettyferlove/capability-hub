@@ -8,6 +8,7 @@ import {
   inboxKindStyles,
   tagAmberStyles,
   inboxVersionStyles,
+  inboxMetadataStyles,
   inboxFootStyles,
   inboxGuidanceStyles,
   reviewStageStyles,
@@ -20,6 +21,7 @@ import {
   tagTealStyles,
 } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
+import { ApiKeyBadge } from '../catalog/ApiKeyBadge.js';
 import type { ReviewResponse } from '@capability-hub/contracts/http';
 import { ArrowRight, RefreshCw, ShieldCheck } from '../../shared/icons/lucide.js';
 import { useQuery } from '../../shared/api/use-query.js';
@@ -126,12 +128,17 @@ export default function ReviewPage() {
                       <small>{dateLabel(r.created_at)}</small>
                     </div>
                     <strong>{r.asset.slug}</strong>
-                    {r.nomination && <span className={cn(tagStyles, tagTealStyles)}>通用提名</span>}
-                    <span className={inboxVersionStyles}>
-                      {r.candidate.version_label.startsWith('git.')
-                        ? r.candidate.version_label.slice(0, 16) + '…'
-                        : r.candidate.version_label}
-                    </span>
+                    <div className={inboxMetadataStyles}>
+                      <span className={inboxVersionStyles}>
+                        {r.candidate.version_label.startsWith('git.')
+                          ? r.candidate.version_label.slice(0, 16) + '…'
+                          : r.candidate.version_label}
+                      </span>
+                      {r.asset.kind === 'skill' && r.requires_api_key && <ApiKeyBadge />}
+                      {r.nomination && (
+                        <span className={cn(tagStyles, tagTealStyles)}>通用提名</span>
+                      )}
+                    </div>
                     <div className={inboxFootStyles}>
                       <span>{r.submitter}</span>
                       <span>

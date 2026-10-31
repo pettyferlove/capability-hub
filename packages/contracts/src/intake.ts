@@ -41,6 +41,7 @@ export const uploadIntakeRequestSchema = z.discriminatedUnion('target', [
       slug: assetSlugSchema,
       kind: assetKindSchema,
       keywords: keywordsSchema.optional(),
+      requires_api_key: z.boolean().optional(),
       version_label: versionLabel,
     })
     .strict(),
@@ -49,6 +50,7 @@ export const uploadIntakeRequestSchema = z.discriminatedUnion('target', [
       target: z.literal('existing'),
       asset_id: uuidSchema,
       keywords: keywordsSchema.optional(),
+      requires_api_key: z.boolean().optional(),
       version_label: versionLabel,
       version_mode: z.enum(['automatic', 'manual']).default('manual'),
     })

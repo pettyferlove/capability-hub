@@ -4,6 +4,18 @@ import type { HttpContext } from '../context.js';
 import { idempotencyKey as key, jsonRoute as send } from '../response.js';
 export function registerLifecycleRoutes(app: Express, { hub }: HttpContext): void {
   app.patch(
+    '/api/assets/:id/usage',
+    send(
+      async (req, res) =>
+        await hub.lifecycle.updateUsage(
+          res.locals.principal,
+          String(req.params.id),
+          req.body,
+          req.get('If-Match'),
+        ),
+    ),
+  );
+  app.patch(
     '/api/assets/:id/lifecycle',
     send(
       async (req, res) =>

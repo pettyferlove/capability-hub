@@ -65,6 +65,7 @@ import {
   sheetScrollStyles,
 } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
+import { ApiKeyBadge } from './ApiKeyBadge.js';
 import {
   type AssetResponse,
   type KeywordSuggestionsResponse,
@@ -432,6 +433,7 @@ export default function DiscoverPage({ openAsset }: { openAsset?: string }) {
                             </span>
                           ))}
                         {a.current_release.has_scripts && <ScriptBadge />}
+                        {a.kind === 'skill' && a.requires_api_key && <ApiKeyBadge />}
                       </div>
                       {q && a.match_reasons?.length ? (
                         <small className={matchReasonStyles}>{a.match_reasons.join(' · ')}</small>

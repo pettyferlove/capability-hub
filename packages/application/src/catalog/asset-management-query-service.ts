@@ -24,6 +24,7 @@ export class AssetManagementQueryService {
           id: asset.id,
           slug: asset.slug,
           kind: asset.kind,
+          requires_api_key: asset.requires_api_key === true,
           owner_group_id: asset.owner_group_id,
           source_id: asset.source_id,
           source_kind: (await this.context.store.get('sources', asset.source_id))!.kind,

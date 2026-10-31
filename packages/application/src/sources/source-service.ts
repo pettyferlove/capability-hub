@@ -147,6 +147,7 @@ export class SourceService {
       id: randomUUID(),
       slug: target.slug,
       kind: target.kind,
+      requires_api_key: false,
       source_id: source.id,
       owner_group_id: source.owner_group_id,
       lifecycle: 'active',

@@ -23,6 +23,7 @@ import {
 } from './styles.js';
 import { cn } from '../../shared/styles/cn.js';
 import { AssetFeedback } from './AssetFeedback.js';
+import { SkillUsageForm } from './SkillUsageForm.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import type {
   ManagementAssetResponse,
@@ -191,6 +192,15 @@ function Controls({
     <>
       <DialogTitle title={a.slug + ' · 维护'} onClose={onClose} />
       <div className={cn(sheetScrollStyles, formStackStyles)}>
+        {a.kind === 'skill' && a.can_submit && (
+          <SkillUsageForm
+            key={a.id + ':' + a.revision}
+            assetId={a.id}
+            revision={a.revision}
+            requiresApiKey={a.requires_api_key}
+            onSaved={onSaved}
+          />
+        )}
         <form className={formStackStyles} onSubmit={submit}>
           <Message>
             管理员通过管理接口审查内容；普通目录仍按当前受众与历史版本受众的交集分发。

@@ -70,14 +70,15 @@ type Tree = {
 };
 export function FileWorkbench({
   request: r,
-  focusPath,
+  focus,
 }: {
   request: ReviewResponse;
-  focusPath: string;
+  focus?: { path: string };
 }) {
   const files: ChangeFile[] = r.diff;
   const treeRef = useRef<HTMLDivElement>(null),
-    selectedRef = useRef<HTMLButtonElement>(null);
+    selectedRef = useRef<HTMLButtonElement>(null),
+    previewTitleRef = useRef<HTMLDivElement>(null);
   const [path, setPath] = useState(
       files.find((f) => f.path === 'SKILL.md')?.path ??
         files.find((f) => f.path === 'server.json')?.path ??
@@ -94,6 +95,7 @@ export function FileWorkbench({
     [unavailable, setUnavailable] = useState(false),
     [retry, setRetry] = useState(0),
     [mode, setMode] = useState('diff'),
+    [highlightedPath, setHighlightedPath] = useState(''),
     [wrap, setWrap] = useState(true),
     [expanded, setExpanded] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -110,6 +112,7 @@ export function FileWorkbench({
     hasNext = !!r.candidate.manifest.files.some((f) => f.path === path);
   const previewKey = r.id + ':' + path;
   useEffect(() => {
+    const focusPath = focus?.path;
     if (!focusPath || !files.some((f) => f.path === focusPath)) return;
     setPath(focusPath);
     setSearch('');
@@ -125,7 +128,23 @@ export function FileWorkbench({
       }
       return result;
     });
-  }, [focusPath]);
+    // 等待文件选择和 Tab 切换提交后，再把视线与键盘焦点带到预览标题。
+    const frame = requestAnimationFrame(() => {
+      const title = previewTitleRef.current;
+      if (!title) return;
+      title.focus({ preventScroll: true });
+      title.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      });
+      setHighlightedPath(focusPath);
+    });
+    const timer = setTimeout(() => setHighlightedPath(''), 1800);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }, [focus]);
   useEffect(() => {
     if (!path) return;
     let live = true;
@@ -324,7 +343,14 @@ export function FileWorkbench({
           </div>
         </aside>
         <div className={reviewFileViewerStyles}>
-          <div className={fileViewerTitleStyles}>
+          <div
+            ref={previewTitleRef}
+            className={fileViewerTitleStyles}
+            role="group"
+            aria-label={'文件预览：' + path}
+            tabIndex={-1}
+            data-highlighted={highlightedPath === path || undefined}
+          >
             <div>
               <FileCode2 size={15} />
               <code title={path}>{path || '选择一个文件'}</code>

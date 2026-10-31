@@ -5,6 +5,7 @@ import type { IsoDateTime, VersionedRecord } from './base.js';
 export interface AssetRecord extends VersionedRecord {
   slug: string;
   kind: AssetKind;
+  requires_api_key?: boolean;
   source_id: string;
   owner_group_id: string;
   lifecycle: 'active' | 'deprecated' | 'blocked';

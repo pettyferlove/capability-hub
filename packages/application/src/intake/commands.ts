@@ -2,6 +2,7 @@ import type { AssetKind } from '@capability-hub/domain/content';
 export type ReceiveIntakeCommand = {
   version_label: string;
   keywords?: string[];
+  requires_api_key?: boolean;
 } & (
   | { target: 'new'; slug: string; kind: AssetKind; owner_group_id: string }
   | { target: 'existing'; asset_id: string; version_mode?: 'automatic' | 'manual' }

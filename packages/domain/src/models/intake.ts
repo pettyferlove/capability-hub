@@ -22,6 +22,7 @@ export interface IntakeRecord {
   payload_ref?: string;
   filename?: string;
   keywords?: string[];
+  requires_api_key?: boolean;
   binding_id?: string | null;
   source_sync_job_id?: string;
   source_generation?: number | null;

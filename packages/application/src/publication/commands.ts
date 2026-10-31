@@ -4,6 +4,7 @@ export interface SubmitPublicationCommand extends Policy {
   source_intake_id: string;
   version_id: string;
   applies_to: Applicability;
+  requires_api_key?: boolean;
   purpose: string;
   base_release_id: string | null;
 }
