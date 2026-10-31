@@ -425,71 +425,21 @@
     --overlay-shadow: var(--shadow-floating);
   }
 
-  /* 头像保留用户选择的身份色，背景随系统主题降低亮度。 */
+  /* 身份色使用灰调；点阵底色在组件内混合当前主题的纸色。 */
   :root {
-    --avatar-teal-background: #d9eee7;
-    --avatar-teal-glow: #f4fff8;
-    --avatar-teal-shell: #79c7b2;
-    --avatar-teal-shade: #328a7c;
-    --avatar-teal-suit: #245c57;
-    --avatar-teal-visor: #173e3d;
-    --avatar-teal-light: #d8fff0;
-    --avatar-teal-accent-0: #f4bc6b;
-    --avatar-teal-accent-1: #ed9b85;
-    --avatar-teal-accent-2: #b8d98a;
-    --avatar-blue-background: #dae9f5;
-    --avatar-blue-glow: #f5fbff;
-    --avatar-blue-shell: #8fbce6;
-    --avatar-blue-shade: #477cae;
-    --avatar-blue-suit: #304e78;
-    --avatar-blue-visor: #1d3456;
-    --avatar-blue-light: #d9f3ff;
-    --avatar-blue-accent-0: #f5c778;
-    --avatar-blue-accent-1: #f1a59a;
-    --avatar-blue-accent-2: #9ed5c5;
-    --avatar-violet-background: #e9e0f4;
-    --avatar-violet-glow: #fcf7ff;
-    --avatar-violet-shell: #b9a1dd;
-    --avatar-violet-shade: #8462b4;
-    --avatar-violet-suit: #53416f;
-    --avatar-violet-visor: #382d50;
-    --avatar-violet-light: #f0e0ff;
-    --avatar-violet-accent-0: #f1c57f;
-    --avatar-violet-accent-1: #a1d6c2;
-    --avatar-violet-accent-2: #eda8bd;
-    --avatar-amber-background: #f4e8ce;
-    --avatar-amber-glow: #fffaf0;
-    --avatar-amber-shell: #e8bd75;
-    --avatar-amber-shade: #b78243;
-    --avatar-amber-suit: #78503c;
-    --avatar-amber-visor: #493830;
-    --avatar-amber-light: #fff0c1;
-    --avatar-amber-accent-0: #8ac9b5;
-    --avatar-amber-accent-1: #d9907f;
-    --avatar-amber-accent-2: #b6b8e5;
-    --avatar-rose-background: #f4dfe5;
-    --avatar-rose-glow: #fff7f9;
-    --avatar-rose-shell: #e0a0b2;
-    --avatar-rose-shade: #b96986;
-    --avatar-rose-suit: #75475e;
-    --avatar-rose-visor: #4e3045;
-    --avatar-rose-light: #ffe2ed;
-    --avatar-rose-accent-0: #a8d5bc;
-    --avatar-rose-accent-1: #efc577;
-    --avatar-rose-accent-2: #afa9dd;
+    --avatar-teal: #637f73;
+    --avatar-blue: #657d96;
+    --avatar-violet: #82728f;
+    --avatar-amber: #987953;
+    --avatar-rose: #9a727d;
   }
   .dark,
   [data-theme='dark'] {
-    --avatar-teal-background: color-mix(in srgb, var(--avatar-teal-shell) 18%, var(--paper));
-    --avatar-teal-glow: color-mix(in srgb, var(--avatar-teal-shell) 9%, var(--paper));
-    --avatar-blue-background: color-mix(in srgb, var(--avatar-blue-shell) 18%, var(--paper));
-    --avatar-blue-glow: color-mix(in srgb, var(--avatar-blue-shell) 9%, var(--paper));
-    --avatar-violet-background: color-mix(in srgb, var(--avatar-violet-shell) 18%, var(--paper));
-    --avatar-violet-glow: color-mix(in srgb, var(--avatar-violet-shell) 9%, var(--paper));
-    --avatar-amber-background: color-mix(in srgb, var(--avatar-amber-shell) 18%, var(--paper));
-    --avatar-amber-glow: color-mix(in srgb, var(--avatar-amber-shell) 9%, var(--paper));
-    --avatar-rose-background: color-mix(in srgb, var(--avatar-rose-shell) 18%, var(--paper));
-    --avatar-rose-glow: color-mix(in srgb, var(--avatar-rose-shell) 9%, var(--paper));
+    --avatar-teal: #8fa99a;
+    --avatar-blue: #91a5bc;
+    --avatar-violet: #a89ab5;
+    --avatar-amber: #baa181;
+    --avatar-rose: #bc99a2;
   }
 }
 @theme inline {
