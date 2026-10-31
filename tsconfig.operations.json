@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "scripts/operations",
+    "outDir": "dist/operations",
+    "noEmit": false,
+    "customConditions": []
+  },
+  "include": [
+    "scripts/operations/runtime.ts",
+    "scripts/operations/migrate.ts",
+    "scripts/operations/backup.ts",
+    "scripts/operations/restore-check.ts",
+    "scripts/operations/restore-import.ts",
+    "scripts/operations/maintenance.ts",
+    "scripts/operations/recover-account.ts"
+  ]
+}

@@ -1,0 +1,120 @@
+@keyframes theme-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes hero-skill-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-8deg);
+  }
+  50% {
+    transform: translateY(-9px) rotate(-5deg);
+  }
+}
+@keyframes hero-mcp-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(10deg);
+  }
+  50% {
+    transform: translateY(8px) rotate(6deg);
+  }
+}
+@keyframes hero-orbit-signal {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+@keyframes hero-cross-drift {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translateY(-4px);
+  }
+}
+@keyframes keyword-refresh {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes intake-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes popover-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes query-progress {
+  0% {
+    opacity: 0.7;
+    transform: scaleX(0.1);
+  }
+  70% {
+    opacity: 0.7;
+    transform: scaleX(0.9);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.7;
+  }
+}
+@keyframes demo-dot {
+  50% {
+    opacity: 0.3;
+    transform: translateY(-3px);
+  }
+}
+@keyframes hub-pass-hover {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-12deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(-8deg);
+  }
+}
+@keyframes hub-pass-sheen {
+  0%,
+  20% {
+    background-position: 100% 0;
+  }
+  70%,
+  100% {
+    background-position: 0 0;
+  }
+}

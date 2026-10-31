@@ -1,0 +1,56 @@
+{
+  "name": "@capability-hub/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.22.1"
+  },
+  "scripts": {
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "node ../../scripts/build/clean-package.mjs && tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@capability-hub/contracts": "workspace:*",
+    "@capability-hub/domain": "workspace:*",
+    "@capability-hub/infrastructure": "workspace:*",
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "jsonc-parser": "^3.3.1",
+    "proper-lockfile": "^4.1.2",
+    "smol-toml": "^1.9.1",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/proper-lockfile": "^4.1.4",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  },
+  "exports": {
+    "./install": {
+      "development": "./src/install.ts",
+      "types": "./dist/install.d.ts",
+      "default": "./dist/install.js"
+    },
+    "./credentials": {
+      "development": "./src/credentials.ts",
+      "types": "./dist/credentials.d.ts",
+      "default": "./dist/credentials.js"
+    },
+    "./run": {
+      "development": "./src/main.ts",
+      "types": "./dist/main.d.ts",
+      "default": "./dist/main.js"
+    }
+  },
+  "bin": {
+    "capability-hub": "./bin/capability-hub.mjs"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "src"
+  ]
+}

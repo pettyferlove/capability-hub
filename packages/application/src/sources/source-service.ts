@@ -1,0 +1,332 @@
+import type { Principal } from '@capability-hub/domain/identity';
+import type { CreateSourceCommand, UpdateSourceCommand, SourceTarget } from './commands.js';
+import type { GitSourceRecord, SourceRecord } from '@capability-hub/domain/models';
+import { canonical, digest } from '@capability-hub/domain/canonical';
+import { fail, notFound } from '@capability-hub/domain/errors';
+import { collisionKey, sourcePath } from '@capability-hub/domain/paths';
+import { has } from '@capability-hub/domain/rbac';
+import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
+import type { ApplicationContext } from '../shared/application-context.js';
+import type { AssetAccessService } from '../catalog/asset-access-service.js';
+import type { GitCredentialService } from '../credentials/git-credential-service.js';
+import type { GitRepository } from '../ports/index.js';
+import type { JobQueue } from '../jobs/job-queue.js';
+import type { PublicationService } from '../publication/publication-service.js';
+import type { IdempotencyService } from '../shared/idempotency-service.js';
+import { matchRevision } from '../shared/revision.js';
+export class SourceService {
+  constructor(
+    private readonly context: ApplicationContext,
+    private readonly assets: AssetAccessService,
+    private readonly publications: PublicationService,
+    private readonly idempotency: IdempotencyService,
+    private readonly jobs: JobQueue,
+    private readonly git: GitRepository,
+    private readonly credentials: GitCredentialService,
+  ) {}
+  private get store() {
+    return this.context.store;
+  }
+  private async getSourceRecord(id: string): Promise<GitSourceRecord> {
+    const source = await this.store.get('sources', id);
+    if (!source || source.kind !== 'git') notFound();
+    return source;
+  }
+  async get(principal: Principal, id: string) {
+    const source = await this.store.get('sources', id);
+    if (!source || source.kind !== 'git') notFound();
+    this.assets.requireSourceManagement(principal, source);
+    return {
+      ...source,
+      targets: await Promise.all(
+        (await this.store.all('bindings'))
+          .filter((b) => b.source_id === id && !b.retired_at)
+          .map(async (b) => ({
+            ...b,
+            slug: (await this.assets.getAsset(b.asset_id)).slug,
+            kind: (await this.assets.getAsset(b.asset_id)).kind,
+          })),
+      ),
+    };
+  }
+  async list(principal: Principal) {
+    return await Promise.all(
+      (await this.store.all('sources'))
+        .filter(
+          (s) =>
+            s.kind === 'git' &&
+            has(principal, 'source:manage', { source: s.id, team: s.owner_group_id }),
+        )
+        .map(async (s) => await this.get(principal, s.id)),
+    );
+  }
+  private async validateTargets(targets: SourceTarget[]) {
+    const seen = new Set<string>();
+    for (const t of targets) {
+      await this.publications.validatePolicy(t);
+      sourcePath(t.path, t.kind);
+      const key = collisionKey(t.path);
+      if (seen.has(key)) fail(422, 'DUPLICATE_PATH', '同一来源不允许重复目标路径');
+      seen.add(key);
+    }
+    const enabled = targets.filter((t) => t.enabled !== false);
+    for (let i = 0; i < enabled.length; i++)
+      for (let j = i + 1; j < enabled.length; j++) {
+        const a = collisionKey(enabled[i].path),
+          b = collisionKey(enabled[j].path);
+        if (a === '.' || b === '.' || a.startsWith(b + '/') || b.startsWith(a + '/'))
+          fail(422, 'OVERLAPPING_PATH', '启用目标之间不能有父子路径重叠');
+      }
+  }
+  private async validateCredential(
+    principal: Principal,
+    ref: string | undefined | null,
+    destination?: {
+      host: string;
+      transport: string;
+    },
+    existing?: string | null,
+  ) {
+    if (!ref) return;
+    if (destination)
+      await this.credentials.select(principal, ref, destination, existing ?? undefined);
+    else {
+      const r = await this.credentials.active(ref);
+      if (r.user_id !== principal.id && ref !== existing)
+        fail(403, 'CREDENTIAL_FORBIDDEN', '只能选择自己的 Git 凭据');
+    }
+  }
+  async create(principal: Principal, body: CreateSourceCommand, key: string | undefined) {
+    const b = body;
+    this.context.identity.require(principal, 'source:create', { team: b.owner_group_id });
+    await this.validateCredential(principal, b.credential_ref);
+    await this.validateTargets(b.targets);
+    await this.git.branch(b.branch);
+    const repository = await this.git.validate(b.repository_url);
+    await this.validateCredential(principal, b.credential_ref, repository);
+    if (repository.transport === 'ssh' && !b.credential_ref)
+      fail(422, 'SSH_CREDENTIAL_REQUIRED', 'SSH 仓库需要选择个人 SSH 凭据');
+    return await this.idempotency.execute(
+      principal,
+      'sources',
+      key,
+      digest(canonical(b)),
+      async () => {
+        this.context.identity.require(principal, 'source:create', { team: b.owner_group_id });
+        await this.validateCredential(principal, b.credential_ref, repository);
+        await this.validateTargets(b.targets);
+        if (!(await this.store.get('groups', b.owner_group_id))?.active)
+          fail(422, 'INVALID_GROUP', '团队无效');
+        for (const t of b.targets)
+          if (await this.store.find('assets', 'slug', t.slug))
+            fail(409, 'SLUG_CONFLICT', '资产名称已占用');
+        const source = await this.store.insert('sources', {
+          id: randomUUID(),
+          kind: 'git',
+          provider: b.provider,
+          canonical_url: repository.url,
+          repository_identity: repository.identity,
+          branch: b.branch,
+          credential_ref: b.credential_ref ?? null,
+          owner_group_id: b.owner_group_id,
+          state: 'active',
+          revision: 1,
+          generation: 0,
+          next_poll_at: Date.now() + 300000,
+          created_at: new Date().toISOString(),
+        });
+        for (const t of b.targets) await this.createTarget(source, t);
+        await this.store.audit(principal.id, 'source.created', source.id);
+        return await this.get(principal, source.id);
+      },
+    );
+  }
+  private async createTarget(source: SourceRecord, target: SourceTarget) {
+    const a = await this.store.insert('assets', {
+      id: randomUUID(),
+      slug: target.slug,
+      kind: target.kind,
+      source_id: source.id,
+      owner_group_id: source.owner_group_id,
+      lifecycle: 'active',
+      current_release_id: null,
+      revision: 1,
+      created_at: new Date().toISOString(),
+    });
+    return await this.store.insert('bindings', {
+      id: randomUUID(),
+      source_id: source.id,
+      asset_id: a.id,
+      path: target.path,
+      enabled: target.enabled !== false,
+      retired_at: null,
+      category: target.category,
+      scenario_ids: target.scenario_ids,
+      distribution: target.distribution,
+      applies_to: target.applies_to ?? {},
+      created_at: new Date().toISOString(),
+    });
+  }
+  async patch(p: Principal, id: string, body: UpdateSourceCommand, etag: string | undefined) {
+    const b = body;
+    const before = await this.get(p, id);
+    matchRevision(before, etag);
+    if (b.branch) await this.git.branch(b.branch);
+    await this.validateCredential(p, b.credential_ref, undefined, before.credential_ref);
+    const destination =
+      'credential_ref' in b ? await this.git.validate(before.canonical_url) : undefined;
+    if (destination) {
+      await this.validateCredential(p, b.credential_ref, destination, before.credential_ref);
+      if (destination.transport === 'ssh' && !b.credential_ref)
+        fail(422, 'SSH_CREDENTIAL_REQUIRED', 'SSH 来源必须保留有效 SSH 凭据');
+    }
+    if (b.targets) await this.validateTargets(b.targets);
+    return await this.store.tx(async () => {
+      const source = await this.getSourceRecord(id);
+      this.assets.requireSourceManagement(await this.context.identity.principal(p.id), source);
+      matchRevision(source, etag);
+      if (destination)
+        await this.validateCredential(p, b.credential_ref, destination, source.credential_ref);
+      if (b.targets) await this.validateTargets(b.targets);
+      const old = (await this.store.all('bindings')).filter(
+        (t) => t.source_id === id && !t.retired_at,
+      );
+      if (b.targets) {
+        const ids = b.targets.map((t) => t.binding_id).filter(Boolean);
+        if (
+          new Set(ids).size !== ids.length ||
+          old.some((t) => !ids.includes(t.id)) ||
+          ids.some((i) => !old.some((t) => t.id === i))
+        )
+          fail(422, 'TARGET_SET_INCOMPLETE', '必须提交完整现有目标；停用请明确设置 enabled=false');
+        for (const t of b.targets) {
+          if (t.binding_id) {
+            const existing = old.find((x) => x.id === t.binding_id)!;
+            const a = await this.assets.getAsset(existing.asset_id);
+            if (t.slug !== a.slug || t.kind !== a.kind || (t.asset_id && t.asset_id !== a.id))
+              fail(422, 'BINDING_IMMUTABLE', '目标身份不能通过普通编辑改变');
+          } else if (t.asset_id || (await this.store.find('assets', 'slug', t.slug)))
+            fail(409, 'SLUG_CONFLICT', '新增目标不可认领已有资产');
+        }
+      }
+      const targets = b.targets ?? before.targets;
+      if ((b.state ?? source.state) !== 'paused' && !targets.some((t) => t.enabled !== false))
+        fail(422, 'ACTIVE_TARGET_REQUIRED', '活动来源至少需要一个启用目标');
+      // 先释放路径唯一约束占用，再在同一事务中交换目标路径。
+      if (b.targets)
+        for (const t of old)
+          await this.store.put('bindings', { ...t, path: 'reserved-' + randomUUID() });
+      if (b.targets)
+        for (const t of b.targets) {
+          if (t.binding_id) {
+            const prior = old.find((x) => x.id === t.binding_id)!;
+            await this.store.put('bindings', {
+              ...prior,
+              path: t.path,
+              enabled: t.enabled !== false,
+              category: t.category,
+              scenario_ids: t.scenario_ids,
+              distribution: t.distribution,
+              applies_to: t.applies_to ?? {},
+            });
+          } else await this.createTarget(source, t);
+        }
+      const updated = await this.store.put('sources', {
+        ...source,
+        ...(b.branch ? { branch: b.branch } : {}),
+        ...('credential_ref' in b ? { credential_ref: b.credential_ref } : {}),
+        ...(b.state ? { state: b.state } : {}),
+        revision: source.revision + 1,
+        next_poll_at: Date.now(),
+      });
+      for (const t of old)
+        await this.publications.invalidatePending(t.asset_id, 'SOURCE_CONFIG_CHANGED');
+      await this.store.audit(p.id, 'source.updated', id, '', { revision: updated.revision });
+      return await this.get(p, id);
+    });
+  }
+  async revokeDistribution(
+    principal: Principal,
+    id: string,
+    input: unknown,
+    etag: string | undefined,
+  ) {
+    const value = z
+      .object({ reason: z.string().trim().min(1).max(2000) })
+      .strict()
+      .parse(input);
+    return await this.store.tx(async () => {
+      const actor = await this.context.identity.principal(principal.id);
+      const source = await this.store.get('sources', id);
+      if (!source) notFound();
+      this.context.identity.require(actor, 'source:share', {
+        source: source.id,
+        team: source.owner_group_id,
+      });
+      matchRevision(source, etag);
+      await this.store.put('sources', {
+        ...source,
+        state: 'blocked',
+        distribution_revoked_at: new Date().toISOString(),
+        revision: source.revision + 1,
+      });
+      for (const asset of await this.store.where('assets', 'source_id', source.id))
+        await this.publications.invalidatePending(asset.id, 'SOURCE_REVOKED');
+      await this.store.audit(actor.id, 'source.distribution_revoked', source.id, value.reason);
+      return { ok: true };
+    });
+  }
+
+  async getSyncJob(principal: Principal, sourceId: string, jobId: string) {
+    await this.get(principal, sourceId);
+    const job = await this.store.get('jobs', jobId);
+    if (!job || job.kind !== 'source_sync' || job.aggregate_id !== sourceId) notFound();
+    return {
+      id: job.id,
+      state: job.state,
+      attempt: job.attempt,
+      created_at: job.created_at,
+      finished_at: job.finished_at,
+      last_error_code: job.last_error_code,
+      error_message: job.error_message,
+      result: job.result,
+    };
+  }
+
+  async sync(principal: Principal, id: string, key: string | undefined) {
+    const source = await this.get(principal, id);
+    if (source.state === 'paused' || source.state === 'blocked')
+      fail(409, 'SOURCE_NOT_ACTIVE', '来源已暂停或封锁');
+    const targets = source.targets.filter((t) => t.enabled);
+    if (!targets.length) fail(409, 'NO_TARGETS', '没有启用目标');
+    return await this.idempotency.execute(
+      principal,
+      'source-sync/' + id,
+      key,
+      digest(canonical({ source_id: id, revision: source.revision })),
+      async () => {
+        const current = await this.get(principal, id);
+        if (current.revision !== source.revision)
+          fail(409, 'SOURCE_CONFIG_CHANGED', '来源配置已变化');
+        if (current.state === 'paused' || current.state === 'blocked')
+          fail(409, 'SOURCE_NOT_ACTIVE', '来源已暂停或封锁');
+        if (!current.targets.some((target) => target.enabled))
+          fail(409, 'NO_TARGETS', '没有启用目标');
+        const active = (await this.store.all('jobs')).find(
+          (j) =>
+            j.kind === 'source_sync' &&
+            j.aggregate_id === id &&
+            ['running', 'queued'].includes(j.state),
+        );
+        if (active) return { job_id: active.id, source_revision: source.revision };
+        const job = await this.jobs.enqueue('source_sync', id, {
+          requested_by: principal.id,
+          source_revision: source.revision,
+        });
+        await this.store.audit(principal.id, 'source.sync_requested', id);
+        return { job_id: job.id, source_revision: source.revision };
+      },
+    );
+  }
+}

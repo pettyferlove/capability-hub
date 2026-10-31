@@ -1,0 +1,108 @@
+import type { Principal } from '@capability-hub/domain/identity';
+import type { RecordStore } from '../ports/index.js';
+import { fail } from '@capability-hub/domain/errors';
+import { sha256 } from '@capability-hub/domain/canonical';
+import { randomUUID } from 'node:crypto';
+import type { SetupCommand } from './commands.js';
+import type { PasswordHasher } from '../ports/index.js';
+import type { IdentityService } from './identity-service.js';
+import type { SessionService } from './session-service.js';
+
+/** 本地账号初始化、密码认证与密码变更。 */
+export class AuthenticationService {
+  private readonly dummy = '00000000000000000000000000000000:' + '00'.repeat(64);
+  constructor(
+    private readonly store: RecordStore,
+    private readonly identity: IdentityService,
+    private readonly sessions: SessionService,
+    private readonly passwords: PasswordHasher,
+  ) {}
+  async setup(body: SetupCommand) {
+    const v = body;
+    const password_hash = await this.passwords.hash(v.password);
+    return await this.store.tx(async () => {
+      if ((await this.store.all('users')).length) fail(409, 'ALREADY_INITIALIZED', '系统已初始化');
+      const u = await this.store.insert('users', {
+        id: randomUUID(),
+        username: v.username,
+        password_hash,
+        display_name: v.display_name,
+        active: true,
+        revision: 1,
+        created_at: new Date().toISOString(),
+      });
+      const g = await this.store.insert('groups', {
+        id: randomUUID(),
+        name: v.team_name,
+        active: true,
+        revision: 1,
+      });
+      await this.store.insert('memberships', { id: randomUUID(), user_id: u.id, group_id: g.id });
+      for (const key of ['admin', 'maintainer'])
+        await this.store.insert('role_bindings', {
+          id: randomUUID(),
+          principal_id: u.id,
+          role_id: (await this.store.find('roles', 'key', key))!.id,
+          scope_type: key === 'admin' ? 'platform' : 'team',
+          scope_id: key === 'admin' ? '' : g.id,
+        });
+      await this.store.audit(u.id, 'identity.bootstrap', u.id);
+      return u;
+    });
+  }
+  async login(username: string, password: string, address: string) {
+    username = username.trim().toLowerCase();
+    const key = sha256(address + ':' + username);
+    const attempts = await this.store.get('login_attempts', key);
+    if (attempts && attempts.window_expires_at > Date.now() && attempts.failure_count >= 8)
+      fail(429, 'LOGIN_RATE_LIMIT', '登录尝试过多，请 15 分钟后重试');
+    const observed = await this.store.find('users', 'username', username);
+    const valid = await this.passwords.verify(password, observed?.password_hash ?? this.dummy);
+    const user = await this.store.tx(async () => {
+      const current = observed ? await this.store.get('users', observed.id) : undefined;
+      const attempts = await this.store.get('login_attempts', key);
+      if (attempts && attempts.window_expires_at > Date.now() && attempts.failure_count >= 8)
+        fail(429, 'LOGIN_RATE_LIMIT', '登录尝试过多，请 15 分钟后重试');
+      if (!current?.active || !valid || current.password_hash !== observed?.password_hash) {
+        const attempt = {
+          id: key,
+          failure_count:
+            (attempts && attempts.window_expires_at > Date.now() ? attempts.failure_count : 0) + 1,
+          window_expires_at: Date.now() + 15 * 60000,
+        };
+        if (attempts) await this.store.put('login_attempts', attempt);
+        else await this.store.insert('login_attempts', attempt);
+        await this.store.audit(
+          'anonymous',
+          'identity.login_failed',
+          current?.id ?? '',
+          'invalid_credentials',
+        );
+        return undefined;
+      }
+      if (attempts) await this.store.remove('login_attempts', key);
+      await this.store.audit(current.id, 'identity.login', current.id);
+      return current;
+    });
+    if (!user) fail(401, 'INVALID_CREDENTIALS', '账号或密码错误');
+    return user;
+  }
+  async changePassword(
+    principal: Principal,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const observed = await this.identity.activeUser(principal.id);
+    if (!(await this.passwords.verify(currentPassword, observed.password_hash)))
+      fail(422, 'CURRENT_PASSWORD_INVALID', '当前密码不正确');
+    const password_hash = await this.passwords.hash(newPassword);
+    await this.store.tx(async () => {
+      const current = await this.identity.activeUser(principal.id);
+      if (current.password_hash !== observed.password_hash)
+        fail(409, 'AUTH_CONTEXT_CHANGED', '密码已变化，请重新登录');
+      await this.store.put('users', { ...current, password_hash, revision: current.revision + 1 });
+      await this.sessions.revokeAll(principal.id);
+      await this.store.audit(principal.id, 'identity.password_changed', principal.id);
+    });
+  }
+}

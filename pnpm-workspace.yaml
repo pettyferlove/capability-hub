@@ -1,0 +1,30 @@
+packages:
+  - apps/*
+  - packages/*
+
+injectWorkspacePackages: true
+
+# Vite 所需的原生构建步骤。
+onlyBuiltDependencies:
+  - esbuild
+  - unrs-resolver
+
+syncInjectedDepsAfterScripts:
+  - build
+
+catalog:
+  '@types/express': '^5.0.6'
+  '@types/node': '^24.10.0'
+  '@types/pg': '^8.15.5'
+  '@types/react': '^19.3.0'
+  '@types/react-dom': '^19.3.0'
+  '@types/semver': '^7.7.1'
+  'express': '^5.3.0'
+  'minio': '^8.0.6'
+  'pg': '^8.16.3'
+  'react': '^19.3.1'
+  'react-dom': '^19.3.1'
+  'semver': '^7.7.3'
+  'tsx': '^4.20.6'
+  'typescript': '^5.9.3'
+  'zod': '^4.1.12'

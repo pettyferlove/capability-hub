@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: ${CAPABILITY_HUB_TEST_POSTGRES_IMAGE:-postgres:17.11-trixie}
+    environment:
+      POSTGRES_USER: hub_test
+      POSTGRES_PASSWORD: ${CAPABILITY_HUB_TEST_PASSWORD:?Test runner generates a password}
+      POSTGRES_DB: hub_test
+    ports: ['127.0.0.1::5432']
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'hub_test', '-d', 'hub_test']
+      interval: 1s
+      timeout: 3s
+      retries: 45
+    tmpfs: ['/var/lib/postgresql/data']
+  minio:
+    image: ${CAPABILITY_HUB_TEST_MINIO_IMAGE:-minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    command: ['server', '/data']
+    volumes: ['./tests/fixtures/minio/bootstrap.sh:/bootstrap.sh:ro']
+    environment:
+      MINIO_ROOT_USER: hub_test
+      MINIO_ROOT_PASSWORD: ${CAPABILITY_HUB_TEST_PASSWORD:?Test runner generates a password}
+    ports: ['127.0.0.1::9000']
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 1s
+      timeout: 3s
+      retries: 45
+    tmpfs: ['/data']
+  git:
+    build: tests/fixtures/git
+    ports: ['127.0.0.1::2222']
+    volumes:
+      [
+        '${CAPABILITY_HUB_TEST_GIT_PUBLIC_KEY:?Test runner generates a public key}:/home/git/.ssh/authorized_keys:ro',
+      ]
+    healthcheck:
+      test: ['CMD', 'test', '-f', '/run/sshd.pid']
+      interval: 1s
+      timeout: 3s
+      retries: 45

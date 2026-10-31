@@ -1,0 +1,151 @@
+@layer base {
+  html {
+    @apply font-sans [scrollbar-gutter:stable] overscroll-y-none;
+    font-size: 15px;
+  }
+  body {
+    @apply m-0 bg-page text-ink font-sans text-body leading-[1.65] antialiased;
+    font-synthesis: none;
+    font-kerning: normal;
+    font-optical-sizing: auto;
+  }
+  body::before {
+    content: '';
+    @apply fixed inset-x-0 top-0 z-60 h-[env(safe-area-inset-top,0px)] bg-page;
+  }
+  #root {
+    @apply min-w-0;
+  }
+  h1,
+  h2 {
+    @apply text-balance;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  p {
+    @apply m-0;
+  }
+  h2 {
+    @apply text-[21px] font-semibold tracking-normal;
+  }
+  h3 {
+    @apply text-base font-medium;
+  }
+  small {
+    @apply text-label;
+  }
+  code,
+  pre,
+  kbd,
+  samp {
+    @apply font-mono tracking-normal;
+    font-variant-ligatures: none;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+  a {
+    @apply text-brand no-underline;
+  }
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  summary {
+    @apply outline-offset-2;
+  }
+  :where(
+    button:not([data-rac]),
+    a:not([data-rac]),
+    input:not([data-rac]),
+    select:not([data-rac]),
+    textarea:not([data-rac]),
+    summary
+  ):focus-visible,
+  [data-rac][data-focus-visible] {
+    @apply outline-2 outline-solid outline-brand;
+  }
+  [data-rac]:focus-visible:not([data-focus-visible]) {
+    outline: none;
+  }
+  button {
+    @apply cursor-pointer;
+  }
+  button:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+  label {
+    @apply flex min-w-0 flex-col gap-2 text-label font-medium leading-[1.5];
+  }
+  label > small {
+    @apply text-caption font-normal leading-[1.7] text-muted-ink;
+  }
+  fieldset {
+    @apply m-0 min-w-0 rounded-[10px] border border-line p-[15px];
+  }
+  legend {
+    @apply px-1.5 text-label font-medium;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-muted-ink opacity-100;
+  }
+  input[type='checkbox'],
+  input[type='radio'] {
+    @apply accent-brand;
+  }
+  table {
+    @apply w-full border-collapse text-left text-label;
+  }
+  th {
+    @apply bg-page text-caption font-medium whitespace-nowrap text-muted-ink;
+  }
+  th,
+  td {
+    @apply border-b border-line px-3 py-[13px] align-top;
+  }
+  td {
+    @apply min-w-20;
+  }
+  td small {
+    @apply mt-[5px] block max-w-87.5 text-[11px] text-muted-ink [overflow-wrap:anywhere];
+  }
+  td code {
+    @apply text-[11px] [overflow-wrap:anywhere];
+  }
+  td strong {
+    @apply text-label;
+  }
+  /* 快照过渡期间暂停组件自己的颜色动画，整页保持同一节奏。 */
+  html[data-theme-transition] *,
+  html[data-theme-transition] *::before,
+  html[data-theme-transition] *::after {
+    transition: none !important;
+  }
+  ::view-transition-old(root) {
+    animation: none;
+  }
+  ::view-transition-new(root) {
+    animation: theme-appear 180ms ease-out both;
+    mix-blend-mode: normal;
+  }
+  ::view-transition-group(root) {
+    pointer-events: none;
+  }
+  /* 全局覆盖也作用于弹层与伪元素，保持减少动态效果设置完整。 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      transition-duration: 0ms !important;
+      animation: none !important;
+    }
+  }
+}

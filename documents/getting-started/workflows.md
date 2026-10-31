@@ -1,0 +1,36 @@
+# 资源使用与发布
+
+## 使用资源
+
+目录按当前可见资源检索。公开资源可匿名阅读、下载，或复制“请安装这个 Skill/MCP”指令给 Agent。团队资源需相应账号权限；网页登录、CLI 登录与 Hub MCP 连接各自授权。
+
+CLI 安装固定版本并指定目录：
+
+```sh
+capability-hub login --url https://hub.example.com
+capability-hub search "关键词"
+capability-hub add NAME --version VERSION --to .agents/skills --dry-run
+capability-hub add NAME --version VERSION --to .agents/skills
+```
+
+查看 dry-run 的文件及本地差异后再安装。已有目录需要显式 --replace，旧内容会保留在输出所示备份目录。CLI 不执行资源脚本。
+
+MCP 用 `mcp-config NAME --version VERSION --client CLIENT --option OPTION_ID` 输出配置。支持的客户端、Skill 目录与官方依据见 [Agent 客户端接入](../reference/agent-clients.md)。设置本机所需变量，保留客户端原配置，并在目标客户端自行完成连接核验。Skill 的 `--to` 应选用目标客户端支持的目录。
+
+Hub 自身也可通过对话接入：在“连接你的 Agent”页选择客户端与范围，复制 Hub 接入指令交给 Agent。这一步不依赖已连接的 Hub MCP，凭据由客户端或接入助手保存，用户仅在浏览器确认授权；说明链接与 CLI 用法见 [首次接入说明](../reference/agent-clients.md#通过对话接入-hub-自身)。
+
+## 上传与来源
+
+上传 Skill ZIP 或 MCP server.json，选定团队、资源名及固定版本。MCP 表单可生成远程 HTTP 或固定 npm 版本描述，只解析命令而不执行。
+
+已有 Git 资产的新内容通过来源同步接收，不能在上传表单中选作手工上传目标。
+
+Git 来源先在个人中心维护凭据，再登记仓库、分支和精确目标。SSH 需要私钥及独立确认的服务器主机公钥。同步后检查具体提交和接收结果；保存来源配置或扫描通过都不会自动发布。
+
+## 发布与审核
+
+维护者核对内容、用途、分类、关键词和共享受众，再提交申请。审核者查看差异、原始文件与静态发现项，为每条 warning 写接受理由，或说明问题退回。
+
+public 扩大到匿名用户，organization 扩大到所有有效登录用户；跨团队和通用资源要求平台范围审核。提交者及提名对应来源共享者不能自行批准。审核上下文变化后需重新核对，页面不会自动重试旧决定。
+
+资源可推荐和提名通用；提名不改变原受众。弃用仍保留内容，封禁或撤销会限制后续分发。回退仍走新的独立审核。

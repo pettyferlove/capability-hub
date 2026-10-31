@@ -1,0 +1,98 @@
+{
+  "name": "@capability-hub/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.22.1"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "node ../../scripts/build/clean-package.mjs && tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "zod": "catalog:",
+    "semver": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "@types/node": "catalog:",
+    "@types/semver": "catalog:"
+  },
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./canonical": {
+      "development": "./src/canonical.ts",
+      "types": "./dist/canonical.d.ts",
+      "default": "./dist/canonical.js"
+    },
+    "./errors": {
+      "development": "./src/errors.ts",
+      "types": "./dist/errors.d.ts",
+      "default": "./dist/errors.js"
+    },
+    "./files": {
+      "development": "./src/files.ts",
+      "types": "./dist/files.d.ts",
+      "default": "./dist/files.js"
+    },
+    "./paths": {
+      "development": "./src/paths.ts",
+      "types": "./dist/paths.d.ts",
+      "default": "./dist/paths.js"
+    },
+    "./rbac": {
+      "development": "./src/rbac.ts",
+      "types": "./dist/rbac.d.ts",
+      "default": "./dist/rbac.js"
+    },
+    "./async": {
+      "development": "./src/async.ts",
+      "types": "./dist/async.d.ts",
+      "default": "./dist/async.js"
+    },
+    "./models": {
+      "development": "./src/models/index.ts",
+      "types": "./dist/models/index.d.ts",
+      "default": "./dist/models/index.js"
+    },
+    "./content": {
+      "development": "./src/content.ts",
+      "types": "./dist/content.d.ts",
+      "default": "./dist/content.js"
+    },
+    "./token": {
+      "development": "./src/token.ts",
+      "types": "./dist/token.d.ts",
+      "default": "./dist/token.js"
+    },
+    "./identity": {
+      "development": "./src/identity.ts",
+      "types": "./dist/identity.d.ts",
+      "default": "./dist/identity.js"
+    },
+    "./policy": {
+      "development": "./src/policy.ts",
+      "types": "./dist/policy.d.ts",
+      "default": "./dist/policy.js"
+    },
+    "./audit": {
+      "development": "./src/audit.ts",
+      "types": "./dist/audit.d.ts",
+      "default": "./dist/audit.js"
+    },
+    "./version-labels": {
+      "development": "./src/version-labels.ts",
+      "types": "./dist/version-labels.d.ts",
+      "default": "./dist/version-labels.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}

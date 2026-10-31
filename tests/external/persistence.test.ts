@@ -1,0 +1,185 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { randomUUID } from 'node:crypto';
+import { openRecordStore, snapshotStore, restoreStore } from '@capability-hub/infrastructure/store';
+import { MinioBlobStore } from '@capability-hub/infrastructure/content';
+import { HubError } from '@capability-hub/domain/errors';
+import { createTestHub, publishSkill } from '../support/application.js';
+import { externalDatabase, externalBucket } from '../support/external.js';
+import { createSqliteStore, deferred } from '../support/store.js';
+import { assertFrozenEvidence } from '../support/evidence.js';
+
+test('PostgreSQL 上两个连接争抢同一约束只有一个成功，失败事务全部回滚并允许后续使用', async () => {
+  const database = await externalDatabase();
+  const poolErrors: Error[] = [];
+  const onPoolError = (error: Error) => {
+    poolErrors.push(error);
+  };
+  const first = await openRecordStore({ driver: 'postgresql', url: database.url, onPoolError });
+  const second = await openRecordStore({ driver: 'postgresql', url: database.url, onPoolError });
+  try {
+    const name = '唯一团队';
+    const results = await Promise.allSettled(
+      [first, second].map((store) =>
+        store.insert('groups', { id: randomUUID(), revision: 1, active: true, name }),
+      ),
+    );
+    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+    await assert.rejects(() =>
+      first.tx(async () => {
+        await first.insert('groups', {
+          id: randomUUID(),
+          revision: 1,
+          active: true,
+          name: '不应提交',
+        });
+        await first.insert('groups', { id: randomUUID(), revision: 1, active: true, name });
+      }),
+    );
+    assert.deepEqual(
+      (await second.all('groups')).map((group) => group.name),
+      [name],
+    );
+    const entered = deferred();
+    const release = deferred();
+    const holding = first.tx(async () => {
+      entered.resolve();
+      await release.promise;
+      await first.insert('groups', { id: randomUUID(), revision: 1, active: true, name: '先提交' });
+    });
+    await entered.promise;
+    let completed = false;
+    const waiting = second.tx(async () => {
+      completed = true;
+      assert(await second.find('groups', 'name', '先提交'));
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(completed, false);
+    release.resolve();
+    await Promise.all([holding, waiting]);
+    assert.deepEqual(poolErrors, []);
+  } finally {
+    await Promise.all([first.close(), second.close()]);
+    await database.close();
+  }
+});
+
+test('MinIO 使用受限应用账号写入与复读校验，匿名不能读取，损坏对象不会被同名写入修复', async () => {
+  const resource = await externalBucket();
+  const blobs = new MinioBlobStore(resource.options, resource.bucket);
+  try {
+    await blobs.health();
+    const bytes = Buffer.from('固定内容\0\xff');
+    const hash = await blobs.put(bytes);
+    assert.equal(await blobs.put(bytes), hash);
+    assert.deepEqual(await blobs.read(hash), bytes);
+    const response = await fetch(`${resource.endpoint}/${resource.bucket}/blobs/${hash}`);
+    assert.equal(response.status, 403);
+    await response.body?.cancel();
+    await resource.admin.putObject(resource.bucket, 'blobs/' + hash, Buffer.from('corrupt'));
+    await assert.rejects(
+      () => blobs.read(hash),
+      (error: unknown) => error instanceof HubError && error.code === 'BLOB_CORRUPT',
+    );
+    await assert.rejects(
+      () => blobs.put(bytes),
+      (error: unknown) => error instanceof HubError && error.code === 'BLOB_CORRUPT',
+    );
+    assert.equal(await blobs.exists(hash), false);
+    await blobs.remove(hash);
+    assert.equal(await blobs.exists(hash), false);
+  } finally {
+    await blobs.close();
+    await resource.close();
+  }
+});
+
+test('真实 PostgreSQL 与 MinIO 完成扫描、独立审核、分发与撤权；快照可在 SQLite 重放一致记录', async (context) => {
+  const database = await externalDatabase();
+  const resource = await externalBucket();
+  const fixture = await createTestHub(context, {
+    database: { driver: 'postgresql', url: database.url, poolSize: 4 },
+    objectStorage: {
+      driver: 'minio',
+      endpoint: resource.endpoint,
+      accessKey: resource.options.accessKey,
+      secretKey: resource.options.secretKey,
+      bucket: resource.bucket,
+      region: 'us-east-1',
+      prefix: 'blobs/',
+    },
+  });
+  try {
+    const { intake } = await publishSkill(fixture);
+    const release = await fixture.store.find('requests', 'source_intake_id', intake.id);
+    assert(release);
+    await assertFrozenEvidence(fixture.store, intake.scan_run_id, release.id);
+    await assert.rejects(
+      () => fixture.store.put('requests', { ...release, decision_reason: '改写审核决定' }),
+      /immutable/,
+    );
+    const catalog = await fixture.hub.catalog.search(null, {});
+    assert.equal(catalog.total, 1);
+    const version = await fixture.store.get('versions', intake.version_id);
+    assert(version);
+    const reordered = Object.fromEntries(Object.entries(version).reverse()) as typeof version;
+    await fixture.store.put('versions', reordered);
+    await assert.rejects(() =>
+      fixture.store.put('versions', {
+        ...version,
+        metadata: { ...version.metadata, description: '错误修改' },
+      }),
+    );
+    assert(
+      (await fixture.hub.content.getFile(null, version.id, 'SKILL.md')).bytes
+        .toString()
+        .includes('sample-skill'),
+    );
+    const feedbackInput = {
+      version_id: version.id,
+      idempotency_key: randomUUID(),
+      consent: true as const,
+      kind: 'capability_gap' as const,
+      title: '补充批处理',
+      scenario: '多条数据处理',
+      expected: '一次处理多条记录',
+      actual: '只能单条执行',
+      location: '',
+      reproduction: '',
+      evidence: '',
+      suggestion: '',
+      blocking: false,
+    };
+    const [feedback, retry] = await Promise.all([
+      fixture.hub.feedback.report(fixture.reader, feedbackInput),
+      fixture.hub.feedback.report(fixture.reader, feedbackInput),
+    ]);
+    assert.equal(feedback.id, retry.id);
+    assert.equal((await fixture.store.all('asset_feedback')).length, 1);
+    await fixture.hub.feedback.update(fixture.admin, feedback.id, {
+      revision: 1,
+      status: 'in_progress',
+      resolution: '已安排实现',
+      fixed_version_id: null,
+    });
+    assert.equal(
+      (await fixture.hub.feedback.get(fixture.reader, feedback.id)).status,
+      'in_progress',
+    );
+    const snapshot = await snapshotStore(fixture.store);
+    const { store: sqlite } = await createSqliteStore(context);
+    await restoreStore(sqlite, snapshot);
+    assert.deepEqual(await snapshotStore(sqlite), snapshot);
+    await fixture.hub.sources.revokeDistribution(
+      fixture.admin,
+      intake.source_id,
+      { reason: '停止共享' },
+      '"1"',
+    );
+    await assert.rejects(() => fixture.hub.content.getManifest(null, version.id));
+  } finally {
+    await fixture.close();
+    await resource.close();
+    await database.close();
+  }
+});

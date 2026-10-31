@@ -1,0 +1,173 @@
+import {
+  formStackStyles,
+  panelStyles,
+  sectionHeadingStyles,
+  subtleStyles,
+  btnStyles,
+} from '../../shared/styles/recipes.js';
+import {
+  operationsGridStyles,
+  operationsPanelStyles,
+  operationsCardsStyles,
+  operationsFailuresStyles,
+} from './styles.js';
+import type { OperationsResponse } from '@capability-hub/contracts/http';
+import { RefreshCw } from '../../shared/icons/lucide.js';
+import { useQuery } from '../../shared/api/use-query.js';
+import { ErrorState } from '../../shared/components/ErrorState.js';
+import { CardGridSkeleton, SummarySkeleton } from '../../shared/components/Skeleton.js';
+import { useHub } from '../../shared/context/HubContext.js';
+import { dateLabel } from '../../shared/format/labels.js';
+export function OperationsPanel() {
+  const { refresh, reload } = useHub();
+  const { data, error, loading } = useQuery<OperationsResponse>('/api/admin/operations', refresh);
+  if (error) return <ErrorState message={error} retry={reload} />;
+  if (!data)
+    return (
+      <div className={formStackStyles}>
+        <CardGridSkeleton label="正在加载实例运行状态…" count={3} variant="stat" />
+        <div className={operationsGridStyles}>
+          <section className={panelStyles}>
+            <SummarySkeleton label="正在加载请求与访问控制…" />
+          </section>
+          <section className={panelStyles}>
+            <SummarySkeleton label="正在加载处理与检查状态…" />
+          </section>
+        </div>
+      </div>
+    );
+  const statuses = data.http.by_status;
+  const total = data.http.requests;
+  const successful = Object.entries(statuses)
+    .filter(([status]) => Number(status) >= 200 && Number(status) < 400)
+    .reduce((sum, [, count]) => sum + Number(count), 0);
+  const denied = (statuses['401'] ?? 0) + (statuses['403'] ?? 0);
+  const failures = Object.entries(statuses)
+    .filter(([status]) => Number(status) >= 500)
+    .reduce((sum, [, count]) => sum + Number(count), 0);
+  return (
+    <section className={operationsPanelStyles}>
+      <div className={sectionHeadingStyles}>
+        <div>
+          <h2>实例运行状态</h2>
+          <p className={subtleStyles}>
+            最近采样 {dateLabel(data.observed_at)} · 请求统计从本次进程启动开始
+          </p>
+        </div>
+        <button className={btnStyles} disabled={loading} onClick={reload}>
+          <RefreshCw size={14} />
+          刷新
+        </button>
+      </div>
+      <div className={operationsCardsStyles}>
+        <div>
+          <span>HTTP 请求</span>
+          <strong>{total}</strong>
+          <small>
+            成功率 {total ? ((successful / total) * 100).toFixed(1) + '%' : '—'} · 平均{' '}
+            {data.http.mean_duration_ms ?? '—'} ms
+            <br />
+            5xx {failures}
+          </small>
+        </div>
+        <div>
+          <span>等待 / 执行中的作业</span>
+          <strong>
+            {data.jobs.by_state.queued ?? 0}
+            <em>/ {data.jobs.by_state.running ?? 0}</em>
+          </strong>
+          <small>
+            最长等待 {data.jobs.oldest_wait_seconds} 秒 · 重试 {data.jobs.retrying}
+          </small>
+        </div>
+        <div>
+          <span>可用磁盘</span>
+          <strong>
+            {data.disk.available ? ((data.disk.free_bytes ?? 0) / 1073741824).toFixed(1) : '不可用'}
+            <em>{data.disk.available ? 'GiB' : ''}</em>
+          </strong>
+          <small>
+            最近备份 {data.last_backup_at ? dateLabel(data.last_backup_at) : '暂无成功记录'}
+          </small>
+        </div>
+      </div>
+      <div className={operationsGridStyles}>
+        <section className={panelStyles}>
+          <h3>请求与访问控制</h3>
+          <dl>
+            <div>
+              <dt>401 / 403</dt>
+              <dd>{denied}</dd>
+            </div>
+            <div>
+              <dt>429 限流</dt>
+              <dd>{statuses['429'] ?? 0}</dd>
+            </div>
+            <div>
+              <dt>身份刷新失败</dt>
+              <dd>{data.http.errors.IDENTITY_REFRESH_FAILED ?? 0}</dd>
+            </div>
+            <div>
+              <dt>内容缺失 / 损坏</dt>
+              <dd>{(data.http.errors.BLOB_MISSING ?? 0) + (data.http.errors.BLOB_CORRUPT ?? 0)}</dd>
+            </div>
+            <div>
+              <dt>处理中断</dt>
+              <dd>{data.http.aborted}</dd>
+            </div>
+          </dl>
+          <p className={subtleStyles}>仅汇总状态、耗时和错误码，不记录查询内容、请求正文或凭据。</p>
+        </section>
+        <section className={panelStyles}>
+          <h3>处理与检查</h3>
+          <dl>
+            <div>
+              <dt>已完成作业</dt>
+              <dd>{data.jobs.by_state.succeeded ?? 0}</dd>
+            </div>
+            <div>
+              <dt>失败作业</dt>
+              <dd>{data.jobs.by_state.failed ?? 0}</dd>
+            </div>
+            <div>
+              <dt>过期租约</dt>
+              <dd>{data.jobs.expired_leases}</dd>
+            </div>
+            <div>
+              <dt>扫描阻断</dt>
+              <dd>{data.scans.by_state.blocked ?? 0}</dd>
+            </div>
+            <div>
+              <dt>规则集</dt>
+              <dd>
+                <code>{data.scans.ruleset}</code>
+              </dd>
+            </div>
+          </dl>
+          <p className={subtleStyles}>扫描通过表示未发现当前规则的阻断项，仍需独立人工审核。</p>
+        </section>
+      </div>
+      {data.jobs.recent_failures.length > 0 && (
+        <section className={panelStyles}>
+          <h3>最近失败作业</h3>
+          <div className={operationsFailuresStyles}>
+            {data.jobs.recent_failures.map((job, index: number) => (
+              <div key={index}>
+                <span>
+                  {(
+                    { intake: '内容接收', rescan: '重新扫描', source_sync: '来源同步' } as Record<
+                      string,
+                      string
+                    >
+                  )[job.kind] ?? job.kind}
+                </span>
+                <code>{job.error_code ?? 'UNKNOWN'}</code>
+                <small>{dateLabel(job.created_at)}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </section>
+  );
+}

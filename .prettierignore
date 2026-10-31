@@ -1,0 +1,7 @@
+node_modules/
+.data/
+output/
+**/dist/
+packages/contracts/schemas/
+# Drizzle 的迁移文件和快照属于版本历史，不由格式化命令改写。
+**/persistence/*/migrations/

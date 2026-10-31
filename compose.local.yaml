@@ -1,0 +1,13 @@
+# 与 compose.yaml 一并使用，数据库和对象存储端口仅绑定 loopback。
+services:
+  server:
+    build:
+      context: .
+      target: server
+  postgres:
+    ports:
+      - '127.0.0.1:${CAPABILITY_HUB_POSTGRES_PORT:-15432}:5432'
+  minio:
+    ports:
+      - '127.0.0.1:${CAPABILITY_HUB_MINIO_PORT:-19000}:9000'
+      - '127.0.0.1:${CAPABILITY_HUB_MINIO_CONSOLE_PORT:-19001}:9001'

@@ -1,0 +1,145 @@
+import { InputField } from '../../shared/components/InputField.js';
+import { feedbackKindIcons } from '../../shared/components/select-icons.js';
+import { checkLabelStyles } from '../../shared/styles/recipes.js';
+import { formStackStyles, subtleStyles } from '../../shared/styles/recipes.js';
+import { feedbackFormStyles } from './styles.js';
+import { cn } from '../../shared/styles/cn.js';
+import { feedbackKinds, type AssetFeedbackRequest } from '@capability-hub/contracts';
+import type { AssetFeedbackResponse, VersionHistoryResponse } from '@capability-hub/contracts/http';
+import { useRef, useState, type FormEvent } from 'react';
+import { mutate } from '../../shared/api/client.js';
+import { errorMessage } from '../../shared/api/error-message.js';
+import { useQuery } from '../../shared/api/use-query.js';
+import { Message } from '../../shared/components/Message.js';
+import { SelectField } from '../../shared/components/SelectField.js';
+import { Submit } from '../../shared/components/Submit.js';
+
+const fields = [
+  ['title', '反馈标题', 160, true],
+  ['scenario', '业务场景与目标', 2000, true],
+  ['expected', '预期行为', 2000, true],
+  ['actual', '实际观察到的现象', 2000, true],
+  ['location', '相关文件路径或 MCP 工具名称', 240, false],
+  ['reproduction', '复现步骤', 4000, false],
+  ['evidence', '脱敏证据摘要', 4000, false],
+  ['suggestion', '推断原因或改进建议（未经确认）', 2000, false],
+] as const;
+
+export function FeedbackForm({
+  assetId,
+  versionId,
+  onSubmitted,
+}: {
+  assetId: string;
+  versionId: string;
+  onSubmitted: (feedback: AssetFeedbackResponse) => void;
+}) {
+  const [kind, setKind] = useState<AssetFeedbackRequest['kind']>('defect');
+  const [version, setVersion] = useState(versionId);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const pending = useRef(false);
+  const retry = useRef<{ body: string; key: string } | null>(null);
+  const { data: versions } = useQuery<VersionHistoryResponse[]>(`/api/assets/${assetId}/versions`);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending.current) return;
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    const text = (name: string) => {
+      const value = values.get(name);
+      return typeof value === 'string' ? value : '';
+    };
+    const content = {
+      version_id: version,
+      kind,
+      title: text('title'),
+      scenario: text('scenario'),
+      expected: text('expected'),
+      actual: text('actual'),
+      location: text('location'),
+      reproduction: text('reproduction'),
+      evidence: text('evidence'),
+      suggestion: text('suggestion'),
+      blocking: values.get('blocking') === 'on',
+      consent: values.get('consent') === 'on',
+    };
+    const body = JSON.stringify(content);
+    if (retry.current?.body !== body) retry.current = { body, key: crypto.randomUUID() };
+    pending.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const feedback = await mutate<AssetFeedbackResponse>('/api/feedback', {
+        ...content,
+        idempotency_key: retry.current.key,
+      });
+      retry.current = null;
+      form.reset();
+      onSubmitted(feedback);
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }
+  return (
+    <form className={cn(formStackStyles, feedbackFormStyles)} onSubmit={submit}>
+      <fieldset disabled={busy} className={formStackStyles}>
+        <label>
+          反馈版本
+          <SelectField value={version} onValueChange={setVersion} required>
+            {versions ? (
+              versions.map((item) => (
+                <option key={item.version_id} value={item.version_id}>
+                  {item.version_label}
+                </option>
+              ))
+            ) : (
+              <option value={versionId}>当前版本</option>
+            )}
+          </SelectField>
+        </label>
+        <label>
+          反馈类型
+          <SelectField
+            optionIcons={feedbackKindIcons}
+            value={kind}
+            onValueChange={(value) => setKind(value as AssetFeedbackRequest['kind'])}
+          >
+            {Object.entries(feedbackKinds).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </SelectField>
+        </label>
+        {fields.map(([name, label, max, required]) => (
+          <label key={name}>
+            {label}
+            {required ? '（必填）' : ''}
+            {name === 'title' || name === 'location' ? (
+              <InputField icon="text" name={name} required={required} maxLength={max} />
+            ) : (
+              <textarea name={name} required={required} maxLength={max} rows={3} />
+            )}
+          </label>
+        ))}
+        <label className={checkLabelStyles}>
+          <input name="blocking" type="checkbox" />
+          <span>该问题阻塞当前任务</span>
+        </label>
+        <p className={subtleStyles}>
+          仅你和资产维护者可见。请勿提交密钥、完整对话、业务源码或未脱敏日志。
+        </p>
+        <label className={checkLabelStyles}>
+          <input name="consent" type="checkbox" required />
+          <span>我已检查并脱敏内容，同意提交给资产维护者</span>
+        </label>
+        {error && <Message error>{error}</Message>}
+        <Submit busy={busy}>提交反馈</Submit>
+      </fieldset>
+    </form>
+  );
+}
