@@ -27,3 +27,17 @@
 布尔开关在环境变量中使用小写字符串 true/false，加载后转换为 boolean；未设置时使用默认值，空字符串、0/1 或其他值均报错。未知驱动或不合法配置立即失败。相对实例路径以工作区/部署包解析，不随进程工作目录变化。
 
 Compose 专用变量包括 CAPABILITY_HUB_IMAGE、POSTGRES_IMAGE、MINIO_IMAGE、POSTGRES_PASSWORD、MINIO_ROOT_USER、MINIO_ROOT_PASSWORD 及发布端口。它们不进入浏览器产物。测试变量 CAPABILITY_HUB_TEST_* 仅由隔离测试 runner 生成。
+
+## AI 配置
+
+`CAPABILITY_HUB_AI_CONFIG` 指向 UTF-8 JSON 文件，相对路径基于工作区根目录；未设置时模型列表为空，AI 工作台不能发起执行。复制仓库根目录的 [ai.config.example.json](../../ai.config.example.json) 到 `.data/ai-config.json`，按实际服务调整 API 前缀、model 和 `credential_ref`，再配置：
+
+```dotenv
+CAPABILITY_HUB_AI_CONFIG=.data/ai-config.json
+HUB_AI_PRIMARY_KEY=<实际凭据>
+HUB_AI_MESSAGES_KEY=<实际凭据>
+```
+
+JSON 中仅保存环境变量名，不直接保存 key。两个协议配置可以指向不同供应商，也可以只保留其中一个；`default_profile` 必须存在。支持字段、默认预算和 MCP 白名单见 [AI 框架](../design/ai-framework.md)。修改后重启服务；现有执行绑定原模型配置摘要，不能静默改用另一个模型恢复。
+
+容器需要以只读方式挂载配置文件，并设置容器内的绝对路径及 `credential_ref` 对应环境变量。默认 Compose 未自动传递 AI 凭据，部署者需显式配置环境变量或秘密注入。凭据不得进入 Web 构建。

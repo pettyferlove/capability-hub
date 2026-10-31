@@ -80,3 +80,7 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 - CLI `connect --url URL --client CLIENT` 完成助手授权、验证与配置；`bridge` 提供 stdio 到 Hub MCP 的连接；`status` 检查连接。配置范围、权限与文件覆盖参数见 [Agent 接入说明](agent-clients.md#接入助手与高级入口)。
 
 OAuth 与个人手动令牌的生命周期分开，详见 [身份安全](../design/identity-security.md#agent-oauth-连接)。
+
+## AI 工作台
+
+`/api/ai` 提供操作目录、执行、人工交互与 SSE；详细请求、并发条件和事件协议见 [AI 接口](ai-interfaces.md)。

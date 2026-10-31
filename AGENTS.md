@@ -8,7 +8,7 @@ the JSON API, `/mcp`, and (optionally) the background worker; content arrives fr
 sources (Git), passes an intake/publication workflow with RBAC, and is served back as versioned
 releases.
 
-pnpm monorepo, ESM, strict TypeScript, no framework beyond Express + React.
+pnpm monorepo, ESM, strict TypeScript, Express + React; AI workflows use Mastra.
 
 ## Architecture & Data Flow
 
@@ -16,16 +16,18 @@ Dependency direction is a whitelist enforced by `scripts/checks/check-architectu
 (`permittedDependencies`). Additions fail `pnpm check` unless the matrix and the target package's
 `exports` map are updated too.
 
-| Package          | May import                                                        |
-| ---------------- | ----------------------------------------------------------------- |
-| `contracts`      | nothing (zod wire schemas + DTO types; no Node runtime concerns)  |
-| `domain`         | nothing (records, RBAC, errors, canonical JSON, digests)          |
-| `application`    | `domain` (use cases + port interfaces)                            |
-| `infrastructure` | `contracts`, `domain`, `application` (adapters)                   |
-| `server`         | `application`, `infrastructure`, `contracts`, `domain`, `logging` |
-| `cli`            | `contracts`, `domain`, `infrastructure`                           |
-| `web`            | `contracts`, `logging` (browser entry only)                       |
-| `logging`        | standalone (`./server` and `./browser` entries)                   |
+| Package          | May import                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| `contracts`      | nothing (zod wire schemas + DTO types; no Node runtime concerns)                      |
+| `domain`         | nothing (records, RBAC, errors, canonical JSON, digests)                              |
+| `application`    | `domain` (use cases + port interfaces)                                                |
+| `ai`             | nothing in this workspace (Mastra runtime, governance and ports)                      |
+| `hub-agents`     | `ai`, `application`, `domain`                                                         |
+| `infrastructure` | `ai`, `contracts`, `domain`, `application` (adapters)                                 |
+| `server`         | `ai`, `hub-agents`, `application`, `infrastructure`, `contracts`, `domain`, `logging` |
+| `cli`            | `contracts`, `domain`, `infrastructure`                                               |
+| `web`            | `contracts`, `logging` (browser entry only)                                           |
+| `logging`        | standalone (`./server` and `./browser` entries)                                       |
 
 Cross-package imports must go through declared `exports`; relative paths across packages, package
 cycles, and `web/src/shared` → `web/src/features` imports are rejected.
@@ -41,15 +43,15 @@ cycles, and `web/src/shared` → `web/src/features` imports are rejected.
 - **MCP flow:** `apps/server/src/http/routes/mcp-routes.ts` creates a per-request stateless server;
   `apps/server/src/integrations/mcp.ts` gates `contribution` tools on `hub:contribute`, re-reads the
   principal per call, and returns protocol errors (`isError: true`) instead of HTTP statuses.
-- **Errors:** every layer throws `HubError(status, code, message, details, retryable)` /
+- **Errors:** Hub layers throw `HubError(status, code, message, details, retryable)` /
   `fail()` from `packages/domain/src/errors.ts`; one handler
   (`apps/server/src/http/middleware/error-handler.ts`) maps `ZodError`→422, PG unique→409,
-  oversized body→413, unknown→500 with `{error:{code,message,request_id,retryable,details}}`.
+  standalone `AiError`→safe Hub HTTP errors, oversized body→413, unknown→500 with `{error:{code,message,request_id,retryable,details}}`.
 - **Concurrency safety:** mutating commands use `Idempotency-Key` plus `ETag`/`If-Match` revision
   checks (`withRevision`, `packages/application/src/shared/revision.ts`); conflicts are 409/412/428,
   never silent last-write-wins.
 - **Worker:** exactly one, `apps/server/src/workers/hub-worker.ts` — 1s tick, single-flight guard,
-  claims jobs with a lease, renews every 20s, backoff `[30s,120s,600s]`, max 3 attempts.
+  claims jobs with a lease, renews every 20s. Content jobs retain backoff `[30s,120s,600s]` and max 3 attempts; AI uses one separate slot in the same Worker, with durable resume and no automatic provider-failure retry. See [AI framework](documents/design/ai-framework.md).
 - **Web:** no state library. `shared/api/client.ts` is the only transport (auto `X-CSRF-Token`,
   auto `Idempotency-Key`, 401 → `hub:unauthenticated`); `shared/api/use-query.ts` supplies
   `useQuery`; session lives in `HubCtx`; routing is history-based via `app/use-app-route.ts`.
@@ -118,7 +120,7 @@ Operations: `pnpm backup`, `restore:import`, `restore:check`, `maintenance`, `ac
   `AbortSignal.timeout(30000)` for outbound calls.
 - **Auth ordering:** `security.authenticate`/`csrf` are mounted mid-registration in `app.ts`; routes
   registered before them are anonymous by design. Never reorder blindly.
-- **Data access:** only through `RecordStore`/`BlobStorage`/`GitRepository` ports; `tx()` for
+- **Data access:** only through `RecordStore`/`AiStore`/`BlobStorage`/`GitRepository` ports; `tx()` for
   atomic writes; no SQL in routes or use cases.
 - **Web:** Tailwind CSS v4 utilities; long/reused combinations in `features/*/styles.ts` or
   `shared/styles/`, merged with `cn()`; colors, radii, and fonts only from `styles/theme.css`

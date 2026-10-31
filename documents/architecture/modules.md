@@ -27,11 +27,15 @@
 - security：scrypt、AES-GCM 凭据、OpenSSH 公钥检查和签名游标。
 - scanning：隔离进程入口及消息格式。
 
+## AI
+
+`packages/ai` 提供独立 Mastra 框架，`packages/hub-agents` 组合操作；`infrastructure/ai` 适配共享事务和宿主 JobQueue，`server/bootstrap/ai-services.ts` 注入当前身份、资源和凭据解析。详细边界见 [AI 框架](../design/ai-framework.md)。
+
 ## 入口与 Web
 
 server 的 http/routes 只做协议解析、身份/CSRF 接入和结果交付；业务写入通过用例。integrations 保存 MCP 工具及目标客户端配置转换，observability 保存运行指标。
 
-Web 的 app 管理会话、路由、主题和导航。features 按 auth、catalog、connect、identity、profile、publishing、review、sources 组织。shared 只放跨功能 API、控件、格式、上下文和导航能力。来源编辑表单与来源列表独立，发布策略字段归发布功能。
+Web 的 app 管理会话、路由、主题和导航。features 按 ai、auth、catalog、connect、identity、profile、publishing、review、sources 组织。shared 只放跨功能 API、控件、格式、上下文和导航能力。来源编辑表单与来源列表独立，发布策略字段归发布功能。
 
 Web 统一使用 Tailwind CSS v4。styles/index.css 加载主题、基础元素规则与关键帧；功能目录的 styles.ts 和 shared/styles 保存静态工具类组合，组件通过 cn 合并条件和覆盖。主题、变体与验证规范见[工程规范](../development/engineering.md#tailwind-样式)。
 
