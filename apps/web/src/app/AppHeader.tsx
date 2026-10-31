@@ -36,6 +36,7 @@ const navigation = [
   { id: 'publish', label: '发布', icon: UploadCloud },
   { id: 'review', label: '审核', icon: ShieldCheck },
   { id: 'connect', label: '接入 Agent', icon: Bot },
+  { id: 'ai', label: 'AI 工作台', icon: Bot },
 ] as const;
 
 export function AppHeader({
@@ -85,6 +86,7 @@ export function AppHeader({
         <nav className={headerNavStyles} aria-label="主导航">
           {navigation
             .filter((item) => me || item.id === 'discover' || item.id === 'connect')
+            .filter((item) => item.id !== 'ai' || me?.capabilities.can_ai)
             .map((item) => (
               <a
                 key={item.id}

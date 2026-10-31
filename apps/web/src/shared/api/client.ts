@@ -88,3 +88,55 @@ export async function fileText(
   if (!response.ok) throw await responseError(response, url);
   return readPreviewText(response);
 }
+export interface ServerEvent {
+  event: string;
+  id: string;
+  data: unknown;
+}
+export async function streamEvents(
+  path: string,
+  onEvent: (event: ServerEvent) => void,
+  signal: AbortSignal,
+  lastEventId?: string,
+): Promise<void> {
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    redirect: 'error',
+    signal,
+    headers: {
+      Accept: 'text/event-stream',
+      ...(lastEventId ? { 'Last-Event-ID': lastEventId } : {}),
+    },
+  });
+  if (!response.ok) throw await responseError(response, path);
+  if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream'))
+    throw new ApiError(502, 'STREAM_INVALID', '事件连接不可用');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) return;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      if (buffer.length > 8_000_000) throw new ApiError(502, 'STREAM_LIMIT', '事件内容超过限制');
+      let match: RegExpExecArray | null;
+      while ((match = /\r?\n\r?\n/.exec(buffer))) {
+        const frame = buffer.slice(0, match.index);
+        buffer = buffer.slice(match.index + match[0].length);
+        let event = 'message';
+        let id = '';
+        const data: string[] = [];
+        for (const line of frame.split(/\r?\n/)) {
+          if (line.startsWith('event:')) event = line.slice(6).trim();
+          else if (line.startsWith('id:')) id = line.slice(3).trim();
+          else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
+        }
+        if (data.length) onEvent({ event, id, data: JSON.parse(data.join('\n')) as unknown });
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}

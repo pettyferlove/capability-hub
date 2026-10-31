@@ -1,4 +1,4 @@
-export type HubPage = 'discover' | 'publish' | 'review' | 'connect' | 'account' | 'login';
+export type HubPage = 'discover' | 'publish' | 'review' | 'connect' | 'account' | 'login' | 'ai';
 
 export interface HubRoute {
   page: HubPage;
@@ -10,7 +10,7 @@ export interface HubRoute {
 export function isPagePath(pathname: string): boolean {
   return (
     pathname === '/' ||
-    /^\/(?:discover|publish|review|connect|account|login)\/?$/.test(pathname) ||
+    /^\/(?:discover|publish|review|connect|account|login|ai)\/?$/.test(pathname) ||
     /^\/asset\/[^/]+\/?$/.test(pathname)
   );
 }
@@ -29,7 +29,7 @@ export function parseHistoryRoute(pathname: string, search = ''): HubRoute {
     }
   }
   if (path === '/' || path === '/discover') return { page: 'discover', query };
-  return ['/publish', '/review', '/connect', '/account', '/login'].includes(path)
+  return ['/publish', '/review', '/connect', '/account', '/login', '/ai'].includes(path)
     ? { page: path.slice(1) as HubPage, query }
     : { page: 'discover', query: '' };
 }
