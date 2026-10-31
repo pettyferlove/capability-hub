@@ -29,3 +29,6 @@ dist-ssr
 !.env.example
 output/
 *.tsbuildinfo
+
+# Local AI notes and runtime artifacts; shared tooling and specs remain trackable
+/.agents/local/

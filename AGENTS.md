@@ -134,6 +134,54 @@ Operations: `pnpm backup`, `restore:import`, `restore:check`, `maintenance`, `ac
 - **Dependencies:** internal deps are `workspace:*` only; shared versions come from the `catalog:` in
   `pnpm-workspace.yaml`. Exports need `development` → `src/*.ts`, `types`/`default` → `dist/*`.
 
+## AI Tooling and Specifications
+
+These rules apply to every contributor, regardless of which AI tools are installed locally.
+The examples below do not adopt or require a Specification-Driven Development (SDD) framework.
+Use the repository's established workflow or the user's authorized adoption scope; discovering
+a skill alone does not authorize installing, initializing, or upgrading its framework.
+
+- **Shared tooling:** keep project-owned instructions, skills, configuration, templates, and
+  supporting scripts eligible for version control, including `.agents/skills/`. Review generated
+  files by purpose, not by their origin. Record the source/version and reproduction instructions
+  for adopted tooling; keep personal installations and machine-specific settings out of commits.
+- **Formal SDD artifacts:** when the repository adopts such a workflow, version its shared
+  configuration, specifications, change proposals, designs, research, tasks, and archives in their
+  native locations. Examples: OpenSpec's `openspec/config.yaml`, `openspec/specs/`, and
+  `openspec/changes/` (including `archive/`); Spec Kit's shared `.specify/` constitution, templates,
+  and scripts, plus `specs/<feature>/`. Draft status does not make these disposable process notes.
+  Do not move them into local scratch space or ignore files merely named `proposal.md`, `plan.md`,
+  `research.md`, or `tasks.md`.
+- **Local process material:** ad hoc design exploration, scratch plans, investigation notes,
+  progress records, caches, and temporary outputs belong in ignored `.agents/local/`.
+  Existing exploratory Agent proposals live in `.agents/local/design/`; they are not adopted SDD
+  specifications. Keep these materials out of commits and the formal documentation index.
+- **Selective ignores:** never ignore `.agents/` or another AI tool directory wholesale. Add only
+  specific local/cache paths when needed; keep shared skills and workflow artifacts visible.
+  Tool-required local state outside `.agents/local/` needs an explicit, narrowly scoped rule.
+  `.gitignore` does not untrack files: inspect staged paths and remove local artifacts from the
+  index without deleting their working copies or disturbing unrelated staged changes.
+
+When an SDD workflow is used:
+
+1. Read the repository instructions, existing tool configuration, and selected change before
+   generating files. Use one authoritative specification location per change; do not maintain
+   competing copies in multiple frameworks. Review initialization and upgrade diffs for overwrites.
+2. Derive specifications and templates from the existing architecture and engineering rules.
+   Tool defaults must not relax package boundaries, RBAC, concurrency, persistence, or test rules.
+   Keep proposed behavior distinct from implemented behavior and honor design-only task scope.
+3. Maintain traceability between requirements, tasks, implementation, and validation. Run the
+   configured workflow's validation and applicable repository checks; report unavailable tools or
+   unrun checks explicitly. Synchronize accepted changes and preserve history using that workflow's
+   completion/archive rules; do not mark abandoned or unverified work as implemented.
+4. Review related specifications and implementation together when committing is authorized.
+   Keep `documents/` focused on implemented behavior; link to authoritative specifications rather
+   than duplicating their rules, and do not index local scratch material or unfinished proposals.
+
+Upstream references: [OpenSpec tool integration](https://github.com/Fission-AI/OpenSpec/blob/main/docs/supported-tools.md),
+[OpenSpec concepts](https://github.com/Fission-AI/OpenSpec/blob/main/docs/concepts.md), and
+[Spec Kit adoption](https://github.com/github/spec-kit/blob/main/docs/guides/existing-projects.md).
+
 ## Important Files
 
 | File                                                  | Role                                              |
