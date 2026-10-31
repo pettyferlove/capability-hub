@@ -61,9 +61,9 @@ export type ServerConfig = z.infer<typeof configSchema>;
 function flag(environment: NodeJS.ProcessEnv, name: string, defaultValue: boolean): boolean {
   const value = environment[name];
   if (value === undefined) return defaultValue;
-  if (value === '1') return true;
-  if (value === '0') return false;
-  throw new Error(name + ' 必须为 0 或 1');
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(name + ' 必须为 true 或 false');
 }
 function hostList(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))];

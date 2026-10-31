@@ -17,7 +17,7 @@ test('配置错误在创建数据目录之前报错，校验不会产生半初�
   for (const environment of [
     { PORT: '0' },
     { CAPABILITY_HUB_DATABASE_DRIVER: 'unknown' },
-    { CAPABILITY_HUB_WORKER: 'true' },
+    { CAPABILITY_HUB_WORKER: 'invalid' },
     { CAPABILITY_HUB_PUBLIC_URL: 'https://user:secret@example.test/path' },
     {
       CAPABILITY_HUB_DATABASE_DRIVER: 'postgresql',
@@ -26,6 +26,41 @@ test('配置错误在创建数据目录之前报错，校验不会产生半初�
   ])
     assert.throws(() => loadServerConfig({ dataDir: invalid }, environment));
   await assert.rejects(() => lstat(invalid), { code: 'ENOENT' });
+});
+
+test('布尔环境变量使用 true/false，未设置时默认启用，显式配置优先', async (context) => {
+  const dataDir = await directory(context);
+  const defaults = loadServerConfig({ dataDir }, {});
+  assert.equal(defaults.worker, true);
+  assert.equal(defaults.requestLogging, true);
+  for (const enabled of [true, false]) {
+    const environment = {
+      CAPABILITY_HUB_WORKER: String(enabled),
+      CAPABILITY_HUB_REQUEST_LOGS: String(!enabled),
+    };
+    const config = loadServerConfig({ dataDir }, environment);
+    assert.equal(config.worker, enabled);
+    assert.equal(config.requestLogging, !enabled);
+    const overridden = loadServerConfig(
+      { dataDir, worker: !enabled, requestLogging: enabled },
+      environment,
+    );
+    assert.equal(overridden.worker, !enabled);
+    assert.equal(overridden.requestLogging, enabled);
+  }
+});
+
+test('非法布尔环境变量在创建实例目录前报错并指出变量名', async (context) => {
+  const root = await directory(context);
+  const dataDir = join(root, 'invalid');
+  for (const name of ['CAPABILITY_HUB_WORKER', 'CAPABILITY_HUB_REQUEST_LOGS']) {
+    for (const value of ['0', '1', '', 'TRUE', 'FALSE', 'yes', 'no', ' true ']) {
+      assert.throws(() => loadServerConfig({ dataDir }, { [name]: value }), {
+        message: name + ' 必须为 true 或 false',
+      });
+    }
+  }
+  await assert.rejects(() => lstat(dataDir), { code: 'ENOENT' });
 });
 
 test('开发实例创建私有密钥并在再次打开时复用，显式配置的密钥不会落盘', async (context) => {

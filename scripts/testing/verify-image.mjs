@@ -98,7 +98,7 @@ try {
       '-e',
       'CAPABILITY_HUB_INSTANCE_SECRET=' + randomBytes(32).toString('hex'),
       '-e',
-      'CAPABILITY_HUB_WORKER=0',
+      'CAPABILITY_HUB_WORKER=false',
       '-e',
       'CAPABILITY_HUB_LOG_LEVEL=info',
       image,
