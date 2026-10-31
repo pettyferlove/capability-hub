@@ -645,3 +645,16 @@ export const asset_feedback = sqliteTable(
     foreignKey({ columns: [t.submitted_by], foreignColumns: [users.id] }),
   ],
 );
+
+export {
+  ai_executions,
+  ai_events,
+  ai_snapshots,
+  ai_interactions,
+  ai_effects,
+  ai_threads,
+  ai_messages,
+  ai_calls,
+  ai_traces,
+  ai_artifacts,
+} from './ai-schema.js';

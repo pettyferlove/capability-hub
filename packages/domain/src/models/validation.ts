@@ -418,6 +418,11 @@ const schemas = {
     published_at: date,
   }),
   jobs: z.discriminatedUnion('kind', [
+    z.strictObject({
+      ...jobBase,
+      kind: z.literal('ai_execution'),
+      input: z.strictObject({ execution_id: id }),
+    }),
     z.strictObject({ ...jobBase, kind: z.literal('intake'), input: z.strictObject({}) }),
     z.strictObject({
       ...jobBase,

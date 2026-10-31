@@ -22,8 +22,12 @@ export async function migrationRuntime(context: TestContext, dialect: 'sqlite' |
     openRecordStore: typeof openRecordStore;
   };
   const folder = join(directory, 'src/persistence', dialect, 'migrations');
+  const initialJournal = JSON.parse(await readFile(join(folder, 'meta/_journal.json'), 'utf8')) as {
+    entries: unknown[];
+  };
   return {
     directory,
+    initialCount: initialJournal.entries.length,
     open: runtime.openRecordStore,
     async append(sql: string) {
       const path = join(folder, 'meta/_journal.json');

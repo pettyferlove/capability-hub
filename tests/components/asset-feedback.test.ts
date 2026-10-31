@@ -156,6 +156,7 @@ function feedbackPage() {
           csrf_token: '',
           groups: [],
           capabilities: {
+            can_ai: false,
             can_admin: false,
             can_publish: false,
             can_review: false,

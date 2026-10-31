@@ -27,7 +27,10 @@ test('SQLite 迁移首次并发打开只执行一次，后续迁移保留已有�
   }
   const db = new DatabaseSync(path);
   try {
-    assert.equal(db.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get()?.count, 2);
+    assert.equal(
+      db.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get()?.count,
+      runtime.initialCount + 1,
+    );
     assert.equal(db.prepare('SELECT count(*) AS count FROM migration_probe').get()?.count, 1);
     assert.equal(
       db.prepare("SELECT strict FROM pragma_table_list WHERE name='groups'").get()?.strict,
@@ -57,7 +60,10 @@ test('SQLite 迁移失败整体回滚，包括 DDL 和迁移历史；修改后�
       db.prepare("SELECT 1 FROM sqlite_schema WHERE name='should_rollback'").get(),
       undefined,
     );
-    assert.equal(db.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get()?.count, 1);
+    assert.equal(
+      db.prepare('SELECT count(*) AS count FROM __drizzle_migrations').get()?.count,
+      runtime.initialCount,
+    );
     db.exec("UPDATE __drizzle_migrations SET hash='changed'");
   } finally {
     db.close();

@@ -1,16 +1,17 @@
 import { parseRecord } from '@capability-hub/domain/models';
 import type { StoreSnapshot } from './store-snapshot.js';
 import { tables } from '../tables.js';
+import { aiTables, parseAiRecord } from '@capability-hub/ai/records';
 
 export function parseSnapshot(value: unknown): StoreSnapshot {
   if (
     !value ||
     typeof value !== 'object' ||
     Array.isArray(value) ||
-    Object.keys(value).length !== tables.length
+    Object.keys(value).length !== tables.length + aiTables.length
   )
     throw new Error('备份记录格式无效');
-  const entries = tables.map((table) => {
+  const entries: [string, unknown][] = tables.map((table) => {
     const rows = (value as Record<string, unknown>)[table];
     if (!Array.isArray(rows)) throw new Error('备份记录格式无效');
     const parsed = (rows as unknown[]).map((row) => parseRecord(table, row));
@@ -18,6 +19,14 @@ export function parseSnapshot(value: unknown): StoreSnapshot {
       throw new Error('备份包含重复记录');
     return [table, parsed];
   });
+  for (const table of aiTables) {
+    const rows = (value as Record<string, unknown>)[table];
+    if (!Array.isArray(rows)) throw new Error('备份 AI 记录格式无效');
+    const parsed = (rows as unknown[]).map((row) => parseAiRecord(table, row));
+    if (new Set(parsed.map((row) => row.id)).size !== parsed.length)
+      throw new Error('备份包含重复 AI 记录');
+    entries.push([table, parsed]);
+  }
   return Object.fromEntries(entries) as StoreSnapshot;
 }
 export function blobReferences(snapshot: Pick<StoreSnapshot, 'versions' | 'intakes'>): string[] {

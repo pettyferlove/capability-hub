@@ -34,16 +34,25 @@ export function checkArchitecture(root: string) {
   let fileCount = 0;
   const runtimeImports = new Map<string, string[]>();
   const permittedDependencies: Record<string, string[]> = {
+    '@capability-hub/ai': [],
+    '@capability-hub/hub-agents': [
+      '@capability-hub/ai',
+      '@capability-hub/application',
+      '@capability-hub/domain',
+    ],
     '@capability-hub/logging': [],
     '@capability-hub/contracts': [],
     '@capability-hub/domain': [],
     '@capability-hub/application': ['@capability-hub/domain'],
     '@capability-hub/infrastructure': [
+      '@capability-hub/ai',
       '@capability-hub/contracts',
       '@capability-hub/domain',
       '@capability-hub/application',
     ],
     '@capability-hub/server': [
+      '@capability-hub/ai',
+      '@capability-hub/hub-agents',
       '@capability-hub/application',
       '@capability-hub/logging',
       '@capability-hub/contracts',

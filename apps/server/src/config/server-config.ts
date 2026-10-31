@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
+import { aiConfigurationSchema } from '@capability-hub/ai';
 import { defaultDataDirectory, defaultWebDirectory, workspaceRoot } from './paths.js';
 
 const databaseSchema = z.discriminatedUnion('driver', [
@@ -54,6 +55,7 @@ const configSchema = z
     logLevel: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']),
     database: databaseSchema,
     objectStorage: objectStorageSchema,
+    ai: aiConfigurationSchema,
   })
   .strict();
 export type ServerConfig = z.infer<typeof configSchema>;
@@ -169,6 +171,15 @@ export function loadServerConfig(
         }
       : { driver: environment.CAPABILITY_HUB_OBJECT_STORAGE_DRIVER ?? 'filesystem' });
   const config = configSchema.parse({
+    ai:
+      overrides.ai ??
+      aiConfigurationSchema.parse(
+        environment.CAPABILITY_HUB_AI_CONFIG
+          ? (JSON.parse(
+              readFileSync(resolve(workspaceRoot, environment.CAPABILITY_HUB_AI_CONFIG), 'utf8'),
+            ) as unknown)
+          : {},
+      ),
     host: environment.CAPABILITY_HUB_HOST ?? '127.0.0.1',
     port: Number(environment.PORT ?? 4100),
     publicUrl: environment.CAPABILITY_HUB_PUBLIC_URL ?? 'http://127.0.0.1:4100',

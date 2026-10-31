@@ -1,5 +1,7 @@
 import type { Principal } from './identity.js';
 export const PERMISSIONS = [
+  'ai:execute',
+  'ai:inspect',
   'identity:manage',
   'audit:read',
   'source:create',
@@ -31,6 +33,8 @@ export const builtinRoles = [
     name: '平台管理员',
     key: 'admin',
     permissions: [
+      'ai:execute',
+      'ai:inspect',
       'identity:manage',
       'audit:read',
       'source:manage',

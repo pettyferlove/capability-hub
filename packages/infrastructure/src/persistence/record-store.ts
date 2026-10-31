@@ -1,52 +1,26 @@
 import { auditDefinitions } from '@capability-hub/domain/audit';
 import type { RecordMap, TableName } from '@capability-hub/domain/models';
 import type { RecordStore } from '@capability-hub/application/ports';
-import { DrizzleQueryError } from 'drizzle-orm';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { resolveAuditActor, resolveAuditSubject } from '@capability-hub/application/audit';
 import type { RecordDriver, RecordQueries } from './record-driver.js';
 import { openPostgresDriver, type PostgresOptions } from './postgresql/driver.js';
-import { SerialExecutor } from './transaction/serial-executor.js';
+import { PersistenceSession } from './transaction/persistence-session.js';
+import { bindPersistenceSession } from './ai/ai-store.js';
 import { openSqliteDriver } from './sqlite/driver.js';
-import { TransactionScope } from './transaction/transaction-scope.js';
 
 export type RecordStoreOptions = { driver: 'sqlite'; path: string } | PostgresOptions;
 
-function databaseError(error: unknown): unknown {
-  return error instanceof DrizzleQueryError && error.cause ? error.cause : error;
-}
-
 class DrizzleStore implements RecordStore {
   readonly kind: RecordStore['kind'];
-  private readonly context = new AsyncLocalStorage<{
-    state: TransactionScope;
-    queries: RecordQueries;
-    serial: SerialExecutor;
-  }>();
-  private closing: Promise<void> | undefined;
-  constructor(private readonly driver: RecordDriver) {
+  private readonly session: PersistenceSession;
+  constructor(driver: RecordDriver) {
     this.kind = driver.kind;
+    this.session = new PersistenceSession(driver);
+    bindPersistenceSession(this, this.session);
   }
-
   private execute<T>(work: (queries: RecordQueries) => Promise<T>): Promise<T> {
-    const scope = this.context.getStore();
-    const query = async (queries: RecordQueries) => {
-      try {
-        return await work(queries);
-      } catch (error) {
-        throw databaseError(error);
-      }
-    };
-    if (scope)
-      return scope.state.run(() =>
-        scope.serial.run(() => {
-          scope.state.assertActive();
-          return query(scope.queries);
-        }),
-      );
-    if (this.closing) return Promise.reject(new Error('Store is closing'));
-    return this.driver.exclusive(() => query(this.driver.queries));
+    return this.session.execute((queries) => work(queries.records));
   }
   get<K extends TableName>(
     table: K,
@@ -80,29 +54,8 @@ class DrizzleStore implements RecordStore {
   remove(table: TableName, id: string): Promise<void> {
     return this.tx(() => this.execute((queries) => queries.remove(table, id)));
   }
-  async tx<T>(work: () => T | Promise<T>): Promise<T> {
-    const parent = this.context.getStore();
-    if (parent) return parent.state.run(work);
-    if (this.closing) throw new Error('Store is closing');
-    try {
-      return await this.driver.exclusive(() =>
-        this.driver.transaction(async (queries) => {
-          const scope = { queries, state: new TransactionScope(), serial: new SerialExecutor() };
-          try {
-            const result = await this.context.run(scope, work);
-            scope.state.finish();
-            await scope.serial.idle();
-            scope.state.assertSuccessful();
-            return result;
-          } finally {
-            scope.state.finish();
-            await scope.serial.idle();
-          }
-        }),
-      );
-    } catch (error) {
-      throw databaseError(error);
-    }
+  tx<T>(work: () => T | Promise<T>): Promise<T> {
+    return this.session.tx(work);
   }
   async audit(
     actor: string,
@@ -133,12 +86,7 @@ class DrizzleStore implements RecordStore {
     return this.execute((queries) => queries.health());
   }
   close(): Promise<void> {
-    const scope = this.context.getStore();
-    if (scope)
-      return scope.state.run(() => {
-        throw new Error('Cannot close store inside a transaction');
-      });
-    return (this.closing ??= this.driver.close());
+    return this.session.close();
   }
 }
 

@@ -38,8 +38,10 @@ import {
   SignedCatalogCursorCodec,
 } from '@capability-hub/infrastructure/security';
 import type { ServerConfig } from '../config/server-config.js';
+import { HubAiServices } from './ai-services.js';
 /** HTTP、MCP 与 Worker 复用同一组应用用例。 */
 export class HubServices {
+  readonly ai: HubAiServices;
   readonly git: GitRepositoryAdapter;
   readonly assetAccess: AssetAccessService;
   readonly assetManagement: AssetManagementQueryService;
@@ -137,6 +139,14 @@ export class HubServices {
       this.jobs,
       this.git,
       this.credentials,
+    );
+    this.ai = new HubAiServices(
+      this.identity,
+      store,
+      this.jobs,
+      this.assetAccess,
+      this.content,
+      config,
     );
   }
 }

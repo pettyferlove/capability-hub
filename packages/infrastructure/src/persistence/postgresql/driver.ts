@@ -1,3 +1,4 @@
+import { PgAiQueries } from './ai-queries.js';
 import { DrizzleQueryError } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
@@ -56,11 +57,12 @@ export async function openPostgresDriver(options: PostgresOptions): Promise<Reco
   return {
     kind: 'postgresql',
     queries: new PgQueries(db),
+    ai: new PgAiQueries(db),
     exclusive: (work) => work(),
     transaction: (work) =>
       transaction(async (tx) => {
         await tx.execute(mutationLock);
-        return work(new PgQueries(tx));
+        return work(new PgQueries(tx), new PgAiQueries(tx));
       }),
     close: () => pool.end(),
   };

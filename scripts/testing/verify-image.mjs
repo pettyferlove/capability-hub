@@ -28,6 +28,12 @@ import { spawn } from 'node:child_process';
 import { get } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { scanIsolated } from '@capability-hub/infrastructure/scanning';
+import { openRecordStore } from '@capability-hub/infrastructure/store';
+import { createAiStore, HubAiQueue } from '@capability-hub/infrastructure/ai';
+import { AiRuntime, OperationRegistry, aiConfigurationSchema } from '@capability-hub/ai';
+import { createStep, createWorkflow } from '@capability-hub/ai/mastra';
+import { JobQueue } from '@capability-hub/application';
+import { z } from 'zod';
 assert.equal(process.getuid(), 1000);
 assert.throws(() => import.meta.resolve('tsx'));
 for (const dialect of ['sqlite', 'postgresql']) {
@@ -37,6 +43,21 @@ for (const dialect of ['sqlite', 'postgresql']) {
 }
 const inspected = await scanIsolated({ kind: 'skill', slug: 'compiled-skill', files: [{ path: 'SKILL.md', bytes: Buffer.from('---\\nname: compiled-skill\\ndescription: Compiled runtime fixture\\n---\\n\\n# Runtime\\n'), executable: false }] });
 assert.equal(inspected.inspected.state, 'passed'); assert(inspected.zip.length > 0);
+const aiStore = await openRecordStore({ driver: 'sqlite', path: '/app/data/image-ai.sqlite' });
+try {
+  const value = z.object({ value: z.number() });
+  const answer = z.object({ approved: z.boolean() });
+  const registry = new OperationRegistry().register({ id: 'image-ai', version: '1', title: 'Image', description: 'Image verification', input: value, output: value, interactions: { approval: answer },
+    create: () => createWorkflow({ id: 'image-ai', inputSchema: value, outputSchema: value, options: { autoRestartActiveRuns: false }, retryConfig: { attempts: 0, delay: 0 } }).then(createStep({ id: 'approval', inputSchema: value, outputSchema: value, resumeSchema: answer, suspendSchema: value, execute: async ({ inputData, resumeData, suspend }) => resumeData ? inputData : suspend(inputData) })).commit(),
+  });
+  const queue = new JobQueue(aiStore);
+  const runtime = new AiRuntime(createAiStore(aiStore), new HubAiQueue(aiStore, queue), registry, { authorization: { authorize: async () => {} }, credentials: { resolve: async () => { throw new Error('Unexpected model request'); } }, resources: { resolve: async () => { throw new Error('Unexpected resource request'); } } }, aiConfigurationSchema.parse({ profiles: [{ id: 'image', label: 'Image', format: 'openai', base_url: 'https://example.test', model: 'unused', credential_ref: 'IMAGE_KEY' }], default_profile: 'image' }));
+  const row = await runtime.submit('image-owner', 'image-ai', { value: 7 });
+  const run = async () => { const job = await queue.claim('image-worker', ['ai_execution']); assert(job); await runtime.process({ execution_id: row.id, dispatch_id: job.id, owner: job.lease_owner, epoch: job.lease_epoch, attempt: job.attempt }, new AbortController().signal); };
+  await run(); const view = await runtime.view(row.id); assert.equal(view.execution.status, 'waiting_input');
+  await runtime.respond(row.id, view.interactions[0].id, row.owner_id, view.interactions[0].payload.revision, { approved: true }); await run();
+  assert.equal((await runtime.get(row.id)).status, 'succeeded');
+} finally { await aiStore.close(); }
 function request(path) {
   return new Promise((resolve, reject) => {
     const req = get({ hostname: '127.0.0.1', port: 4100, path, headers: { Host: 'hub.example.test' } }, (res) => {
@@ -61,6 +82,7 @@ try {
   assert(ready, 'compiled server readiness');
   const page = await request('/discover');
   assert.equal(page.status, 200); assert(page.text.includes('<div id="root">'));
+  assert.equal((await request('/ai')).status, 200);
   const missing = await request('/api/missing');
   assert.notEqual(missing.headers['content-type'], 'text/html');
 } finally {
@@ -68,7 +90,7 @@ try {
   const timeout = setTimeout(() => server.kill('SIGKILL'), 10000);
   assert.equal(await closed, 0, 'graceful shutdown'); clearTimeout(timeout);
 }
-process.stdout.write('镜像验收通过：非 root、无 tsx、SQL 资产、编译扫描器、真实服务 readiness、静态页面和优雅关闭。\\n');
+process.stdout.write('镜像验收通过：非 root、无 tsx、SQL 资产、编译扫描器、Mastra 原生暂停恢复、真实服务 readiness、静态页面和优雅关闭。\\n');
 `;
 const container = 'hub-image-check-' + randomBytes(6).toString('hex');
 let result;

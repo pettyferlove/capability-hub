@@ -16,14 +16,16 @@
     "@capability-hub/infrastructure": "workspace:*",
     "@capability-hub/contracts": "workspace:*",
     "@capability-hub/domain": "workspace:*",
-    "@modelcontextprotocol/node": "^2.1.2",
-    "@modelcontextprotocol/server": "^2.4.0",
+    "@modelcontextprotocol/node": "catalog:",
+    "@modelcontextprotocol/server": "catalog:",
     "express": "catalog:",
     "multer": "^2.0.2",
     "zod": "catalog:",
     "@capability-hub/logging": "workspace:*",
     "@capability-hub/application": "workspace:*",
-    "bowser": "^2.15.0"
+    "bowser": "^2.15.0",
+    "@capability-hub/ai": "workspace:*",
+    "@capability-hub/hub-agents": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "catalog:",

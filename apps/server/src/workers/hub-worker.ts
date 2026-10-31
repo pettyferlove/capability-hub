@@ -3,33 +3,122 @@ import type { JobRecord } from '@capability-hub/domain/models';
 import { randomUUID } from 'node:crypto';
 import type { HubServices } from '../bootstrap/hub-services.js';
 import type { SourceService } from '@capability-hub/application';
+import { AiError } from '@capability-hub/ai';
 export class HubWorker {
   readonly id = randomUUID();
   private running: Promise<void> | undefined;
   private stopped = false;
   private timer: ReturnType<typeof setInterval> | undefined;
+  private aiControl: Promise<void> | undefined;
+  private aiActive:
+    { job: JobRecord; controller: AbortController; promise: Promise<void> } | undefined;
   constructor(
     private readonly hub: HubServices,
     private readonly sources: SourceService,
   ) {}
   get busy() {
-    return this.running !== undefined;
+    return this.running !== undefined || this.aiActive !== undefined;
   }
   start() {
     if (this.timer || this.stopped) return;
-    const run = () =>
+    const run = () => {
+      void this.tickAi().catch((err) =>
+        this.hub.logs.logger.error({ event: 'ai.scheduler_failed', err }),
+      );
       void this.tick().catch((err) =>
         this.hub.logs.logger.error({ event: 'worker.tick_failed', err, worker_id: this.id }),
       );
+    };
     this.timer = setInterval(run, 1000);
     this.timer.unref();
     run();
   }
-  stop() {
+  async stop() {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    return this.running ?? Promise.resolve();
+    const control = await Promise.allSettled([this.aiControl]);
+    this.aiActive?.controller.abort(new AiError('AI_INTERRUPTED', '服务正在关闭'));
+    const results = [
+      ...control,
+      ...(await Promise.allSettled([this.running, this.aiActive?.promise])),
+    ];
+    const failures = results
+      .filter((result) => result.status === 'rejected')
+      .map((result) => result.reason as unknown);
+    if (failures.length) throw new AggregateError(failures, '关闭 Worker 失败');
+  }
+  async waitForIdle() {
+    await this.aiControl;
+    await Promise.all([this.running, this.aiActive?.promise]);
+  }
+  private tickAi(): Promise<void> {
+    if (this.aiControl) return this.aiControl;
+    if (this.stopped) return Promise.resolve();
+    this.aiControl = (async () => {
+      await this.hub.ai.runtime.expireWaiting();
+      if (this.aiActive) {
+        const execution = await this.hub.ai.runtime.get(this.aiActive.job.aggregate_id);
+        if (execution.status !== 'running' && execution.status !== 'queued')
+          this.aiActive.controller.abort(new AiError('AI_CANCELLED', '执行已结束'));
+        return;
+      }
+      const job = await this.hub.jobs.claim(this.id, ['ai_execution']);
+      if (!job) return;
+      const controller = new AbortController();
+      if (this.stopped) controller.abort(new AiError('AI_INTERRUPTED', '服务正在关闭'));
+      const active = { job, controller, promise: Promise.resolve() };
+      this.aiActive = active;
+      active.promise = this.runAi(job, controller)
+        .catch((err) => {
+          this.hub.logs.logger.error({ event: 'ai.dispatch_failed', job_id: job.id, err });
+        })
+        .finally(() => {
+          if (this.aiActive === active) this.aiActive = undefined;
+        });
+    })().finally(() => {
+      this.aiControl = undefined;
+    });
+    return this.aiControl;
+  }
+  private async runAi(job: JobRecord, controller: AbortController) {
+    let heartbeat: ReturnType<typeof setTimeout> | undefined;
+    let renewal = Promise.resolve();
+    let finishing = false;
+    const schedule = () => {
+      if (finishing) return;
+      heartbeat = setTimeout(() => {
+        renewal = (async () => {
+          try {
+            if (!(await this.hub.jobs.renew(job))) {
+              controller.abort(new AiError('AI_LEASE_LOST', '作业租约已失效'));
+              return;
+            }
+            schedule();
+          } catch {
+            controller.abort(new AiError('AI_LEASE_LOST', '无法确认作业租约'));
+          }
+        })();
+      }, 20000);
+      heartbeat.unref();
+    };
+    schedule();
+    try {
+      await this.hub.ai.runtime.process(
+        {
+          execution_id: job.aggregate_id,
+          dispatch_id: job.id,
+          owner: this.id,
+          epoch: job.lease_epoch,
+          attempt: job.attempt,
+        },
+        controller.signal,
+      );
+    } finally {
+      finishing = true;
+      if (heartbeat) clearTimeout(heartbeat);
+      await renewal;
+    }
   }
   tick(): Promise<void> {
     if (this.running) return this.running;
@@ -43,6 +132,7 @@ export class HubWorker {
   }
   private async cancelRequestedJobs() {
     await this.hub.jobs.cancelRequested(async (job) => {
+      if (job.kind === 'ai_execution') return;
       const intakes =
         job.kind === 'source_sync'
           ? await this.hub.store.where('intakes', 'source_sync_job_id', job.id)
@@ -67,6 +157,7 @@ export class HubWorker {
     let finishing = false;
     try {
       await this.cancelRequestedJobs();
+      await this.tickAi();
       for (const s of (await this.hub.store.all('sources')).filter(
         (s) => s.kind === 'git' && s.state === 'active' && s.next_poll_at <= Date.now(),
       )) {
@@ -96,7 +187,7 @@ export class HubWorker {
             await this.hub.store.put('sources', { ...latest, next_poll_at: Date.now() + 300000 });
         });
       }
-      job = await this.hub.jobs.claim(this.id);
+      job = await this.hub.jobs.claim(this.id, ['intake', 'rescan', 'source_sync']);
       if (!job) return;
       const captured = job;
       this.hub.logs.logger.info({

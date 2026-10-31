@@ -29,11 +29,12 @@ export class JobQueue {
       }),
     );
   }
-  async claim(worker: string) {
+  async claim(worker: string, kinds?: readonly JobKind[]) {
     return await this.store.tx(async () => {
       const job = (await this.store.all('jobs'))
         .filter(
           (j) =>
+            (!kinds || kinds.includes(j.kind)) &&
             !j.cancel_requested &&
             ((j.state === 'queued' && j.run_after <= Date.now()) ||
               (j.state === 'running' && j.lease_until <= Date.now())),

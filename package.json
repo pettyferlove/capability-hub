@@ -34,7 +34,8 @@
     "db:generate:postgresql": "drizzle-kit generate --config=scripts/database/drizzle-postgresql.ts",
     "db:generate": "pnpm db:generate:sqlite && pnpm db:generate:postgresql",
     "db:check": "node --conditions=development --import tsx scripts/checks/check-database.mjs",
-    "db:migrate": "node --conditions=development --env-file-if-exists=.env --import tsx scripts/operations/migrate.ts"
+    "db:migrate": "node --conditions=development --env-file-if-exists=.env --import tsx scripts/operations/migrate.ts",
+    "test:ai:live": "node --conditions=development --env-file-if-exists=.env --import ./scripts/testing/register-test-runtime.mjs --test tests/live/ai-models.test.ts"
   },
   "devDependencies": {
     "@capability-hub/application": "workspace:*",
@@ -45,7 +46,7 @@
     "@capability-hub/logging": "workspace:*",
     "@capability-hub/server": "workspace:*",
     "@eslint/js": "^10.0.1",
-    "@modelcontextprotocol/client": "^2.4.0",
+    "@modelcontextprotocol/client": "catalog:",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
     "@types/express": "catalog:",
@@ -68,7 +69,12 @@
     "supertest": "^7.1.4",
     "tsx": "catalog:",
     "typescript": "catalog:",
-    "typescript-eslint": "^8.72.1"
+    "typescript-eslint": "^8.72.1",
+    "@capability-hub/ai": "workspace:*",
+    "@capability-hub/hub-agents": "workspace:*",
+    "zod": "catalog:",
+    "@modelcontextprotocol/server": "catalog:",
+    "@modelcontextprotocol/node": "catalog:"
   },
   "bin": {
     "capability-hub": "bin/capability-hub.mjs"

@@ -8,6 +8,7 @@ export interface MeResponse {
   avatar_color?: string;
   groups: { id: string; name: string }[];
   capabilities: {
+    can_ai: boolean;
     can_admin: boolean;
     can_audit: boolean;
     can_manage_assets?: boolean;

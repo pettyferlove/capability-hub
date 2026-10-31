@@ -1,6 +1,7 @@
 import type { LogContext } from '@capability-hub/logging/server';
 import { OAuthError } from '@capability-hub/application';
 import { HubError } from '@capability-hub/domain/errors';
+import { AiError } from '@capability-hub/ai';
 import type { Express } from 'express';
 import { type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
@@ -14,15 +15,41 @@ export function registerErrorHandler(
 ): void {
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     let e =
-      error instanceof OAuthError
-        ? new HubError(error.status, error.code.toUpperCase(), error.message)
-        : error instanceof HubError
-          ? error
-          : error instanceof ZodError
-            ? new HubError(422, 'VALIDATION_ERROR', '请检查输入字段', error.flatten())
-            : error instanceof multer.MulterError
-              ? new HubError(413, 'UPLOAD_LIMIT', '上传超过大小、文件数或字段限制')
-              : new HubError(500, 'INTERNAL_ERROR', '服务暂时无法完成请求');
+      error instanceof AiError
+        ? new HubError(
+            error.code === 'AI_NOT_FOUND'
+              ? 404
+              : error.code === 'AI_FORBIDDEN'
+                ? 403
+                : error.code === 'AI_REVISION_CONFLICT'
+                  ? 412
+                  : error.code === 'AI_CONFIGURATION'
+                    ? 422
+                    : error.code === 'AI_BUDGET_EXCEEDED'
+                      ? 429
+                      : error.code === 'AI_INTERNAL'
+                        ? 500
+                        : [
+                              'AI_PROVIDER_FAILED',
+                              'AI_STREAM_INCOMPLETE',
+                              'AI_OUTPUT_INVALID',
+                            ].includes(error.code)
+                          ? 502
+                          : 409,
+            error.code,
+            error.message,
+            {},
+            error.retryable,
+          )
+        : error instanceof OAuthError
+          ? new HubError(error.status, error.code.toUpperCase(), error.message)
+          : error instanceof HubError
+            ? error
+            : error instanceof ZodError
+              ? new HubError(422, 'VALIDATION_ERROR', '请检查输入字段', error.flatten())
+              : error instanceof multer.MulterError
+                ? new HubError(413, 'UPLOAD_LIMIT', '上传超过大小、文件数或字段限制')
+                : new HubError(500, 'INTERNAL_ERROR', '服务暂时无法完成请求');
     if (
       (error instanceof Error && /UNIQUE constraint failed/.test(error.message)) ||
       (error && typeof error === 'object' && 'code' in error && error.code === '23505')

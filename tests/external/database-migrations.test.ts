@@ -35,7 +35,7 @@ test('PostgreSQL 并发初始化、增量迁移、重复启动和失败回滚均
     }
     assert.equal(
       (await pool.query('SELECT count(*) FROM drizzle.__drizzle_migrations')).rows[0].count,
-      '2',
+      String(runtime.initialCount + 1),
     );
     assert.equal((await pool.query('SELECT count(*) FROM migration_probe')).rows[0].count, '1');
     const constraint = (
@@ -55,7 +55,7 @@ test('PostgreSQL 并发初始化、增量迁移、重复启动和失败回滚均
     );
     assert.equal(
       (await pool.query('SELECT count(*) FROM drizzle.__drizzle_migrations')).rows[0].count,
-      '2',
+      String(runtime.initialCount + 1),
     );
     await pool.query("UPDATE drizzle.__drizzle_migrations SET hash='changed' WHERE id=1");
     await assert.rejects(() => runtime.open(options), /迁移历史/);

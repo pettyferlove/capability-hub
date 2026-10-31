@@ -31,6 +31,7 @@ function page(child: ReactNode) {
           csrf_token: '',
           groups: [{ id: 'team', name: '工程团队' }],
           capabilities: {
+            can_ai: false,
             can_admin: false,
             can_audit: false,
             can_publish: true,

@@ -1,0 +1,28 @@
+{
+  "profiles": [
+    {
+      "id": "primary",
+      "label": "主要模型",
+      "format": "openai",
+      "base_url": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "credential_ref": "HUB_AI_PRIMARY_KEY"
+    },
+    {
+      "id": "messages",
+      "label": "Messages 模型",
+      "format": "anthropic",
+      "base_url": "https://api.deepseek.com/anthropic/v1",
+      "model": "deepseek-flash",
+      "credential_ref": "HUB_AI_MESSAGES_KEY"
+    }
+  ],
+  "default_profile": "primary",
+  "mcp_endpoints": [],
+  "max_requests": 24,
+  "max_tools": 40,
+  "max_event_bytes": 10000000,
+  "execution_timeout_ms": 86400000,
+  "active_timeout_ms": 600000,
+  "max_continuations": 8
+}

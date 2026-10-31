@@ -25,6 +25,7 @@ import { registerWebRoutes } from './http/routes/web-routes.js';
 import { HubServices } from './bootstrap/hub-services.js';
 import { HttpSecurity } from './http/security/http-security.js';
 import { registerProfileRoutes } from './http/routes/profile-routes.js';
+import { registerAiRoutes } from './http/routes/ai-routes.js';
 import { HubWorker } from './workers/hub-worker.js';
 import { RequestMetrics } from './observability/operations.js';
 import type { ServerConfig } from './config/server-config.js';
@@ -76,6 +77,7 @@ export async function createApp(
     registerIntakesRoutes(app, context);
     registerPublicationRoutes(app, context);
     registerLifecycleRoutes(app, context);
+    registerAiRoutes(app, context);
     registerMcpRoutes(app, context);
     registerWebRoutes(app, config.webDirectory);
     app.use((_req, _res, next) => next(new HubError(404, 'NOT_FOUND', '接口不存在')));

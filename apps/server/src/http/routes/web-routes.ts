@@ -14,7 +14,7 @@ export function registerWebRoutes(app: Express, directory: string): void {
     }),
   );
   app.get(
-    /^(?:\/|\/(?:discover|publish|review|connect|account|login)\/?|\/asset\/[^/]+\/?)$/,
+    /^(?:\/|\/(?:discover|publish|review|connect|account|login|ai)\/?|\/asset\/[^/]+\/?)$/,
     (req, res, next) => {
       if (!req.accepts('html')) return next();
       res.setHeader('Cache-Control', 'no-cache');

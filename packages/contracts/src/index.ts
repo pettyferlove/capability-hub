@@ -16,3 +16,4 @@ export * from './agent-clients.js';
 export * from './hub-installation.js';
 export * from './feedback.js';
 export * from './connections.js';
+export * from './ai.js';

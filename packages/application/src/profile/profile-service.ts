@@ -37,6 +37,7 @@ export class ProfileService {
         .filter((group) => principal.groups.includes(group.id))
         .map(({ id, name }) => ({ id, name })),
       capabilities: {
+        can_ai: has(principal, 'ai:execute'),
         can_admin: has(principal, 'identity:manage'),
         can_audit: has(principal, 'audit:read'),
         can_manage_assets: has(principal, 'asset:lifecycle'),

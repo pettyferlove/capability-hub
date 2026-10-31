@@ -1,3 +1,4 @@
+import { SqliteAiQueries } from './ai-queries.js';
 import { drizzle } from 'drizzle-orm/sqlite-proxy';
 import { chmodSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -50,9 +51,12 @@ export async function openSqliteDriver(path: string): Promise<RecordDriver> {
         return {
           kind: 'sqlite',
           queries: new SqliteQueries(db),
+          ai: new SqliteAiQueries(db),
           exclusive: (work) => lease.executor.run(work),
           transaction: (work) =>
-            db.transaction((tx) => work(new SqliteQueries(tx)), { behavior: 'immediate' }),
+            db.transaction((tx) => work(new SqliteQueries(tx), new SqliteAiQueries(tx)), {
+              behavior: 'immediate',
+            }),
           close: () =>
             lease.executor.run(() => {
               try {
