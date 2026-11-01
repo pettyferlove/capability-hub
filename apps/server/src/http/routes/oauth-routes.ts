@@ -4,6 +4,14 @@ import { z } from 'zod';
 import type { HttpContext } from '../context.js';
 import { jsonRoute } from '../response.js';
 
+/**
+ * 匿名可达的 OAuth 授权服务器与发现文档，是 CLI/客户端首次接入的唯一入口：这些路由注册在
+ * `security.authenticate` 之前，因此不能依赖 `res.locals.principal`。`/oauth/*` 按 IP 做 60 秒
+ * 窗口限流（register 30、token 120、authorize/revoke 60 次），窗口缓存上限 4096 条，超出后
+ * 未命中键直接 429 + `Retry-After: 60` 与 `temporarily_unavailable`；路径先小写去尾斜杠，
+ * 防止大小写与尾斜杠变体绕过。`OAuthError` 映射为 `{error, error_description}` 的 JSON，
+ * 其他异常继续交给统一错误处理器。
+ */
 export function registerOAuthRoutes(app: Express, { hub }: HttpContext): void {
   const base = hub.config.publicUrl;
   const resourceMetadata = {
@@ -93,6 +101,12 @@ export function registerOAuthRoutes(app: Express, { hub }: HttpContext): void {
     }),
   );
 }
+/**
+ * 当前登录用户自己的连接管理，注册在 `security.authenticate`/`csrf` 之后。所有操作只用
+ * `res.locals.principal.id` 定位连接，不接受请求体里的用户 id，因此无法操作他人的连接；
+ * 批准时 `contribute` 默认 false：请求方本身未申请 `hub:contribute` 却想授予写入会直接失败，
+ * 因此写入作用域只能由用户在浏览器中显式确认。
+ */
 export function registerConnectionRoutes(app: Express, { hub }: HttpContext): void {
   app.get(
     '/api/connections',

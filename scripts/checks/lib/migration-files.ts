@@ -22,6 +22,11 @@ export async function migrationFiles(
   return files;
 }
 
+/**
+ * 守卫迁移的可重建性：journal 的 `idx` 必须从 0 连续、每个 entry 都要有对应文件，
+ * 且目录里不能出现 journal 未登记的游离文件（或反过来引用到不存在的 SQL）。
+ * 顺序错乱或漏登记只会在全新环境建库时才炸，所以必须在提交时就查。
+ */
 export async function validateMigrationJournal(directory: string): Promise<void> {
   const journal: unknown = JSON.parse(
     await readFile(join(directory, 'meta/_journal.json'), 'utf8'),

@@ -3,6 +3,11 @@ import { randomUUID } from 'node:crypto';
 import type { RecordStore } from '@capability-hub/application/ports';
 import { recoveryRuntime } from './ai-recovery.js';
 
+/**
+ * 断言事件历史投影的两个边界：只有 `tool.*` 与消息段边界进入 activity（delta 不进入），
+ * 且超出上限后保留最近 1000 条并置 `activity_truncated`。重建 runtime 后视图必须一致，
+ * 用来守住投影只依赖存储内容、不依赖进程内状态这一点。
+ */
 export async function assertActivityHistory(store: RecordStore) {
   const { runtime, ai } = recoveryRuntime(store);
   const execution = await runtime.submit(randomUUID(), 'recoverable', { value: 1 });

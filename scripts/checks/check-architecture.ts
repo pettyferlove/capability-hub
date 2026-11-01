@@ -14,6 +14,12 @@ interface WorkspacePackage {
   manifest: WorkspaceManifest;
   compilerOptions: ts.CompilerOptions;
 }
+/**
+ * 守卫分层与包边界：显式白名单的依赖方向、`workspace:*` 版本、只能引用已声明的子路径导出、
+ * kebab-case 文件名、import 必须位于正文之前、禁止显式 `any`，以及包级与文件级的运行时循环依赖。
+ * 这些约束类型系统都表达不了，一旦破就会以构建顺序飘忽、改一层动全身的形式慢慢回归，
+ * 所以要在 CI 里逐文件静态解析 AST。返回失败列表而不直接退出，便于调用方决定汇总方式。
+ */
 export function checkArchitecture(root: string) {
   const packages: WorkspacePackage[] = ['apps', 'packages'].flatMap((directory) =>
     readdirSync(resolve(root, directory), { withFileTypes: true })

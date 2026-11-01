@@ -1,6 +1,13 @@
 import { createLogger } from '@capability-hub/logging/server';
 import { createApp } from './app.js';
 import { loadServerConfig } from './config/server-config.js';
+/**
+ * 启动与优雅停机。`SIGTERM`/`SIGINT`、监听失败、未捕获异常和未处理的 Promise 拒绝都走同一条
+ * `stop()`：只执行一次（`stopping` 去重），退出码取出现过的最严重值；先停 worker，再停止接收
+ * 新连接、等现有连接结束，最后关存储并 flush 日志。整体 60 秒截止，超时直接 `exit(1)` 并记
+ * `server.shutdown_timeout`——宁可被外部重启，也不无限期挂在半关闭状态。
+ * 启动期任何失败都以 `server.start_failed` 记录并退出码 1，避免容器认为进程仍健康。
+ */
 async function main() {
   const config = loadServerConfig();
   const logger = createLogger({

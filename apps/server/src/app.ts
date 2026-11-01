@@ -29,6 +29,10 @@ import { registerAiRoutes } from './http/routes/ai-routes.js';
 import { HubWorker } from './workers/hub-worker.js';
 import { RequestMetrics } from './observability/operations.js';
 import type { ServerConfig } from './config/server-config.js';
+/**
+ * 一个进程内实例的全部句柄，由 {@link createApp} 一次性装配：HTTP 应用与 worker 共用同一个
+ * 存储和 `HubServices`，不要分别创建，否则幂等键、锁与缓冲会分裂到两套状态上。
+ */
 export interface AppRuntime {
   app: Express;
   store: RecordStore;
@@ -37,6 +41,7 @@ export interface AppRuntime {
   sources: HubServices['sources'];
   worker: HubWorker;
   logger: Logger;
+  /** 停 worker 后关存储；并发调用返回同一个 Promise，失败以 `AggregateError` 汇总。 */
   close: () => Promise<void>;
 }
 /** 在同一装配入口创建 HTTP 和后台任务所需的服务。 */

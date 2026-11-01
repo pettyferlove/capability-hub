@@ -13,6 +13,7 @@ import { JobQueue } from '@capability-hub/application';
 import type { RecordStore } from '@capability-hub/application/ports';
 import { createAiStore, HubAiQueue } from '@capability-hub/infrastructure/ai';
 
+/** 恢复测试用的 profile：指向不存在的 fixture 地址，`credential_ref` 由 fixture 解析器接管。 */
 export const recoveryConfig = aiConfigurationSchema.parse({
   profiles: [
     {
@@ -26,7 +27,17 @@ export const recoveryConfig = aiConfigurationSchema.parse({
   ],
   default_profile: 'fixture',
 });
+/**
+ * 可以在事务提交后被观察到的恢复断点：`effect` 是副作用步骤结束，`terminal` 是全流程成功，
+ * `resume` 是由挂起转回运行——三种各自对应一类需要重放时不能重复执行的情况。
+ */
 export type CrashStage = 'effect' | 'terminal' | 'resume';
+/**
+ * 带崩溃断点的 AI 运行时夹具：包一层 `AiStore`，在快照写入后把命中的断点推给 `checkpoint`，
+ * 让测试能在事务提交、进程尚未返回的瞬间杀掉自己。
+ * `checkpoint` 只在最外层事务结束后调用，嵌套事务不会重复触发；`claim()` 直接领取一个
+ * `ai_execution` 作业并返回租约，模拟 worker 的视角。
+ */
 export function recoveryRuntime(
   store: RecordStore,
   checkpoint?: (stage: CrashStage) => Promise<void>,

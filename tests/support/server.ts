@@ -3,6 +3,11 @@ import { createServer } from 'node:http';
 import { createTestHub, type TestHub } from './application.js';
 import type { ServerConfig } from '@capability-hub/server/config';
 
+/**
+ * 起真实 TCP 监听，并把 `publicUrl`/`port` 指向它——需要真实 URL 的场景（OAuth 回调、
+ * CLI 接入、设备码轮询）必须用这个而不是内存版 {@link createTestHub}。
+ * 监听先于 fixture 创建，之前到达的请求返回 503；`context.after` 负责关服务。
+ */
 export async function serveTestHub(context: TestContext, overrides: Partial<ServerConfig> = {}) {
   const state: { fixture?: TestHub } = {};
   const server = createServer((req, res) => {

@@ -26,15 +26,29 @@ const credentials = z
     scope: z.string(),
   })
   .strict();
+/**
+ * 已持久化的连接凭据。`expires_at` 是毫秒时间戳，`scope` 是空格分隔的作用域串，
+ * 其中是否含 `hub:contribute` 决定这次连接能否写。
+ */
 export type ConnectionCredentials = z.infer<typeof credentials>;
+/**
+ * 连接凭据的文件名由 `url + '\n' + client` 的 SHA-256 决定：同一 Hub 的不同客户端各存一份，
+ * 换 Hub 或客户端不会读到别人的令牌，也避免把 URL 直接写进路径。
+ */
 export function connectionFile(directory: string, url: string, client: AgentClient) {
   return join(directory, 'connections', sha256(url + '\n' + client) + '.json');
 }
+/** 读到属于其他 Hub 的凭据直接报错，防止把令牌发给地址相同但实例不同的服务。 */
 export async function readConnection(path: string, url: string) {
   const saved = credentials.parse(await loadPrivateJson(path));
   if (saved.url !== url) throw new Error('连接凭据属于其他 Hub，请重新接入');
   return saved;
 }
+/**
+ * 浏览器 PKCE 授权：临时在本机 loopback 随机端口起回调，校验 `state`、`iss`、请求方法与 Host
+ * 都指向同一个回调地址，参数出现重复即判为异常响应。等待窗口 600 秒，超时提示重新运行；
+ * 无论成功失败都会关掉回调服务和定时器。返回的凭据尚未写入磁盘，由调用方决定是否提交。
+ */
 export async function authorizeConnection(
   url: string,
   client: AgentClient,
@@ -155,11 +169,17 @@ export async function authorizeConnection(
 }
 /** 同一凭据串行刷新；崩溃残留锁由心跳锁自动恢复。 */
 export const withConnectionLock = withFileLock;
+/** 连接身份已被替换（例如另一进程重新接入），提示重新加载 MCP 而不是静默沿用旧令牌。 */
 export class ConnectionChangedError extends Error {
   constructor() {
     super('连接身份或授权已更换，请在 Agent 中重新加载 Hub MCP');
   }
 }
+/**
+ * 取可用访问令牌：距过期不足 60 秒才刷新，刷新在文件锁内二次确认，避免并发刷新把
+ * refresh token 轮换掉。`clientId` 与存档不一致说明连接已被替换，抛
+ * {@link ConnectionChangedError} 而不是拿别人的令牌继续请求。
+ */
 export async function connectionToken(
   path: string,
   url: string,

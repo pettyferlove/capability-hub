@@ -7,8 +7,15 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+/** fixture 服务要模拟的协议；两者在鉴权头与响应形状上都不同。 */
 export type Format = 'openai' | 'anthropic';
+/** 响应模式：`tools` 先回一次工具调用再回文本，其余分别对应纯文本、JSON、限流与截断。 */
 export type Mode = 'tools' | 'text' | 'json' | 'rate-limit' | 'truncated';
+/**
+ * 起一个本地假模型服务并返回其地址与观测句柄。`gated` 为真时首个 delta 会挂起直到
+ * `release()`，用于测流式取消与超时；`script` 用固定回合覆盖默认行为。
+ * 服务监听随机端口，返回的 `close()` 必须调用，否则测试进程不会退出。
+ */
 export async function fixture(
   format: Format,
   mode: Mode = 'tools',

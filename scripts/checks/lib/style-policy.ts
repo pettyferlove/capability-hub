@@ -4,6 +4,11 @@ import ts from 'typescript';
 const literalColor =
   /#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{4}|[\da-f]{3})\b|\b(?:rgba?|hsla?|oklch|oklab|hwb|lab|lch|color)\(|\b(?:bg|text|border|fill|stroke|outline|ring|shadow)-(?:white|black|(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone)-\d{2,3})\b/i;
 
+/**
+ * 找出硬编码颜色的行：CSS 声明，以及 TS/TSX 中出现在 className/style/cn 等样式上下文里的字面量。
+ * 守卫的是主题可切换这一约定——写死 `#fff` 或 `text-red-500` 会在另一个配色下失去对比度，
+ * 且无从用变量修正。返回行号（从 1 开始）而不是抛出，方便一次性报出全部位置。
+ */
 export function fixedColorLines(filename: string, text: string): number[] {
   const lines = new Set<number>();
   if (filename.endsWith('.css')) {
@@ -55,6 +60,12 @@ export function fixedColorLines(filename: string, text: string): number[] {
   return [...lines];
 }
 
+/**
+ * 解析主题 CSS 里的调色板：按带 `color-scheme: light|dark` 的规则分组，
+ * 收集其中的 `--*` 十六进制变量，
+ * 并把三位写法展开成六位以便逐项对比。没有 `data-palette` 的规则按默认 `graphite` 记名。
+ * 供比对每套调色板在两套模式下是否定义了同一批变量，这类差异人工核对容易漏。
+ */
 export function readThemePalettes(text: string) {
   const palettes: { name: string; mode: string; colors: Map<string, string> }[] = [];
   postcss.parse(text).walkRules((rule) => {

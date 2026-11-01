@@ -11,6 +11,11 @@ import { safeDirectory } from './filesystem.js';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, readlink } from 'node:fs/promises';
+/**
+ * 清单校验：路径必须已排序且无大小写/规范化碰撞、不能同时是文件与目录，单文件 ≤10 MiB、
+ * 总计 ≤100 MiB；`skill` 必须恰有一个非执行的 SKILL.md，`mcp` 只能是单个非执行的 server.json。
+ * 校验失败抛 422（`MANIFEST_INVALID`、`MANIFEST_EXECUTABLE`），供安装前拒绝而不是安装中途失败。
+ */
 export function validateManifest(value: unknown): asserts value is Manifest {
   const parsed = manifestSchema.safeParse(value);
   if (!parsed.success) fail(422, 'MANIFEST_INVALID', '内容清单格式错误');
@@ -101,6 +106,15 @@ async function localDiff(path: string) {
   for (const f of files) if (!expected.some((e) => e.path === f)) diff.push('新增 ' + f);
   return diff;
 }
+/**
+ * 把归档原子地装进 `to/<slug>`，全程只写显式给出的目标目录，不执行其中任何内容。
+ * 前置校验：slug 合法、清单合规、清单与归档各自的摘要匹配、逐文件比对大小与 SHA-256，
+ * 任一不符按 422 拒绝。提交阶段持锁目录（并发安装 409 `INSTALL_BUSY`），先写 staging、
+ * 再确认目标目录未被移动、内容指纹未变化（否则 409 `INSTALL_TARGET_CHANGED`），
+ * 然后 rename 替换并把旧目录挪到备份；失败时回滚，回滚也不成立才以 `AggregateError`
+ * 连备份路径一起抛出。`beforeCommit` 用于提交前再做一次远端校验（例如重新拉清单）。
+ * `dryRun` 只返回差异，不创建任何目录。
+ */
 export async function install(input: {
   slug: string;
   to: string;

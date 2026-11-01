@@ -11,9 +11,16 @@ import { AiError } from '@capability-hub/ai';
 import { recoveryRuntime, type CrashStage } from './ai-recovery.js';
 import { createSqliteStore } from './store.js';
 
+/** 崩溃恢复要覆盖的两种存储驱动：SQLite 给文件路径，PostgreSQL 给已建库的连接串。 */
 export type RecoveryDatabase =
   { driver: 'sqlite'; path: string } | { driver: 'postgresql'; url: string };
 
+/**
+ * 端到端崩溃恢复：先在父进程跑出一个等待交互的执行，再 fork 子进程在 `stage`
+ * （effect/terminal/resume）处 `SIGKILL` 自己，最后在主进程模拟租约过期并重新处理。
+ * 断言结果是恰好一次副作用（审计只记一条）、交互被应用、快照的投影修订号与快照修订号一致。
+ * 子进程必须真正被杀掉，才能在无通知的情况下验证恢复路径。
+ */
 export async function assertCrashRecovery(
   t: TestContext,
   store: RecordStore,
@@ -93,6 +100,11 @@ export async function assertCrashRecovery(
   );
 }
 
+/**
+ * 租约隔离：把作业租约置为过期后，旧 scope 的所有写入（事件、memory、workflow）都必须
+ * 以 `AI_LEASE_LOST` 拒绝，而新领取者拿到更大的 epoch 才能继续。
+ * 同时验证事件写入失败会连同事务里的其他写入一起回滚，以及快照导出/恢复后可逐字节还原。
+ */
 export async function assertLeaseIsolation(t: TestContext, store: RecordStore) {
   const { runtime, claim, ai } = recoveryRuntime(store);
   const execution = await runtime.submit(randomUUID(), 'recoverable', { value: 1 });

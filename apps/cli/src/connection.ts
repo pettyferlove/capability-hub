@@ -20,6 +20,11 @@ import {
 import { savePrivateJson } from './private-json.js';
 import { HubApiClient, HubApiError, terminalText } from './api-client.js';
 
+/**
+ * 打开到 Hub MCP 的连接：请求被限制在 `<url>/mcp` 这一路径内，令牌每次请求前换取，
+ * 因此刷新后无需重建连接；401 转成 `UNAUTHENTICATED` 提示重新 `connect`。
+ * 连接建立失败会先 `close()` 再抛错，不留下半开的会话。
+ */
 export async function openHubConnection(url: string, path: string) {
   const identity = await readConnection(path, url);
   const client = new Client({ name: 'capability-hub-bridge', version: '0.1.0' });
@@ -50,6 +55,12 @@ export async function openHubConnection(url: string, path: string) {
   }
   return client;
 }
+/**
+ * 完整接入流程：准备配置 → 复用或新建授权 → 用新令牌实跑一次 `listTools` 与 `search_skills` 验证
+ * → 在凭据锁内确认没有被其他进程换过身份 → 写配置再落凭据。顺序是先验证后提交，
+ * 验证失败时既不写配置也不写凭据；中途失败会撤销这次新授权的令牌，`--contribute` 却没拿到
+ * `hub:contribute` 时同样放弃，保留原有连接与配置。
+ */
 export async function connectAgent(
   options: ConnectionConfigOptions & { contribute: boolean; noBrowser: boolean },
 ) {
@@ -149,6 +160,10 @@ async function revokeConnection(url: string, credentials: ConnectionCredentials)
   }
 }
 
+/**
+ * stdio 桥：把 Hub 的工具原样转发给本地客户端，参数与结果都不改写。
+ * 监听 stdin 结束与 SIGTERM/SIGINT 关闭两端，宿主进程退出后不留孤儿子进程。
+ */
 export async function bridgeAgent(url: string, directory: string, agent: AgentClient) {
   const client = await openHubConnection(url, connectionFile(directory, url, agent));
   const server = new McpServer(
@@ -185,6 +200,7 @@ export async function bridgeAgent(url: string, directory: string, agent: AgentCl
     throw error;
   }
 }
+/** 只读自检：列出工具数量并打印，用于排查配置是否正确。 */
 export async function checkConnection(url: string, directory: string, agent: AgentClient) {
   const client = await openHubConnection(url, connectionFile(directory, url, agent));
   try {

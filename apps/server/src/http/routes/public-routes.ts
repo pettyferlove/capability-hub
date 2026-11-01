@@ -11,6 +11,15 @@ import type { Express } from 'express';
 import { loginRequestSchema, setupHttpRequestSchema } from '@capability-hub/contracts';
 import type { HttpContext } from '../context.js';
 import { jsonRoute as send } from '../response.js';
+/**
+ * 匿名入口，注册在 `security.authenticate` 之前，因此任何一条都不得读取 `res.locals.principal`。
+ * `/api/hub-share`、`/INSTALL.md`、`/api/hub-mcp-config`、`/connect/mcp` 只交付公开配置与占位变量，
+ * 不签发令牌、不授予资源权限；`/auth/setup` 由 `authentication.setup` 判定实例是否尚未初始化，
+ * 生产环境还要求与环境变量一致的初始化密钥（否则 403 `SETUP_TOKEN_REQUIRED`），并做 Origin 校验；
+ * `/auth/login` 用进程内计数把并发登录压到 4 个（超出 429 `LOGIN_BUSY`），
+ * 失败计数与锁定由认证服务负责。
+ * `/auth/cli/*` 是 CLI 的设备码轮询，凭 code 与 verifier 匹配，不接受 cookie 身份。
+ */
 export function registerPublicRoutes(app: Express, { hub, security }: HttpContext): void {
   const { store, blobs, authentication, config } = hub;
   // 首次接入仅交付公开配置和占位变量，不创建令牌、不授予资源权限。

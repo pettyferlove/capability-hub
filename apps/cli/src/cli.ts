@@ -33,6 +33,12 @@ import {
 
 const help = `Capability Hub\n\n  connect --url URL --client CLIENT [--scope project|user] [--contribute] [--no-browser] [--config-file PATH] [--replace]\n  bridge --url URL --client CLIENT\n  status --url URL --client CLIENT\n  login --url URL\n  search QUERY [--json]\n  add NAME --version VERSION --to PATH [--dry-run] [--replace]\n  hub-config --url URL --client CLIENT [--scope project|user] [--conversation]\n  mcp-config NAME --version VERSION --client ${agentClientIds.join('|')} [--option ID] [--scope project|user]\n\n读取命令可设置 CAPABILITY_HUB_TOKEN 并明确提供 --url URL。未设置环境令牌时使用浏览器批准后保存的凭据。\n所有命令可用 --config-dir PATH 指定独立凭据目录。add 只写明确路径，不执行内容。\n`;
 
+/**
+ * CLI 入口。读取类命令支持 `CAPABILITY_HUB_TOKEN` + 显式 `--url`，否则回落到浏览器批准后保存的凭据
+ * （`--config-dir` 可换目录）；两种来源互斥，避免把令牌发往另一实例。
+ * 写文件的只有 `add`，且必须给出显式 `--to`：只解包到指定目录，内容从不执行。
+ * 失败一律抛错由调用方转成退出码，不在此处 `process.exit`，便于测试直接调用。
+ */
 export async function runCli(arguments_: readonly string[] = process.argv.slice(2)): Promise<void> {
   const { positionals, values: flags } = parseArgs({
     args: [...arguments_],

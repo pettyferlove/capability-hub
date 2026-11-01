@@ -17,6 +17,15 @@ const input = z
     scope: z.enum(['project', 'user']).default('project'),
   })
   .strict();
+/**
+ * 生成客户端 MCP 配置文本。只输出、不执行：远程安装项输出 url + 用环境变量引用替换的秘密 Header，
+ * stdio 安装项输出 `npx -y <pkg>@<version>`，平台自身不会运行它。
+ * 上游声明里凡带模板变量、秘密或客户端表达式（`${}`、`%VAR%`、`{env:}`、Pi 的 `!` 前缀）的值，
+ * 一律拒绝而不是猜测展开，避免把未审阅的值升级成命令执行。
+ * 失败抛 `HubError` 422：`NOT_MCP`、`UNSUPPORTED_CLIENT`、`UNSUPPORTED_INSTALLATION_OPTION`、
+ * `UNSUPPORTED_CLIENT_EXPRESSION`、`UNSUPPORTED_VARIABLE`、`UNSUPPORTED_HEADER_TEMPLATE` 等。
+ * 调用方必须已通过 `requireReadableVersion`，本例不再重复鉴权。
+ */
 export async function createClientConfiguration(
   hub: HubServices,
   p: Principal | null,

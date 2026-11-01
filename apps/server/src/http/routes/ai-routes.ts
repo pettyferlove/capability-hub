@@ -20,6 +20,14 @@ function revision(request: Pick<Request, 'get'>) {
     fail(412, 'REVISION_CONFLICT', '修订号无效');
   return Number(match[1]);
 }
+/**
+ * AI 工作台。整组先由 `/api/ai` 前置中间件要求登录会话（无会话 401 `UNAUTHENTICATED`），
+ * 每条路由再用 `hub.ai.principal` 结合执行记录复核归属，越权按 `AI_FORBIDDEN`/`AI_NOT_FOUND` 处理，
+ * 因此列表只输出调用者可见的执行。提交、取消、应答都走 `hub.idempotency.execute`：
+ * 键来自 `Idempotency-Key`，请求体摘要参与去重，避免重试产生重复执行。
+ * 取消与应答要求 `If-Match`（缺失 428、格式非法 412），返回体带 `ETag` 供下一次回填。
+ * `events` 是 SSE，连接上限与存活期见 {@link streamAiEvents}。
+ */
 export function registerAiRoutes(app: Express, context: HttpContext) {
   const { hub, security } = context;
   const runtime = hub.ai.runtime;

@@ -18,6 +18,12 @@ const oauthMessages: Record<string, string> = {
   invalid_request: '授权请求格式无效',
   temporarily_unavailable: '授权服务繁忙，请稍后重试',
 };
+/**
+ * CLI 侧最小的 Hub 客户端：不跟随重定向（`redirect: 'error'`），每次请求 30 秒超时，
+ * 非 2xx 一律转成 {@link HubApiError}，错误体按固定上限读取并清洗控制字符后才写入终端，
+ * 因此 Hub 返回的文本无法向用户终端注入转义序列。
+ * 响应体同样有上限：JSON 1 MiB、归档 120 MiB，超出即中止读取。
+ */
 export class HubApiClient {
   constructor(
     readonly url: string,
@@ -106,6 +112,7 @@ export class HubApiClient {
   }
 }
 
+/** 剔除控制字符与格式字符后再写入终端，避免 Hub 返回内容伪造颜色或改写已打印的行。 */
 export function terminalText(value: string): string {
   return value.replace(/[\p{Cc}\p{Cf}]/gu, ' ');
 }

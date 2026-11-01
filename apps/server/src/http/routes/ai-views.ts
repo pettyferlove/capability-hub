@@ -4,6 +4,10 @@ import {
 } from '@capability-hub/contracts';
 import type { AiRuntime, ExecutionRecord } from '@capability-hub/ai';
 
+/**
+ * 把存储行投影成对外的执行响应：`payload` 之外的字段（id/owner/status/时间戳）来自行本身，
+ * 并统一按 `aiExecutionResponseSchema` 解析，保证新增字段不会漏出契约之外。
+ */
 export function executionResponse(row: ExecutionRecord) {
   const payload = row.payload;
   return aiExecutionResponseSchema.parse({
@@ -27,6 +31,10 @@ export function executionResponse(row: ExecutionRecord) {
     error: payload.error,
   });
 }
+/**
+ * 评审视图：`watermark` 是本次快照覆盖到的事件位置，客户端据此判断后续增量从哪开始；
+ * `resource:` 前缀的产物是被内联进消息的资源证据，不在此列出。
+ */
 export function executionView(view: Awaited<ReturnType<AiRuntime['view']>>) {
   return aiExecutionViewResponseSchema.parse({
     execution: executionResponse(view.execution),

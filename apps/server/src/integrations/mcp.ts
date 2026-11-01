@@ -25,6 +25,11 @@ const search = {
   cursor: z.string().optional(),
   limit: z.number().int().min(1).max(50).default(20),
 };
+/**
+ * 构造一次连接对应的 MCP handler。`hub:read` 连接不注册贡献类工具，即使绕过工具列表直接调用也会
+ * 得到 403 `TOKEN_SCOPE`；每次调用还会重新读取 principal，服务层再按当前权限判定，
+ * 因此令牌作用域是上限而不是能力来源。工具入参在这里按 schema 校验，错误以 MCP 工具错误返回。
+ */
 export function createMcp(hub: HubServices, p: Principal, scope: TokenRecord['scope']) {
   const handler = createMcpHandler(
     () => {

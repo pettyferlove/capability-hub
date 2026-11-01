@@ -4,6 +4,12 @@ import type { BlobStorage, BlobMaintenance, RecordStore } from '@capability-hub/
 import type { Logger } from '@capability-hub/logging/server';
 import { join } from 'node:path';
 import type { ServerConfig } from '../config/server-config.js';
+/**
+ * 按配置打开记录存储与对象存储，并在返回前对 blob 做一次健康检查：
+ * 对象存储不可用时直接失败，而不是等到第一次读写才暴露。驱动参数已在
+ * {@link loadServerConfig} 阶段校验，这里只负责连接与回退清理。
+ * PostgreSQL 用 `onPoolError` 把连接池错误记进日志，避免未处理拒绝。
+ */
 export async function openStorage(
   config: ServerConfig,
   logger: Logger,
@@ -53,6 +59,10 @@ export async function openStorage(
   }
 }
 
+/**
+ * 并行关闭两个存储，任一失败都不阻断另一个；有失败时抛 `AggregateError`，
+ * 让调用方在退出前仍能看到完整的关闭错误。
+ */
 export async function closeStorage(store: RecordStore, blobs: BlobStorage): Promise<void> {
   const results = await Promise.allSettled([
     Promise.resolve().then(() => blobs.close()),

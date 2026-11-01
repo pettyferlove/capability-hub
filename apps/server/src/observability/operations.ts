@@ -39,6 +39,11 @@ export class RequestMetrics {
     };
   }
 }
+/**
+ * 运维快照，一次读三张表：作业与扫描按状态计数，`backup.completed` 审计给出最近备份时间。
+ * `dataDir` 只用于 `statfs`，探测失败时 `disk.available` 为 false 而不是抛错——磁盘不可探查
+ * 本身就是需要被看到的信号。`expired_leases` 与 `oldest_wait_seconds` 是排查 worker 卡死的入口。
+ */
 export async function operations(store: RecordStore, metrics: RequestMetrics, dataDir: string) {
   const [jobs, scans, audits] = await Promise.all([
     store.all('jobs'),

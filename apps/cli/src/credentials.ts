@@ -1,17 +1,23 @@
 import { cliCredentialsSchema, type CliCredentials } from '@capability-hub/contracts';
 import { savePrivateJson, loadPrivateJson } from './private-json.js';
 
+/** 覆盖写入凭据文件前先按契约校验，非法值不会被持久化。 */
 export async function saveCredentials(path: string, value: CliCredentials) {
   await savePrivateJson(path, parseCredentials(value));
 }
 
 export type { CliCredentials } from '@capability-hub/contracts';
+/** 校验失败统一提示重新登录，避免把 zod 细节暴露给终端使用者。 */
 export function parseCredentials(value: unknown): CliCredentials {
   const parsed = cliCredentialsSchema.safeParse(value);
   if (!parsed.success) throw new Error('凭据格式无效，请重新登录');
   return parsed.data;
 }
 
+/**
+ * 归一化 Hub 地址为 origin。强制 HTTPS，只对 loopback（127.0.0.1/localhost/[::1]）放行明文 HTTP；
+ * 带凭据、路径或查询的地址一律拒绝，保证后续凭据只会发往单一实例根地址。
+ */
 export function hubUrl(value: string) {
   if (/[\p{Cc}\p{Cf}\s]/u.test(value)) throw new Error('Hub URL 不能含空白或控制字符');
   const url = new URL(value);
@@ -45,6 +51,7 @@ export async function resolveConsumerCredentials(options: {
   return { url, token: saved.token };
 }
 
+/** 读取 `--config-dir`（默认 `~/.config/capability-hub`）下的 `auth.json`，并同样做格式校验。 */
 export async function loadCredentials(path: string): Promise<CliCredentials> {
   return parseCredentials(await loadPrivateJson(path));
 }

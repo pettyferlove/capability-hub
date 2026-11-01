@@ -2,6 +2,10 @@ import { fail } from '@capability-hub/domain/errors';
 import { lstat, mkdir, realpath } from 'node:fs/promises';
 import { join, parse, resolve } from 'node:path';
 
+/**
+ * 逐级检查目录链：任一层是符号链接或普通文件即 422 `INSTALL_PATH`，防止写入被重定向到别处。
+ * `create` 为 true 时按 0700 补建缺失目录并返回解析后的真实路径；为 false 时只校验、返回绝对路径。
+ */
 export async function safeDirectory(directory: string, create = true) {
   const absolute = resolve(directory);
   const root = parse(absolute).root;

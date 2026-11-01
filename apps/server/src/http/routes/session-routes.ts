@@ -4,6 +4,12 @@ import { changePasswordRequestSchema } from '@capability-hub/contracts';
 import type { HttpContext } from '../context.js';
 import { jsonRoute } from '../response.js';
 
+/**
+ * 会话与令牌自助。`/auth/logout` 在允许的匿名路径列表内，无会话时也清 cookie 并返回成功，
+ * 因此可重复调用；修改密码成功后清掉当前 cookie，强制重新登录。令牌的列出/签发/撤销都只作用于
+ * `res.locals.principal.id`，无法操作他人令牌；`/api/cli/approve` 需要登录态，
+ * 把设备码批准绑定到当前用户。
+ */
 export function registerSessionRoutes(app: Express, { hub }: HttpContext): void {
   app.get(
     '/api/me',

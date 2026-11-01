@@ -15,6 +15,10 @@ import { sha256 } from '@capability-hub/domain/canonical';
 import { withFileLock } from './file-lock.js';
 import { safeDirectory } from './filesystem.js';
 
+/**
+ * 接入参数。`scope` 为 `user` 时拒绝由客户端自己管理的配置位置（claude-code、vscode），
+ * 必须显式给 `--config-file`；`replace` 决定能否覆盖与助手方案不同的同名条目。
+ */
 export interface ConnectionConfigOptions {
   client: AgentClient;
   scope: 'project' | 'user';
@@ -23,6 +27,12 @@ export interface ConnectionConfigOptions {
   configFile?: string;
   replace?: boolean;
 }
+/**
+ * 只读地准备配置变更，返回目标路径、原文与新文本，不写任何文件——调用方可以先给人看。
+ * 现有 JSONC/TOML 有语法错误、含重复字段或 `mcpServers` 结构非法时直接报错，绝不试修复后写入；
+ * 同名条目与期望不一致且未加 `--replace` 时也拒绝，避免悄悄覆盖用户已有配置。
+ * 原文在提交时备份到凭据目录下的 `config-backups`。
+ */
 export async function prepareConnectionConfig(options: ConnectionConfigOptions) {
   const { client, scope } = options;
   if (!options.configFile && scope === 'user' && ['claude-code', 'vscode'].includes(client))
@@ -164,6 +174,11 @@ async function readConfig(path: string): Promise<string | null> {
     await file.close();
   }
 }
+/**
+ * 提交阶段：加文件锁后重新读取目标，内容与准备时不一致即放弃（其他程序改过配置）。
+ * 有原文时先写 0600 备份，再用临时文件 + rename 替换；写前再比对一次原文，
+ * 期间被改动就保留最新文件并报错，返回值为备份路径（未覆盖时为空）。
+ */
 export async function writeConnectionConfig(
   prepared: Awaited<ReturnType<typeof prepareConnectionConfig>>,
 ) {

@@ -2,6 +2,13 @@ import type { Express } from 'express';
 import { z } from 'zod';
 import type { HttpContext } from '../context.js';
 import { idempotencyKey as key, jsonRoute as send } from '../response.js';
+/**
+ * 资产生命周期。写操作全部透传 `If-Match`：缺失 428 `IF_MATCH_REQUIRED`、不符 412
+ * `REVISION_CONFLICT`；`rollback-requests` 另带 `Idempotency-Key`，避免重复发起回滚。
+ * 权限在服务层判定：`usage`/`lifecycle` 需要 `asset:lifecycle` 或维护权，`revoke` 需要
+ * `version:revoke` 并要求 1–2000 字原因（写入审计），`migrate-source` 需要 `asset:migrate`
+ * 且源与目标都要 `source:share`。`mcp-options` 只返回调用者可读版本的可安装项。
+ */
 export function registerLifecycleRoutes(app: Express, { hub }: HttpContext): void {
   app.patch(
     '/api/assets/:id/usage',

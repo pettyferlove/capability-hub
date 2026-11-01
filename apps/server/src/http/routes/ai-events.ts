@@ -8,6 +8,15 @@ import type { HttpContext } from '../context.js';
 import { executionView } from './ai-views.js';
 
 const connections = new WeakMap<HttpContext['hub'], Map<string, number>>();
+/**
+ * 执行事件 SSE。同一 principal 最多同时打开 4 条连接，超出 429 `AI_STREAM_LIMIT`；
+ * 单条连接最多存活 300 秒后由客户端按 `retry: 1500` 重连，重连时用 `Last-Event-ID`
+ * （或 `?cursor=`）续传，游标必须是 `<execution_id>:operator:<n>` 形式，
+ * 否则 400 `AI_CURSOR_INVALID`。
+ * 每轮读取前重新校验会话与可见性：会话失效、权限被收回或执行不可见时，先发 `stream.error`
+ * （`ACCESS_REVOKED`）再结束，而不是继续推送旧内容；事件位置不连续时先发 `stream.reset` 快照，
+ * 保证客户端不会拼接出带缺口的视图。每 15 秒发一次注释心跳，期间无新事件时每 250ms 轮询一次。
+ */
 export async function streamAiEvents(
   req: Request<Record<string, string | string[]>, unknown, unknown, Record<string, unknown>>,
   res: Response,

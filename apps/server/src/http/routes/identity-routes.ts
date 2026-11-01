@@ -3,6 +3,13 @@ import type { Express } from 'express';
 import { operations } from '../../observability/operations.js';
 import type { HttpContext } from '../context.js';
 import { jsonRoute as send } from '../response.js';
+/**
+ * 管理面。整组挂在 `/api` 前缀下，先经 `security.authenticate` 要求会话或 Bearer，写操作再过 CSRF；
+ * 组内权限由服务层按 `principal` 逐次校验：`/api/admin/operations` 需要 `audit:read`，
+ * `administration` 的变更需要 `identity:manage`，审计读取另按 `audit:read` 收敛可见范围。
+ * `PATCH` 把 `If-Match` 修订号交给 `matchRevision`：缺失 → 428 `IF_MATCH_REQUIRED`，
+ * 不符 → 412 `REVISION_CONFLICT`；其余失败以 `HubError` 抛给统一错误处理器映射状态码。
+ */
 export function registerIdentityRoutes(app: Express, { hub, metrics }: HttpContext): void {
   const { store, identity, administration, config } = hub;
   app.get(

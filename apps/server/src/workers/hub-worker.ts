@@ -4,6 +4,13 @@ import { randomUUID } from 'node:crypto';
 import type { HubServices } from '../bootstrap/hub-services.js';
 import type { SourceService } from '@capability-hub/application';
 import { AiError } from '@capability-hub/ai';
+/**
+ * 后台作业循环：每 1 秒一拍，AI 派发与普通作业各自单飞（同一时刻只有一个 tick 在跑），
+ * 因此多实例部署时靠存储层抢占而不是本地锁来互斥。作业租约每 20 秒续一次，续租失败或抛错
+ * 就以 `AI_LEASE_LOST` 中断当前执行，避免两个 worker 同时写同一作业。
+ * 失败重试上限 3 次，退避 30s/120s/600s；`LEASE_LOST`、`SOURCE_*_CHANGED` 直接取消而不重试。
+ * `stop()` 先停计时器，再中断在跑的 AI 执行并等待两类 tick 落定，失败以 `AggregateError` 汇总。
+ */
 export class HubWorker {
   readonly id = randomUUID();
   private running: Promise<void> | undefined;

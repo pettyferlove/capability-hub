@@ -10,8 +10,17 @@ import { createApp } from '@capability-hub/server';
 import { loadServerConfig, type ServerConfig } from '@capability-hub/server/config';
 import type { Policy } from '@capability-hub/contracts';
 
+/**
+ * 测试统一口令。必须满足生产口令策略（长度与字符种类），否则初始化会直接被拒；
+ * 硬编码是刻意的，便于失败时复现。
+ */
 export const testPassword = 'A-test-password-2026!';
 
+/**
+ * 在临时目录起一个完整应用：SQLite + 文件对象存储、worker 关闭（测试自己调 `tick()`）、
+ * 静默日志，所有临时文件都在 `context.after` 里清掉。`overrides` 覆盖配置，但端口与
+ * `publicUrl` 要一起改，否则 Origin 校验会把请求挡掉。
+ */
 export async function createTestApplication(
   context: TestContext,
   overrides: Partial<ServerConfig> = {},
@@ -44,6 +53,11 @@ export async function createTestApplication(
   return { ...runtime, directory, config };
 }
 
+/**
+ * 在应用之上预置三种身份，避免每个用例重复搭权限：`admin`（初始化出的维护者）、
+ * `reviewer`（平台级审核角色）、`reader`（无任何组的外部成员），并返回他们的组 id。
+ * 仍保留 `hub`/`store` 等原始句柄，用例可以直接调用服务层绕过 HTTP。
+ */
 export async function createTestHub(context: TestContext, overrides: Partial<ServerConfig> = {}) {
   const runtime = await createTestApplication(context, overrides);
   const { hub, store } = runtime;
@@ -84,8 +98,14 @@ export async function createTestHub(context: TestContext, overrides: Partial<Ser
   };
 }
 
+/** {@link createTestHub} 的完整返回值，含 admin/reviewer/reader 三种 principal 与 teamId。 */
 export type TestHub = Awaited<ReturnType<typeof createTestHub>>;
 
+/**
+ * 走一次真实上传链路：打包一个只含 SKILL.md 的 ZIP → `intakes.receive` → 手动 `worker.tick()`
+ * → 断言扫描已就绪。返回的 intake 带非空的 `version_id` 与 `scan_run_id`，
+ * 后续发布用例依赖这两个字段，所以这里断言而不是让调用方自己检查。
+ */
 export async function receiveSkill(
   fixture: TestHub,
   options: {
@@ -119,6 +139,10 @@ export async function receiveSkill(
   return { ...intake, version_id: intake.version_id, scan_run_id: intake.scan_run_id };
 }
 
+/**
+ * 以 `admin` 身份提交一次共享申请，默认受众为 `public`；`distribution` 用于覆盖可见范围。
+ * 基线与 `asset.current_release_id` 对齐，避免每次提交都因版本已变化被判为过期。
+ */
 export async function submitPublication(
   fixture: TestHub,
   intake: Awaited<ReturnType<typeof receiveSkill>>,
@@ -141,6 +165,11 @@ export async function submitPublication(
   );
 }
 
+/**
+ * 一路走完到审核通过：接收 → 提交 → 由 `reviewer` 批准（不覆盖审核意见与警告）。
+ * 返回三段结果，供用例断言发布后的可见性与产物。提交者与审核者必须是不同 principal，
+ * 否则会被 `SELF_REVIEW` 拒绝。
+ */
 export async function publishSkill(
   fixture: TestHub,
   options: Parameters<typeof receiveSkill>[1] & { distribution?: Policy['distribution'] } = {},

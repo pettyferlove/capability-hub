@@ -10,6 +10,7 @@ import { safePath } from '@capability-hub/domain/paths';
 import { z } from 'zod';
 import type { HubServices } from '../bootstrap/hub-services.js';
 import { createClientConfiguration } from './client-config.js';
+/** MCP 配置生成入参；`scope` 缺省按项目级处理，客户端标识必须是受支持列表中的值。 */
 export const mcpConfigurationInput = z
   .object({
     version_id: z.uuid(),
@@ -18,6 +19,10 @@ export const mcpConfigurationInput = z
     scope: z.enum(['project', 'user']).optional(),
   })
   .strict();
+/**
+ * 分段读取安装内容的入参：`offset` 用于续读，`max_bytes` 上限 256 KiB、默认 64 KiB，
+ * 让客户端按自己终端/上下文的预算分块取回，而不是一次性拉完整包。
+ */
 export const skillInstallationInput = z
   .object({
     version_id: z.uuid(),
@@ -26,6 +31,10 @@ export const skillInstallationInput = z
     max_bytes: z.number().int().min(1).max(262144).default(65536),
   })
   .strict();
+/**
+ * 分享内容的入参：`files` 1–100 个、单文件 ≤512 KiB，`idempotency_key` 必填以避免客户端重试
+ * 产生重复版本；`target: new` 需指定归属组，`existing` 需指定资产 id，两者互斥。
+ */
 export const skillSharingInput = z
   .object({
     destination: z.discriminatedUnion('target', [

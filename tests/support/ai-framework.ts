@@ -13,6 +13,11 @@ import { createAiStore, HubAiQueue } from '@capability-hub/infrastructure/ai';
 import { z } from 'zod';
 import { createTestHub } from './application.js';
 
+/**
+ * 搭一套最小可跑的 AI 运行时 fixture：注册一个两段式测试操作，把 `work` 当作步骤体，
+ * 并把抛出过的错误收集到 `failures`（步骤内先记录再抛出，测试据此断言失败原因）。
+ * `run()` 只执行一次作业领取与处理，调用方自己控制重复调用与信号。
+ */
 export async function frameworkFixture(
   t: TestContext,
   config: AiConfiguration,
@@ -96,6 +101,7 @@ export async function frameworkFixture(
   };
   return { ...hub, runtime, run, failures };
 }
+/** 校验后返回一份指向本地 fixture 服务的 profile 配置；默认 openai 格式。 */
 export function frameworkConfig(
   url = 'https://example.test/v1',
   format: 'openai' | 'anthropic' = 'openai',
