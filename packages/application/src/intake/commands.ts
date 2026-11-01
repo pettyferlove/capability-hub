@@ -10,19 +10,20 @@ export type ReceiveIntakeCommand = {
   keywords?: string[];
   /** 只对 Skill 有效，MCP 传入即 422/`NOT_SKILL`。 */
   requires_api_key?: boolean;
-} & (
+} &
   /**
    * 新建资产：`slug` 1–64 位已被占用时 409/`SLUG_CONFLICT`；
    * 调用者需在 `owner_group_id` 上持有 `asset:create`。
    */
-  | { target: 'new'; slug: string; kind: AssetKind; owner_group_id: string }
-  /**
-   * 更新已有资产：调用者需是该资产的维护者（否则 403）。`version_mode` 为 `automatic` 表示
-   * 版本号取自版本建议，提交时会用最新建议复核，已过期或不再大于最新版本则
-   * 409/`VERSION_SUGGESTION_STALE`；`manual` 不做该复核。
-   */
-  | { target: 'existing'; asset_id: string; version_mode?: 'automatic' | 'manual' }
-);
+  (
+    | { target: 'new'; slug: string; kind: AssetKind; owner_group_id: string }
+    /**
+     * 更新已有资产：调用者需是该资产的维护者（否则 403）。`version_mode` 为 `automatic` 表示
+     * 版本号取自版本建议，提交时会用最新建议复核，已过期或不再大于最新版本则
+     * 409/`VERSION_SUGGESTION_STALE`；`manual` 不做该复核。
+     */
+    | { target: 'existing'; asset_id: string; version_mode?: 'automatic' | 'manual' }
+  );
 /** 列表视图向外暴露的状态，含由关联发布申请推导出的状态，因此并非接收记录本身的 `state`。 */
 export type IntakeStatus =
   | 'processing'
