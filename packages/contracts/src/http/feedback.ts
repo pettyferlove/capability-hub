@@ -1,3 +1,7 @@
+/**
+ * 反馈详情，出现在反馈列表与详情；`can_manage` 表示当前主体能否改状态（维护者）。
+ * `revision` 为乐观锁版本，提交更新时必须原样带回。
+ */
 export interface AssetFeedbackResponse {
   id: string;
   asset_id: string;
@@ -25,6 +29,7 @@ export interface AssetFeedbackResponse {
   can_manage: boolean;
   detail_url: string;
 }
+/** 反馈分页：`total` 为可见条目总数（非本页条数），`limit` 回显请求的每页条数。 */
 export interface AssetFeedbackListResponse {
   items: AssetFeedbackResponse[];
   total: number;

@@ -7,6 +7,10 @@ const versionLabel = z
   .max(128)
   .regex(versionLabelPattern)
   .refine(isFixedVersionLabel, '版本号超出支持范围');
+/**
+ * 导入列表可见状态全集（含审核结论），也用作筛选参数 `state` 的取值来源。
+ * 与处理机的 {@link IntakeState} 不同，这里表达的是列表上「用户看到的业务状态」。
+ */
 export const intakeStatuses = [
   'processing',
   'ready',
@@ -19,7 +23,12 @@ export const intakeStatuses = [
   'deprecated',
   'blocked',
 ] as const;
+/** {@link intakeStatuses} 的成员类型。 */
 export type IntakeStatus = (typeof intakeStatuses)[number];
+/**
+ * 导入列表查询：`page` 以字符串传入（1–9999999），转成数字后用于分页；
+ * `page_size` 只接受 5/10/20/50 默认 5，`q` 去空白后 ≤200 字符，`state` 默认 `all`。
+ */
 export const intakeListQuerySchema = z
   .object({
     page: z
@@ -33,6 +42,11 @@ export const intakeListQuerySchema = z
   })
   .strict();
 
+/**
+ * 上传新版本请求，按 `target` 判别分支：`new` 需给出所属组、slug 与类型，
+ * `existing` 只给资产 id。版本号必须是固定 SemVer（≤128）；`version_mode` 为 `automatic`
+ * 时仍会复核一次版本建议，建议已过期则返回冲突而不是接受旧建议。
+ */
 export const uploadIntakeRequestSchema = z.discriminatedUnion('target', [
   z
     .object({
@@ -57,10 +71,16 @@ export const uploadIntakeRequestSchema = z.discriminatedUnion('target', [
     .strict(),
 ]);
 
+/** 单个导入的处理机状态，按接收、拉取、扫描的顺序推进，`ready` 之后进入发布流程。 */
 export type IntakeState = 'received' | 'fetching' | 'scanning' | 'ready' | 'failed' | 'cancelled';
 
+/** {@link uploadIntakeRequestSchema} 的输入侧类型；`requires_api_key`、`version_mode` 等可省略。 */
 export type UploadIntakeRequest = z.input<typeof uploadIntakeRequestSchema>;
 
+/**
+ * 导入进度：`progress` 至少一步，按 `started_at` 记录各阶段开始时间；
+ * `finished_at` 与错误字段仅在处理结束后填充，未结束时为 `null`。
+ */
 export const intakeProgressResponseSchema = z.strictObject({
   id: uuidSchema,
   state: z.enum(['received', 'fetching', 'scanning', 'ready', 'failed', 'cancelled']),
@@ -77,4 +97,5 @@ export const intakeProgressResponseSchema = z.strictObject({
   error_code: z.string().nullable(),
   error_message: z.string().nullable(),
 });
+/** {@link intakeProgressResponseSchema} 的输出侧类型，供轮询接口返回。 */
 export type IntakeProgressResponse = z.infer<typeof intakeProgressResponseSchema>;

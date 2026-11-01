@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { uuidSchema } from './primitives.js';
 
+/**
+ * 提名请求：`release_id` 指向已发布版本，理由去空白后需 10–2000 字，用于说明通用价值。
+ * 服务端在请求入口解析；严格模式拒绝未知字段。
+ */
 export const nominateAssetRequestSchema = z
   .object({
     release_id: uuidSchema,
@@ -8,6 +12,9 @@ export const nominateAssetRequestSchema = z
   })
   .strict();
 
+/**
+ * 推荐请求：按固定版本记录目标状态，重复提交同一取值结果一致，无需额外幂等键。
+ */
 export const assetRecommendationRequestSchema = z
   .object({
     version_id: uuidSchema,
@@ -15,5 +22,7 @@ export const assetRecommendationRequestSchema = z
   })
   .strict();
 
+/** {@link nominateAssetRequestSchema} 的输入侧类型，即解析前的原始请求体。 */
 export type NominateAssetRequest = z.input<typeof nominateAssetRequestSchema>;
+/** {@link assetRecommendationRequestSchema} 的输入侧类型。 */
 export type AssetRecommendationRequest = z.input<typeof assetRecommendationRequestSchema>;

@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+/**
+ * 支持自动配置的客户端标识全集；顺序即接入说明表格中的展示顺序。
+ * {@link agentClients} 与每个适配分支都必须与这里保持一一对应。
+ */
 export const agentClientIds = [
   'codex',
   'claude-code',
@@ -10,9 +14,16 @@ export const agentClientIds = [
   'vscode',
   'copilot-cli',
 ] as const;
+/** 客户端标识校验：只接受 {@link agentClientIds} 中的值。 */
 export const agentClientSchema = z.enum(agentClientIds);
+/** {@link agentClientSchema} 的输出侧类型。 */
 export type AgentClient = z.infer<typeof agentClientSchema>;
+/** 配置作用范围：`project` 写入当前仓库，`user` 写入当前用户级配置。 */
 export const agentConfigurationScopeSchema = z.enum(['project', 'user']);
+/**
+ * 接入页面查询串：`client` 必填，`scope` 默认 `project`，`method` 默认 `oauth`，
+ * `permission` 默认 `read`（`contribute` 需显式指定才会申请写权限）；严格模式拒绝未知参数。
+ */
 export const hubConnectionQuerySchema = z
   .object({
     client: agentClientSchema,
@@ -101,11 +112,19 @@ export const agentClients: Record<AgentClient, AgentClientRecord> = {
   },
 };
 
+/**
+ * 生成客户端可识别的环境变量插值写法：OpenCode 为 `{env:NAME}`，Cursor 与 VS Code 为
+ * `${env:NAME}`，其余为 `${NAME}`。只拼接语法，不读取环境变量，也不校验变量是否已设置。
+ */
 export function clientEnvironmentReference(client: AgentClient, name: string): string {
   if (client === 'opencode') return `{env:${name}}`;
   return client === 'cursor' || client === 'vscode' ? `\${env:${name}}` : `\${${name}}`;
 }
 
+/**
+ * 通用 MCP 服务记录，字段沿用主流客户端的公共子集；{@link renderMcpClientConfiguration}
+ * 会按客户端改写键名，因此这里只描述语义，不代表最终落盘格式。
+ */
 export interface McpClientServerRecord {
   url?: string;
   command?: string;
@@ -185,6 +204,13 @@ export function renderMcpClientConfiguration(
   };
 }
 
+/**
+ * 生成 Hub 自己的 MCP 配置：`assistant` 走 CLI 桥接命令，`oauth` 直接用远端地址
+ * （仅 codex 额外写入 `scopes`，`contribute` 时申请读写两段权限），`token` 通过环境变量
+ * `CAPABILITY_HUB_TOKEN` 注入（codex 用 `bearer_token_env_var` 指向变量名，其余写入
+ * `Authorization` 头）。
+ * 只返回结构与文本，不写本地文件、不发起连接。
+ */
 export function hubMcpClientConfiguration(
   client: AgentClient,
   endpoint: string,

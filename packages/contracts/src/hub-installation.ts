@@ -1,12 +1,18 @@
 import { z } from 'zod';
 import { agentClientIds, agentClients } from './agent-clients.js';
 
+/** 分享 Hub 接入邀请时返回的结构化结果，出现在分享/接入入口的响应里。 */
 export const hubShareResponseSchema = z.object({
   installation_url: z.url(),
   prompt: z.string().min(1),
 });
+/** {@link hubShareResponseSchema} 的输出侧类型。 */
 export type HubShareResponse = z.infer<typeof hubShareResponseSchema>;
 
+/**
+ * 生成接入邀请：只取 `origin` 的 origin 部分拼出 `/INSTALL.md` 地址，路径与查询串被忽略。
+ * `origin` 非法时 `new URL` 会抛出 `TypeError`，调用方需先保证是绝对地址。
+ */
 export function hubShareInvitation(origin: string): HubShareResponse {
   const installation_url = `${new URL(origin).origin}/INSTALL.md`;
   return {
