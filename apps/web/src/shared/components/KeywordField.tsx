@@ -16,6 +16,16 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery } from '../api/use-query.js';
 import { keywordSeparators, mergeKeywords } from './keyword-input.js';
 
+/**
+ * 关键词输入：可自由输入也可复用已有关键词，按逗号/分号/回车分段，支持整批粘贴。
+ * 上限 20 个；超出时 `mergeKeywords` 报错并保持未提交状态，输入框通过 `setCustomValidity`
+ * 参与原生表单校验，因此外层 `<form>` 提交会被浏览器拦下。
+ * 联想搜索去抖 200ms，且只接受与当前输入一致的响应（`search === normalizedDraft`），
+ * 迟到的结果不会覆盖更新的输入；服务端不可用时仍允许手动输入新词。
+ * 受控用法的兜底：外部 `value` 被替换（回填、重置）时才覆盖本地标签，避免每次渲染都打断输入。
+ *
+ * @param value - 已提交的关键词，保持用户书写的原样大小写，判重时按小写比较。
+ */
 export function KeywordField({
   value,
   onChange,

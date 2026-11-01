@@ -28,6 +28,12 @@ interface PaletteLink {
   href: string;
   icon: typeof Search;
 }
+/**
+ * 全局命令面板：空关键词时只列静态快捷入口（同样按登录状态裁剪），有输入时改搜资产。
+ * 搜索去抖 200ms，且每次关键词变化都 abort 上一个请求；结果里带 `query`，
+ * 只有它与当前关键词一致才渲染，迟到的响应不会覆盖更新的一次搜索。
+ * 输入法组合期间的回车只用于确认候选，不触发展开结果。
+ */
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { me } = useHub();
   const [q, setQ] = useState(''),

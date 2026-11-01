@@ -15,6 +15,13 @@ interface QueryOptions {
   keepPreviousData?: boolean;
 }
 
+/**
+ * 由「请求描述 + 已取回的资源」推导渲染所需状态，不发起请求，因此可在测试里单独构造。
+ * 只有当请求的 `path` 与 `refresh` 都与当前一致才算当前请求的结论：换 `path` 后旧结果与旧错误都不再透出，
+ * 避免把上一个查询的错误显示在新页面上。
+ * `isPreviousData` 仅在 `keepPreviousData` 且新结果未到时为真，此时 `data` 仍是上一份数据、
+ * `refreshing` 也为真——集合可以这样过渡，实体详情不要依赖它，否则会短暂显示别的实体。
+ */
 export function queryView<T>(
   path: string | null,
   refresh: number,
@@ -36,7 +43,12 @@ export function queryView<T>(
   };
 }
 
-/** 集合页面显式选择保留前页结果，旧请求不能覆盖当前查询。 */
+/**
+ * 极简 GET 查询：依赖 `path` 与 `refresh`，任一变化都重新请求并 abort 上一个，迟到的响应被丢弃，
+ * 因此快速切页或连续刷新不会出现旧数据覆盖新数据。
+ * `path` 为 `null` 表示条件未就绪（如未登录、未选中对象），此时清空数据且不发请求；
+ * 递增 `refresh` 是唯一的显式重取手段，同一个 `path` 不会自行轮询。
+ */
 export function useQuery<T>(path: string | null, refresh = 0, options: QueryOptions = {}) {
   const [resource, setResource] = useState<Resource<T>>();
   const [request, setRequest] = useState<QueryRequest>();

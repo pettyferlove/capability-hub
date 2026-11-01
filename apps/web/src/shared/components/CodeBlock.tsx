@@ -41,6 +41,13 @@ function tint(line: string, i: number) {
   );
 }
 
+/**
+ * 只读代码块，右上角带复制按钮。着色是行级正则近似（整行注释、双引号字符串、`--flag`），
+ * 不解析语言语法，因此别用它展示需要精确高亮的内容；`code.split('\n')` 保留原始换行与缩进。
+ *
+ * @param code - 原样展示并原样复制，不做转义或裁剪。
+ * @param title - 左上角标签，缺省显示为空串而不是隐藏，避免头部高度跳动。
+ */
 export function CodeBlock({ code, title }: { code: string; title?: string }) {
   return (
     <div className={cn(codewrapStyles, 'min-w-0')}>

@@ -21,6 +21,13 @@ function currentAppearance(): Appearance {
   };
 }
 
+/**
+ * 主题状态入口；初值取自 `<html>` 上已应用的属性而非重新读存储，保证与首屏
+ * {@link initializeAppearance} 的结果一致，不会因为时序产生第二次切换。
+ * 挂载期间跟随系统配色变化与跨标签页的 localStorage 变更，两者都只改界面不回写存储，
+ * 避免两个标签页互相覆盖对方的偏好；连续切换以 ref 中的最新意图为准，跳过被取代的过渡。
+ * 卸载时中断进行中的 View Transition，防止残留的过渡属性叠加到下一次切换。
+ */
 export function useTheme() {
   const [appearance, setAppearance] = useState(currentAppearance);
   const desired = useRef(appearance);

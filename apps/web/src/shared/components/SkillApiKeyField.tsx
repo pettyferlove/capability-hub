@@ -1,6 +1,10 @@
 import { useId } from 'react';
 import { checkLabelStyles, subtleStyles } from '../styles/recipes.js';
 
+/**
+ * Skill 的「需要 API Key」勾选项（受控）：勾上只是声明，平台不会代为校验或保存使用者的密钥，
+ * 具体配置方式要求写在 Skill 文档里——因此文案与提示必须一起展示，不能只留复选框。
+ */
 export function SkillApiKeyField({
   checked,
   onChange,

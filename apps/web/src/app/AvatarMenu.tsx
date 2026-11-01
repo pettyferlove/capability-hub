@@ -19,6 +19,10 @@ import { useState } from 'react';
 import { Button, Menu, MenuItem, MenuTrigger, Popover, Separator } from 'react-aria-components';
 import { UserAvatar } from '../shared/components/UserAvatar.js';
 import { useHub } from '../shared/context/HubContext.js';
+/**
+ * 账号菜单：资料/凭据/安全入口按需显示「团队与权限」（需 `capabilities.can_admin`），
+ * 菜单项用 `href` 走原生链接以保留浏览器行为。退出登录失败只在菜单内联提示，不关闭弹层也不阻塞再次点击。
+ */
 export function AvatarMenu() {
   const { me, logout } = useHub();
   const [error, setError] = useState('');

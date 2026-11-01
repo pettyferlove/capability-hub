@@ -25,11 +25,18 @@ function plain(node: ReactNode): string {
     )
     .join(' ');
 }
+/**
+ * 轻量表格外壳：在客户端对 `tbody` 内已渲染的文案做子串过滤，并为空结果补一行占位。
+ * 因为过滤基于已渲染内容，分页或服务端筛选仍然有效——它只缩小当前这一页；
+ * 搜索框在超过 10 行或已有输入时才出现，避免小表被工具栏挤占。
+ */
 export function DataTable({
   label,
   children,
 }: {
+  /** 表格名，同时用于标题、`aria-label` 与搜索框的无障碍名称。 */
   label: string;
+  /** 必须是单个 `<table>`；列数按 `thead` 首行各单元格的 `colSpan` 累加（缺省 1），用于让空态占满整行。 */
   children: ReactElement<React.TableHTMLAttributes<HTMLTableElement>>;
 }) {
   const [query, setQuery] = useState('');

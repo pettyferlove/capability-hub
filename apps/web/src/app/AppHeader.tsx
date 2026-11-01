@@ -39,6 +39,11 @@ const navigation = [
   { id: 'ai', label: 'AI 工作台', icon: Bot },
 ] as const;
 
+/**
+ * 顶栏：品牌、主导航、命令面板入口、主题与账号入口。
+ * 导航项按登录状态与能力裁剪（未登录只留目录与接入，无 AI 能力则隐藏 AI 工作台），
+ * 因此传入的 `page` 可能对应一个当前不可见的导航项。
+ */
 export function AppHeader({
   page,
   reviewCount,
@@ -48,10 +53,13 @@ export function AppHeader({
   returnTo = '/discover',
 }: {
   page: HubPage;
+  /** 待审核数量；0 时隐藏角标，只表示前端已知的数量，不代表全部队列。 */
   reviewCount: number;
   theme: ReturnType<typeof useTheme>;
+  /** 命令面板是否展开，用于 `aria-expanded`；展开状态由父组件持有。 */
   searchOpen: boolean;
   onSearch: () => void;
+  /** 登录链接的回跳地址，默认回到 `/discover`；只影响未登录时的登录按钮。 */
   returnTo?: string;
 }) {
   const { me } = useHub();

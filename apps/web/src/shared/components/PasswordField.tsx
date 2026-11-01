@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { InputField } from './InputField.js';
 
+/**
+ * 密码输入框（带显隐切换），始终 `required`。可见性只影响 `type`，值不受影响，
+ * 切换不会清空已输入内容；`minLength` 只是前端提示，服务端仍会独立校验。
+ */
 export function PasswordField({
   name,
   label,
@@ -10,7 +14,9 @@ export function PasswordField({
 }: {
   name: string;
   label: string;
+  /** 交给浏览器的自动填充语义：新密码用 `new-password`，登录/当前密码场景要改成 `current-password`。 */
   autoComplete?: string;
+  /** 最小长度，默认 12；与后端密码策略不一致时以这个为提交前提示。 */
   minimum?: number;
   placeholder?: string;
 }) {

@@ -2,9 +2,14 @@ import { reportError } from '../logging.js';
 import { readPreviewText } from './preview.js';
 export { PreviewUnavailable } from './preview.js';
 let csrfToken = '';
+/** 注入 CSRF 令牌来源：由 `use-session` 在登录/刷新会话成功后写入，退出或失败时清空。 */
 export function setCsrf(value: string): void {
   csrfToken = value;
 }
+/**
+ * 非 2xx 响应的统一形状，`message` 可直接展示给用户，`status`/`code`/`requestId` 供报障与分支判断。
+ * 401 的副作用已在 {@link api} 里处理完（派发 `hub:unauthenticated`），调用方通常只需展示 `message`。
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -42,7 +47,15 @@ async function responseError(response: Response, path: string): Promise<ApiError
   });
   return new ApiError(response.status, code, message, requestId);
 }
-/** JSON 传输边界；调用方显式使用共享响应类型。 */
+/**
+ * JSON 传输边界；调用方显式使用共享响应类型。
+ *
+ * 写请求自动带 `X-CSRF-Token`（值来自 {@link setCsrf}）与未显式提供时的 `Idempotency-Key`，
+ * 因此重试同一调用不要自己生成 key，否则服务端会当成两次操作。
+ * `redirect: 'error'` 用来暴露登录重定向，避免把 HTML 登录页当 JSON 解析。
+ * 非 2xx 一律抛 {@link ApiError}；401 且目标不是 `/auth/*` 或 `/api/me` 时还会派发
+ * `hub:unauthenticated`，让全局退回登录态。204 返回 `undefined`，调用方不要解构结果。
+ */
 export async function api<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body && !(options.body instanceof FormData))
@@ -65,6 +78,11 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
+/**
+ * 写操作的便捷封装：`revision` 会变成带引号的 `If-Match`，服务端据此做乐观并发校验，
+ * 版本已变时返回 412 并抛 {@link ApiError}，调用方应提示刷新而不是静默重试。
+ * 未传 `revision` 时不带条件头；要求并发校验的接口会以 428/`IF_MATCH_REQUIRED` 拒绝。
+ */
 export function mutate<T = void>(
   path: string,
   body: unknown,
@@ -77,6 +95,13 @@ export function mutate<T = void>(
     headers: revision !== undefined ? { 'If-Match': `"${revision}"` } : undefined,
   });
 }
+/**
+ * 读取归档内单个文件的预览文本。`management` 为真时读候选版本（需登录且通过候选访问授权，
+ * 服务端会写管理读取审计），否则只读已发布版本；同一 `path` 两条路径的可见性不同，不要混用。
+ *
+ * @param version - 版本 id 而非资产 id，预览始终指向具体版本。
+ * @param signal - 取消信号；版本切换时必须 abort，否则迟到响应会覆盖当前文件内容。
+ */
 export async function fileText(
   version: string,
   path: string,
@@ -88,11 +113,19 @@ export async function fileText(
   if (!response.ok) throw await responseError(response, url);
   return readPreviewText(response);
 }
+/** SSE 帧被解析后的形状；`data` 已按 JSON 解析，解析失败会中断整条流而不是跳过该帧。 */
 export interface ServerEvent {
+  /** 帧的 `event:` 字段，缺省为 `message`。 */
   event: string;
+  /** 帧的 `id:` 字段，缺省为空串；回传它可让服务端从断点续推。 */
   id: string;
   data: unknown;
 }
+/**
+ * 订阅 SSE：连接前带上 `Last-Event-ID` 续传，收到 `data:` 才回调（心跳与注释帧被忽略）。
+ * 单条流累计缓冲超过 8MB 抛 502/`STREAM_LIMIT`，防止服务端异常输出撑爆内存。
+ * 返回即代表正常结束或 `signal` 被 abort；读流会在 `finally` 中取消并释放锁，不会留下悬挂连接。
+ */
 export async function streamEvents(
   path: string,
   onEvent: (event: ServerEvent) => void,

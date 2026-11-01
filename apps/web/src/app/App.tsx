@@ -40,6 +40,12 @@ const pagePlaceholders = {
   login: { title: '登录', variant: 'profile' },
   ai: { title: 'AI 工作台', variant: 'cards' },
 } as const;
+/**
+ * 应用外壳：先决定整个界面处在「加载中 / 启动失败 / 需登录 / 已就绪」哪一支，只有就绪后才挂载各页面，
+ * 因此页面组件可以假定 `me` 存在，不必各自重复鉴权。
+ * 会话未确定时统一渲染 {@link LoadingScope} 而不是分页渲染，避免子页面先发出会 401 的请求。
+ * `HubCtx` 以用户 id 作为 key：切换账号会重建整棵子树，上一个账号的页面状态不会带过来。
+ */
 export default function App() {
   const view = useAppRoute();
   const [refresh, setRefresh] = useState(0);

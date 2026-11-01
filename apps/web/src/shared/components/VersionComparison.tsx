@@ -4,6 +4,11 @@ import { Glyph } from './Glyph.js';
 
 type Snapshot = NonNullable<ManagementAssetResponse['current_version']>;
 
+/**
+ * 审核用的版本对比：两版点阵同源于 `content_digest`，因此「内容未变化」（摘要相同）时不会出现描边，
+ * 有差异也只有点阵描边——它只提示「变了」，具体改动仍以文件差异为准。
+ * `previous` 为空表示首次发布，此时左侧显示「尚未发布」而不是隐藏整栏，以保持左右可对齐阅读。
+ */
 export function VersionComparison({
   kind,
   previous,
@@ -11,10 +16,15 @@ export function VersionComparison({
   previousLabel = '当前发布',
   candidateLabel = '本次快照',
 }: {
+  /** 资产类型，决定点阵配色（skill/mcp）与文案；必须与候选版本本身的类型一致。 */
   kind: ManagementAssetResponse['kind'];
+  /** 当前已发布快照；`null` 表示尚无基线。 */
   previous: Snapshot | null;
+  /** 待审核的候选快照，必有值。 */
   candidate: Snapshot;
+  /** 左栏标签，缺省「当前发布」；不同审核场景（如对比上一候选）可改写。 */
   previousLabel?: string;
+  /** 右栏标签，缺省「本次快照」。 */
   candidateLabel?: string;
 }) {
   const same = previous?.content_digest === candidate.content_digest;

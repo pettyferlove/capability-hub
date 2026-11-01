@@ -18,6 +18,10 @@ const modes = [
   { id: 'system', name: '跟随系统', icon: Monitor },
 ] as const;
 
+/**
+ * 外观选择弹层：明暗模式与配色互相独立，改动立即生效并写入本浏览器（不入账号）。
+ * 选择值取自 {@link useTheme} 的返回值，非法值被忽略而不回退，因此 UI 不会显示一个并未应用的选项。
+ */
 export function ThemePicker({ palette, mode, setPalette, setMode }: ReturnType<typeof useTheme>) {
   return (
     <DialogTrigger>

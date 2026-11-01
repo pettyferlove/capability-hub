@@ -11,13 +11,19 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
 import { spring } from '../motion/transitions.js';
+/**
+ * 复制按钮：写完剪贴板后 1.6s 内显示「已复制」再自动复原，并用 `aria-live` 播报结果。
+ * 浏览器拒绝写剪贴板时只弹提示，不进入成功态；需要的是 HTTPS 或 localhost 环境。
+ */
 export function CopyButton({
   text,
   label = '复制',
   variant = 'code',
 }: {
   text: string;
+  /** 空闲态文案，同时作为 `aria-label`；成功态固定显示「已复制」。 */
   label?: string;
+  /** `primary` 为强调按钮，`code` 为代码块内的紧凑样式，两者高度与配色不同。 */
   variant?: 'code' | 'primary';
 }) {
   const [done, setDone] = useState(false);

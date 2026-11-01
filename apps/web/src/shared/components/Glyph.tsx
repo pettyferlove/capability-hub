@@ -28,6 +28,12 @@ export function cells(seed: string): boolean[] {
   return out;
 }
 
+/**
+ * 由 `seed` 决定的 5×5 镜像点阵图：同一种子永远得到同一图案，因此可用它作为资产/用户的稳定标识。
+ * `diffWith` 会以红色描边标出与另一图案不同的格子，用于版本对比。
+ * 纯展示组件，不读全局状态；`seed` 以 `sha256:` 开头时无障碍标签取哈希前缀，否则用品牌名，
+ * 因此它可作为 `role="img"` 被读屏朗读。
+ */
 export function Glyph({
   seed,
   kind,

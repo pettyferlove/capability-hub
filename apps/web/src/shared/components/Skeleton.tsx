@@ -108,12 +108,19 @@ function Lines({ count = 3 }: { count?: number }) {
   );
 }
 
+/**
+ * 卡片网格占位；`variant` 决定单卡内部的骨架形状（`asset` 带标签行、`source` 带来源结构、
+ * `role` 为角色行、`stat` 为指标数字），应与真实网格的变体保持一致，否则加载完成会明显跳一下。
+ * 可见性同样走 180ms 延迟，短暂加载不会闪出骨架。
+ */
 export function CardGridSkeleton({
   label = '正在加载资产…',
   count = 3,
   variant = 'asset',
 }: {
+  /** 读屏播报文案，缺省「正在加载资产…」。 */
   label?: string;
+  /** 占位卡片数量，默认 3；不参与布局计算，只影响观感，通常传一屏可见数量。 */
   count?: number;
   variant?: 'asset' | 'source' | 'role' | 'stat';
 }) {
@@ -176,13 +183,19 @@ export function CardGridSkeleton({
   );
 }
 
+/**
+ * 表格占位；列数写入 CSS 变量 `--skeleton-columns` 由样式决定栅格。
+ * 单元格宽度按行列错位变化，避免骨架呈现严格等宽网格被误认为真实数据。
+ */
 export function TableSkeleton({
   label = '正在加载表格…',
   rows = 5,
   columns = 4,
 }: {
   label?: string;
+  /** 占位行数，默认 5；只是视觉密度，与真实分页大小无关。 */
   rows?: number;
+  /** 列数，默认 4；必须与真实表头列数一致，否则切换时会横向跳动。 */
   columns?: number;
 }) {
   const cells = Array.from({ length: columns }, (_, i) => i);
@@ -230,6 +243,7 @@ function ListPlaceholder({ rows }: { rows: number }) {
   );
 }
 
+/** 列表行占位（图标块 + 两行文字 + 尾部按钮），用于记录流；`rows` 默认 3，行序不影响语义。 */
 export function ListSkeleton({
   label = '正在加载记录…',
   rows = 3,
@@ -260,6 +274,7 @@ function FormPlaceholder({ fields, action = true }: { fields: number; action?: b
   );
 }
 
+/** 键值摘要占位（左标签、右取值）；`rows` 默认 5，宽度错位，用于状态面板类区块。 */
 export function SummarySkeleton({
   label = '正在加载状态…',
   rows = 5,
@@ -283,6 +298,7 @@ export function SummarySkeleton({
   );
 }
 
+/** 个人中心布局占位：上方资料横幅 + 左侧表单卡 + 右侧列表与说明卡，比例需与真实页面一致。 */
 export function ProfileSkeleton() {
   return (
     <SkeletonRegion label="正在加载个人资料…">
@@ -322,6 +338,7 @@ function CodePlaceholder({ lines = 12 }: { lines?: number }) {
   );
 }
 
+/** 代码区占位（行号块 + 长短交错的行），用于固定版本文件预览；行数是观感值，与文件真实行数无关。 */
 export function CodeSkeleton({ label = '正在读取固定版本内容…' }: { label?: string }) {
   return (
     <SkeletonRegion label={label}>
@@ -330,6 +347,7 @@ export function CodeSkeleton({ label = '正在读取固定版本内容…' }: { 
   );
 }
 
+/** 资产详情抽屉占位：标题块 + 元信息宫格 + 标签条 + 正文行，结构与详情页一致以避免打开时跳动。 */
 export function DetailSkeleton() {
   return (
     <SkeletonRegion label="正在加载资产详情…">
@@ -352,6 +370,7 @@ export function DetailSkeleton() {
   );
 }
 
+/** 审核工作台占位：左收件箱列表 + 右侧决策卡与代码预览，比例需与真实两栏一致。 */
 export function ReviewSkeleton() {
   return (
     <SkeletonRegion label="正在加载审核队列…">
@@ -374,10 +393,16 @@ export function ReviewSkeleton() {
   );
 }
 
+/**
+ * 页面级占位：`variant` 逐一对应真实页面布局（`roles` 与 `profile` 是个人中心的两个子视图）。
+ * 标题在骨架阶段就渲染真实 `<h1>`，让标题立即可见并减少懒加载组件到达后的位移；
+ * 该 `h1` 与页面自身的 {@link PageHead} 不会同时出现，因为二者处于互斥的渲染分支。
+ */
 export function PageSkeleton({
   title,
   variant = 'cards',
 }: {
+  /** 真实页面标题，直接作为骨架的 `h1` 与读屏文案。 */
   title: string;
   variant?: 'cards' | 'table' | 'review' | 'connect' | 'publish' | 'profile' | 'roles';
 }) {

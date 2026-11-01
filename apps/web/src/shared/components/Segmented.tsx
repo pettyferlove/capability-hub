@@ -12,6 +12,12 @@ interface Highlight {
   height: number;
   animate: boolean;
 }
+/**
+ * 单选分段控件（`radiogroup`）：选中背景块用 ResizeObserver 量出的位置绘制，
+ * 尺寸变化（换行、字体加载）后直接重定位不带动画，只有切换选择才播放过渡；`reduceMotion` 时始终瞬时。
+ * 方向键/Home/End 会在选项间移动并同步聚焦，`aria-checked` 与 `value` 必须由调用方保持一致。
+ * `id` 写到 `data-segmented` 供样式定位，必须页内唯一。
+ */
 export function Segmented<T extends string>({
   options,
   value,

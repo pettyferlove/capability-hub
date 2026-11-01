@@ -14,6 +14,10 @@ function headingText(node: ReactNode): string {
     )
     .join('');
 }
+/**
+ * 标题锚点：小写后去掉字母数字/空白/`_`/`-` 以外的字符（按 Unicode 字母表，中文会保留），空白折叠成 `-`。
+ * 本函数不处理同名标题，重复编号由调用方根据出现次数追加。
+ */
 export function markdownAnchor(text: string) {
   return text
     .toLowerCase()
@@ -21,9 +25,14 @@ export function markdownAnchor(text: string) {
     .trim()
     .replace(/\s+/g, '-');
 }
+/** 去掉开头的 YAML front matter；只有成对的 `---` 才被当作元数据，未闭合时原样保留，避免吞掉正文。 */
 export function markdownBody(text: string) {
   return text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '');
 }
+/**
+ * 取 `href` 中 `#` 之后的片段并解码一次；无片段或百分号编码非法时返回 `undefined`，
+ * 让调用方按「没有锚点」处理而不是抛错。
+ */
 export function referenceAnchor(href: string) {
   const fragment = href.indexOf('#');
   if (fragment < 0) return;
@@ -33,6 +42,12 @@ export function referenceAnchor(href: string) {
     return;
   }
 }
+/**
+ * 在渲染结果内滚动到 `data-anchor` 匹配的标题；只调整最近的纵向可滚动祖先的 `scrollTop`，
+ * 不调用 `scrollIntoView`，以免连带移动整页或其它滚动容器。`scrollMarginTop` 作为粘性头部补偿。
+ *
+ * @returns 是否找到目标；找不到时容器位置保持不变。
+ */
 export function scrollMarkdownAnchor(root: HTMLElement, anchor: string) {
   const target = Array.from(root.querySelectorAll<HTMLElement>('[data-anchor]')).find(
     (element) => element.dataset.anchor === anchor,
@@ -48,6 +63,11 @@ export function scrollMarkdownAnchor(root: HTMLElement, anchor: string) {
   return true;
 }
 
+/**
+ * 把文档里的相对链接解析成同一版本内的文件路径：以 `currentFile` 所在目录为基准处理 `./` 与 `../`。
+ * 纯锚点、绝对 URL、协议链接、以 `/` 开头或含反斜杠的路径一律返回 `undefined`（不预览、也不猜），
+ * 指向目录时退回该目录下的首个文件，保证「链接到一个目录」也能点开东西。
+ */
 export function snapshotReference(currentFile: string, paths: string[], href: string) {
   if (href.startsWith('#') || /^[a-z][a-z0-9+.-]*:/i.test(href)) return;
   let path: string;
@@ -70,6 +90,13 @@ export function snapshotReference(currentFile: string, paths: string[], href: st
   );
 }
 
+/**
+ * 渲染不受信任的 README/Markdown：`skipHtml` 丢弃原始 HTML，图片不外链加载（只留占位文字），
+ * 链接只对 `http(s)` 输出真实 `href`，其余退化为无地址的锚点，避免 `javascript:` 之类被执行。
+ * 站内相对链接改写成按钮并回调 `onOpen`，由上层按固定版本取文件内容，
+ * 因此点击不会离开当前预览，也不会跳出到归档外的路径。
+ * 标题锚点带 `useId` 前缀，同页多个文档不会互相冲突。
+ */
 export function SafeMarkdown({
   text,
   currentFile,
@@ -77,8 +104,11 @@ export function SafeMarkdown({
   onOpen,
 }: {
   text: string;
+  /** 当前文件在归档内的路径，用作相对链接的解析基准。 */
   currentFile: string;
+  /** 该版本的全部文件路径，用于把引用落地到真实文件或目录下的首个文件。 */
   paths: string[];
+  /** 点击归档内引用时触发，`anchor` 为链接里的片段（无片段时为 `undefined`）。 */
   onOpen: (path: string, anchor?: string) => void;
 }) {
   const prefix = useId();

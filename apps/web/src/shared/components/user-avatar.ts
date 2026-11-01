@@ -1,3 +1,4 @@
+/** 头像可选配色；`id` 会持久化到账号数据，改名会让既有头像失去配色，只能新增不能重命名。 */
 export const avatarPalettes = [
   { id: 'teal', label: '鼠尾草', color: 'var(--avatar-teal)' },
   { id: 'blue', label: '雾蓝', color: 'var(--avatar-blue)' },
@@ -6,9 +7,13 @@ export const avatarPalettes = [
   { id: 'rose', label: '灰玫瑰', color: 'var(--avatar-rose)' },
 ] as const;
 
+/** {@link avatarPalettes} 中存在的配色 id；用于校验账号里存下来的值而不必信任后端字段。 */
 export type AvatarColor = (typeof avatarPalettes)[number]['id'];
 
-/** 账号标识决定左右对称点阵，不随名称、配色、主题和尺寸变化。 */
+/**
+ * 账号标识决定左右对称点阵，不随名称、配色、主题和尺寸变化。
+ * 输出 25 个布尔值（5 行 × 5 列，按行优先），每行至少亮一组点，保证小尺寸下仍有可辨识图案。
+ */
 export function avatarDesign(identity: string) {
   let state = 0x811c9dc5;
   for (const character of 'capability-hub/avatar/' + identity) {

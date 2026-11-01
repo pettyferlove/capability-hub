@@ -13,6 +13,12 @@ import { FocusScope, useOverlay, usePreventScroll } from 'react-aria';
 
 import { softSpring, spring } from '../motion/transitions.js';
 import { LoadingScope } from './LoadingScope.js';
+/**
+ * 弹层基座：portal 到 `body`，Esc 与点击遮罩都会走 `onClose`（`isDismissable`），
+ * 打开期间锁滚动、把焦点圈在弹层内并在关闭后还给触发元素。
+ * 内部自带 {@link LoadingScope}，因此弹层里的加载占位与页面占位各自计时，不会互相牵连。
+ * `reduceMotion` 生效时动画时长归零，但仍保留挂载/卸载时序。
+ */
 export function Overlay({
   open,
   onClose,
@@ -23,11 +29,16 @@ export function Overlay({
   loadingKey,
 }: {
   open: boolean;
+  /** 由外部持有开关状态；调用方负责同步路由或按钮状态。 */
   onClose: () => void;
+  /** 弹层的无障碍名称（`aria-label`），同时是加载作用域的兜底 key。 */
   label: string;
   children: ReactNode;
+  /** `sheet` 右侧抽屉、`palette` 顶部居中面板、`showcase` 居中展示，三者的遮罩与尺寸规则不同。 */
   variant: 'sheet' | 'palette' | 'showcase';
+  /** 只在 `sheet` 上生效：`wide` 放宽抽屉，`workspace` 在宽屏占 60vw；其余变体忽略此值。 */
   size?: 'default' | 'wide' | 'workspace';
+  /** 内容切换时用它重置加载计时（如详情 slug），缺省回落到 `label`。 */
   loadingKey?: string;
 }) {
   const dialog = useRef<HTMLDivElement>(null);
