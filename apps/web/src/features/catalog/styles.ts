@@ -248,9 +248,9 @@ export const catalogSearchClearStyles = cn(
 );
 
 export const quickSearchStyles = cn(
-  'relative flex items-center flex-nowrap gap-[9px] mt-3.5 text-[length:11px] text-muted-ink min-h-7',
-  'overflow-x-auto [overscroll-behavior-x:contain] [scrollbar-width:none] whitespace-nowrap',
-  '[&_>_*]:shrink-0 max-[600px]:gap-1.5 max-[600px]:text-[length:11px]',
+  'relative flex items-center flex-wrap gap-x-[9px] gap-y-2 max-w-162.5 mt-3.5 text-[length:11px]',
+  'text-muted-ink min-h-7 whitespace-nowrap [&_>_*]:shrink-0 max-[600px]:gap-x-1.5',
+  'max-[600px]:gap-y-1.5 max-[600px]:text-[length:11px]',
   "[[class~='group/discover']_&]:mt-[11px]",
 );
 
