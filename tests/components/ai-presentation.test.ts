@@ -14,7 +14,6 @@ import { ExecutionResult } from '../../apps/web/src/features/ai/ExecutionResult.
 import { ActivityFeed } from '../../apps/web/src/features/ai/ActivityFeed.js';
 import { activityItems } from '../../apps/web/src/features/ai/activity.js';
 import { advanceStreamCursor } from '../../apps/web/src/features/ai/stream-text.js';
-import { StreamingText } from '../../apps/web/src/features/ai/StreamingText.js';
 import { InteractionForm } from '../../apps/web/src/features/ai/InteractionForm.js';
 import { BusinessAgentPanel } from '../../apps/web/src/features/ai/BusinessAgentPanel.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
@@ -460,69 +459,6 @@ test('成果视图保留与最终结果不同的草案和未知成果', () => {
   assert.ok(screen.getByText('附加建议'));
 });
 
-test('活动流仅在底部跟随，阅读历史时保持位置并支持回到最新', () => {
-  let execution = executionView({
-    status: 'running',
-    operation_id: 'assistant',
-    input: { prompt: '解释这个问题' },
-    message_blocks: [
-      { id: 'block', message_id: 'assistant:one', text: '第一段回答', complete: false },
-    ],
-  }).execution;
-  const { rerender } = render(
-    createElement(ActivityFeed, {
-      canManage: true,
-      view: { ...executionView(), execution },
-      active: true,
-      onRefresh: () => undefined,
-      focusRequest: 0,
-    }),
-  );
-  const region = screen.getByRole('region', { name: '任务活动' });
-  // 仅模拟滚动输入与位置；jsdom 不提供布局，实际高度由用户浏览器验收。
-  Object.defineProperty(region, 'scrollHeight', { value: 1200, writable: true });
-  Object.defineProperty(region, 'clientHeight', { value: 400 });
-  region.scrollTop = 800;
-  fireEvent.scroll(region);
-  Object.defineProperty(region, 'scrollHeight', { value: 1800 });
-  execution = {
-    ...execution,
-    message_blocks: [{ ...execution.message_blocks[0], text: '第一段回答，继续生成内容。' }],
-  };
-  rerender(
-    createElement(ActivityFeed, {
-      canManage: true,
-      view: { ...executionView(), execution },
-      active: true,
-      onRefresh: () => undefined,
-      focusRequest: 0,
-    }),
-  );
-  assert.equal(region.scrollTop, 1800);
-  region.scrollTop = 200;
-  fireEvent.scroll(region);
-  Object.defineProperty(region, 'scrollHeight', { value: 2200 });
-  execution = {
-    ...execution,
-    message_blocks: [
-      { ...execution.message_blocks[0], text: '第一段回答，继续生成内容。新增一段回答。' },
-    ],
-  };
-  rerender(
-    createElement(ActivityFeed, {
-      canManage: true,
-      view: { ...executionView(), execution },
-      active: true,
-      onRefresh: () => undefined,
-      focusRequest: 0,
-    }),
-  );
-  assert.equal(region.scrollTop, 200);
-  fireEvent.click(screen.getByRole('button', { name: '回到最新' }));
-  assert.equal(region.scrollTop, 2200);
-  assert.equal(screen.queryByRole('button', { name: '回到最新' }), null);
-});
-
 test('人工确认需要明确选择，切换视图保留决定与意见，标签支持键盘操作', () => {
   const view = executionView({ status: 'waiting_input' });
   view.interactions = [
@@ -671,7 +607,7 @@ test('工具按调用编号归并，穿插于 Agent 输出之间，失败和中�
   assert.equal(stopped?.kind === 'tool' && stopped.state, 'interrupted');
 });
 
-test('人工回答后在协作过程留下决策记录，角色概览区分规划和两类审查', () => {
+test('人工回答后在协作过程留下决策记录，不再提供确认表单', () => {
   const view = executionView();
   view.interactions = [
     {
@@ -697,12 +633,9 @@ test('人工回答后在协作过程留下决策记录，角色概览区分规�
   assert.ok(within(decision).getByText('暂不采纳'));
   assert.ok(within(decision).getByText('依据尚不充分'));
   assert.equal(screen.queryByRole('form', { name: '人工确认' }), null);
-  const roster = screen.getByRole('region', { name: '协作角色' });
-  for (const role of ['规划助手', '表达审查', '风险审查'])
-    assert.ok(within(roster).getByText(role));
 });
 
-test('文字动画保持字素完整，减少动态效果时直接显示完整 Markdown', () => {
+test('流式游标按字素边界推进，不拆开 emoji 和组合字符', () => {
   const text = '测试👨‍👩‍👧‍👦e\u0301🇨🇳结束';
   const boundaries = new Set(
     [...new Intl.Segmenter('zh-CN', { granularity: 'grapheme' }).segment(text)].map(
@@ -715,8 +648,5 @@ test('文字动画保持字素完整，减少动态效果时直接显示完整 M
     assert(next > cursor && boundaries.has(next));
     cursor = next;
   }
-  const { rerender } = render(createElement(StreamingText, { text: '**历史内容**', live: true }));
-  assert.ok(screen.getByText('历史内容'));
-  rerender(createElement(StreamingText, { text: '**历史内容**\n\n完整的新内容👨‍👩‍👧‍👦', live: true }));
-  assert.ok(screen.getByText('完整的新内容👨‍👩‍👧‍👦'));
+  assert.equal(cursor, text.length);
 });

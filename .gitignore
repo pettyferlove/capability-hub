@@ -30,5 +30,49 @@ dist-ssr
 output/
 *.tsbuildinfo
 
-# Local AI notes and runtime artifacts; shared tooling and specs remain trackable
-/.agents/local/
+### AI Agents ###
+
+# Claude Code
+.claude/*
+!.claude/settings.json
+!.claude/agents/
+!.claude/commands/
+!.claude/skills/
+!.claude/rules/
+!.claude/hooks/
+!.claude/output-styles/
+CLAUDE.local.md
+
+# Codex
+.codex/*
+!.codex/config.toml
+!.codex/agents/
+
+# Agent Skills
+.agents/*
+!.agents/skills/
+!.agents/plugins/
+
+# Cursor
+.cursor/*
+!.cursor/rules/
+!.cursor/commands/
+
+# Trae
+.trae/*
+!.trae/rules/
+
+# oh-my-pi
+.omp/*
+!.omp/rules/
+
+# oh-my-claudecode
+.omc/*
+!.omc/skills/
+.omc-workspace
+
+# oh-my-codex
+.omx/
+
+# Local context
+*.local.md
