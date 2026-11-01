@@ -12,6 +12,13 @@ import {
   type SQLiteTableExtraConfigValue,
 } from 'drizzle-orm/sqlite-core';
 
+/**
+ * 记录表的统一形状：整条记录放在 `data` JSON 里，另用 STORED 生成列把需要约束或索引的字段
+ * （如 `username`）物化出来，唯一约束、索引与外键都作用在这些真实列上，而写入方只需提交 JSON。
+ * `*_data_check` 要求 `json_valid`、为对象且 `$.id` 等于主键，生成列因此不会与 JSON 内容分叉。
+ * 注意外键只在开启 `PRAGMA foreign_keys`（见 `openSqliteDriver`）的连接上生效。
+ * 本表：`username` 唯一，登录与重命名冲突都由它裁决，不需要先查后写。
+ */
 export const users = sqliteTable(
   'users',
   {
@@ -30,6 +37,7 @@ export const users = sqliteTable(
   ],
 );
 
+/** 组名唯一；`sources`/`assets` 的归属组外键指向本表，被引用时删除会被拒绝。 */
 export const groups = sqliteTable(
   'groups',
   {
@@ -48,6 +56,7 @@ export const groups = sqliteTable(
   ],
 );
 
+/** `(user_id, group_id)` 唯一，同一成员关系不会重复；两个外键保证用户与组都真实存在。 */
 export const memberships = sqliteTable(
   'memberships',
   {
@@ -71,6 +80,7 @@ export const memberships = sqliteTable(
   ],
 );
 
+/** 角色名唯一；`role_bindings.role_id` 引用本表。 */
 export const roles = sqliteTable(
   'roles',
   {
@@ -89,6 +99,10 @@ export const roles = sqliteTable(
   ],
 );
 
+/**
+ * 只对 `role_id` 建外键：授权主体可能是用户或组，单列外键表达不了这种二选一，
+ * `principal_id` 的合法性由应用层保证，因此主体被删除后数据库不会阻止留下孤立绑定。
+ */
 export const role_bindings = sqliteTable(
   'role_bindings',
   {
@@ -110,6 +124,7 @@ export const role_bindings = sqliteTable(
   ],
 );
 
+/** 归属组外键指向 `groups`，组被引用时无法删除；`owner_group_id` 由 `data` 生成，不能单独改写。 */
 export const sources = sqliteTable(
   'sources',
   {
@@ -129,6 +144,11 @@ export const sources = sqliteTable(
   ],
 );
 
+/**
+ * `slug` 唯一；`current_release_id` 用复合外键
+ * `(id, current_release_id) → releases(asset_id, id)`，因此「当前发布」必须既存在又属于本资产，
+ * 跨资产引用会被存储层拒绝。
+ */
 export const assets = sqliteTable(
   'assets',
   {
@@ -164,6 +184,10 @@ export const assets = sqliteTable(
   ],
 );
 
+/**
+ * 两个部分唯一索引只在 `retired_at IS NULL` 时生效：同一资产最多一个活跃绑定、
+ * 同一来源路径最多一个活跃绑定；已退役的历史绑定可以无限累积而不冲突。
+ */
 export const bindings = sqliteTable(
   'bindings',
   {
@@ -196,6 +220,7 @@ export const bindings = sqliteTable(
   ],
 );
 
+/** `intake_asset` 索引支撑按资产翻导入记录；被引用的资产、来源、绑定任一都不能直接删除。 */
 export const intakes = sqliteTable(
   'intakes',
   {
@@ -223,6 +248,7 @@ export const intakes = sqliteTable(
   ],
 );
 
+/** `(asset_id, version_label)` 唯一，同一资产内版本号不重复；`versions_asset` 供按资产列举。 */
 export const versions = sqliteTable(
   'versions',
   {
@@ -246,6 +272,7 @@ export const versions = sqliteTable(
   ],
 );
 
+/** 扫描记录通过 `version_id` 挂在版本上，被引用的版本不能先被删除。 */
 export const scans = sqliteTable(
   'scans',
   {
@@ -264,6 +291,10 @@ export const scans = sqliteTable(
   ],
 );
 
+/**
+ * 资产与来源导入两条索引支撑审核列表分页；四个外键（资产/版本/导入/扫描）
+ * 使被引用的上游记录无法被单独删除，审核链因此保持完整。
+ */
 export const requests = sqliteTable(
   'requests',
   {
@@ -297,6 +328,11 @@ export const requests = sqliteTable(
   ],
 );
 
+/**
+ * `request_id` 唯一：一次审核请求只能产出一个发布，重复发布由约束拒绝；
+ * `(asset_id, release_seq)` 唯一给发布序号定序；`(asset_id, id)` 唯一是
+ * `assets.current_release_id` 复合外键的引用目标。
+ */
 export const releases = sqliteTable(
   'releases',
   {
@@ -330,6 +366,10 @@ export const releases = sqliteTable(
   ],
 );
 
+/**
+ * `jobs_schedule` 索引 `(state, run_after)` 是轮询到期任务的主路径；
+ * 不设外键——任务与业务聚合的关联只靠 `aggregate_id`，清理聚合时不会阻塞也不会级联。
+ */
 export const jobs = sqliteTable(
   'jobs',
   {
@@ -352,6 +392,10 @@ export const jobs = sqliteTable(
   ],
 );
 
+/**
+ * 审计只物化 `occurred_at` 用于时间检索，刻意不设任何外键：
+ * 主体被删除时删除操作不被阻塞，审计记录也不会被级联清除。
+ */
 export const audit = sqliteTable(
   'audit',
   {
@@ -369,6 +413,7 @@ export const audit = sqliteTable(
   ],
 );
 
+/** 会话归 `user_id` 所有；该用户被引用期间删除会被外键拒绝，需先清理会话。 */
 export const sessions = sqliteTable(
   'sessions',
   {
@@ -387,6 +432,7 @@ export const sessions = sqliteTable(
   ],
 );
 
+/** 个人访问令牌归 `user_id` 所有；外键行为与 `sessions` 一致。 */
 export const tokens = sqliteTable(
   'tokens',
   {
@@ -405,6 +451,7 @@ export const tokens = sqliteTable(
   ],
 );
 
+/** 客户端注册表只有 JSON 载荷，无生成列与外键，因此删除其它记录不会牵连已注册客户端。 */
 export const oauth_clients = sqliteTable(
   'oauth_clients',
   {
@@ -419,6 +466,7 @@ export const oauth_clients = sqliteTable(
   ],
 );
 
+/** 按客户端、按用户两条索引支撑列举授权；本表又被 `oauth_requests`/`oauth_credentials` 引用。 */
 export const oauth_grants = sqliteTable(
   'oauth_grants',
   {
@@ -443,6 +491,7 @@ export const oauth_grants = sqliteTable(
   ],
 );
 
+/** 三条索引分别支撑按客户端、用户、授权查询待处理请求；三个外键阻止上游记录被删除。 */
 export const oauth_requests = sqliteTable(
   'oauth_requests',
   {
@@ -472,6 +521,7 @@ export const oauth_requests = sqliteTable(
   ],
 );
 
+/** 授权换出的凭据以 `grant_id` 索引，按授权定位或撤销；授权存在期间不能删除。 */
 export const oauth_credentials = sqliteTable(
   'oauth_credentials',
   {
@@ -491,6 +541,7 @@ export const oauth_credentials = sqliteTable(
   ],
 );
 
+/** 用户维护的 Git 凭据；`user_id` 外键存在，被引用期间用户无法删除。 */
 export const git_credentials = sqliteTable(
   'git_credentials',
   {
@@ -509,6 +560,10 @@ export const git_credentials = sqliteTable(
   ],
 );
 
+/**
+ * `(principal_id, route, KEY)` 唯一：幂等键的作用域是「主体 + 路由」，不同接口可复用同一键值。
+ * 列名 `KEY` 沿用 SQL 保留字，生成 DDL/DML 时需要引号转义。
+ */
 export const idempotency = sqliteTable(
   'idempotency',
   {
@@ -531,6 +586,7 @@ export const idempotency = sqliteTable(
   ],
 );
 
+/** 只物化 `window_expires_at` 供清理过期窗口；不设外键，未登录态的尝试也必须能记录。 */
 export const login_attempts = sqliteTable(
   'login_attempts',
   {
@@ -548,6 +604,7 @@ export const login_attempts = sqliteTable(
   ],
 );
 
+/** `code` 唯一：设备码被并发提交时由存储层裁决唯一成功者；不设外键，码在确认前尚未绑定用户。 */
 export const cli_logins = sqliteTable(
   'cli_logins',
   {
@@ -565,6 +622,7 @@ export const cli_logins = sqliteTable(
   ],
 );
 
+/** 场景名唯一；场景内容整体落在 `data` 中，不参与任何外键。 */
 export const scenarios = sqliteTable(
   'scenarios',
   {
@@ -583,6 +641,7 @@ export const scenarios = sqliteTable(
   ],
 );
 
+/** `(user_id, version_id)` 唯一：同一用户对同一版本只有一条推荐，重复推荐必须更新而非新增。 */
 export const recommendations = sqliteTable(
   'recommendations',
   {
@@ -606,6 +665,10 @@ export const recommendations = sqliteTable(
   ],
 );
 
+/**
+ * 全局版本计数器：`id = 1` 的 check 保证只有一行；迁移安装的触发器在业务表写入后自增，
+ * `revision()` 读取它判断是否需要刷新缓存。
+ */
 export const hub_revision = sqliteTable(
   'hub_revision',
   {
@@ -615,6 +678,10 @@ export const hub_revision = sqliteTable(
   (_t): SQLiteTableExtraConfigValue[] => [check('hub_revision_id_check', sql`id = 1`)],
 );
 
+/**
+ * `(submitted_by, request_key)` 唯一，使同一用户的重试提交不会产生第二条反馈；
+ * `asset_feedback_asset` 支撑按资产列举，三个外键锁定资产/版本/提交人。
+ */
 export const asset_feedback = sqliteTable(
   'asset_feedback',
   {

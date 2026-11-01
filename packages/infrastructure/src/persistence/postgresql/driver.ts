@@ -7,12 +7,26 @@ import { PgQueries } from './record-queries.js';
 import { initializePostgresSchema, mutationLock } from './initialize.js';
 import type { RecordDriver } from '../record-driver.js';
 
+/** PostgreSQL 驱动的连接参数；`onPoolError` 必须自行记录，否则空闲连接的异步错误会丢失。 */
 export interface PostgresOptions {
   driver: 'postgresql';
   url: string;
+  /** 连接池上限，默认 10。 */
   poolSize?: number;
+  /** 池级错误回调：空闲连接断开、服务端主动结束会话等都会走到这里。 */
   onPoolError: (error: Error) => void;
 }
+/**
+ * 打开 PostgreSQL 驱动并就地完成迁移，返回 {@link RecordDriver}。
+ *
+ * 超时与连接：建连 5 秒、单条语句 15 秒、事务空闲 30 秒即被服务端回收；池上限取 `poolSize ?? 10`，
+ * 池耗尽会让调用方排队而不是快速失败。启动阶段先取事务级 advisory lock
+ * （{@link mutationLock}）再跑迁移，多实例同时启动时只有一个实例真正执行迁移。
+ *
+ * 事务隔离：每个事务从池里独占一个 client，出错后若错误来自 begin/commit/rollback 本身，
+ * 说明连接状态不可信，该 client 会被直接丢弃而不是归还池。初始化失败时关闭整个池后再抛出，
+ * 不会留下半初始化的驱动。
+ */
 export async function openPostgresDriver(options: PostgresOptions): Promise<RecordDriver> {
   const pool = new Pool({
     connectionString: options.url,

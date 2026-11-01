@@ -9,6 +9,10 @@ import { PersistenceSession } from './transaction/persistence-session.js';
 import { bindPersistenceSession } from './ai/ai-store.js';
 import { openSqliteDriver } from './sqlite/driver.js';
 
+/**
+ * 存储的两种部署形态：SQLite 只需文件路径（目录与文件由驱动按最小权限创建），
+ * PostgreSQL 需要连接串与池大小。`driver` 是判别式，决定了超时、并发与迁移锁的实现。
+ */
 export type RecordStoreOptions = { driver: 'sqlite'; path: string } | PostgresOptions;
 
 class DrizzleStore implements RecordStore {
@@ -90,6 +94,14 @@ class DrizzleStore implements RecordStore {
   }
 }
 
+/**
+ * 按部署形态打开驱动，返回带审计能力的 `RecordStore`。
+ *
+ * 打开过程会就地执行未应用的迁移（PostgreSQL 用 advisory lock 串行化，
+ * SQLite 用 `BEGIN IMMEDIATE`），因此首次调用可能较慢且会创建文件/表；迁移失败时异常上抛，
+ * 不返回半初始化的 store。返回的 store 同时被登记为 AI 端口的会话来源，
+ * `close()` 之后再使用会抛错。
+ */
 export async function openRecordStore(options: RecordStoreOptions): Promise<RecordStore> {
   switch (options.driver) {
     case 'sqlite':

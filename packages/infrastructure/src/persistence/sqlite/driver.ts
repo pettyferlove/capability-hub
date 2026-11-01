@@ -20,6 +20,16 @@ function input(value: unknown): SQLInputValue {
     return value;
   throw new TypeError('Unsupported SQLite parameter');
 }
+/**
+ * 打开（必要时创建）SQLite 数据库并就地完成迁移，返回 {@link RecordDriver}。
+ *
+ * 路径处理：目录按 0700 创建，文件路径先 `realpath` 归一，避免同一库经由符号链接被打开两次而
+ * 得到两套连接；归一后的路径作为执行器池的键，因此同一进程内对同一库只有一条串行队列。
+ * 权限固定为 0600。连接参数为 `foreign_keys=ON`、`journal_mode=WAL`、`busy_timeout=5000`。
+ *
+ * 副作用与生命周期：文件在首次打开时被创建；初始化失败会关闭连接并归还在池中的引用。
+ * `close()` 在串行执行器内关闭连接后再释放引用计数，因此不会与正在执行的语句交错。
+ */
 export async function openSqliteDriver(path: string): Promise<RecordDriver> {
   const absolute = resolve(path);
   mkdirSync(dirname(absolute), { recursive: true, mode: 0o700 });

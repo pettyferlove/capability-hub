@@ -14,6 +14,11 @@ import {
   type PgTableExtraConfigValue,
 } from 'drizzle-orm/pg-core';
 
+/**
+ * 全局版本计数器：`id = 1` 的 check 保证只有一行；迁移安装的触发器在业务表写入后自增，
+ * `revision()` 读取它判断是否需要刷新缓存。`revision` 为 bigint 且以 bigint 模式读出，
+ * 避免超过安全整数范围后丢精度。
+ */
 export const hub_revision = pgTable(
   'hub_revision',
   {
@@ -25,6 +30,13 @@ export const hub_revision = pgTable(
   (_t): PgTableExtraConfigValue[] => [check('hub_revision_id_check', sql`id = 1`)],
 );
 
+/**
+ * 记录表的统一形状：整条记录放在 `data` jsonb 里，另用 `GENERATED ALWAYS AS` 把需要约束或
+ * 索引的字段（如 `username`）物化出来，唯一约束、索引与外键都作用在这些真实列上，
+ * 写入方只需提交 JSON。`*_data_check` 要求 `jsonb_typeof(data) = 'object'` 且
+ * `data ->> 'id'` 等于主键，生成列不会与 JSON 分叉。
+ * 本表：`username` 唯一，登录与重命名冲突都由它裁决，不需要先查后写。
+ */
 export const users = pgTable(
   'users',
   {
@@ -43,6 +55,7 @@ export const users = pgTable(
   ],
 );
 
+/** 组名唯一；`sources`/`assets` 的归属组外键指向本表，被引用时删除会被拒绝。 */
 export const groups = pgTable(
   'groups',
   {
@@ -61,6 +74,7 @@ export const groups = pgTable(
   ],
 );
 
+/** `(user_id, group_id)` 唯一，同一成员关系不会重复；两个外键保证用户与组都真实存在。 */
 export const memberships = pgTable(
   'memberships',
   {
@@ -80,6 +94,7 @@ export const memberships = pgTable(
   ],
 );
 
+/** 角色名唯一；`role_bindings.role_id` 引用本表。 */
 export const roles = pgTable(
   'roles',
   {
@@ -98,6 +113,10 @@ export const roles = pgTable(
   ],
 );
 
+/**
+ * 只对 `role_id` 建外键：授权主体可能是用户或组，单列外键表达不了这种二选一，
+ * `principal_id` 的合法性由应用层保证，因此主体被删除后数据库不会阻止留下孤立绑定。
+ */
 export const role_bindings = pgTable(
   'role_bindings',
   {
@@ -117,6 +136,7 @@ export const role_bindings = pgTable(
   ],
 );
 
+/** 归属组外键指向 `groups`，组被引用时无法删除；`owner_group_id` 由 `data` 生成，不能单独改写。 */
 export const sources = pgTable(
   'sources',
   {
@@ -133,6 +153,11 @@ export const sources = pgTable(
   ],
 );
 
+/**
+ * `slug` 唯一；`current_release_id` 用复合外键
+ * `(id, current_release_id) → releases(asset_id, id)`，因此「当前发布」必须既存在又属于本资产，
+ * 跨资产引用会被数据库拒绝。
+ */
 export const assets = pgTable(
   'assets',
   {
@@ -162,6 +187,10 @@ export const assets = pgTable(
   ],
 );
 
+/**
+ * 两个部分唯一索引只在 `retired_at IS NULL` 时生效：同一资产最多一个活跃绑定、
+ * 同一来源路径最多一个活跃绑定；已退役的历史绑定可以无限累积而不冲突。
+ */
 export const bindings = pgTable(
   'bindings',
   {
@@ -188,6 +217,7 @@ export const bindings = pgTable(
   ],
 );
 
+/** `intake_asset` 索引支撑按资产翻导入记录；被引用的资产、来源、绑定任一都不能直接删除。 */
 export const intakes = pgTable(
   'intakes',
   {
@@ -209,6 +239,7 @@ export const intakes = pgTable(
   ],
 );
 
+/** `(asset_id, version_label)` 唯一，同一资产内版本号不重复；`versions_asset` 供按资产列举。 */
 export const versions = pgTable(
   'versions',
   {
@@ -230,6 +261,7 @@ export const versions = pgTable(
   ],
 );
 
+/** 扫描记录通过 `version_id` 挂在版本上，被引用的版本不能先被删除。 */
 export const scans = pgTable(
   'scans',
   {
@@ -246,6 +278,10 @@ export const scans = pgTable(
   ],
 );
 
+/**
+ * 资产与来源导入两条索引支撑审核列表分页；四个外键（资产/版本/导入/扫描）
+ * 使被引用的上游记录无法被单独删除，审核链因此保持完整。
+ */
 export const requests = pgTable(
   'requests',
   {
@@ -272,6 +308,11 @@ export const requests = pgTable(
   ],
 );
 
+/**
+ * `request_id` 唯一：一次审核请求只能产出一个发布，重复发布由约束拒绝；
+ * `(asset_id, release_seq)` 唯一给发布序号定序；`(asset_id, id)` 唯一是
+ * `assets.current_release_id` 复合外键的引用目标。
+ */
 export const releases = pgTable(
   'releases',
   {
@@ -300,6 +341,10 @@ export const releases = pgTable(
   ],
 );
 
+/**
+ * `jobs_schedule` 索引 `(state, run_after)` 是轮询到期任务的主路径；
+ * 不设外键——任务与业务聚合的关联只靠 `aggregate_id`，清理聚合时不会阻塞也不会级联。
+ */
 export const jobs = pgTable(
   'jobs',
   {
@@ -318,6 +363,10 @@ export const jobs = pgTable(
   ],
 );
 
+/**
+ * 审计只物化 `occurred_at` 用于时间检索，刻意不设任何外键：
+ * 主体被删除时删除操作不被阻塞，审计记录也不会被级联清除。
+ */
 export const audit = pgTable(
   'audit',
   {
@@ -335,6 +384,7 @@ export const audit = pgTable(
   ],
 );
 
+/** 会话归 `user_id` 所有；该用户被引用期间删除会被外键拒绝，需先清理会话。 */
 export const sessions = pgTable(
   'sessions',
   {
@@ -351,6 +401,7 @@ export const sessions = pgTable(
   ],
 );
 
+/** 个人访问令牌归 `user_id` 所有；外键行为与 `sessions` 一致。 */
 export const tokens = pgTable(
   'tokens',
   {
@@ -367,6 +418,7 @@ export const tokens = pgTable(
   ],
 );
 
+/** 客户端注册表只有 JSON 载荷，无生成列与外键，因此删除其它记录不会牵连已注册客户端。 */
 export const oauth_clients = pgTable(
   'oauth_clients',
   {
@@ -381,6 +433,7 @@ export const oauth_clients = pgTable(
   ],
 );
 
+/** 按客户端、按用户两条索引支撑列举授权；本表又被 `oauth_requests`/`oauth_credentials` 引用。 */
 export const oauth_grants = pgTable(
   'oauth_grants',
   {
@@ -401,6 +454,7 @@ export const oauth_grants = pgTable(
   ],
 );
 
+/** 三条索引分别支撑按客户端、用户、授权查询待处理请求；三个外键阻止上游记录被删除。 */
 export const oauth_requests = pgTable(
   'oauth_requests',
   {
@@ -424,6 +478,7 @@ export const oauth_requests = pgTable(
   ],
 );
 
+/** 授权换出的凭据以 `grant_id` 索引，按授权定位或撤销；授权存在期间不能删除。 */
 export const oauth_credentials = pgTable(
   'oauth_credentials',
   {
@@ -441,6 +496,7 @@ export const oauth_credentials = pgTable(
   ],
 );
 
+/** 用户维护的 Git 凭据；`user_id` 外键存在，被引用期间用户无法删除。 */
 export const git_credentials = pgTable(
   'git_credentials',
   {
@@ -457,6 +513,10 @@ export const git_credentials = pgTable(
   ],
 );
 
+/**
+ * `(principal_id, route, KEY)` 唯一：幂等键的作用域是「主体 + 路由」，不同接口可复用同一键值。
+ * 列名 `KEY` 沿用 SQL 保留字，生成 DDL/DML 时需要引号转义。
+ */
 export const idempotency = pgTable(
   'idempotency',
   {
@@ -476,6 +536,7 @@ export const idempotency = pgTable(
   ],
 );
 
+/** 只物化 `window_expires_at` 供清理过期窗口；不设外键，未登录态的尝试也必须能记录。 */
 export const login_attempts = pgTable(
   'login_attempts',
   {
@@ -493,6 +554,7 @@ export const login_attempts = pgTable(
   ],
 );
 
+/** `code` 唯一：设备码被并发提交时由数据库裁决唯一成功者；不设外键，码在确认前尚未绑定用户。 */
 export const cli_logins = pgTable(
   'cli_logins',
   {
@@ -510,6 +572,7 @@ export const cli_logins = pgTable(
   ],
 );
 
+/** 场景名唯一；场景内容整体落在 `data` 中，不参与任何外键。 */
 export const scenarios = pgTable(
   'scenarios',
   {
@@ -528,6 +591,7 @@ export const scenarios = pgTable(
   ],
 );
 
+/** `(user_id, version_id)` 唯一：同一用户对同一版本只有一条推荐，重复推荐必须更新而非新增。 */
 export const recommendations = pgTable(
   'recommendations',
   {
@@ -551,6 +615,10 @@ export const recommendations = pgTable(
   ],
 );
 
+/**
+ * `(submitted_by, request_key)` 唯一，使同一用户的重试提交不会产生第二条反馈；
+ * `asset_feedback_asset` 支撑按资产列举，三个外键锁定资产/版本/提交人。
+ */
 export const asset_feedback = pgTable(
   'asset_feedback',
   {

@@ -7,6 +7,18 @@ import yauzl from 'yauzl';
 import yazl from 'yazl';
 import { crc32 } from 'node:zlib';
 const MiB = 1024 * 1024;
+/**
+ * 解压上传的 ZIP 为内存文件列表，不写磁盘、不解压嵌套归档。
+ *
+ * 上限：归档 ≤ 20 MiB、条目数 ≤ 6500、文件数 ≤ 500、单文件 ≤ 10 MiB、解压总量 ≤ 100 MiB
+ * （413 `UPLOAD_SIZE` / `PACKAGE_LIMIT`）。同时按实际流出的字节数二次计数，不信任条目头声明的大小。
+ *
+ * 安全边界：路径经 {@link safePath} 拒绝 `..` 与绝对路径，并做大小写/Unicode 归一化判重
+ * （422 `PATH_COLLISION`）；路径必须能按 UTF-8 严格解码，非 ASCII 路径缺少 UTF-8 标志位
+ * 视为异常；加密条目、符号链接与特殊文件类型直接拒绝（422 `ZIP_ENTRY_TYPE`）。
+ * 每条目解压后重新计算 CRC32，与头部不符抛 422 `ZIP_CRC`。一旦出错即关闭归档并 reject，
+ * 已读出的部分结果不会返回。
+ */
 export async function unzip(bytes: Buffer): Promise<ContentFile[]> {
   if (!bytes.length || bytes.length > 20 * MiB)
     fail(413, 'UPLOAD_SIZE', '上传文件必须为非空且不超过 20 MiB');
@@ -130,6 +142,12 @@ export async function unzip(bytes: Buffer): Promise<ContentFile[]> {
     ),
   );
 }
+/**
+ * 把「单层根目录包裹」的 Skill 包剥成以 `SKILL.md` 为顶层的形态（GitHub 下载的 ZIP 常见），
+ * 并保证整包只有一个 Skill。root 只有一层且恰好一个 `SKILL.md` 时才改写路径，
+ * 出现嵌套或多个根目录时抛 422 `SKILL_ROOT` 而不是猜测意图。不修改入参元素；已是规范形态时
+ * 直接返回入参数组本身，调用方不得再原地改写返回值。
+ */
 export function normalizeSkill(files: ContentFile[]) {
   if (!files.some((f) => f.path === 'SKILL.md')) {
     const roots = files.filter((f) => /^[^/]+\/SKILL\.md$/.test(f.path));
@@ -143,6 +161,13 @@ export function normalizeSkill(files: ContentFile[]) {
     fail(422, 'SKILL_ROOT', '不接受嵌套 Skill');
   return files;
 }
+/**
+ * 把文件列表打包为 ZIP 字节流，全部在内存中完成。
+ *
+ * 结果必须可复现：条目按路径 UTF-8 字节序排列、修改时间固定为 2000-01-01T00:00:00Z、
+ * 权限位只区分 0644/0755，因此同一份内容重复打包得到相同的 `sha256`（下游据此判等与去重）。
+ * 只写入文件条目，不产生目录条目，也不保留除可执行位以外的文件系统元数据。
+ */
 export async function archive(files: ContentFile[]) {
   const zip = new yazl.ZipFile();
   for (const f of [...files].sort((a, b) => utf8Compare(a.path, b.path)))

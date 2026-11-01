@@ -7,6 +7,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ScanResponse } from './scan-messages.js';
+/**
+ * 在隔离子进程里执行内容审查与打包，宿主进程不直接解析不可信上传内容。
+ *
+ * 隔离手段：`fork` 的子进程堆上限 384 MiB、`cwd` 指向新建临时目录、环境变量只剩 `PATH`、
+ * 三个标准流全部丢弃，只走 IPC（advanced 序列化以传 Buffer）。输入经 IPC 传入，
+ * 输出只有审查结果与 ZIP。单次 30 秒超时（504 `SCAN_TIMEOUT`，可重试）；子进程提前退出或
+ * IPC 失败按 503 `SCANNER_FAILED` / `SCANNER_UNAVAILABLE` 处理，均标记可重试。
+ *
+ * 无论成功失败，子进程都会被 SIGKILL 并等待 `close` 后再删临时目录，不留残留进程或文件。
+ * 子进程报出的 {@link HubError} 原样透传错误码与 `retryable`，宿主不重新解释。
+ */
 export async function scanIsolated(
   input: ScanInput,
 ): Promise<{ inspected: ContentInspection; zip: Buffer }> {

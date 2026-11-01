@@ -42,6 +42,19 @@ if (!schema || typeof schema !== 'object' || Array.isArray(schema))
   throw new Error('MCP schema must be an object');
 const schemaId = '$id' in schema && typeof schema.$id === 'string' ? schema.$id : '';
 const validateMcp = ajv.compile<McpServerDocument>(schema);
+/**
+ * 纯函数式内容审查：只读取字节、不落盘、不执行包内任何内容，返回可直接入库的清单与静态提示。
+ *
+ * 资源上限：文件数 ≤ 500、单文件 ≤ 10 MiB、总量 ≤ 100 MiB、`SKILL.md` ≤ 256 KiB，超出抛
+ * 413 `PACKAGE_LIMIT` / `SKILL_SIZE`。提示条数上限 1000，触顶后追加一条 `SCAN_TRUNCATED` 并停止
+ * 展开，因此 `findings` 为空不代表内容干净，只代表未命中规则。
+ *
+ * `expectedSlug` 必须与 Skill frontmatter 的 `name` 完全相等（最长 64 字符），否则 422
+ * `SKILL_NAME`。包内路径经 {@link artifactPath} 校验，大小写/Unicode 归一化后冲突抛 422
+ * `PATH_COLLISION`。结构性问题（缺 frontmatter、MCP 校验失败、可变版本标签等）一律抛 422，
+ * 不会以降级方式继续。
+ * 产出 `manifest` 只记录路径/大小/摘要，`content_digest` 由 canonical 序列化计算，供后续幂等比对。
+ */
 export function inspect(
   kind: 'skill' | 'mcp',
   input: ContentFile[],

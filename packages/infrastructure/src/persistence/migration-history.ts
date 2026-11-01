@@ -1,5 +1,9 @@
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 
+/**
+ * 迁移账本中一行的最小视图；`created_at` 允许三种数值形态是因为不同驱动返回的
+ * `timestamp`/`bigint` 列在运行时可能是字符串、number 或 bigint，比较前会统一转为 number。
+ */
 export type MigrationHistoryRecord = {
   hash: string;
   created_at: string | number | bigint;

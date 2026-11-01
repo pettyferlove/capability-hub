@@ -1,6 +1,10 @@
 import remarkParse from 'remark-parse';
 import { unified } from 'unified';
 
+/**
+ * 从 Markdown 中提取出的一次引用；`url` 保持原文（未解码、未去除查询串），
+ * `line` 为语法树记录的起始行（1 起），用于把校验结果回指到具体行。
+ */
 export interface MarkdownReference {
   url: string;
   line: number;

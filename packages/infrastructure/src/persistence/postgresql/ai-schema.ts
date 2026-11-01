@@ -68,16 +68,33 @@ function defineAiTable(name: AiTable) {
     ],
   );
 }
+/**
+ * AI 记录表族的 PostgreSQL 定义：整条记录存在 `data` jsonb 里，另用 `GENERATED ALWAYS AS`
+ * 把 `owner_id`/`execution_id`/`lookup_key`/`status`/`created_at`/`updated_at`/`position`
+ * 抽成真实列（`position` 为 bigint，驱动侧映射回 number），索引、外键与唯一约束因此由数据库强制，
+ * 写入方只需提交一个 JSON。`*_data_check` 要求 `jsonb_typeof(data) = 'object'` 且 `data ->> 'id'`
+ * 等于主键，防止索引列与 JSON 内容分叉。除本表外的 `ai_*` 表都以 `execution_id` 外键指向本表。
+ */
 export const ai_executions = defineAiTable('ai_executions');
+/** 流式事件：`(lookup_key, position)` 唯一，同一流内序号不可重复。 */
 export const ai_events = defineAiTable('ai_events');
+/** 快照：`lookup_key` 唯一，同一键只能有一份，重复提交必须走更新而不是新增。 */
 export const ai_snapshots = defineAiTable('ai_snapshots');
+/** 人工交互：`lookup_key` 唯一，且部分唯一索引保证同一执行同时最多一条 `pending` 交互。 */
 export const ai_interactions = defineAiTable('ai_interactions');
+/** 外部副作用：`lookup_key` 唯一，据此让同一效果的重放不会写第二行。 */
 export const ai_effects = defineAiTable('ai_effects');
+/** 会话容器；与 `ai_messages` 一起承载模型侧的记忆存储，按 `(execution_id, position)` 顺序读取。 */
 export const ai_threads = defineAiTable('ai_threads');
+/** 会话消息，行内 `lookup_key` 指向所属会话。 */
 export const ai_messages = defineAiTable('ai_messages');
+/** 单次模型调用记录（耗时、token 用量、错误码），按 `(execution_id, position)` 回放。 */
 export const ai_calls = defineAiTable('ai_calls');
+/** 追踪片段，`payload.parent_id` 表达调用树；只有位置索引，不做唯一约束。 */
 export const ai_traces = defineAiTable('ai_traces');
+/** 产出物（名称、媒体类型、内容、摘要）；同样只有位置索引，允许多次产出。 */
 export const ai_artifacts = defineAiTable('ai_artifacts');
+/** 按表名索引的全量集合，迁移与查询都从这里取表对象。 */
 export const aiSchema: Record<AiTable, ReturnType<typeof defineAiTable>> = {
   ai_executions,
   ai_events,

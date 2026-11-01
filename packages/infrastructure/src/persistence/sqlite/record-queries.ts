@@ -8,6 +8,14 @@ type Session = Pick<
   SqliteRemoteDatabase<typeof sqliteSchema>,
   'select' | 'insert' | 'update' | 'delete' | 'run'
 >;
+/**
+ * `RecordQueries` 的 SQLite 实现：读写只经过 `id`/`data`，约束与生成列全部交给 Schema。
+ *
+ * 每条记录在写入与读出时都会 `parseRecord` 校验并做 Zod 解析，因此损坏或旧版本的 JSON 会在
+ * 边界处暴露而不是流进业务层。`where` 用 `json_extract` 查询 `data` 内部字段，走不到生成列的索引，
+ * 只适合小结果集；`put` 依 `returning` 的行数判断目标是否存在，缺失时抛 `Error`（不是 no-op）。
+ * 本类不管理事务与并发——事务由驱动提供，串行化由执行器池保证。
+ */
 export class SqliteQueries implements RecordQueries {
   constructor(private readonly db: Session) {}
   async get<K extends TableName>(table: K, id: string | null | undefined) {

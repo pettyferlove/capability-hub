@@ -17,12 +17,29 @@ import type {
 } from '@capability-hub/application/ports';
 import { isRestrictedGitAddress } from './network-policy.js';
 import { sshAskpass } from '../security/ssh-askpass.js';
+/** {@link GitRepository} 端口的运行配置；域名与私网例外均由管理员配置，不在请求里传入。 */
 export interface GitRepositoryOptions {
+  /** 拉取时使用的临时目录父路径；`init`/`fetch` 的 `HOME` 也指向它，不读系统或全局 git 配置。 */
   dataDir: string;
+  /** `hostname` 允许列表（精确匹配）；不在列表内抛 422 `GIT_HOST_DENIED`。 */
   gitHosts: readonly string[];
+  /** 允许解析到内网地址的主机名，仅此类可绕过 {@link isRestrictedGitAddress} 的私网拦截。 */
   privateGitHosts: readonly string[];
 }
 const shellQuote = (v: string) => "'" + v.replaceAll("'", "'\\''") + "'";
+/**
+ * `GitRepository` 端口的实现：用受控参数调用系统 `/usr/bin/git` 生成单提交快照。
+ *
+ * 外部依赖：`/usr/bin/git`、可选的 SSH 客户端、{@link GitCredentialResolver} 提供的个人凭据。
+ * 每次操作在 `mkdtemp` 目录内执行 `init --bare` + `fetch --depth=1`，结束后由调用方
+ * `close()` 删除；临时目录内含明文私钥/口令文件（0600/0700），删除时机由
+ * {@link GitSnapshot.close} 负责。
+ *
+ * 硬性约束：单条 git 命令 45 秒超时（504 `GIT_TIMEOUT`，标记为可重试）、stdout 上限 110 MiB
+ * （413 `GIT_SIZE`）、stderr 只保留前 4 KiB 用于归类错误。禁用 hooks、重定向跟随、
+ * credential helper、系统/全局配置与非 SSH/HTTPS 协议；SSH 侧固定 known_hosts，
+ * 关闭 agent 与 ProxyJump。不重试——失败直接抛 502，由上层决定是否再次调度。
+ */
 export class GitRepositoryAdapter implements GitRepository {
   constructor(
     private readonly config: GitRepositoryOptions,

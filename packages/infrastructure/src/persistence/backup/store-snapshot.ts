@@ -3,6 +3,10 @@ import type { RecordStore } from '@capability-hub/application/ports';
 import { tables } from '../tables.js';
 import { aiTables, type AiRecordMap, type AiTable } from '@capability-hub/ai/records';
 import { createAiStore } from '../ai/ai-store.js';
+/**
+ * 整库快照的序列化形态：业务表与 AI 表一一对应，键集合必须与当前 schema 完全吻合。
+ * 内容按存储原样读出，不做投影、脱敏或重排。
+ */
 export type StoreSnapshot = { [K in TableName]: RecordMap[K][] } & {
   [K in AiTable]: AiRecordMap[K][];
 };
@@ -36,6 +40,11 @@ const restoreOrder: readonly TableName[] = [
   'recommendations',
   'asset_feedback',
 ];
+/**
+ * 在单个事务内导出整库。业务表一次 `all` 读完；AI 表按 `position` 游标分页（每页 1000）
+ * 以保证大表也不会一次性拉爆内存，并在同一事务快照里读到一致视图。
+ * 事务期间持有读视图（SQLite 为串行执行器排队），导出耗时与数据量正相关，调用方需自行限流。
+ */
 export async function snapshotStore(store: RecordStore): Promise<StoreSnapshot> {
   return store.tx(async () => {
     const entries: [string, unknown][] = [];

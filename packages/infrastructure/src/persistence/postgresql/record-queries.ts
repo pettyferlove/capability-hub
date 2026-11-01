@@ -4,10 +4,18 @@ import type { RecordQueries } from '../record-driver.js';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pgRevision, type pgSchema, pgTableFor } from './record-schema.js';
 
+/** 查询对象所需的 drizzle 会话子集：既接受连接池上的 db，也接受事务内的 tx。 */
 export type PostgresSession = Pick<
   NodePgDatabase<typeof pgSchema>,
   'select' | 'insert' | 'update' | 'delete' | 'execute'
 >;
+/**
+ * `RecordQueries` 的 PostgreSQL 实现：读写只经过 `id`/`data`，约束与生成列全部交给 Schema。
+ *
+ * 每条记录在写入与读出时都会 `parseRecord` 校验并做 Zod 解析，损坏或旧版本的 JSON 会在边界处暴露。
+ * `where` 用 `data ->> key` 过滤 jsonb 字段，不走生成列索引，只适合小结果集；`put` 依 `returning`
+ * 行数判断目标存在性，缺失时抛 `Error` 而非静默成功。事务与连接由驱动提供，本类不自行取得连接。
+ */
 export class PgQueries implements RecordQueries {
   constructor(private readonly db: PostgresSession) {}
   async get<K extends TableName>(table: K, id: string | null | undefined) {
