@@ -1,3 +1,10 @@
+/**
+ * 业务页右侧的 Agent 停靠面板：`feedbackId` 存在时跑 `feedback-triage`，否则跑 `resource-audit`，
+ * 通过 `/api/ai/executions` 拉取该版本/反馈的历史执行（最多回溯到 30 条或出现成功记录为止），
+ * 并把研判结论以 `AuditSuggestion` 回传给父级用于预填发布表单。
+ *
+ * 工作区进度复用 {@link useAiExecution} 的事件流，写操作统一走 {@link useAiCommand}（带幂等键）。
+ */
 import { useEffect, useLayoutEffect, useMemo, useId, useRef, useState } from 'react';
 import {
   aiCatalogResponseSchema,
@@ -35,14 +42,20 @@ import { statusLabels } from './presentation.js';
 
 interface BusinessAgentPanelProps {
   versionId: string;
+  /** 存在即切换为反馈研判（`feedback-triage`），否则为资源审计（`resource-audit`）。 */
   feedbackId?: string;
   title: string;
+  /** 选中执行状态转为 `succeeded` 时回调；内部用 ref 持有最新引用，父组件无需 memo。 */
   onCompleted?: () => void;
+  /** 结论变化时回传当前应采用的建议（待确认优先于已成功记录），`undefined` 表示无可采用建议。 */
   onSuggestion?: (suggestion: AuditSuggestion | undefined) => void;
   onAdopt?: (origin: ReviewOrigin) => void;
   className?: string;
 }
 
+/**
+ * 权限门：账号无 `can_ai` 时整块不渲染（返回 `null`），业务页无需感知面板存在。
+ */
 export function BusinessAgentPanel(props: BusinessAgentPanelProps) {
   const { me } = useHub();
   if (!me?.capabilities.can_ai) return null;

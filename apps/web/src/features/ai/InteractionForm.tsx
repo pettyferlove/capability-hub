@@ -1,3 +1,11 @@
+/**
+ * 人工确认交互的表单：渲染 Agent 在 `request` 中给出的问题、草案/审查材料与研判报告，
+ * 按 `response_schema` 收集答复后经
+ * `/api/ai/executions/{id}/interactions/{interactionId}/respond` 提交。
+ *
+ * 提交走 {@link useAiCommand}：以 `interaction.revision` 作为 `If-Match`，版本过期会抛出
+ * `ApiError` 并进入错误提示，不会静默覆盖他人确认；提交成功后由上层 `onDone` 触发整页刷新。
+ */
 import { BusinessAssessment } from './BusinessAssessment.js';
 import { QuickReview } from './quick-review.js';
 import { createPortal } from 'react-dom';
@@ -24,6 +32,10 @@ import {
   interactionCardStyles,
 } from './styles.js';
 
+/**
+ * 交互卡片：`submit` 以 ref 去重，重复点击不会重复提交；`approval` 存在时至少选择采纳/不采纳之一
+ * 才能提交，且 `apply_feedback` 仅在采纳且证据允许（`can_apply_feedback`）时才暴露。
+ */
 export function InteractionForm({
   executionId,
   interaction,
@@ -31,6 +43,7 @@ export function InteractionForm({
 }: {
   executionId: string;
   interaction: AiInteractionResponse;
+  /** 提交成功后调用，用于让父级重新拉取执行视图。 */
   onDone: () => void;
 }) {
   const [value, setValue] = useState(() => initialValues(interaction.response_schema));

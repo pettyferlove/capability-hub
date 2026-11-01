@@ -1,3 +1,9 @@
+/**
+ * Git 来源管理面板：登记仓库/分支与精确读取目标，触发同步并跟踪同步任务。
+ * 依赖 `/api/sources`、`PATCH /api/sources/:id`（带 `revision` 做乐观并发）、
+ * `/api/sources/:id/sync` 与 `/api/sources/:id/sync-jobs/:jobId` 轮询，
+ * 以及 `/api/intakes/:id` 查看同步产出的待审核内容。
+ */
 import {
   formStackStyles,
   sectionHeadingStyles,
@@ -48,6 +54,11 @@ import { CardGridSkeleton, DetailSkeleton } from '../../shared/components/Skelet
 import { useHub } from '../../shared/context/HubContext.js';
 import { dateLabel, stateLabel } from '../../shared/format/labels.js';
 import { IntakeDetail } from '../publishing/IntakeDetail.js';
+/**
+ * 同步任务处于 `queued`/`running` 时每 2 秒轮询一次，进入终态才停止并重载列表；
+ * 卸载或切换任务时 abort 请求并清掉定时器，避免旧任务的响应覆盖新状态。
+ * 暂停/恢复走 `PATCH` 并携带 `revision`，缓存过期会被服务端拒绝，需重载后重试。
+ */
 export default function SourcesPanel() {
   const { refresh, reload, me } = useHub();
   const { data, error, loading } = useQuery<SourceResponse[]>('/api/sources', refresh);

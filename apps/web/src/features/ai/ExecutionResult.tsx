@@ -21,6 +21,14 @@ import {
   resultCardStyles,
 } from './styles.js';
 
+/**
+ * 「成果」页签的渲染分发：审计类操作直接交给 `{@link BusinessAssessment}`（报告优先取 `result`，
+ * 缺失时退回名为 `assessment` 的成果件），「多 Agent 协作」优先展示草案与审查，
+ * 其余结果按 `text` → JSON 兜底。
+ *
+ * 去重逻辑：与结果完全相同的 `proposal` 成果件、以及用于合规提示的 `evaluation:proposal` 不再重复
+ * 列出，后者只以「是否包含审查意见」的提示出现，不声称事实准确性。
+ */
 export function ExecutionResult({ view }: { view: AiExecutionViewResponse }) {
   const business = ['resource-audit', 'feedback-triage'].includes(view.execution.operation_id);
   if (business) {

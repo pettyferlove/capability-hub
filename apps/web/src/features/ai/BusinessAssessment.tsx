@@ -1,3 +1,9 @@
+/**
+ * 研判报告呈现组件：消费 Agent 产出（或人工交互 `request.assessment`）的 JSON 结果，
+ * 渲染风险摘要、发现项、检查范围与局限，并用 {@link reportSuggestion} 判断是否带有发布建议。
+ *
+ * 入参为未校验的 `Json`，内部逐字段做类型收敛，缺字段时降级为「待核实」而非报错。
+ */
 import { reportSuggestion } from './publication-suggestion.js';
 import { SuggestionPreview } from './SuggestionPreview.js';
 import { AiText } from './AiText.js';
@@ -16,6 +22,10 @@ const risks: Record<string, string> = {
   high: '高风险',
   unknown: '证据不足',
 };
+/**
+ * 报告主体：`value` 为整份报告对象，`assessment` 缺失时各区块自动隐藏；
+ * 已采纳但没有 `publication_suggestion` 的历史报告会提示改在新研判中重新生成。
+ */
 export function BusinessAssessment({ value }: { value: Json }) {
   const suggestion = reportSuggestion(value);
   const report = jsonObject(value);

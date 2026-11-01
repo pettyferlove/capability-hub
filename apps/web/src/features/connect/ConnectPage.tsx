@@ -1,3 +1,9 @@
+/**
+ * 连接页：把团队能力接进 Agent 的入口，兼作三类授权回调的落点——`authorization=<requestId>`
+ * 交给 {@link ConnectionAuthorization}，`code=<授权码>` 交给 CLI 审批，其余情况展示连接指引。
+ * 依赖 `/api/hub-share` 生成 Hub MCP 配置、`/api/cli/approve` 批准 CLI 登录，
+ * 以及 `hubMcpConnectionGuide` / `agentClients` 契约。
+ */
 import { InputField } from '../../shared/components/InputField.js';
 import { configurationScopeIcons } from '../../shared/components/select-icons.js';
 import { checkLabelStyles } from '../../shared/styles/recipes.js';
@@ -56,6 +62,10 @@ import { ConversationInstallIntro } from './ConversationInstallIntro.js';
 import { AgentConversationDemo } from './AgentConversationDemo.js';
 import { HubToolbox } from './HubToolbox.js';
 
+/**
+ * 路由查询串决定视图：带授权参数时只渲染确认区，未登录则引导登录并带回跳地址；
+ * 否则渲染连接指引、已连接客户端与演示区。`routeQuery` 可注入以便测试，默认取当前地址。
+ */
 export default function ConnectPage({ routeQuery = location.search }: { routeQuery?: string }) {
   const { me } = useHub();
   const query = new URLSearchParams(routeQuery);

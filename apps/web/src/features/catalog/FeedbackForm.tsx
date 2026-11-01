@@ -26,6 +26,11 @@ const fields = [
   ['suggestion', '推断原因或改进建议（未经确认）', 2000, false],
 ] as const;
 
+/**
+ * 提交问题或建议：字段上限见 `fields`，正文内容不变时复用同一 `idempotency_key`，
+ * 因此失败重试不会产生重复反馈，改动任一字段才会换新 key。
+ * `pending` 同步挡住连点，避免在请求返回前重复提交。
+ */
 export function FeedbackForm({
   assetId,
   versionId,

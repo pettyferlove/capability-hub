@@ -2,6 +2,10 @@ import type { PublicationRequestResponse } from '@capability-hub/contracts/http'
 import { categoryLabels, type AuditSuggestion } from '../ai/publication-suggestion.js';
 import { FieldSuggestion } from './FieldSuggestion.js';
 
+/**
+ * 已提交发布申请的三项只读摘要（分类、关键词、用途）；有审计建议时逐项对比，分类须连同适用场景集合
+ * 一致才算匹配，关键词按小写比较，用途按原串比较。
+ */
 export function SubmittedFields({
   publication,
   suggestion,

@@ -11,6 +11,10 @@ const statuses = [
   { id: 'cancelled', label: '已撤回', icon: Archive },
 ] as const;
 
+/**
+ * 审核状态筛选条，状态写在 URL 上（`pending` 为默认值，省略该参数）。
+ * `count` 传 `undefined` 表示计数尚不可用（加载中/出错），此时显示占位符而非 0。
+ */
 export function ReviewStatusTabs({
   state,
   count,

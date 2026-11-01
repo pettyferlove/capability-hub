@@ -17,6 +17,10 @@ import { SelectField } from '../../shared/components/SelectField.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { dateLabel } from '../../shared/format/labels.js';
 
+/**
+ * 反馈详情只读展示：九段正文按固定顺序列出，空字段整行省略。
+ * 仅 `can_manage` 的维护者会额外看到处理表单，`key` 绑定 `revision` 以便保存后重置表单状态。
+ */
 export function FeedbackDetail({
   feedback: f,
   onSaved,

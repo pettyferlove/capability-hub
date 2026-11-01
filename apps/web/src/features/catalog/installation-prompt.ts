@@ -1,6 +1,10 @@
 import type { AssetResponse } from '@capability-hub/contracts/http';
 import { publicResourcePath } from '@capability-hub/contracts';
 
+/**
+ * 仅对 `public` 受众可用的对话安装文案；受限资源直接抛错，提示改走授权下载或 CLI。
+ * 链接基于当前 `origin` 拼接，文案里不出现真实凭证。
+ */
 export function installationPrompt(asset: AssetResponse, origin: string): string {
   if (!asset.current_release.distribution.audience.includes('public'))
     throw new Error('受限资源请使用授权下载、CLI 或受支持的 Hub MCP 操作');

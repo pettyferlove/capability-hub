@@ -1,3 +1,11 @@
+/**
+ * 新建执行表单：从 `/api/ai/catalog` 得到的操作目录里选 `operation_id` 与模型档案，
+ * 按该操作的 `input_schema` 收集输入，经 {@link useAiCommand} 向 `/api/ai/executions` 发起创建。
+ *
+ * 输入字段按 schema 属性推导：`prompt`/`topic` 之一作为主输入置于正文，
+ * `require_approval` 单独成行，
+ * 其余字段收进「参考资源与工具」折叠区；示例提示词按 `operation_id` 提供，仅当存在主输入时可用。
+ */
 import { useId, useRef, useState } from 'react';
 import { aiExecutionResponseSchema, type AiCatalogResponse } from '@capability-hub/contracts';
 import { useAiCommand } from './use-ai-command.js';
@@ -65,13 +73,19 @@ const descriptions: Record<string, string> = {
   'agent-lab': '生成草案、并行审查，再由你确认。体验完整协作流程。',
 };
 
+/**
+ * 新建表单：切换任务类型会重置输入为对应 schema 的初始值；无可用模型档案或无 `canExecute` 时
+ * 提交按钮禁用，创建成功后把新执行 id 交给 `onCreated`，由页面跳转到详情。
+ */
 export function NewExecution({
   catalog,
   canExecute,
   onCreated,
 }: {
   catalog: AiCatalogResponse;
+  /** 是否持有 `can_ai`；为假时仅浏览，无法提交。 */
   canExecute: boolean;
+  /** 创建成功后回传执行 id，页面据此导航到 `?execution=`。 */
   onCreated: (id: string) => void;
 }) {
   const [operation, setOperation] = useState(catalog.operations[0]?.id ?? '');

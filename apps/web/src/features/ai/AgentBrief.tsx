@@ -1,3 +1,11 @@
+/**
+ * 业务侧 Agent 的常驻状态条：把执行状态、最近一步动作与研判风险压缩成一行文字 + 点阵信号，
+ * 并提供「发起任务」入口。`open` 为真时自身不渲染，
+ * 展开态由 {@link BusinessAgentPanel} 的工作区承担。
+ *
+ * 契约类型来自 `@capability-hub/contracts`，活动事实由 `activity.js` 的 `activityItems` 归并得到；
+ * 本文件不发请求。
+ */
 import { useState, type RefObject } from 'react';
 import type { AiExecutionResponse, AiExecutionViewResponse } from '@capability-hub/contracts';
 import { ChevronRight, Plus } from '../../shared/icons/lucide.js';
@@ -83,6 +91,10 @@ function Signal({ state }: { state: keyof typeof signals }) {
   );
 }
 
+/**
+ * 状态条：`error` 优先于活动摘要展示；`startAvailable` 为假时按钮禁用但保留入口，
+ * 以免用户在等模型配置或上一任务仍在跑时重复发起。
+ */
 export function AgentBrief({
   actionRef,
   startAvailable,
@@ -98,17 +110,22 @@ export function AgentBrief({
   panelId,
   onToggle,
 }: {
+  /** 为假时禁发起，通常因目录未加载、无可用模型或已有执行处于排队/运行/待确认。 */
   startAvailable: boolean;
   starting: boolean;
   onStart: () => void;
+  /** 供父级注入「快速采纳」浮层的挂载点，出现在状态条右侧。 */
   actionRef: (slot: HTMLDivElement | null) => void;
   view?: AiExecutionViewResponse;
   status?: Status;
   title: string;
+  /** `status` 缺失时替代状态文案，用于区分「尚未发起」与「正在连接」。 */
   emptyLabel: string;
   error: string;
+  /** 为真时不渲染自身，由父级展示展开面板。 */
   open: boolean;
   toggleRef: RefObject<HTMLButtonElement | null>;
+  /** 展开面板的 DOM id，用于 `aria-controls` 关联。 */
   panelId: string;
   onToggle: () => void;
 }) {

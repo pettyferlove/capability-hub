@@ -36,6 +36,12 @@ import { dateLabel } from '../../shared/format/labels.js';
 import { SessionList } from './SessionList.js';
 import { ConnectedAgents } from './ConnectedAgents.js';
 import { AccessTokenForm } from './AccessTokenForm.js';
+/**
+ * 账号安全页：聚合已授权 Agent、登录会话与访问令牌三个来源（`/api/connections`、
+ * `/api/me/sessions`、`/api/tokens`）。改密成功后派发 `hub:unauthenticated` 使全局回到登录态，
+ * 且只影响网页会话，CLI/MCP 令牌继续有效；改密校验失败时会按错误码把焦点移回对应输入框
+ * （`CURRENT_PASSWORD_INVALID` 指向当前密码，其余指向新密码），避免用户重新找位置。
+ */
 export function PersonalSecurity() {
   const { refresh, reload } = useHub(),
     { data: sessions, error: sessionError } = useQuery<SessionResponse[]>(

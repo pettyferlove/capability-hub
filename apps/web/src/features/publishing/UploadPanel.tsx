@@ -1,3 +1,8 @@
+/**
+ * 发布域的上传通道：以 FormData + `metadata` 调用 `POST /api/intakes` 创建接收记录，目标可为新资产或
+ * 已有资产；版本建议来自 `/api/management/assets/{id}/version-plan`。重复提交复用同一
+ * `Idempotency-Key`，版本计划过期（`VERSION_SUGGESTION_STALE`）时刷新建议并要求用户重新确认。
+ */
 import { InputField } from '../../shared/components/InputField.js';
 import { versionPlanIcons } from '../../shared/components/select-icons.js';
 import {
@@ -55,6 +60,10 @@ import {
   type UploadVersionMode,
 } from './upload-identity.js';
 
+/**
+ * 上传面板：收集文件或 MCP 入口、资产身份与发布策略，提交成功后清空表单并切到新接收记录的详情。
+ * 提交按钮在读取文件或请求进行中禁用；同一份 `metadata` 与内容的重试沿用同一幂等键。
+ */
 export function UploadPanel({
   initialAssetId = '',
   initialIntakeId = '',

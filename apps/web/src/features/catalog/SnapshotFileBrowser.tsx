@@ -31,6 +31,11 @@ import { bytesLabel } from '../../shared/format/labels.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { useSnapshotFile } from './use-snapshot-file.js';
 
+/**
+ * 固定版本的文件浏览器：左侧按 `asset.files` 过滤，右侧预览单个文件。
+ * 只有 `active` 时才会请求正文，非 Markdown 或 `source` 模式直接给原文；
+ * 搜索词与预览滚动位置按 `path`（滚动还带 `mode`）分别记忆，切回同一文件时恢复。
+ */
 export function SnapshotFileBrowser({
   asset,
   path,

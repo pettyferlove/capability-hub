@@ -39,6 +39,11 @@ import type { AvatarColor } from '../../shared/components/user-avatar.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { dateLabel } from '../../shared/format/labels.js';
 import { AvatarPalettePicker } from './AvatarPalettePicker.js';
+/**
+ * 个人资料页（`/api/me/profile` 与 `/api/me/activity`）：保存时回传 `data.revision`，
+ * 版本过期即失败。头像配色的本地草稿带 `revision` 标记，仅当草稿版本与最新快照一致时才采用，
+ * 这样保存后不会用旧草稿覆盖服务端刚返回的配色。
+ */
 export function PersonalProfile() {
   const { me, refresh, reload } = useHub(),
     { data, error, loading } = useQuery<ProfileResponse>('/api/me/profile', refresh),

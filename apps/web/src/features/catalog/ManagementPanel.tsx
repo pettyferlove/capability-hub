@@ -1,3 +1,8 @@
+/**
+ * 资产维护面板：发布页「维护」标签的内容，列出 `GET /api/management/assets` 的结果。
+ * 单个资产在抽屉里操作版本、来源与反馈；生命周期与迁移请求带 `revision` 做并发校验，
+ * 回退与吊销只提交 `reason`，失败时回显错误文案。
+ */
 import { Glyph } from '../../shared/components/Glyph.js';
 import { PageTabs } from '../../shared/components/PageTabs.js';
 import { InputField } from '../../shared/components/InputField.js';
@@ -53,6 +58,7 @@ import { Submit } from '../../shared/components/Submit.js';
 import { assetHref, pageHref } from '../../shared/navigation/history-route.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { stateLabel } from '../../shared/format/labels.js';
+/** 维护面板正文：先按名称与状态过滤列表，再为选中的资产打开控制抽屉。 */
 export default function ManagementPanel() {
   const { refresh, reload } = useHub();
   const { data, error, loading } = useQuery<ManagementAssetResponse[]>(

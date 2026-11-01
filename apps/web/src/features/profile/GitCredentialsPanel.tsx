@@ -53,6 +53,12 @@ import { CardGridSkeleton } from '../../shared/components/Skeleton.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { dateLabel } from '../../shared/format/labels.js';
 import { CredentialForm } from './CredentialForm.js';
+/**
+ * 个人 Git 凭据库（`/api/git-credentials`）：密文保存且永不回显 Token 或私钥，
+ * 只对登记时选定的 Git 域名生效。撤销是二次确认的软删除，需带 `If-Match: "<revision>"`
+ * 请求头，冲突即整条撤销失败并提示；撤销只移除秘密材料，凭据记录与已发布的内容快照保留，
+ * 因此已绑定的来源会立即失去访问能力而需要重新登记。
+ */
 export function GitCredentialsPanel() {
   const { refresh, reload } = useHub(),
     { data, error, loading } = useQuery<GitCredentialResponse[]>('/api/git-credentials', refresh);

@@ -2,12 +2,19 @@ import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { CircleAlert, ChevronDown, ArrowRight } from '../../shared/icons/lucide.js';
 
+/** 发布页待核对项，与目标元素的 `data-review-target` 一一对应，用于点击后聚焦定位。 */
 export interface PublicationNotice {
+  /** 目标元素的 `data-review-target` 值，父组件据此在页内查找并聚焦。 */
   target: string;
+  /** 为真表示问题出在扫描证据页，跳转切到证据页，否则切回发布表单。 */
   evidence: boolean;
   text: string;
 }
 
+/**
+ * 发布页底部操作栏：`notices` 非空时左侧变成待核对清单入口（向上浮层），否则显示 `hint` 文案；
+ * 浮层失焦即收起，`Escape` 收起并把焦点还给触发按钮。跳转定位由父组件的 `locate` 负责。
+ */
 export function PublicationFooter({
   action,
   hint,

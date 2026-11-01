@@ -6,6 +6,11 @@ import {
 import { UserAvatar } from '../../shared/components/UserAvatar.js';
 import { avatarPalettes, type AvatarColor } from '../../shared/components/user-avatar.js';
 
+/**
+ * 头像配色单选组：只负责把选中的调色板回传给父级，配色本身的持久化与 `revision` 校验
+ * 由调用方（{@link PersonalProfile}）在保存时处理；两个账号的同一配色经
+ * {@link UserAvatar} 按身份散列成不同图案，因此配色相同不等于头像相同。
+ */
 export function AvatarPalettePicker({
   identity,
   color,

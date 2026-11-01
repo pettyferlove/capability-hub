@@ -1,3 +1,8 @@
+/**
+ * 运维视角的实例运行状态：采样快照来自 `/api/admin/operations`，其中的请求统计只统计本次进程
+ * 启动以来的量，不跨重启累计，所以重启后计数会归零；状态码在客户端聚合为成功（2xx/3xx）、
+ * 拒绝（401/403）与失败（5xx）三类，其余状态不计入任何一类。
+ */
 import {
   formStackStyles,
   panelStyles,
@@ -18,6 +23,10 @@ import { ErrorState } from '../../shared/components/ErrorState.js';
 import { CardGridSkeleton, SummarySkeleton } from '../../shared/components/Skeleton.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { dateLabel } from '../../shared/format/labels.js';
+/**
+ * 所有指标都取自同一份 `OperationsResponse` 快照，避免不同卡片之间出现时间错位；
+ * 重取只由 {@link useHub} 的 `refresh` 变化触发，组件内没有定时器。
+ */
 export function OperationsPanel() {
   const { refresh, reload } = useHub();
   const { data, error, loading } = useQuery<OperationsResponse>('/api/admin/operations', refresh);

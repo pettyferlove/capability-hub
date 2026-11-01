@@ -1,3 +1,7 @@
+/**
+ * 浏览器侧连接授权确认：读取 `/api/connections/authorize/:requestId`，用户裁决后
+ * 提交 `{ allow, contribute }` 并跳转到服务端返回的 `redirect_uri`。
+ */
 import { checkLabelStyles } from '../../shared/styles/recipes.js';
 import {
   panelStyles,
@@ -20,6 +24,11 @@ import { Submit } from '../../shared/components/Submit.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { ListSkeleton } from '../../shared/components/Skeleton.js';
 
+/**
+ * 授权请求有 `expires_at`：倒计时到点后只渲染过期提示，且本地时间已过期时不再发请求，
+ * 以免消费掉一次本就可用的授权。`contribute` 表示是否附带分享/推荐/反馈权限，默认关闭。
+ * 提交失败停留在本页展示错误，成功则整页跳转，状态不再回收。
+ */
 export function ConnectionAuthorization({ requestId }: { requestId: string }) {
   const { me } = useHub();
   const [contribute, setContribute] = useState(false);

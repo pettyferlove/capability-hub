@@ -1,6 +1,10 @@
 import type { MouseEventHandler } from 'react';
 import { Sparkles } from '../../shared/icons/lucide.js';
 
+/**
+ * AI 建议行：`pending` 表示建议仍待研判，此时只展示建议值、不提供采纳按钮；`matched` 为真表示当前
+ * 内容已与建议一致，也不再覆盖。缺少 `onApply` 时纯展示，用于已提交申请的只读对比。
+ */
 export function FieldSuggestion({
   label,
   values,

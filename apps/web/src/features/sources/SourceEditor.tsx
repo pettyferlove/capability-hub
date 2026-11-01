@@ -1,3 +1,7 @@
+/**
+ * Git 来源的新增/编辑抽屉：依赖 `/api/git-credentials` 列出可用凭据，
+ * 保存时按是否有 `source` 走 `POST /api/sources` 或 `PATCH /api/sources/:id`（带 `revision`）。
+ */
 import { InputField } from '../../shared/components/InputField.js';
 import { resourceKindIcons, sourceStateIcons } from '../../shared/components/select-icons.js';
 import {
@@ -26,6 +30,11 @@ import { SelectField } from '../../shared/components/SelectField.js';
 import { KeywordField } from '../../shared/components/KeywordField.js';
 import { PublicationPolicyFields } from '../publishing/PublicationPolicyFields.js';
 
+/**
+ * 仓库身份（URL）在编辑现有来源时只读：正本不可原地替换，更换需走受控迁移。
+ * 凭据下拉按解析出的 host 与协议类型预筛，地址尚未成形时不筛（提交后由服务端校验）。
+ * 保存成功后只回调 `onSaved`，由父级负责重载列表与关闭抽屉。
+ */
 export function SourceEditor({
   source,
   onClose,

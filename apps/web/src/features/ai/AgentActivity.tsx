@@ -32,6 +32,9 @@ function roleInfo(id: string) {
     };
   return { ...role, ...agentLabels[key], tone: agentToneStyles[key] };
 }
+/**
+ * 「多 Agent 协作」的角色板，展示规划、表达、风险三个角色的实时进度；其它操作类型返回 `null`。
+ */
 export function AgentRoster({ view }: { view: AiExecutionViewResponse }) {
   if (view.execution.operation_id !== 'agent-lab') return null;
   return (
@@ -78,6 +81,10 @@ export function AgentRoster({ view }: { view: AiExecutionViewResponse }) {
     </section>
   );
 }
+/**
+ * 单个角色的输出卡片：角色由 `message_id` 冒号前的段位决定，未登记的角色按助手样式兜底；
+ * 研判报告不展示正文，只用 `reportReady` 指路「成果」，其余角色在生成中且面板可见时逐字显示。
+ */
 export function AgentMessageCard({
   block,
   reportReady,
@@ -85,8 +92,11 @@ export function AgentMessageCard({
   active,
 }: {
   block: AiExecutionViewResponse['execution']['message_blocks'][number];
+  /** 研判报告是否已可查看，只有报告角色用到。 */
   reportReady: boolean;
+  /** 执行是否仍在运行，决定「生成中／已停止」与是否继续流式显示。 */
   running: boolean;
+  /** 所在面板当前可见；为假时停止逐字动画以省掉后台渲染。 */
   active: boolean;
 }) {
   const role = block.message_id.split(':')[0];

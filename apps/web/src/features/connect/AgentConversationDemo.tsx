@@ -1,3 +1,7 @@
+/**
+ * 连接页的 Agent 对话回放演示：脚本取自 `conversation-examples.js`，状态机由
+ * `conversation-playback.js` 推导，本组件只负责推进 `visible` 与滚动跟随，不发任何请求。
+ */
 import {
   agentExperienceStyles,
   conversationDemoStyles,
@@ -53,6 +57,11 @@ import {
   type ConversationDecision,
 } from './conversation-playback.js';
 
+/**
+ * 节拍固定 1100ms 推进一步，仅在 `advancing` 期间计时；确认步骤需用户裁决才继续，
+ * 拒绝即终止回放。切换场景会重置步数、播放状态与裁决。用户手动上滑后停止跟随滚动，
+ * 但不会因此暂停播放——跟随与播放是两个独立开关。
+ */
 export function AgentConversationDemo() {
   const reduceMotion = useReducedMotion();
   const [scenario, setScenario] = useState('task');

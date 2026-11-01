@@ -1,3 +1,8 @@
+/**
+ * 目录发现页（`/`）：搜索、关键词建议、类型/分类/场景筛选与游标分页的入口。
+ * 依赖 `GET /api/assets`（`limit` 固定 18，用 `cursor` 翻页）、`GET /api/scenarios`
+ * 与 `GET /api/assets/keywords`；输入 250ms 防抖后才发请求，且 `/` 键在无弹层时聚焦搜索框。
+ */
 import {
   discoverStyles,
   discoverHeroStyles,
@@ -96,6 +101,7 @@ import { categoryLabel } from '../../shared/format/labels.js';
 import { assetHref } from '../../shared/navigation/history-route.js';
 import { CatalogMotionItem } from './CatalogMotionItem.js';
 import { CatalogEmptyState } from './CatalogEmptyState.js';
+/** 目录发现页正文：筛选变化即重置游标，翻页只追加当前条件的结果。 */
 export default function DiscoverPage() {
   const searchInput = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState(''),

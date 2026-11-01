@@ -1,3 +1,8 @@
+/**
+ * 审计事件工作台：数据来自 `/api/admin/audit`，关键词、分类、结果与时间范围组合后由服务端分页，
+ * 翻页时保留上一页数据（`keepPreviousData`）避免表格闪空；关键词输入防抖 250ms 才触发查询。
+ * 行与详情分别由 {@link AuditEventRow} 与 {@link AuditEventDetail} 渲染，原始记录只读不可改。
+ */
 import {
   auditCategoryIcons,
   auditResultIcons,
@@ -48,6 +53,10 @@ import { TableSkeleton } from '../../shared/components/Skeleton.js';
 import { QueryRegion } from '../../shared/components/QueryRegion.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { AuditEventDetail, AuditEventRow } from './AuditEventDetail.js';
+/**
+ * 审计列表的筛选与分页状态都保存在本地 state，URL 不参与同步，刷新页面即回到默认筛选；
+ * 「清空筛选」同时把页码重置为 1，避免停留在越界页。
+ */
 export function AuditPanel() {
   const { refresh, reload } = useHub();
   const [query, setQuery] = useState(''),

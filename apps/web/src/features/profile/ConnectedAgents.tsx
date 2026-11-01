@@ -20,6 +20,11 @@ import { Message } from '../../shared/components/Message.js';
 import { ListSkeleton } from '../../shared/components/Skeleton.js';
 import { dateLabel } from '../../shared/format/labels.js';
 
+/**
+ * 已授权 Agent 连接列表（`/api/connections`）：只展示 `revoked_at` 为空的活动连接，
+ * 断开是软撤销（`DELETE /api/connections/{id}`），记录保留但立即停止访问；
+ * 同一时刻只允许一个断开请求在途，`busy` 期间全部按钮禁用。
+ */
 export function ConnectedAgents({ className }: { className?: string } = {}) {
   const { refresh, reload } = useHub();
   const { data, error } = useQuery<ConnectionResponse[]>('/api/connections', refresh);

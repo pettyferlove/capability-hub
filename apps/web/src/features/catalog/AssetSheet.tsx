@@ -1,3 +1,8 @@
+/**
+ * 资产详情抽屉：由 App 通过 Overlay 懒加载，按 slug 拉取 `GET /api/assets/{slug}`。
+ * 维护动作走 `PATCH /api/assets/{asset_id}/lifecycle` 与 `POST /api/versions/{version_id}/revoke`，
+ * 成功后 `reload()` 刷新详情；权限不足时接口报错，未登录会追加登录入口。
+ */
 import { managementIcons } from '../../shared/components/select-icons.js';
 import {
   detailIdentityStyles,
@@ -38,6 +43,7 @@ import { assetHref, loginHref } from '../../shared/navigation/history-route.js';
 import { AssetContent } from './AssetContent.js';
 import { ApiKeyBadge } from './ApiKeyBadge.js';
 import { SkillUsageForm } from './SkillUsageForm.js';
+/** 详情抽屉外壳：先占位骨架，再渲染身份信息、{@link AssetContent} 与维护工具。 */
 export default function AssetSheet({ slug }: { slug: string }) {
   const { refresh, reload, me } = useHub();
   const {

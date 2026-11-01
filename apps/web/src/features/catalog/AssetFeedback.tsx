@@ -26,6 +26,10 @@ import { useHub } from '../../shared/context/HubContext.js';
 import { FeedbackForm } from './FeedbackForm.js';
 import { FeedbackDetail } from './FeedbackDetail.js';
 
+/**
+ * 目录详情里的反馈区：列表态（10 条一页）、详情态与表单态互斥，靠 `?feedback=` 深链进入详情。
+ * 未登录时不发请求，只提示登录；`revision` 本地自增用于重新拉取列表与详情。
+ */
 export function AssetFeedback({ assetId, versionId }: { assetId: string; versionId?: string }) {
   const { me, refresh } = useHub();
   const [page, setPage] = useState(1);

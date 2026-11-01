@@ -1,3 +1,8 @@
+/**
+ * 单条接收记录的校验与发布工作台：证据页展示扫描结果与固定内容快照，发布页填写策略后向
+ * `POST /api/publication-requests` 提交人工审核。失败记录可 `POST /api/intakes/{id}/retry` 重试，
+ * 规则集过期时用 `/api/intakes/{id}/rescan` 按最新规则重扫并切到新记录。
+ */
 import { createPortal } from 'react-dom';
 import { FieldSuggestion } from './FieldSuggestion.js';
 import { SubmittedFields } from './SubmittedFields.js';
@@ -35,6 +40,11 @@ import type { IntakeConnection } from './use-intake-detail.js';
 import { IntakeScan } from './IntakeScan.js';
 import { KeywordField } from '../../shared/components/KeywordField.js';
 import { SkillApiKeyField } from '../../shared/components/SkillApiKeyField.js';
+/**
+ * 详情工作台：仅当校验通过、规则集未过期且未处于待审核时可编辑（已发布需点重新申请），
+ * `asset_lifecycle` 非 `active` 时整页只读。提交前用 `notices` 汇总缺少的必填项与扫描发现，底部操作栏
+ * 由 {@link PublicationFooter} 门户挂到父级提供的插槽。
+ */
 export function IntakeDetail({
   intake: i,
   suggestion,

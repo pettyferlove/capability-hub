@@ -1,3 +1,8 @@
+/**
+ * 资产详情的主体内容：概览、文件清单、使用与安装、版本历史、问题与建议五个互斥视图。
+ * 依赖 `GET /api/assets/{slug}/versions` 与 {@link useSnapshotFile} 读取当前版本文件；
+ * 历史位置由 {@link detailNavigation} 维护，滚动位置与焦点在切换时按 key 恢复。
+ */
 import { AssetFeedback } from './AssetFeedback.js';
 import {
   assetContentStyles,
@@ -51,6 +56,7 @@ import {
 } from './detail-navigation.js';
 import { useSnapshotFile } from './use-snapshot-file.js';
 
+/** 详情内容区：标签切换与文件跳转共用一条历史栈，后退/前进在同一面板内完成。 */
 export function AssetContent({ asset }: { asset: AssetResponse }) {
   const { refresh, reload } = useHub();
   const entry = asset.kind === 'skill' ? 'SKILL.md' : 'server.json';

@@ -12,6 +12,11 @@ import { FileArchive, FileJson, Trash2, UploadCloud } from '../../shared/icons/l
 import { useRef, useState } from 'react';
 import { bytesLabel } from '../../shared/format/labels.js';
 
+/**
+ * 文件选择区：`kind` 决定 `accept`（Skill 为 `.zip`，MCP 为 `.json`），支持拖放与点击选择；每次选完
+ * 清空 input 的值，使再次选中同一文件仍能触发 `onChange`。`reading` 只置 `aria-busy`，不阻断更换或
+ * 移除。
+ */
 export function UploadFilePicker({
   kind,
   file,

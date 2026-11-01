@@ -53,6 +53,10 @@ function ActorAvatar({ actor }: { actor: AuditEventResponse['actor'] }) {
   );
 }
 
+/**
+ * 只有 `failure` 单独成色，其余取值（含历史数据里的非标准结果）都按成功呈现，
+ * 判断依据是事件的归一化结果而非 `recorded_result` 原文。
+ */
 export function AuditResult({ result }: { result: AuditEventResponse['result'] }) {
   return (
     <span className={cn(auditResultStyles, `group/${result}`)}>
@@ -61,6 +65,10 @@ export function AuditResult({ result }: { result: AuditEventResponse['result'] }
     </span>
   );
 }
+/**
+ * 把 ISO 时间拆成日期与 24 小时制时分秒两段，供列表与详情共用同一套 `zh-CN` 本地时区格式，
+ * 两处必须同源，否则同一事件在表格与抽屉里会显示成不同时间。
+ */
 export function auditTimestamp(value: string) {
   const date = new Date(value);
   return {
@@ -73,6 +81,10 @@ export function auditTimestamp(value: string) {
     }),
   };
 }
+/**
+ * 事件行的备注列优先展示 `reason`，缺失时回落到分类名，因此失败事件即便没有记录原因
+ * 也不会出现空列；`onOpen` 只回传事件本身，分页与筛选仍由父级持有。
+ */
 export function AuditEventRow({
   event,
   onOpen,
@@ -143,6 +155,11 @@ export function AuditEventRow({
   );
 }
 
+/**
+ * 事件详情抽屉：`*_updated` 动作即使没有字段级变更也保留「字段变更」区块并说明无法确认，
+ * 其余动作仅在 `changes` 非空时展示；`recorded_result` 与归一化结果不一致时额外提示，
+ * 因为原始记录始终按落库值展示、不可回写。
+ */
 export function AuditEventDetail({
   event,
   onClose,

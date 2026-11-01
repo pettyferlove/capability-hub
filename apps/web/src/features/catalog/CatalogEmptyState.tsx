@@ -4,6 +4,10 @@ import { FolderOpen, Search, UploadCloud } from '../../shared/icons/lucide.js';
 import { Empty } from '../../shared/components/Empty.js';
 import { useHub } from '../../shared/context/HubContext.js';
 
+/**
+ * 目录列表为空时的兜底视图，按「无匹配」与「整库为空」分别给出行动点。
+ * 发布入口只对具备 `can_publish` 能力的登录用户出现；未登录时文案改为公开资源说明。
+ */
 export function CatalogEmptyState({
   browsing,
   onClear,

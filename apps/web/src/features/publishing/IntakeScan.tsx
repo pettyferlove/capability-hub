@@ -8,6 +8,10 @@ import { tagStyles } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
 import type { ScanResponse } from '@capability-hub/contracts/http';
 import { ShieldCheck } from '../../shared/icons/lucide.js';
+/**
+ * 静态扫描报告：`block`/`warn` 级发现逐项展开，`info` 级折进折叠区；每项带 `data-review-target`，
+ * 供发布页的待核对清单聚焦定位。全部为空时也明确提示仍需人工审核，避免被误读为已通过发布。
+ */
 export function IntakeScan({ scan }: { scan: ScanResponse }) {
   const risks = scan.findings.filter((f) => f.severity !== 'info'),
     infos = scan.findings.filter((f) => f.severity === 'info');

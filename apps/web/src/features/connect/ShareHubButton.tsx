@@ -1,3 +1,7 @@
+/**
+ * 「分享 Hub」入口与其邀请卡：卡片内容来自 `/api/hub-share`，按 `hubShareResponseSchema`
+ * 解析后才渲染，解析失败不展示半成品文案。
+ */
 import { btnStyles, iconBtnStyles } from '../../shared/styles/recipes.js';
 import {
   hubShareTriggerStyles,
@@ -51,6 +55,10 @@ import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Glyph } from '../../shared/components/Glyph.js';
 import { Overlay } from '../../shared/components/Overlay.js';
 
+/**
+ * 自身只管开关与可访问性属性：邀请卡放在 `Overlay` 的 `showcase` 变体里，关闭由 `onClose` 回收，
+ * 按钮与对话框通过 `aria-expanded` 关联。
+ */
 export function ShareHubButton() {
   const [open, setOpen] = useState(false);
   return (

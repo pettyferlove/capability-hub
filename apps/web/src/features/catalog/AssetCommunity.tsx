@@ -22,6 +22,11 @@ import { Submit } from '../../shared/components/Submit.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { assetHref, loginHref, pageHref } from '../../shared/navigation/history-route.js';
 
+/**
+ * 详情里的社区区：推荐（`POST /api/ratings`），以及分类为 general 时的精选提名
+ * （`POST /api/nominations`）。两个动作都要登录，成功后用接口返回的社区对象覆盖本地状态
+ * 并触发全局 reload。
+ */
 export function AssetCommunity({ asset }: { asset: AssetResponse }) {
   const { me, reload } = useHub();
   const [community, setCommunity] = useState(asset.community);

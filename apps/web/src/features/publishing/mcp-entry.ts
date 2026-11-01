@@ -1,6 +1,10 @@
 import { assetSlugSchema as assetSlug, isFixedVersionLabel } from '@capability-hub/contracts';
 import { suggestSlug, type IdentitySuggestion } from './upload-identity.js';
 
+/**
+ * 手动录入 MCP 入口的表单快照。`mode` 决定哪些字段参与提交：`url` 只用 `url` 与 `tokenVariable`，
+ * `command` 只用 `command`/`packageVersion`/`environment`，`file` 不读表单、须走 server.json 导入。
+ */
 export interface McpEntryDraft {
   mode: 'url' | 'command' | 'file';
   url: string;
@@ -11,6 +15,7 @@ export interface McpEntryDraft {
   tokenVariable: string;
   environment: string;
 }
+/** 初始值默认走 `url` 模式，Token 变量名预填 `MCP_TOKEN`，省去带鉴权远程入口的必填提醒。 */
 export const emptyMcpEntry: McpEntryDraft = {
   mode: 'url',
   url: '',
@@ -57,6 +62,12 @@ function commandWords(command: string): string[] {
   return words;
 }
 
+/**
+ * 只接受单条 `npx` 命令或裸 npm 包名；npm/pnpm/yarn/uvx/uv/docker/node/python/sh/bash 等其他安装方式
+ * 一律拒绝并提示改用 server.json。整串上限 4096 字符，参数最多 64 个、不能为空且不能含 `{}` 模板，
+ * 版本必须是固定版本（`latest` 或范围会被拒）；任一不满足即抛 {@link Error}。返回的 `version` 为
+ * `undefined` 表示命令未写版本，由调用方补全。
+ */
 export function parseNpmInstallation(command: string) {
   if (!command.trim()) throw new Error('请输入 npm 包名或 npx 命令。');
   if (command.length > 4096) throw new Error('安装命令不超过 4096 个字符。');
@@ -88,6 +99,10 @@ export function parseNpmInstallation(command: string) {
   return { identifier, version, args: words };
 }
 
+/**
+ * 校验并以 {@link URL} 形式返回 MCP 远程地址：仅 http/https，禁止内嵌账号密码、URL 片段与
+ * `{}`/空白模板变量，保证同一地址能稳定比较与去重；不合法时抛 {@link Error}。
+ */
 export function mcpAddress(address: string): URL {
   const text = address.trim();
   let url: URL;
@@ -107,6 +122,10 @@ export function mcpAddress(address: string): URL {
   return url;
 }
 
+/**
+ * 从 draft 推测 slug 与版本：`url` 模式取末段路径（跳过 `mcp`/`sse`）或主域名，`command` 模式取包名
+ * 末段。输入尚未完整时**不抛错**而返回空建议，具体校验错误留到 {@link buildMcpDocument} 提交时报出。
+ */
 export function mcpEntryIdentity(draft: McpEntryDraft): IdentitySuggestion {
   try {
     if (draft.mode === 'url') {
@@ -140,6 +159,12 @@ function environmentNames(text: string): string[] {
   return names;
 }
 
+/**
+ * 把 draft 转成 server.json 结构：`url` 模式产出单个 `remotes` 条目，`command` 模式产出 `packages`
+ * 条目（只有 `npx` 包，走 stdio）。校验失败一律抛 {@link Error}：slug 须通过契约校验、版本须为固定
+ * 版本且不超过 128 字符、描述 1–100 字符。`authenticated` 为真才写入 Bearer 头与变量声明；
+ * `environment` 只收变量名，最多 20 个，写等号或值会被拒。
+ */
 export function buildMcpDocument(draft: McpEntryDraft, slug: string, version: string) {
   if (!assetSlug.safeParse(slug).success) throw new Error('请填写有效的资产名称。');
   if (!isFixedVersionLabel(version) || version.length > 128)

@@ -1,3 +1,7 @@
+/**
+ * 发布入口页，按 `?tab=` 在「添加资产」{@link UploadPanel}、「Git 同步」{@link SourcesPanel} 与
+ * 「维护资产」{@link ManagementPanel} 三个通道间切换，未知 tab 一律回退到上传。
+ */
 import { publishPageStyles } from './styles.js';
 import { pageContentStyles } from '../../shared/styles/recipes.js';
 import { GitBranch, ShieldCheck, UploadCloud } from '../../shared/icons/lucide.js';
@@ -10,6 +14,10 @@ import { navigate } from '../../shared/navigation/history-navigation.js';
 import ManagementPanel from '../catalog/ManagementPanel.js';
 import SourcesPanel from '../sources/SourcesPanel.js';
 import { UploadPanel } from './UploadPanel.js';
+/**
+ * 发布页容器：只负责 tab 解析、`can_publish` 权限拦截与面板挂载，不持有表单状态。切换 tab 时内容区
+ * 按 `key` 重挂载，避免上一通道的输入残留。
+ */
 export default function PublishPage({ query = location.search }: { query?: string }) {
   const { me } = useHub();
   const params = new URLSearchParams(query);

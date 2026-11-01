@@ -18,6 +18,11 @@ import { Segmented } from '../../shared/components/Segmented.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { useHub } from '../../shared/context/HubContext.js';
 
+/**
+ * 新建个人访问令牌：明文只在 `POST /api/tokens` 的响应里返回一次，保存在本地 state 中，
+ * 关闭或点击「我已安全保存」后即丢弃，无法再次查看。令牌长期有效、只能撤销，
+ * 因此提交用 `pending` ref 与 `token` 双重守卫，防止重复点击签出多张令牌。
+ */
 export function AccessTokenForm({
   defaultName = '',
   onDone,

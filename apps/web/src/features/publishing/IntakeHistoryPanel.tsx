@@ -1,3 +1,8 @@
+/**
+ * 发布域的接收记录通道：分页查询 `/api/intakes`（保留上一页数据避免列表闪烁），选中项经
+ * {@link useIntakeDetail} 读取详情并接收 SSE 进度。有处理中的记录时每 2 秒刷新一次列表，超过 120 秒
+ * 停止轮询并提示到后台查看，避免长时间占用。
+ */
 import { intakeStatusIcons } from '../../shared/components/select-icons.js';
 import {
   panelStyles,
@@ -41,6 +46,10 @@ import type { AuditSuggestion } from '../ai/publication-suggestion.js';
 import { BusinessAgentPanel } from '../ai/BusinessAgentPanel.js';
 import { IntakeHistoryRow, statusLabels } from './IntakeHistoryRow.js';
 
+/**
+ * 接收记录列表与详情容器：选中项由父级 `active` 单向决定，`onSelect` 只回传 id；搜索与状态筛选在
+ * 提交时才生效并重置到第 1 页。
+ */
 export function IntakeHistoryPanel({
   active,
   onSelect,

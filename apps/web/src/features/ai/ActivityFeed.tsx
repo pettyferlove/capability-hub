@@ -1,3 +1,10 @@
+/**
+ * 执行活动的只读渲染层：把 {@link activityItems} 归并出的消息块、工具调用与人工交互
+ * 按时间线铺开，负责自动跟随滚动、离底提示与「聚焦待确认交互」的滚动定位。
+ *
+ * 数据来自 `@capability-hub/contracts` 的 `AiExecutionViewResponse` / `AiInteractionResponse`，
+ * 不做任何请求：交互确认经子组件提交后由父级 `onRefresh` 重新拉取视图。
+ */
 import { useLayoutEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import type { AiExecutionViewResponse, AiInteractionResponse } from '@capability-hub/contracts';
@@ -78,6 +85,10 @@ function InteractionDecision({ interaction }: { interaction: AiInteractionRespon
     </section>
   );
 }
+/**
+ * 时间线主体：`active` 为 false 时（标签页隐藏）不自动滚动、不抢焦点，避免切回时跳动；
+ * 待确认交互仅在 `canManage` 为真时渲染表单，否则只展示决策记录。
+ */
 export function ActivityFeed({
   view,
   canManage,
@@ -86,9 +97,12 @@ export function ActivityFeed({
   focusRequest,
 }: {
   view: AiExecutionViewResponse;
+  /** 是否为当前执行发起人且持有 `can_ai`；否则交互项降级为只读记录。 */
   canManage: boolean;
+  /** 面板是否可见；隐藏时暂停自动跟随与交互聚焦。 */
   active: boolean;
   onRefresh: () => void;
+  /** 单调递增的计数，变化即滚动到待确认交互并聚焦；重复值不会重复触发。 */
   focusRequest: number;
 }) {
   const { execution } = view;

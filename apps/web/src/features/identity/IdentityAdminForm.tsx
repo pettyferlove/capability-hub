@@ -23,6 +23,11 @@ import { DialogTitle } from '../../shared/components/DialogTitle.js';
 import { Message } from '../../shared/components/Message.js';
 import { PasswordField } from '../../shared/components/PasswordField.js';
 import { Submit } from '../../shared/components/Submit.js';
+/**
+ * 账号、团队、角色、绑定与场景共用的编辑表单：`kind` 同时决定提交路径、字段集合与标题，
+ * 且每类形态只提交自己的字段。`reset` 与 `edit-role` 必须带 `user`（缺失直接抛错），
+ * 这两类写操作额外回传 `user.revision` 做乐观并发校验；其余形态均为新建语义。
+ */
 export function IdentityAdminForm({
   kind,
   data,
@@ -294,6 +299,11 @@ export function IdentityAdminForm({
   );
 }
 
+/**
+ * 各编辑形态共用的最小记录快照；`revision` 随写请求回传，服务端据此拒绝过期写入，
+ * 因此从列表里拿到的记录不能跨刷新长期持有。不同形态用到的字段不同：
+ * `permissions` 只对角色生效，`name` 只对团队与角色生效。
+ */
 export interface IdentityEditorRecord {
   id: string;
   revision: number;
@@ -302,5 +312,10 @@ export interface IdentityEditorRecord {
   name?: string;
 }
 
+/**
+ * 表单形态：`user`/`reset` 面向账号，`group`/`membership` 面向团队与成员关系，
+ * `role`/`edit-role` 面向角色定义与授权，`binding` 面向「主体—角色—作用域」绑定，
+ * `scenario` 登记业务场景；每种形态对应一条独立的写接口，不共享提交载荷。
+ */
 export type IdentityEditorKind =
   'user' | 'reset' | 'group' | 'role' | 'edit-role' | 'binding' | 'membership' | 'scenario';

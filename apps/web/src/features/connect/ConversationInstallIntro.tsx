@@ -1,3 +1,7 @@
+/**
+ * 「选择获取方式」面板：纯静态说明，按 Agent 对话 / 直接下载 / CLI 与 Hub MCP 三条路径
+ * 列出步骤与权限前提，不发起请求。各方式的可见性差异写在各自 `hint` 里。
+ */
 import { panelStyles, btnStyles, btnPrimaryStyles } from '../../shared/styles/recipes.js';
 import {
   connectAccessStyles,
@@ -54,6 +58,10 @@ const accessMethods = [
   },
 ] as const;
 
+/**
+ * 单选组式切换：`selected` 始终指向 `accessMethods` 中的一项，切换只影响下方步骤与操作按钮，
+ * 不触发导航以外的副作用；`useId` 派生的 id 用于把描述与单选框、标题关联。
+ */
 export function ConversationInstallIntro() {
   const id = useId();
   const [selected, setSelected] = useState<string>('conversation');

@@ -1,8 +1,19 @@
+/**
+ * 对话演示的单步：用户或 Agent 的文本、一次工具调用，或需要用户裁决的确认请求。
+ * 每步只表达一种 `kind`，`tool` 的 `status`/`result` 与 `confirmation` 的标题文本都只用于展示。
+ */
 export type ConversationStep =
   | { kind: 'user' | 'agent'; text: string }
   | { kind: 'tool'; name: string; input: string; result?: string; status?: string }
   | { kind: 'confirmation'; title: string; text: string; action: string };
 
+/**
+ * 引导页对话演示的脚本数据。`id` 在数组内唯一，播放器按 `id` 选场景，
+ * 重复会让切换恒定落到首个匹配项，并让回放状态与 UI 上的选中项错位。
+ *
+ * 每个场景首步是用户指令（播放器初始展示前两步）；含 `confirmation` 的场景
+ * 必须等用户裁决才会继续，拒绝即视为该场景结束。
+ */
 export const conversationExamples: {
   id: string;
   label: string;

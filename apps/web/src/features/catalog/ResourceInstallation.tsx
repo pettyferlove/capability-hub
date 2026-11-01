@@ -23,6 +23,11 @@ import {
   type InstallationClient,
 } from './installation-methods.js';
 
+/**
+ * 「使用与安装」标签的内容，按 {@link installationMethods} 的结果三选一：
+ * 公开资源给对话安装指令，Skill 给 CLI 命令，MCP 交给受限配置表单。
+ * 各分支都使用当前发布版本，因此安装结果与页面展示的版本一致。
+ */
 export function ResourceInstallation({ asset, origin }: { asset: AssetResponse; origin: string }) {
   const methods = installationMethods(asset);
   const [client, setClient] = useState<InstallationClient>('codex');

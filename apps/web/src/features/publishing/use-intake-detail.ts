@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 
+/**
+ * 详情连接状态：`connecting` 首次加载或仍处处理中、`live` 已收到进度事件、`reconnecting` 传输中断后
+ * 浏览器自动重连、`closed` 已终态或出错不再更新。
+ */
 export type IntakeConnection = 'connecting' | 'live' | 'reconnecting' | 'closed';
 
 /** 详情由 HTTP 读取，处理中的阶段由 SSE 更新；终态重新读取不可变检查证据。 */

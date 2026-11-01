@@ -21,6 +21,11 @@ function enumLabel(value: Json | undefined): string {
 function object(value: Json | undefined): Record<string, Json> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
+/**
+ * 由 JSON Schema 生成表单初值，优先级：`default` 最高，其次仅为 `required` 字段合成空值（枚举取首项，
+ * 其余按类型给 `false`／`0`／空对象／空数组／空串）。可选且无默认值的字段直接不出现，因此提交体
+ * 不会带上服务端没要求的键。
+ */
 export function initialValues(schema: Json): Record<string, Json> {
   const properties = object(object(schema).properties);
   const required = object(schema).required;
@@ -78,6 +83,10 @@ function JsonField({
     />
   );
 }
+/**
+ * 只渲染契约响应 schema 的子集（boolean、enum、number、object/array 等走 JSON 文本域、其余为文本域），
+ * 按需展示必填标记与 `description`。服务端未声明的字段类型一律降级为文本，不会报错。
+ */
 export function SchemaFields({
   schema,
   value,
@@ -89,6 +98,7 @@ export function SchemaFields({
   value: Record<string, Json>;
   onChange: (value: Record<string, Json>) => void;
   disabled?: boolean;
+  /** 白名单：只渲染这些键；省略则全部渲染，渲染顺序始终跟随 schema 的 properties 顺序。 */
   names?: string[];
 }) {
   const fields = object(object(schema).properties);

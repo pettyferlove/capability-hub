@@ -10,11 +10,18 @@ import {
   readingWidthStyles,
 } from './styles.js';
 
+/**
+ * 「运行详情」页签：用量概览、任务元信息、已作答的人工决定与事件时间线，末尾附原始输入/结果/成果件。
+ *
+ * `events` 由调用方传入（通常是 `view.activity`），{@link eventLabel} 返回 `undefined` 的事件会被
+ * 丢弃；同一 `seq` 作为 React key，因此传入列表须来自同一视图，不要拼接多次快照。
+ */
 export function ExecutionDetails({
   view,
   events,
 }: {
   view: AiExecutionViewResponse;
+  /** 用于渲染时间线的事件，按传入顺序展示，组件内不再排序。 */
   events: AiEventResponse[];
 }) {
   const { execution } = view;

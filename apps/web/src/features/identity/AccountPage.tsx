@@ -1,3 +1,9 @@
+/**
+ * 账号域入口页：个人资料、Git 凭据、账号安全为所有登录用户可见，账号与团队、角色与作用域、
+ * 审计、运维四个页签分别由 {@link useHub} 的 `me.capabilities.can_admin` / `can_audit` 开放，
+ * 无对应能力的账号连页签都不会渲染。各面板数据来自 `/api/admin/identity`、
+ * `/api/admin/audit` 与 `/api/admin/operations` 等管理端接口。
+ */
 import { accountPageStyles } from './styles.js';
 import { pageContentStyles } from '../../shared/styles/recipes.js';
 import {
@@ -17,6 +23,10 @@ import { PersonalSecurity } from '../profile/SecurityPanel.js';
 import { AdministrationPanel } from './AdministrationPanel.js';
 import { AuditPanel } from './AuditPanel.js';
 import { OperationsPanel } from './OperationsPanel.js';
+/**
+ * 页签容器：`query` 缺省取 `location.search`，其中的 `tab` 若不在当前账号允许的集合内
+ * （含拼写错误与越权页签）一律回落到 `profile`，因此永远不会渲染出无权限面板。
+ */
 export default function AccountPage({ query = location.search }: { query?: string }) {
   const { me } = useHub();
   const requested = new URLSearchParams(query).get('tab') ?? 'profile';

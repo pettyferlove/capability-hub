@@ -1,3 +1,7 @@
+/**
+ * 发布审核工作台：按状态拉取 `/api/publication-requests?state=`，左侧队列、右侧详情。
+ * 选中项由 URL 的 `state`/`request` 决定，非法状态回落到 `pending`（见 `reviewLocation`）。
+ */
 import { shortVersion } from './version-label.js';
 import { Glyph } from '../../shared/components/Glyph.js';
 import {
@@ -39,6 +43,10 @@ import { navigate } from '../../shared/navigation/history-navigation.js';
 import { ReviewDetail } from './ReviewDetail.js';
 import { ReviewStatusTabs } from './ReviewStatusTabs.js';
 import type { ChangeFile } from './types.js';
+/**
+ * 队列与详情共用一份数据：URL 指向的申请不在当前状态列表里时回落第一条。
+ * 切状态保留上一份数据（`keepPreviousData`）以免闪空，期间状态条只显示占位而不是旧计数。
+ */
 export default function ReviewPage({ query = location.search }: { query?: string }) {
   const { refresh, reload } = useHub();
   const { state, request: selected } = reviewLocation(query);

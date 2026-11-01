@@ -1,3 +1,8 @@
+/**
+ * 账号与角色管理面板（`identity` 与 `roles` 两个页签共用）：快照来自 `/api/admin/identity`，
+ * 成员、团队、角色授权与业务场景的增删改走 `/api/admin/*`；停用账号、编辑角色等写操作回传
+ * `revision`，服务端据此拒绝基于过期快照的写入。
+ */
 import {
   formStackStyles,
   panelStyles,
@@ -52,6 +57,10 @@ import { CardGridSkeleton, ListSkeleton, TableSkeleton } from '../../shared/comp
 import { useHub } from '../../shared/context/HubContext.js';
 import type { IdentityEditorKind, IdentityEditorRecord } from './IdentityAdminForm.js';
 import { IdentityAdminForm } from './IdentityAdminForm.js';
+/**
+ * 按 `tab` 在「账号维护」与「角色授权」两套视图间切换；两套视图共用同一份快照，
+ * 停用账号会连带撤销该账号的会话与令牌，因此写操作后立即 `reload()` 而不是本地修补列表。
+ */
 export function AdministrationPanel({ tab }: { tab: string }) {
   const { refresh, reload } = useHub();
   const { data, error, loading } = useQuery<IdentitySnapshotResponse>(

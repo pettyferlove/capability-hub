@@ -1,6 +1,9 @@
 import type { PublicationSuggestion } from '@capability-hub/contracts';
 import { categoryLabels } from './publication-suggestion.js';
 
+/**
+ * 发布建议的只读预览：分类、关键词与用途，不接受编辑；写入表单由调用方负责。
+ */
 export function SuggestionPreview({ fields }: { fields: PublicationSuggestion }) {
   return (
     <section

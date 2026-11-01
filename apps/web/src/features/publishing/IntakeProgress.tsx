@@ -37,6 +37,11 @@ const duration = (milliseconds: number) => {
 };
 const time = (value: string) => new Date(value).toLocaleTimeString('zh-CN', { hour12: false });
 
+/**
+ * 处理进度面板：处理中每秒刷新已用时长计时器，其余状态停止计时；步骤序列固定为首次事件、
+ * `scanning`、`snapshot`。`SCAN_BLOCKED` 与失败/取消都按停止态展示，`connection` 只描述 SSE 通道
+ * 状态，不改变进度判断。
+ */
 export function IntakeProgress({
   intake,
   connection = 'closed',

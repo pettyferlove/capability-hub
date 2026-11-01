@@ -1,3 +1,7 @@
+/**
+ * Hub MCP 工具清单的静态侧栏：名称与说明都来自 `hubTools` 契约（`read` / `client` / `contribute`
+ * 三类动作），本组件只按 `name` 映射图标并逐条渲染，不发请求。
+ */
 import {
   toolboxStyles,
   toolboxHeadingStyles,
@@ -35,6 +39,10 @@ const icons: Record<(typeof hubTools)[number]['name'], IconComponent> = {
   rate_asset: ThumbsUp,
   report_asset_feedback: MessageSquare,
 };
+/**
+ * 只有 `contribute` 类工具（分享、反馈、推荐）会写团队侧数据、需要额外权限，故只对它们
+ * 提示权限；`read` 只查询，`client` 写的是本地配置。
+ */
 export function HubToolbox() {
   return (
     <section className={toolboxStyles} aria-label={`Hub MCP 的 ${hubTools.length} 个工具`}>

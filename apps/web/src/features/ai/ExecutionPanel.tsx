@@ -1,3 +1,8 @@
+/**
+ * 执行面板：把一份执行视图拆成「协作过程／成果／运行详情」三个页签，并承载取消任务与人工确认入口。
+ * 视图、连接状态与刷新回调都由调用方注入（独立页面与侧栏浮层共用），写操作经 `{@link useAiCommand}`
+ * 提交，因此这里的取消请求同样带幂等键与版本前置条件。
+ */
 import { useEffect, useRef, useId, useState, type ReactNode } from 'react';
 import {
   aiExecutionViewResponseSchema,
@@ -25,6 +30,13 @@ import { executionTitle, jsonObject, operationLabels } from './presentation.js';
 import { fillStyles, scrollStyles } from './styles.js';
 
 type Tab = 'activity' | 'result' | 'details';
+/**
+ * 执行视图的交互外壳：页签切换、状态徽标、错误提示、取消与「前往确认」。
+ *
+ * 紧凑模式下首次变为可见时按当前状态自动定位页签（成功切「成果」、待确认切「协作过程」并递增
+ * `focusRequest` 让活动流滚到待确认项），之后不再自动跳转，避免用户切页时被打断。取消前会先拉取
+ * 最新快照取 `revision`，任务已结束就不发请求；失败文案写在面板顶部，不覆盖执行自身的错误。
+ */
 export function ExecutionPanel({
   view,
   canManage,
@@ -34,10 +46,15 @@ export function ExecutionPanel({
   visible = true,
 }: {
   view: AiExecutionViewResponse;
+  /** 是否展示写操作（取消、确认）入口，由调用方按权限计算。 */
   canManage: boolean;
+  /** 实时连接状态文案，仅用于底部状态条，不参与逻辑。 */
   connection: string;
+  /** 取消成功后触发，由调用方重新拉取视图。 */
   onRefresh: () => void;
+  /** 侧栏浮层模式：隐藏操作类型行、缩小标题，并在首次可见时自动选页签。 */
   compact?: boolean;
+  /** 面板当前是否处于可见容器内；为假时停止活动流的自动滚动与流式动画。 */
   visible?: boolean;
 }) {
   const { execution } = view;

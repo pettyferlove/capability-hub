@@ -3,6 +3,7 @@ import { useReducedMotion } from 'motion/react';
 import { Check } from '../../shared/icons/lucide.js';
 import type { ReviewOrigin } from '../ai/quick-review.js';
 
+/** 单条草稿字段的采纳结果，`result` 与 `field` 一起决定回执文案与是否播放落位动画。 */
 export interface DraftChange {
   field: 'category' | 'keywords' | 'purpose';
   label: string;
@@ -10,6 +11,11 @@ export interface DraftChange {
   result: '已填入' | '保留手动填写' | '已有相同内容' | '已达关键词上限';
 }
 
+/**
+ * 草稿核对回执：只有 `origin` 变化时才播放落位动画（同一来源重复渲染会被 `played` 挡掉），
+ * 把「已填入」的值从 `origin` 坐标飞到对应 `data-draft-field` 控件或 `data-landing` 落点；
+ * 系统开启减少动效时只记录已播放。回执本身不提交任何内容。
+ */
 export function DraftReceipt({
   origin,
   changes,

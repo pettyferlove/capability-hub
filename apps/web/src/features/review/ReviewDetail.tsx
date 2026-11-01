@@ -1,3 +1,7 @@
+/**
+ * 审核申请详情：变更清单、来源授权、受众变化与扫描结论，并在同一视图里做出通过/退回决定。
+ * 决定与撤回都提交到 `/api/publication-requests/:id/{decision,cancel}`，携带 `revision`。
+ */
 import { BusinessAgentPanel } from '../ai/BusinessAgentPanel.js';
 import { VersionComparison } from '../../shared/components/VersionComparison.js';
 import {
@@ -89,6 +93,11 @@ import type { ChangeFile } from './types.js';
 import { shortVersion } from './version-label.js';
 import { audienceChange } from './audience-change.js';
 import { ApiKeyBadge } from '../catalog/ApiKeyBadge.js';
+/**
+ * 通过是终态：必须勾选审查确认、为每条 `warning` 级发现填写接受理由，且扫描已 `passed`；
+ * 退回必须填审核意见，否则只聚焦意见框而不发请求。受众被放宽（`expanded`）时会额外提示。
+ * 版本冲突类错误只提示刷新重核，系统不自动重试。
+ */
 export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
   const { reload, me } = useHub();
   const [comment, setComment] = useState(''),

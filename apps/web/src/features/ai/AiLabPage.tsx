@@ -1,3 +1,11 @@
+/**
+ * AI 工作台页面：左侧任务记录（游标分页 + 本地筛选），右侧按 `?execution=` 切换执行详情，
+ * 无选中执行时展示 {@link NewExecution} 新建表单。
+ *
+ * 数据来源：`/api/ai/catalog` 与 `/api/ai/executions`（游标分页，翻页结果按执行 id 去重合并），
+ * 已选执行的实时进度由 {@link useAiExecution} 的 SSE 事件流维护；
+ * 契约 schema 来自 `@capability-hub/contracts`。`can_ai` 缺失时仅提示，不阻断历史浏览。
+ */
 import { useEffect, useState } from 'react';
 import {
   aiCatalogResponseSchema,
@@ -26,6 +34,10 @@ import {
   workspaceStyles,
 } from './styles.js';
 
+/**
+ * 实验台外壳：`query` 为当前 location 的查询串，仅读取其中的 `execution` 参数；
+ * 该参数变化即切换详情并重建事件流，历史列表也会随之重载以刷新状态徽标。
+ */
 export default function AiLabPage({ query }: { query: string }) {
   const { me } = useHub();
   const selected = new URLSearchParams(query).get('execution') ?? '';

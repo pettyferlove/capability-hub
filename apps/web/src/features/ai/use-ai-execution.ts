@@ -22,6 +22,14 @@ const states: Record<string, AiExecutionViewResponse['execution']['status']> = {
   'execution.timed_out': 'timed_out',
   'execution.retry_scheduled': 'queued',
 };
+/**
+ * 把单个 SSE 事件合并进执行视图，纯函数、不修改入参（`message_blocks` 逐个浅拷贝）。
+ *
+ * 严格连续：事件必须属于当前执行且 `seq` 恰为 `watermark + 1`，否则抛出内部 `StreamGap` 让调用方
+ * 丢弃游标回到快照；`seq` 不大于 `watermark` 的重复事件原样返回视图，因此重复投递是幂等的。
+ * `message.delta` 的 `offset` 必须等于块内已有文本长度，缺失块或偏移错位同样视为中断。
+ * 活动记录只保留最近 1000 条，被丢弃过历史时 `activity_truncated` 一旦置位就不再回落。
+ */
 export function applyAiEvent(
   view: AiExecutionViewResponse,
   event: AiEventResponse,
@@ -68,6 +76,16 @@ export function applyAiEvent(
     watermark: event.seq,
   };
 }
+/**
+ * 订阅一次执行的实时视图，`refresh` 变化即重连；`id` 为空时不做任何请求。
+ *
+ * SSE 与 HTTP 混用：流正常关闭后拉取一次快照补齐可能漏掉的事件，并把游标切到
+ * `executionId:operator:watermark` 让下次重连从服务端视角续传；终态（非 queued／running）直接结束。
+ * 中断收尾：每轮 effect 新建 `AbortController` 并在清理时 abort，流、快照请求与退避等待都监听同一
+ * 信号，所以切换执行不会把旧数据写回新视图。401/403/404 会清空视图并停止重连；`StreamGap` 或
+ * 响应不符合 schema 时清空游标、退回全量快照；其余失败按 1s 起、上限 15s 的指数退避重试最多 5 次，
+ * 每次水位前移都会把退避计数归零。
+ */
 export function useAiExecution(id: string, refresh: number) {
   const [view, setView] = useState<AiExecutionViewResponse>();
   const [connection, setConnection] = useState('');

@@ -28,6 +28,7 @@ import {
 import { Glyph } from '../../shared/components/Glyph.js';
 import { dateLabel } from '../../shared/format/labels.js';
 
+/** 接收记录列表与状态筛选共用的中文文案，键为接口返回的 `status` 原值，缺键即视为未知状态。 */
 export const statusLabels: Record<string, string> = {
   processing: '处理中',
   ready: '待提交审核',
@@ -41,6 +42,10 @@ export const statusLabels: Record<string, string> = {
   blocked: '资产已封禁',
 };
 
+/**
+ * 单条接收记录：图标、来源与摘要都按 `status` 分支渲染（失败显示错误、处理中显示阶段、其余显示内容
+ * 摘要）。整行即按钮，`active` 只影响选中样式，选中动作交由 `onSelect`。
+ */
 export function IntakeHistoryRow({
   item,
   active,

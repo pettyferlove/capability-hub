@@ -1,3 +1,7 @@
+/**
+ * 身份入口：登录页与首次初始化面板共用一套表单。数据来自 `/auth/login` / `/auth/setup`，
+ * 提交成功后不自行跳转，由 `onLogin` 交由外层刷新会话并决定去往何处。
+ */
 import { InputField } from '../../shared/components/InputField.js';
 import {
   authLayoutStyles,
@@ -25,6 +29,10 @@ import { Message } from '../../shared/components/Message.js';
 import { PasswordField } from '../../shared/components/PasswordField.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { Glyph } from '../../shared/components/Glyph.js';
+/**
+ * `initialized` 为假时同一表单走 `/auth/setup`：需二次确认密码，且 `confirm_password`
+ * 在提交前被移除、不会发往服务端。失败只渲染服务端错误文案，输入不做清空以便重试。
+ */
 export default function LoginPage({
   initialized,
   setupRequired = false,

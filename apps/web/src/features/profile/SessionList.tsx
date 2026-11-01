@@ -34,6 +34,11 @@ function browserLabel(session: SessionResponse) {
   return [client.browser_name, client.browser_version?.split('.')[0]].filter(Boolean).join(' ');
 }
 
+/**
+ * 登录会话列表：当前会话只打标不提供退出按钮，避免误把正在使用的会话踢掉；
+ * 撤销交给 `onRevoke`；`pendingId` 非空时所有行的退出按钮都被禁用（被点的那行显示进行中），
+ * 保证同一时间只有一次撤销请求在途。浏览器与系统信息缺失时降级为「未记录」而不是留空。
+ */
 export function SessionList({
   sessions,
   pendingId,

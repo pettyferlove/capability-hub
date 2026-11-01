@@ -1,3 +1,8 @@
+/**
+ * 变更文件工作台：左树右预览，变更清单来自 `ReviewResponse.diff`，能否出 diff 取决于两侧 manifest。
+ * 选中文件时由 `fileText` 并发拉取候选与上一版正文（缺失的一侧跳过），切换或卸载即 abort，
+ * 失败只影响当前文件，可用重试计数原地重取。
+ */
 import { fileFilterIcons } from '../../shared/components/select-icons.js';
 import {
   reviewTreeFileStyles,
@@ -68,6 +73,10 @@ type Tree = {
   file?: ChangeFile;
   count: number;
 };
+/**
+ * 默认选中 `SKILL.md`、其次 `server.json`、再退到首个变更文件；`focus` 指向存在变更的文件时
+ * 覆盖该默认值，并展开其所在目录把焦点移到预览标题；定位只认 `focus.path`，不存在则不理会。
+ */
 export function FileWorkbench({
   request: r,
   focus,

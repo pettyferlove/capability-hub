@@ -7,6 +7,11 @@ import { Segmented } from '../../shared/components/Segmented.js';
 import { mcpAddress, parseNpmInstallation, type McpEntryDraft } from './mcp-entry.js';
 import { fixedVersionPattern } from './upload-identity.js';
 
+/**
+ * MCP 入口字段：随输入用 {@link mcpAddress} / {@link parseNpmInstallation} 实时校验，并把首个错误写入
+ * 底层 input 的 `setCustomValidity`，让表单提交被浏览器原生拦截；切换添加方式时重置 `touched` 并重新
+ * 校验。版本号优先取命令里的固定版本，其次取手填值。
+ */
 export function McpEntryFields({
   value,
   onChange,

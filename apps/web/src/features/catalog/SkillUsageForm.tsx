@@ -6,6 +6,10 @@ import { Submit } from '../../shared/components/Submit.js';
 import { formStackStyles } from '../../shared/styles/recipes.js';
 import { SkillApiKeyField } from '../../shared/components/SkillApiKeyField.js';
 
+/**
+ * 维护者在目录详情中声明 Skill 是否需要 API Key。
+ * 提交走 `PATCH /api/assets/{id}/usage` 并带上 `revision` 做版本校验，值未变化时禁用保存按钮。
+ */
 export function SkillUsageForm({
   assetId,
   revision,
