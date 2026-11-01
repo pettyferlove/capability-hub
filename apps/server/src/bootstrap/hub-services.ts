@@ -34,6 +34,7 @@ import { GitRepositoryAdapter } from '@capability-hub/infrastructure/git';
 import { scanIsolated } from '@capability-hub/infrastructure/scanning';
 import {
   ScryptPasswordHasher,
+  LdapAuthenticator,
   AesCredentialCipher,
   OpenSshKeyInspector,
   SignedCatalogCursorCodec,
@@ -81,7 +82,18 @@ export class HubServices {
     const context = { store, blobs, identity: this.identity };
     this.sessions = new SessionService(store, this.identity);
     const passwords = new ScryptPasswordHasher();
-    this.authentication = new AuthenticationService(store, this.identity, this.sessions, passwords);
+    this.authentication = new AuthenticationService(
+      store,
+      this.identity,
+      this.sessions,
+      passwords,
+      config.ldap
+        ? {
+            authenticator: new LdapAuthenticator(config.ldap),
+            defaultRoles: config.ldap.defaultRoles,
+          }
+        : undefined,
+    );
     this.administration = new IdentityAdministrationService(
       store,
       this.identity,

@@ -23,6 +23,7 @@ import { DialogTitle } from '../../shared/components/DialogTitle.js';
 import { Message } from '../../shared/components/Message.js';
 import { PasswordField } from '../../shared/components/PasswordField.js';
 import { Submit } from '../../shared/components/Submit.js';
+import { accountLoginLabel } from '../../shared/format/labels.js';
 
 /**
  * 账号、团队、角色、绑定与场景共用的编辑表单：`kind` 同时决定提交路径、字段集合与标题，
@@ -110,7 +111,7 @@ export function IdentityAdminForm({
   }
   const title = (
     {
-      user: '创建账号',
+      user: '创建本地账号',
       group: '新建维护团队',
       role: '创建自定义角色',
       'edit-role': '编辑角色权限',
@@ -215,7 +216,7 @@ export function IdentityAdminForm({
                   .filter((u) => u.active)
                   .map((u) => (
                     <option value={u.id} key={u.id}>
-                      {u.display_name} · {u.username}
+                      {u.display_name} · {accountLoginLabel(u)}
                     </option>
                   ))}
               </SelectField>
@@ -254,7 +255,7 @@ export function IdentityAdminForm({
                     .filter((u) => u.active)
                     .map((u) => (
                       <option value={u.id} key={u.id}>
-                        {u.display_name}
+                        {u.display_name} · {accountLoginLabel(u)}
                       </option>
                     ))}
                 </optgroup>

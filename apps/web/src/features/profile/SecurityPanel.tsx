@@ -44,7 +44,7 @@ import { AccessTokenForm } from './AccessTokenForm.js';
  * （`CURRENT_PASSWORD_INVALID` 指向当前密码，其余指向新密码），避免用户重新找位置。
  */
 export function PersonalSecurity() {
-  const { refresh, reload } = useHub(),
+  const { me, refresh, reload } = useHub(),
     { data: sessions, error: sessionError } = useQuery<SessionResponse[]>(
       '/api/me/sessions',
       refresh,
@@ -110,26 +110,32 @@ export function PersonalSecurity() {
           <div className={sectionHeadingStyles}>
             <div>
               <h2>修改密码</h2>
-              <p className={subtleStyles}>修改后需重新登录网页，CLI/MCP 访问令牌保持有效。</p>
+              <p className={subtleStyles}>
+                {me?.auth_provider === 'ldap'
+                  ? '请在 LDAP 目录中修改账号密码。'
+                  : '修改后需重新登录网页，CLI/MCP 访问令牌保持有效。'}
+              </p>
             </div>
             <ShieldCheck size={21} />
           </div>
-          <form className={formStackStyles} onSubmit={change}>
-            <PasswordField
-              label="当前密码"
-              name="current_password"
-              minimum={1}
-              autoComplete="current-password"
-              placeholder="请输入当前密码"
-            />
-            <PasswordField label="新密码" name="new_password" placeholder="至少 12 位" />
-            <PasswordField
-              label="确认新密码"
-              name="confirm_password"
-              placeholder="再次输入新密码"
-            />
-            <Submit busy={busy}>更新密码并重新登录</Submit>
-          </form>
+          {me?.auth_provider !== 'ldap' && (
+            <form className={formStackStyles} onSubmit={change}>
+              <PasswordField
+                label="当前密码"
+                name="current_password"
+                minimum={1}
+                autoComplete="current-password"
+                placeholder="请输入当前密码"
+              />
+              <PasswordField label="新密码" name="new_password" placeholder="至少 12 位" />
+              <PasswordField
+                label="确认新密码"
+                name="confirm_password"
+                placeholder="再次输入新密码"
+              />
+              <Submit busy={busy}>更新密码并重新登录</Submit>
+            </form>
+          )}
         </section>
         <section className={cn(panelStyles, sessionPanelStyles)}>
           <div className={sectionHeadingStyles}>

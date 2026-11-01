@@ -7,6 +7,7 @@ export function useSession(refresh: number) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [initialized, setInitialized] = useState(true);
   const [setupRequired, setSetupRequired] = useState(false);
+  const [ldapEnabled, setLdapEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const sessionGeneration = useRef(0);
@@ -32,6 +33,7 @@ export function useSession(refresh: number) {
       if (controller.signal.aborted || generation !== sessionGeneration.current) return;
       setInitialized(status.initialized);
       setSetupRequired(status.setup_token_required);
+      setLdapEnabled(status.ldap_enabled);
       if (status.initialized) {
         try {
           const user = await api<MeResponse>('/api/me', { signal: controller.signal });
@@ -88,5 +90,5 @@ export function useSession(refresh: number) {
     await mutate('/auth/logout', {});
     clearSession();
   }, [clearSession]);
-  return { me, initialized, setupRequired, loading, error, load, logout };
+  return { me, initialized, setupRequired, ldapEnabled, loading, error, load, logout };
 }

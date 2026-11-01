@@ -52,7 +52,8 @@ export default function App() {
   const view = useAppRoute();
   const [refresh, setRefresh] = useState(0);
   const [palette, setPalette] = useState(false);
-  const { me, initialized, setupRequired, loading, error, load, logout } = useSession(refresh);
+  const { me, initialized, setupRequired, ldapEnabled, loading, error, load, logout } =
+    useSession(refresh);
   const theme = useTheme();
   const reload = useCallback(() => setRefresh((value) => value + 1), []);
   useEffect(() => {
@@ -109,7 +110,12 @@ export default function App() {
   if (!me && (view.page === 'login' || ['publish', 'review', 'account', 'ai'].includes(view.page)))
     return (
       <LoadingScope scopeKey={pageScrollKey}>
-        <Login initialized={initialized} setupRequired={setupRequired} onLogin={load} />
+        <Login
+          initialized={initialized}
+          setupRequired={setupRequired}
+          ldapEnabled={ldapEnabled}
+          onLogin={load}
+        />
       </LoadingScope>
     );
   return (

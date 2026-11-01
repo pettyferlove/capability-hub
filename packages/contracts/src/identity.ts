@@ -53,9 +53,10 @@ export const setupHttpRequestSchema = setupRequestSchema.extend({
   setup_token: z.string().optional(),
 });
 
-/** 登录请求：只限制长度不做归一化，用户名大小写由账号侧统一处理。 */
+/** 未指定认证来源的登录请求只使用本地密码。 */
 export const loginRequestSchema = z
   .object({
+    provider: z.enum(['local', 'ldap']).default('local'),
     username: z.string().min(1).max(64),
     password: z.string().min(1).max(256),
   })
@@ -100,6 +101,9 @@ export type SetupRequest = z.input<typeof setupRequestSchema>;
 
 /** {@link loginRequestSchema} 的输入侧类型。 */
 export type LoginRequest = z.input<typeof loginRequestSchema>;
+
+/** 已选定的登录来源，供账号和会话响应使用。 */
+export type LoginProvider = z.output<typeof loginRequestSchema>['provider'];
 
 /** {@link changePasswordRequestSchema} 的输入侧类型。 */
 export type ChangePasswordRequest = z.input<typeof changePasswordRequestSchema>;

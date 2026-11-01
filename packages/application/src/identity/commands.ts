@@ -1,3 +1,13 @@
+import { z } from 'zod';
+
+/** 本地建号与目录登录共用用户名边界，避免同名账号按不同规则归一化。 */
+export const usernameSchema = z
+  .string()
+  .min(3)
+  .max(64)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]*$/)
+  .transform((value) => value.toLowerCase());
+
 /**
  * 首次初始化输入，来自 HTTP 的 JSON body（`setupRequestSchema` 解析），
  * 只在系统尚无任何用户时可调用，否则 409/`ALREADY_INITIALIZED`。

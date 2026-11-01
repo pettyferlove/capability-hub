@@ -29,6 +29,16 @@ pnpm cli search TypeScript
 
 终端显示批准链接和授权码，使用自己的浏览器打开并确认。网页登录与终端凭据分别管理。
 
-修改后运行 `pnpm check`。需要真实 PostgreSQL、MinIO 和 SSH Git 时运行 `pnpm test:external`；该命令只使用随机隔离资源，不读写现有开发数据。
+修改后运行 `pnpm check`。运行 `pnpm test:external` 可用隔离的 PostgreSQL、MinIO、SSH Git 和 OpenLDAP 验证外部协议。
 
 数据库结构修改后执行 `pnpm db:generate`，审查 SQL，再执行 `pnpm db:migrate`。服务启动也会执行待应用迁移。`pnpm db:check` 校验快照并检测遗漏变更，已包含在 `pnpm check` 中。原生触发器和双后端维护要求见[数据库迁移](../development/database-migrations.md)。
+
+## 本机 OpenLDAP
+
+```sh
+docker compose -f compose.ldap.yaml up -d --build --wait
+```
+
+在 `.env` 中启用 [.env.example](../../.env.example) 的五项 `CAPABILITY_HUB_LDAP_*` 配置，重启 Hub。完成本地管理员初始化后，在登录页选择「LDAP 账号」，输入 `ldap-demo` 和密码 `hub-demo-local`。目录端口仅发布到 `127.0.0.1:1389`。用完可执行 `docker compose -f compose.ldap.yaml down`。默认角色及正式目录的连接要求见 [LDAP 登录配置](../reference/configuration.md#ldap-登录)。
+
+增删模拟用户时，编辑 [directory.ldif](../../tests/fixtures/openldap/directory.ldif) 后重新运行上面的构建命令。为每位用户固定一个不同的 `entryUUID`，重建目录后仍能使用原有 Hub 账号。

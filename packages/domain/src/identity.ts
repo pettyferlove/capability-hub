@@ -1,3 +1,13 @@
+import type { UserRecord } from './models/identity.js';
+
+/** 认证来源与用户名共同标识登录账号。 */
+export type LoginProvider = 'local' | 'ldap';
+
+/** 目录身份绑定到稳定条目标识，本地身份仅持有本地密码。 */
+export function userLoginProvider(user: UserRecord): LoginProvider {
+  return user.ldap_entry_uuid === undefined ? 'local' : 'ldap';
+}
+
 /**
  * 一次请求内使用的身份快照，由用户、成员关系、绑定和角色表即时拼出；
  * 它不随会话缓存，授权变更后下一次请求就生效。

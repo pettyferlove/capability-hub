@@ -1,4 +1,8 @@
-import type { Principal } from '@capability-hub/domain/identity';
+import {
+  userLoginProvider,
+  type LoginProvider,
+  type Principal,
+} from '@capability-hub/domain/identity';
 import type { RecordStore } from '../ports/index.js';
 import { fail } from '@capability-hub/domain/errors';
 import type { UserRecord } from '@capability-hub/domain/models';
@@ -8,6 +12,12 @@ import { bindingMatchesScope, has } from '@capability-hub/domain/rbac';
 /** 每次从存储读取有效身份及当前授权，不缓存账号和角色。 */
 export class IdentityService {
   constructor(private readonly store: RecordStore) {}
+  /** 同名本地和目录账号各自持有独立的 id、停用状态与授权。 */
+  async userForLogin(username: string, provider: LoginProvider) {
+    const users = await this.store.where('users', 'username', username);
+    return users.find((user) => userLoginProvider(user) === provider);
+  }
+
   /**
    * 读取仍启用的账号记录；每次直查存储，不缓存，因此停用在下一次调用立即生效。
    * 记录缺失或 `active` 为 false 抛 401/`UNAUTHENTICATED`。

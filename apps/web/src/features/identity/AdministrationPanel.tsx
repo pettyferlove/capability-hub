@@ -57,6 +57,7 @@ import { CardGridSkeleton, ListSkeleton, TableSkeleton } from '../../shared/comp
 import { useHub } from '../../shared/context/HubContext.js';
 import type { IdentityEditorKind, IdentityEditorRecord } from './IdentityAdminForm.js';
 import { IdentityAdminForm } from './IdentityAdminForm.js';
+import { accountLoginLabel } from '../../shared/format/labels.js';
 
 /**
  * 按 `tab` 在「账号维护」与「角色授权」两套视图间切换；两套视图共用同一份快照，
@@ -130,10 +131,12 @@ export function AdministrationPanel({ tab }: { tab: string }) {
       </div>
     );
   if (!data) return null;
-  const person = (id: string) =>
-    data.users.find((u) => u.id === id)?.display_name ??
-    data.groups.find((g) => g.id === id)?.name ??
-    id;
+  const person = (id: string) => {
+    const user = data.users.find((u) => u.id === id);
+    return user
+      ? `${user.display_name} · ${accountLoginLabel(user)}`
+      : (data.groups.find((g) => g.id === id)?.name ?? id);
+  };
   return (
     <div className={formStackStyles}>
       {message && <Message error={failure}>{message}</Message>}
@@ -146,7 +149,7 @@ export function AdministrationPanel({ tab }: { tab: string }) {
               </h2>
               <button className={cn(btnStyles, btnPrimaryStyles)} onClick={() => setDialog('user')}>
                 <Plus size={15} />
-                创建账号
+                创建本地账号
               </button>
             </div>
             <DataTable label="账号">
@@ -164,7 +167,7 @@ export function AdministrationPanel({ tab }: { tab: string }) {
                     <tr key={u.id}>
                       <td>
                         <strong>{u.display_name}</strong>
-                        <small className={monoStyles}>{u.username}</small>
+                        <small className={monoStyles}>{accountLoginLabel(u)}</small>
                       </td>
                       <td>
                         <div className={chipsStyles}>
@@ -194,15 +197,19 @@ export function AdministrationPanel({ tab }: { tab: string }) {
                           <button className={textBtnStyles} onClick={() => toggle(u)}>
                             {u.active ? '停用' : '启用'}
                           </button>
-                          <button
-                            className={textBtnStyles}
-                            onClick={() => {
-                              setActiveUser(u);
-                              setDialog('reset');
-                            }}
-                          >
-                            重置密码
-                          </button>
+                          {u.auth_provider === 'ldap' ? (
+                            <span className={subtleStyles}>LDAP 管理密码</span>
+                          ) : (
+                            <button
+                              className={textBtnStyles}
+                              onClick={() => {
+                                setActiveUser(u);
+                                setDialog('reset');
+                              }}
+                            >
+                              重置密码
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

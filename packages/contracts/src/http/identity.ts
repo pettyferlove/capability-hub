@@ -1,4 +1,4 @@
-import type { SessionClientInfo } from '../identity.js';
+import type { LoginProvider, SessionClientInfo } from '../identity.js';
 import type { ScopeType } from '../identity.js';
 
 /**
@@ -8,6 +8,7 @@ import type { ScopeType } from '../identity.js';
 export interface MeResponse {
   id: string;
   username: string;
+  auth_provider: LoginProvider;
   display_name: string;
   avatar_color?: string;
   groups: { id: string; name: string }[];
@@ -32,6 +33,7 @@ export interface AuthStatusResponse {
   /** 仅在尚未初始化时有意义：初始化请求是否需要一次性口令。 */
   setup_token_required: boolean;
   auth_provider: string;
+  ldap_enabled: boolean;
   oidc_enabled: boolean;
 }
 
@@ -40,6 +42,7 @@ export interface PublicUserResponse {
   id: string;
   revision: number;
   username: string;
+  auth_provider: LoginProvider;
   display_name: string;
   active: boolean;
   created_at: string;
@@ -97,7 +100,7 @@ export interface IdentitySnapshotResponse {
 /** 个人资料页：在 {@link PublicUserResponse} 基础上补齐本人可见字段与统计。 */
 export type ProfileResponse = Pick<
   PublicUserResponse,
-  'id' | 'username' | 'display_name' | 'revision' | 'created_at'
+  'id' | 'username' | 'auth_provider' | 'display_name' | 'revision' | 'created_at'
 > & {
   title: string;
   bio: string;

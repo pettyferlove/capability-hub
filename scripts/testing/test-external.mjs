@@ -46,7 +46,17 @@ const directory = await mkdtemp(join(tmpdir(), 'hub-external-'));
 const key = join(directory, 'identity');
 const project = 'hub-test-' + randomBytes(6).toString('hex');
 const docker = ['--host', endpoint];
-const compose = [...docker, 'compose', '-f', 'compose.test.yaml', '-p', project];
+const compose = [
+  ...docker,
+  'compose',
+  '-f',
+  'compose.test.yaml',
+  '-f',
+  'compose.ldap.yaml',
+  '-p',
+  project,
+];
+environment.CAPABILITY_HUB_LDAP_PORT = '';
 environment.CAPABILITY_HUB_TEST_PASSWORD = randomBytes(24).toString('hex');
 environment.CAPABILITY_HUB_TEST_GIT_PUBLIC_KEY = key + '.pub';
 environment.CAPABILITY_HUB_TEST_APP_SECRET = randomBytes(24).toString('hex');
@@ -83,6 +93,7 @@ try {
   );
   environment.CAPABILITY_HUB_TEST_DATABASE_URL = `postgresql://hub_test:${environment.CAPABILITY_HUB_TEST_PASSWORD}@${await port('postgres', 5432)}/hub_test`;
   environment.CAPABILITY_HUB_TEST_MINIO_ENDPOINT = 'http://' + (await port('minio', 9000));
+  environment.CAPABILITY_HUB_TEST_LDAP_URL = 'ldap://' + (await port('openldap', 1389));
   environment.CAPABILITY_HUB_TEST_GIT_URL =
     'ssh://git@' + (await port('git', 2222)) + '/repositories/fixture.git';
   environment.CAPABILITY_HUB_TEST_GIT_KEY = key;

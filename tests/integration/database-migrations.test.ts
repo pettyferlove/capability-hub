@@ -2,7 +2,83 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
 import { migrationRuntime } from '../support/migrations.js';
+
+test('认证来源迁移保留已有账号与角色绑定，只放开跨来源同名', async (context) => {
+  const runtime = await migrationRuntime(context, 'sqlite');
+  const options = { driver: 'sqlite' as const, path: join(runtime.directory, 'hub.sqlite') };
+  const journalPath = join(
+    runtime.directory,
+    'src/persistence/sqlite/migrations/meta/_journal.json',
+  );
+  const complete = await readFile(journalPath, 'utf8');
+  const journal = JSON.parse(complete) as { entries: { idx: number }[] };
+  await writeFile(
+    journalPath,
+    JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx < 2) }),
+  );
+  const old = await runtime.open(options);
+  const local = {
+    id: randomUUID(),
+    username: 'member',
+    password_hash: 'local-hash',
+    display_name: '成员',
+    active: true,
+    revision: 1,
+    created_at: new Date().toISOString(),
+  };
+  const ldap = {
+    ...local,
+    id: randomUUID(),
+    username: 'existing-ldap',
+    password_hash: null,
+    ldap_entry_uuid: randomUUID(),
+  };
+  const role = {
+    id: randomUUID(),
+    key: 'reader',
+    name: '使用者',
+    permissions: [],
+    builtin: true,
+    revision: 1,
+  };
+  const grant = {
+    id: randomUUID(),
+    role_id: role.id,
+    principal_id: ldap.id,
+    scope_type: 'platform' as const,
+    scope_id: '',
+  };
+  try {
+    await old.insert('users', local);
+    await old.insert('users', ldap);
+    await old.insert('roles', role);
+    await old.insert('role_bindings', grant);
+  } finally {
+    await old.close();
+    await writeFile(journalPath, complete);
+  }
+  const store = await runtime.open(options);
+  context.after(() => store.close());
+  assert.deepEqual(await store.get('users', local.id), local);
+  assert.deepEqual(await store.get('users', ldap.id), ldap);
+  assert.deepEqual(await store.get('role_bindings', grant.id), grant);
+  await store.put('users', { ...ldap, username: local.username });
+  await assert.rejects(() => store.insert('users', { ...local, id: randomUUID() }));
+  await assert.rejects(() =>
+    store.insert('users', {
+      ...ldap,
+      id: randomUUID(),
+      ldap_entry_uuid: randomUUID(),
+      username: local.username,
+    }),
+  );
+  await assert.rejects(() =>
+    store.insert('users', { ...ldap, id: randomUUID(), username: 'another-uid' }),
+  );
+});
 
 test('SQLite 迁移首次并发打开只执行一次，后续迁移保留已有记录，重复打开不重放', async (context) => {
   const runtime = await migrationRuntime(context, 'sqlite');

@@ -1,7 +1,10 @@
 import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { createElement } from 'react';
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { userEvent } from '@testing-library/user-event';
+import LoginPage from '../../apps/web/src/features/auth/LoginPage.js';
 import { useSession } from '../../apps/web/src/app/use-session.js';
 import { api, setCsrf } from '../../apps/web/src/shared/api/client.js';
 import { deferred } from '../support/store.js';
@@ -9,6 +12,52 @@ import { deferred } from '../support/store.js';
 afterEach(() => {
   cleanup();
   setCsrf('');
+});
+
+test('切换登录方式清空上一组凭据和错误，只提交当前选择的来源', async (context) => {
+  const submitted: unknown[] = [];
+  context.mock.method(globalThis, 'fetch', (_path: string, options: RequestInit) => {
+    submitted.push(JSON.parse(String(options.body)));
+    return Promise.resolve(
+      Response.json({ error: { message: '账号或密码错误' } }, { status: 401 }),
+    );
+  });
+  const user = userEvent.setup();
+  render(
+    createElement(LoginPage, { initialized: true, ldapEnabled: true, onLogin: async () => {} }),
+  );
+  assert.equal(
+    screen.getByRole('radio', { name: '本地账号' }).getAttribute('aria-checked'),
+    'true',
+  );
+  await user.type(screen.getByRole('textbox', { name: '账号' }), 'same-name');
+  await user.type(screen.getByLabelText('密码', { exact: true }), 'local-secret');
+  await user.click(screen.getByRole('button', { name: '登录本地账号' }));
+  assert(await screen.findByText('账号或密码错误'));
+  await user.click(screen.getByRole('radio', { name: 'LDAP 账号' }));
+  assert.equal(screen.queryByText('账号或密码错误'), null);
+  const username = screen.getByRole<HTMLInputElement>('textbox', { name: '账号' });
+  const password = screen.getByLabelText<HTMLInputElement>('密码', { exact: true });
+  assert.equal(username.value, '');
+  assert.equal(password.value, '');
+  await user.type(username, 'same-name');
+  await user.type(password, 'directory-secret');
+  await user.click(screen.getByRole('button', { name: '登录 LDAP 账号' }));
+  assert(await screen.findByText('账号或密码错误'));
+  assert.deepEqual(submitted, [
+    { provider: 'local', username: 'same-name', password: 'local-secret' },
+    { provider: 'ldap', username: 'same-name', password: 'directory-secret' },
+  ]);
+});
+
+test('初始化和未启用 LDAP 的实例只显示本地表单', () => {
+  const onLogin = async () => {};
+  const page = render(createElement(LoginPage, { initialized: false, ldapEnabled: true, onLogin }));
+  assert.equal(screen.queryByRole('radiogroup', { name: '登录方式' }), null);
+  assert(screen.getByRole('form', { name: '初始化' }));
+  page.rerender(createElement(LoginPage, { initialized: true, ldapEnabled: false, onLogin }));
+  assert.equal(screen.queryByRole('radiogroup', { name: '登录方式' }), null);
+  assert(screen.getByRole('form', { name: '本地登录' }));
 });
 
 test('会话失效会取消正在读取的身份，迟到响应不能恢复登录或 CSRF', async (context) => {
@@ -21,7 +70,8 @@ test('会话失效会取消正在读取的身份，迟到响应不能恢复登�
         Response.json({
           initialized: true,
           setup_token_required: false,
-          auth_provider: 'local',
+          auth_provider: 'native-rbac',
+          ldap_enabled: false,
           oidc_enabled: false,
         }),
       );

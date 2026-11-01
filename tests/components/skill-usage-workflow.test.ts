@@ -27,6 +27,7 @@ function page(child: ReactNode) {
         me: {
           id: 'user',
           username: 'owner',
+          auth_provider: 'local',
           display_name: '维护者',
           csrf_token: '',
           groups: [{ id: 'team', name: '工程团队' }],

@@ -3,6 +3,8 @@
  * 提交成功后不自行跳转，由 `onLogin` 交由外层刷新会话并决定去往何处。
  */
 import { InputField } from '../../shared/components/InputField.js';
+import type { LoginProvider } from '@capability-hub/contracts';
+import { Segmented } from '../../shared/components/Segmented.js';
 import {
   authLayoutStyles,
   authStoryStyles,
@@ -30,6 +32,11 @@ import { PasswordField } from '../../shared/components/PasswordField.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { Glyph } from '../../shared/components/Glyph.js';
 
+const loginMethods: { id: LoginProvider; label: string }[] = [
+  { id: 'local', label: '本地账号' },
+  { id: 'ldap', label: 'LDAP 账号' },
+];
+
 /**
  * `initialized` 为假时同一表单走 `/auth/setup`：需二次确认密码，且 `confirm_password`
  * 在提交前被移除、不会发往服务端。失败只渲染服务端错误文案，输入不做清空以便重试。
@@ -37,16 +44,22 @@ import { Glyph } from '../../shared/components/Glyph.js';
 export default function LoginPage({
   initialized,
   setupRequired = false,
+  ldapEnabled = false,
   onLogin,
 }: {
   initialized: boolean;
   setupRequired?: boolean;
+  ldapEnabled?: boolean;
   onLogin: () => Promise<void>;
 }) {
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const [method, setMethod] = useState<LoginProvider>('local');
+  const provider = initialized && ldapEnabled ? method : 'local';
+  const directoryLogin = provider === 'ldap';
   async function submit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError('');
     const data = Object.fromEntries(new FormData(e.currentTarget));
@@ -57,7 +70,8 @@ export default function LoginPage({
     }
     delete data.confirm_password;
     try {
-      await mutate(initialized ? '/auth/login' : '/auth/setup', data);
+      if (initialized) await mutate('/auth/login', { ...data, provider });
+      else await mutate('/auth/setup', data);
       await onLogin();
     } catch (e) {
       setError(errorMessage(e));
@@ -96,13 +110,32 @@ export default function LoginPage({
           <h2>{initialized ? '登录' : '初始化平台'}</h2>
           <p className={subtleStyles}>
             {initialized
-              ? '使用平台账号登录，访问已授权的资源。'
+              ? directoryLogin
+                ? '输入组织目录中的用户名和密码。'
+                : '输入你的 Hub 本地账号和密码。'
               : '创建平台管理员账号和首个维护团队。'}
           </p>
+          {initialized && ldapEnabled && (
+            <fieldset disabled={busy} className="mb-5 min-w-0 border-0 p-0">
+              <Segmented
+                id="login-provider"
+                label="登录方式"
+                options={loginMethods}
+                value={provider}
+                onChange={(next) => {
+                  if (next !== provider) {
+                    setMethod(next);
+                    setError('');
+                  }
+                }}
+              />
+            </fieldset>
+          )}
           <form
+            key={provider}
             onSubmit={submit}
             className={formStackStyles}
-            aria-label={initialized ? '登录' : '初始化'}
+            aria-label={initialized ? (directoryLogin ? 'LDAP 登录' : '本地登录') : '初始化'}
           >
             {!initialized && setupRequired && (
               <PasswordField
@@ -133,15 +166,15 @@ export default function LoginPage({
                 required
                 minLength={initialized ? 1 : 3}
                 maxLength={64}
-                autoComplete="username"
-                placeholder="请输入账号"
+                autoComplete={initialized ? `section-${provider} username` : 'username'}
+                placeholder={directoryLogin ? '请输入目录用户名' : '请输入账号'}
               />
             </label>
             <PasswordField
               label="密码"
               name="password"
               minimum={initialized ? 1 : 12}
-              autoComplete={initialized ? 'current-password' : 'new-password'}
+              autoComplete={initialized ? `section-${provider} current-password` : 'new-password'}
               placeholder={initialized ? '请输入密码' : '至少 12 位'}
             />
             {!initialized && (
@@ -161,13 +194,15 @@ export default function LoginPage({
             )}
             {error && <Message error>{error}</Message>}
             <Submit busy={busy}>
-              {initialized ? '登录' : '创建并进入'}
+              {initialized ? (directoryLogin ? '登录 LDAP 账号' : '登录本地账号') : '创建并进入'}
               <ArrowRight size={17} />
             </Submit>
           </form>
           <p className={authFootStyles}>
             {initialized
-              ? '如需开通账号或重置密码，请联系平台管理员。'
+              ? directoryLogin
+                ? '目录账号首次登录后自动开通，密码由 LDAP 目录管理。'
+                : '如需开通账号或重置密码，请联系平台管理员。'
               : '初始化完成后，请添加其他审核人员；发布者不能审核自己的提交。'}
           </p>
           <a className={textBtnStyles} href="/discover">

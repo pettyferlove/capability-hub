@@ -63,6 +63,45 @@ test('非法布尔环境变量在创建实例目录前报错并指出变量名',
   await assert.rejects(() => lstat(dataDir), { code: 'ENOENT' });
 });
 
+test('LDAP 仅允许本机开发使用明文连接，默认角色按内置键校验并去重', async (context) => {
+  const dataDir = await directory(context);
+  const env = {
+    CAPABILITY_HUB_LDAP_URL: 'ldap://127.0.0.1:1389',
+    CAPABILITY_HUB_LDAP_BASE_DN: 'ou=people,dc=hub,dc=test',
+    CAPABILITY_HUB_LDAP_BIND_DN: 'cn=hub-reader,dc=hub,dc=test',
+    CAPABILITY_HUB_LDAP_BIND_PASSWORD: 'fixture',
+  };
+  assert.equal(loadServerConfig({ dataDir }, {}).ldap, undefined);
+  assert.deepEqual(loadServerConfig({ dataDir }, env).ldap?.defaultRoles, ['maintainer', 'reader']);
+  assert.deepEqual(
+    loadServerConfig({ dataDir }, { ...env, CAPABILITY_HUB_LDAP_DEFAULT_ROLES: 'reader, reader' })
+      .ldap?.defaultRoles,
+    ['reader'],
+  );
+  for (const overrides of [
+    { CAPABILITY_HUB_LDAP_DEFAULT_ROLES: 'reader,missing' },
+    { CAPABILITY_HUB_LDAP_BIND_PASSWORD: '' },
+    { CAPABILITY_HUB_LDAP_BASE_DN: '' },
+    { CAPABILITY_HUB_LDAP_URL: 'ldap://directory.example' },
+    { CAPABILITY_HUB_LDAP_URL: 'https://directory.example' },
+    { CAPABILITY_HUB_LDAP_URL: 'ldap://127.0.0.1:0' },
+    { CAPABILITY_HUB_LDAP_URL: 'ldaps://user:pass@directory.example' },
+  ])
+    assert.throws(() => loadServerConfig({ dataDir }, { ...env, ...overrides }));
+  const production = {
+    dataDir,
+    production: true,
+    publicUrl: 'https://hub.example',
+    secret: 'ab'.repeat(32),
+  };
+  assert.throws(() => loadServerConfig(production, env));
+  assert.equal(
+    loadServerConfig(production, { ...env, CAPABILITY_HUB_LDAP_URL: 'ldaps://directory.example' })
+      .ldap?.url,
+    'ldaps://directory.example',
+  );
+});
+
 test('开发实例创建私有密钥并在再次打开时复用，显式配置的密钥不会落盘', async (context) => {
   const root = await directory(context);
   const first = loadServerConfig({ dataDir: join(root, 'local') }, {});

@@ -1,0 +1,23 @@
+name: capability-hub-ldap
+services:
+  openldap:
+    build: tests/fixtures/openldap
+    ports: ['127.0.0.1:${CAPABILITY_HUB_LDAP_PORT-1389}:1389']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'ldapsearch',
+          '-LLL',
+          '-x',
+          '-H',
+          'ldap://127.0.0.1:1389',
+          '-b',
+          '',
+          '-s',
+          'base',
+          'namingContexts',
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 20

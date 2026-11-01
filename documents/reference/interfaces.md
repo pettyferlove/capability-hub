@@ -22,6 +22,8 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 
 需要修订的修改携带 If-Match，幂等用例携带 Idempotency-Key。Cookie 写入还需 CSRF。
 
+`POST /auth/login` 接受 `username`、`password` 和 `provider`。来源为 `local` 或 `ldap`，省略时仅验证本地密码。实例未启用 LDAP 时，选择 `ldap` 返回 403 `LDAP_DISABLED`。当前账号和管理台用户记录均以 `auth_provider` 标明来源。
+
 `GET /api/admin/operations` 需要 `audit:read`。快照包含实例与存储探测、Agent 注册信息及保留执行的状态计数。近 30 天的趋势按北京时间创建日和当前状态汇总，成功率为完成数除以完成、失败和超时之和。无分母时留空。HTTP P95 显示本进程请求耗时桶的界限。刷新不调用模型。
 
 `PATCH /api/assets/:id/usage` 更新 Skill 的资产级使用要求，请求体为 `{ "requires_api_key": true }` 或 `false`，需要当前资产维护权限及 `If-Match`。新建资产默认 `false`；目录列表、详情和资产维护列表返回 `requires_api_key`。非 Skill 返回 422，修订冲突返回 412；变更记录审计，不保存实际 API Key。实际变更会递增资产修订，并按现有审核上下文规则使待审申请失效；当前已发布内容保持可用。

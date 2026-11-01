@@ -16,6 +16,7 @@
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "drizzle-orm": "0.45.4",
+    "ldapts": "9.2.0",
     "minio": "catalog:",
     "pg": "catalog:",
     "remark-parse": "^11.0.0",

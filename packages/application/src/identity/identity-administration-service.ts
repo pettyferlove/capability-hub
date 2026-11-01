@@ -10,13 +10,8 @@ import { toUserSummary } from './identity-mapper.js';
 import type { PasswordHasher } from '../ports/index.js';
 import type { IdentityService } from './identity-service.js';
 import type { SessionService } from './session-service.js';
+import { usernameSchema } from './commands.js';
 
-const usernameSchema = z
-  .string()
-  .min(3)
-  .max(64)
-  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]*$/)
-  .transform((value) => value.toLowerCase());
 const passwordSchema = z.string().min(12).max(256);
 
 /** 管理账号、团队、角色及授权；最后管理员检查与变更一并提交。 */
@@ -69,7 +64,7 @@ export class IdentityAdministrationService {
   /**
    * 新建账号并挂团队。密码哈希在事务外算完，事务内再次校验调用者权限，
    * 因为哈希期间授权可能已被撤销。
-   * 用户名小写后唯一，重复抛 409/`USERNAME_CONFLICT`；团队必须存在且启用，
+   * 本地用户名小写后唯一，重复抛 409/`USERNAME_CONFLICT`；团队必须存在且启用，
    * 否则 422/`INVALID_GROUP`；团队 ID 去重后建成员关系。写审计 `identity.user_created`。
    * @param body - 严格 schema：用户名 3–64、显示名 1–80、密码 12–256、最多 50 个团队
    */
@@ -87,7 +82,7 @@ export class IdentityAdministrationService {
     const password_hash = await this.passwords.hash(b.password);
     return await this.store.tx(async () => {
       this.identity.require(await this.identity.principal(p.id), 'identity:manage');
-      if (await this.store.find('users', 'username', b.username))
+      if (await this.identity.userForLogin(b.username, 'local'))
         fail(409, 'USERNAME_CONFLICT', '账号已存在');
       for (const id of b.group_ids)
         if (!(await this.store.get('groups', id))?.active) fail(422, 'INVALID_GROUP', '团队无效');
@@ -290,6 +285,8 @@ export class IdentityAdministrationService {
       const u = await this.store.get('users', id);
       if (!u) fail(404, 'NOT_FOUND', '账号不存在');
       matchRevision(u, etag);
+      if (hash && u.ldap_entry_uuid)
+        fail(422, 'DIRECTORY_PASSWORD_MANAGED', '请在 LDAP 目录中修改密码');
       const updated = {
         ...u,
         ...(b.active !== undefined ? { active: b.active } : {}),

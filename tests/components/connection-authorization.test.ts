@@ -13,6 +13,7 @@ const state: HubState = {
   me: {
     id: 'user',
     username: 'reader',
+    auth_provider: 'local',
     display_name: '读者',
     groups: [],
     capabilities: {

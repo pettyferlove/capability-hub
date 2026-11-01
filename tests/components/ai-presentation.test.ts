@@ -30,6 +30,7 @@ function renderBusinessPanel(props: Parameters<typeof BusinessAgentPanel>[0]) {
           me: {
             id: 'owner',
             username: 'owner',
+            auth_provider: 'local',
             display_name: '维护者',
             csrf_token: '',
             groups: [],

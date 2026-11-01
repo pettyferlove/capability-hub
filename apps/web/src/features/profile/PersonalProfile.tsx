@@ -24,6 +24,7 @@ import {
 } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
+import { accountLoginLabel } from '../../shared/format/labels.js';
 import type { ActivityResponse, ProfileResponse } from '@capability-hub/contracts/http';
 import { History, Save, UserRound, UsersRound } from '../../shared/icons/lucide.js';
 import { useState, type SubmitEvent } from 'react';
@@ -84,7 +85,7 @@ export function PersonalProfile() {
           <p className={eyebrowStyles}>MY WORKSPACE</p>
           <h2>{data.display_name}</h2>
           <p className={subtleStyles}>
-            @{data.username}
+            @{accountLoginLabel(data)}
             {data.title && ' · ' + data.title}
           </p>
         </div>

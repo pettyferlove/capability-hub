@@ -198,18 +198,21 @@ const schemas = {
     expires_at: integer,
     consumed_at: integer.nullable(),
   }),
-  users: z.strictObject({
-    ...versioned,
-    username: text,
-    display_name: text,
-    password_hash: text,
-    active: z.boolean(),
-    created_at: date,
-    avatar_color: text.optional(),
-    title: text.optional(),
-    bio: text.optional(),
-    email: text.optional(),
-  }),
+  users: z
+    .strictObject({
+      ...versioned,
+      username: text,
+      display_name: text,
+      password_hash: text.nullable(),
+      ldap_entry_uuid: z.guid().optional(),
+      active: z.boolean(),
+      created_at: date,
+      avatar_color: text.optional(),
+      title: text.optional(),
+      bio: text.optional(),
+      email: text.optional(),
+    })
+    .refine((user) => (user.password_hash === null) === (user.ldap_entry_uuid !== undefined)),
   groups: z.strictObject({ ...versioned, name: text, active: z.boolean() }),
   memberships: z.strictObject({ ...base, user_id: id, group_id: id }),
   roles: z.strictObject({

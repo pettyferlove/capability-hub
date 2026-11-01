@@ -1,14 +1,16 @@
-import type { Principal } from '@capability-hub/domain/identity';
-import type { RecordStore } from '../ports/index.js';
+import type { LoginProvider, Principal } from '@capability-hub/domain/identity';
+import type { UserRecord } from '@capability-hub/domain/models';
+import type { DirectoryAuthenticator, DirectoryIdentity, RecordStore } from '../ports/index.js';
 import { fail } from '@capability-hub/domain/errors';
 import { sha256 } from '@capability-hub/domain/canonical';
 import { randomUUID } from 'node:crypto';
-import type { SetupCommand } from './commands.js';
+import { usernameSchema, type SetupCommand } from './commands.js';
+import { resolveDirectoryUser } from './directory-login.js';
 import type { PasswordHasher } from '../ports/index.js';
 import type { IdentityService } from './identity-service.js';
 import type { SessionService } from './session-service.js';
 
-/** 本地账号初始化、密码认证与密码变更。 */
+/** 本地账号初始化、密码变更及本地或目录认证。 */
 export class AuthenticationService {
   private readonly dummy = '00000000000000000000000000000000:' + '00'.repeat(64);
   constructor(
@@ -16,6 +18,7 @@ export class AuthenticationService {
     private readonly identity: IdentityService,
     private readonly sessions: SessionService,
     private readonly passwords: PasswordHasher,
+    private readonly directory?: { authenticator: DirectoryAuthenticator; defaultRoles: string[] },
   ) {}
   /**
    * 首次初始化：以「库内无账号」为唯一前置条件，重复调用抛 409/`ALREADY_INITIALIZED`。
@@ -59,26 +62,57 @@ export class AuthenticationService {
   }
   /**
    * 校验密码并返回账号；只验证身份，不建会话，也不进入幂等重放。
-   * 同一 `address` 与归一化用户名 15 分钟内失败满 8 次即 429/`LOGIN_RATE_LIMIT`；
-   * 账号不存在时仍跑一次 dummy 校验以抹平耗时差，凭据错误统一 401/`INVALID_CREDENTIALS`，
+   * 同一认证来源、地址和归一化用户名 15 分钟内失败满 8 次即 429/`LOGIN_RATE_LIMIT`；
+   * 只验证选定来源的凭据，凭据错误统一 401/`INVALID_CREDENTIALS`，
    * 不区分「无此账号」与「密码错误」。失败计数与成功清理都写审计，失败记在 `anonymous` 名下。
    * @param username - 首尾空格与大小写不敏感，按小写查表
    * @param address - 客户端地址，只参与限流键的摘要，不落库明文
    */
-  async login(username: string, password: string, address: string) {
+  async login(
+    username: string,
+    password: string,
+    address: string,
+    provider: LoginProvider = 'local',
+  ) {
     username = username.trim().toLowerCase();
-    const key = sha256(address + ':' + username);
+    const directory = provider === 'ldap' ? this.directory : undefined;
+    if (provider !== 'local' && !directory) fail(403, 'LDAP_DISABLED', '此实例未启用 LDAP 登录');
+    const key = sha256(JSON.stringify([provider, address, username]));
     const attempts = await this.store.get('login_attempts', key);
     if (attempts && attempts.window_expires_at > Date.now() && attempts.failure_count >= 8)
       fail(429, 'LOGIN_RATE_LIMIT', '登录尝试过多，请 15 分钟后重试');
-    const observed = await this.store.find('users', 'username', username);
-    const valid = await this.passwords.verify(password, observed?.password_hash ?? this.dummy);
+    const observed = await this.identity.userForLogin(username, provider);
+    let directoryIdentity: DirectoryIdentity | undefined;
+    let localValid = false;
+    if (directory) {
+      if (observed?.active !== false && usernameSchema.safeParse(username).success)
+        directoryIdentity = await directory.authenticator.authenticate(username, password);
+    } else {
+      const valid = await this.passwords.verify(password, observed?.password_hash ?? this.dummy);
+      localValid = valid && observed?.password_hash != null;
+    }
     const user = await this.store.tx(async () => {
-      const current = observed ? await this.store.get('users', observed.id) : undefined;
       const attempts = await this.store.get('login_attempts', key);
       if (attempts && attempts.window_expires_at > Date.now() && attempts.failure_count >= 8)
         fail(429, 'LOGIN_RATE_LIMIT', '登录尝试过多，请 15 分钟后重试');
-      if (!current?.active || !valid || current.password_hash !== observed?.password_hash) {
+      const current = await this.identity.userForLogin(username, provider);
+      let authenticated: UserRecord | undefined;
+      if (directoryIdentity && directory)
+        authenticated = await resolveDirectoryUser(
+          this.store,
+          username,
+          directoryIdentity,
+          current,
+          directory.defaultRoles,
+        );
+      else if (
+        localValid &&
+        current?.active &&
+        current.id === observed?.id &&
+        current.password_hash === observed.password_hash
+      )
+        authenticated = current;
+      if (!authenticated) {
         const attempt = {
           id: key,
           failure_count:
@@ -92,12 +126,15 @@ export class AuthenticationService {
           'identity.login_failed',
           current?.id ?? '',
           'invalid_credentials',
+          { provider },
         );
         return undefined;
       }
       if (attempts) await this.store.remove('login_attempts', key);
-      await this.store.audit(current.id, 'identity.login', current.id);
-      return current;
+      await this.store.audit(authenticated.id, 'identity.login', authenticated.id, '', {
+        provider,
+      });
+      return authenticated;
     });
     if (!user) fail(401, 'INVALID_CREDENTIALS', '账号或密码错误');
     return user;
@@ -114,6 +151,8 @@ export class AuthenticationService {
     newPassword: string,
   ): Promise<void> {
     const observed = await this.identity.activeUser(principal.id);
+    if (observed.password_hash === null)
+      fail(422, 'DIRECTORY_PASSWORD_MANAGED', '请在 LDAP 目录中修改密码');
     if (!(await this.passwords.verify(currentPassword, observed.password_hash)))
       fail(422, 'CURRENT_PASSWORD_INVALID', '当前密码不正确');
     const password_hash = await this.passwords.hash(newPassword);

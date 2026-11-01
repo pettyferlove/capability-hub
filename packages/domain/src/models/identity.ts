@@ -6,11 +6,12 @@ import type { EpochMilliseconds, IsoDateTime, VersionedRecord } from './base.js'
  * 改密会在同一事务内吊销该账号全部会话，因此不需要在每次鉴权时重算口令。
  */
 export interface UserRecord extends VersionedRecord {
-  /** 全局唯一且已转小写的用户名，用于登录与提及。 */
+  /** 在所属认证来源内唯一的小写用户名。 */
   username: string;
   display_name: string;
-  /** 口令哈希，由 PasswordHasher 生成；比较时不得回显、不得写入日志与审计。 */
-  password_hash: string;
+  /** 本地账号保存 scrypt 哈希；LDAP 账号仅保存目录条目标识。 */
+  password_hash: string | null;
+  ldap_entry_uuid?: string;
   /** 停用后不再能登录，且其令牌与连接鉴权立即失效；数据保留。 */
   active: boolean;
   created_at: IsoDateTime;

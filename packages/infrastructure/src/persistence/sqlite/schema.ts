@@ -17,7 +17,7 @@ import {
  * （如 `username`）物化出来，唯一约束、索引与外键都作用在这些真实列上，而写入方只需提交 JSON。
  * `*_data_check` 要求 `json_valid`、为对象且 `$.id` 等于主键，生成列因此不会与 JSON 内容分叉。
  * 注意外键只在开启 `PRAGMA foreign_keys`（见 `openSqliteDriver`）的连接上生效。
- * 本表：`username` 唯一，登录与重命名冲突都由它裁决，不需要先查后写。
+ * 用户名在各自认证来源内唯一，目录条目标识独立于可变的用户名。
  */
 export const users = sqliteTable(
   'users',
@@ -26,10 +26,16 @@ export const users = sqliteTable(
     data: text('data', { mode: 'json' }).$type<RecordMap['users']>().notNull(),
     username: text('username')
       .generatedAlwaysAs(sql`json_extract(data, '$.username')`, { mode: 'stored' })
-      .notNull()
-      .unique(),
+      .notNull(),
   },
-  (_t): SQLiteTableExtraConfigValue[] => [
+  (t): SQLiteTableExtraConfigValue[] => [
+    uniqueIndex('users_local_username')
+      .on(t.username)
+      .where(sql`(data ->> 'ldap_entry_uuid') IS NULL`),
+    uniqueIndex('users_ldap_username')
+      .on(t.username)
+      .where(sql`(data ->> 'ldap_entry_uuid') IS NOT NULL`),
+    uniqueIndex('users_ldap_entry_uuid').on(sql`(data ->> 'ldap_entry_uuid')`),
     check(
       'users_data_check',
       sql`( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1`,

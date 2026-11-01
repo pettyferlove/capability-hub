@@ -74,6 +74,7 @@ export function registerPublicRoutes(app: Express, { hub, security }: HttpContex
     res.json({
       initialized: (await store.all('users')).length > 0,
       auth_provider: 'native-rbac',
+      ldap_enabled: Boolean(config.ldap),
       oidc_enabled: false,
       setup_token_required: config.production,
     }),
@@ -100,7 +101,12 @@ export function registerPublicRoutes(app: Express, { hub, security }: HttpContex
       const b = loginRequestSchema.parse(req.body);
       activeLogins++;
       try {
-        const u = await authentication.login(b.username, b.password, req.ip ?? 'unknown');
+        const u = await authentication.login(
+          b.username,
+          b.password,
+          req.ip ?? 'unknown',
+          b.provider,
+        );
         await security.startSession(req, res, u);
         return { ok: true };
       } finally {

@@ -97,7 +97,7 @@ blob storage.
 | `pnpm typecheck`               | per-package `tsc --noEmit` + root config over `scripts/`, `tests/`                         |
 | `pnpm lint` / `pnpm format`    | ESLint / Prettier (`format:check` in CI-equivalent gate)                                   |
 | `pnpm test`                    | unit + integration + components                                                            |
-| `pnpm test:external`           | Postgres/MinIO/SSH via local Docker                                                        |
+| `pnpm test:external`           | Postgres/MinIO/SSH/OpenLDAP via local Docker                                               |
 | `pnpm check`                   | architecture → doc links → `db:check` → lint → format → build → test                       |
 | `pnpm check:architecture`      | layering/exports/cycles/filename/`any` rules                                               |
 | `pnpm db:generate`             | regenerate SQLite **and** PostgreSQL migrations                                            |
@@ -173,7 +173,7 @@ Runner is Node's built-in `node:test` (`scripts/testing/run-tests.mjs`); asserti
 `node:assert/strict`. Component tests add jsdom plus Testing Library (`@testing-library/react`,
 `@testing-library/user-event`) through `tests/support/dom.js`. Groups: `unit` (pure logic),
 `integration` (SQLite, use cases, `supertest`, MCP, CLI subprocess), `components` (React without
-JSX), `external` (Postgres/MinIO/SSH via `compose.test.yaml`), and `live` (real AI providers,
+JSX), `external` (Postgres/MinIO/SSH/OpenLDAP via `compose.test.yaml` and `compose.ldap.yaml`), and `live` (real AI providers,
 `pnpm test:ai:live`). An empty group is a hard error.
 
 Add or change a test only when:

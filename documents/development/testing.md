@@ -7,7 +7,7 @@
 | unit        | 规范 JSON、路径、版本、密码/密文/游标、内容校验、配置        | 有效输入和恶意/边界输入的可观察结果 |
 | integration | 真实 SQLite、用例、HTTP、MCP SDK、CLI 子进程、备份与作业竞争 | 独立临时实例，真实协作对象          |
 | components  | 表单、键盘、弹层、查询和会话竞争                             | jsdom、Testing Library、user-event  |
-| external    | PostgreSQL、受限账号 MinIO、SSH Git 及完整业务链             | 本机 Docker，真实协议与独立资源     |
+| external    | PostgreSQL、受限账号 MinIO、SSH Git、OpenLDAP 及完整业务链   | 本机 Docker，真实协议与独立资源     |
 | support     | 共享实例、内容、存储、HTTP/DOM 和外部资源夹具                | 隔离创建、结束清理                  |
 
 ```sh

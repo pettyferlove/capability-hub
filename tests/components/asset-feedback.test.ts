@@ -180,6 +180,7 @@ function feedbackPage(canAi = false) {
         me: {
           id: 'reader',
           username: 'reader',
+          auth_provider: 'local',
           display_name: '读者',
           csrf_token: '',
           groups: [],

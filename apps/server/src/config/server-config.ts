@@ -11,6 +11,7 @@ import {
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { aiConfigurationSchema } from '@capability-hub/ai';
+import { builtinRoles } from '@capability-hub/domain/rbac';
 import { defaultDataDirectory, defaultWebDirectory, workspaceRoot } from './paths.js';
 
 const databaseSchema = z.discriminatedUnion('driver', [
@@ -38,6 +39,13 @@ const objectStorageSchema = z.discriminatedUnion('driver', [
     .strict(),
 ]);
 const secretSchema = z.string().regex(/^[a-fA-F0-9]{64}$/);
+const ldapSchema = z.strictObject({
+  url: z.url(),
+  baseDn: z.string().trim().min(1),
+  bindDn: z.string().trim().min(1),
+  bindPassword: z.string().min(1),
+  defaultRoles: z.array(z.string().refine((key) => builtinRoles.some((role) => role.key === key))),
+});
 const configSchema = z
   .object({
     dataDir: z.string().min(1),
@@ -55,6 +63,7 @@ const configSchema = z
     logLevel: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']),
     database: databaseSchema,
     objectStorage: objectStorageSchema,
+    ldap: ldapSchema.optional(),
     ai: aiConfigurationSchema,
   })
   .strict();
@@ -95,6 +104,22 @@ function validate(config: ServerConfig): void {
   if (config.production && publicUrl.protocol !== 'https:')
     throw new Error('生产 CAPABILITY_HUB_PUBLIC_URL 必须使用 HTTPS');
   config.publicUrl = publicUrl.origin;
+  if (config.ldap) {
+    const url = new URL(config.ldap.url);
+    const local = !config.production && ['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname);
+    if (
+      !(url.protocol === 'ldaps:' || (url.protocol === 'ldap:' && local)) ||
+      !url.hostname ||
+      url.port === '0' ||
+      url.username ||
+      url.password ||
+      (url.pathname && url.pathname !== '/') ||
+      url.search ||
+      url.hash
+    )
+      throw new Error('LDAP 需要 LDAPS 服务地址；仅本机开发可使用明文 LDAP');
+    config.ldap.defaultRoles = [...new Set(config.ldap.defaultRoles)];
+  }
   for (const host of config.gitHosts) {
     const url = new URL('https://' + host);
     if (
@@ -179,6 +204,17 @@ export function loadServerConfig(
         }
       : { driver: environment.CAPABILITY_HUB_OBJECT_STORAGE_DRIVER ?? 'filesystem' });
   const config = configSchema.parse({
+    ldap: environment.CAPABILITY_HUB_LDAP_URL
+      ? {
+          url: environment.CAPABILITY_HUB_LDAP_URL,
+          baseDn: environment.CAPABILITY_HUB_LDAP_BASE_DN,
+          bindDn: environment.CAPABILITY_HUB_LDAP_BIND_DN,
+          bindPassword: environment.CAPABILITY_HUB_LDAP_BIND_PASSWORD,
+          defaultRoles: (environment.CAPABILITY_HUB_LDAP_DEFAULT_ROLES ?? 'maintainer,reader')
+            .split(',')
+            .map((role) => role.trim()),
+        }
+      : undefined,
     ai:
       overrides.ai ??
       aiConfigurationSchema.parse(

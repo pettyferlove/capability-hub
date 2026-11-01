@@ -28,6 +28,12 @@
 
 Compose 专用变量包括 CAPABILITY_HUB_IMAGE、POSTGRES_IMAGE、MINIO_IMAGE、POSTGRES_PASSWORD、MINIO_ROOT_USER、MINIO_ROOT_PASSWORD 及发布端口。它们不进入浏览器产物。测试变量 CAPABILITY_HUB_TEST_* 仅由隔离测试 runner 生成。
 
+## LDAP 登录
+
+- `CAPABILITY_HUB_LDAP_URL` 为空时仅启用本地登录。正式目录使用 `ldaps://` 并校验证书，私有 CA 可通过 Node 的 `NODE_EXTRA_CA_CERTS` 加载。开发模式允许连接本机回环地址的 `ldap://` 服务。
+- `CAPABILITY_HUB_LDAP_BASE_DN` 限定用户搜索子树。`CAPABILITY_HUB_LDAP_BIND_DN` 和 `CAPABILITY_HUB_LDAP_BIND_PASSWORD` 提供只读查询身份，需能读取 `uid`、`cn` 和 `entryUUID`。同一搜索子树内的 `uid` 须唯一，用户绑定后须能按自己的 `entryUUID` 查询本条目。
+- `CAPABILITY_HUB_LDAP_DEFAULT_ROLES` 接受逗号分隔的内置角色键，默认 `maintainer,reader`。仅需使用者时填 `reader`。维护者绑定到首次登录时新建的个人维护团队。其余角色按平台范围授予，包括显式配置的 `reviewer` 或 `admin`。配置在重启后生效，仅影响之后首次建号的用户。
+
 ## AI 配置
 
 `CAPABILITY_HUB_AI_CONFIG` 指向 UTF-8 JSON 文件，相对路径基于工作区根目录；未设置时模型列表为空，AI 工作台不能发起执行。复制仓库根目录的 [ai.config.example.json](../../ai.config.example.json) 到 `.data/ai-config.json`，按实际服务调整 API 前缀、model 和 `credential_ref`，再配置：

@@ -1,3 +1,9 @@
+import type { PublicUserResponse } from '@capability-hub/contracts/http';
+
+/** 同名账号的授权和成员关系独立，管理操作需显示来源。 */
+export const accountLoginLabel = (user: Pick<PublicUserResponse, 'username' | 'auth_provider'>) =>
+  `${user.username} · ${user.auth_provider === 'ldap' ? 'LDAP 账号' : '本地账号'}`;
+
 /**
  * 分类名；未知取值原样返回而不是回退到「未分类」——后端新增分类时界面会直接露出该标识，
  * 便于发现遗漏，也避免把两种不同分类显示成同一文案。

@@ -1,11 +1,131 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { randomUUID } from 'node:crypto';
+import { AuthenticationService } from '@capability-hub/application';
+import type { DirectoryAuthenticator } from '@capability-hub/application/ports';
 import { sha256 } from '@capability-hub/domain/canonical';
 import { HubError } from '@capability-hub/domain/errors';
-import { createTestHub, testPassword } from '../support/application.js';
+import { ScryptPasswordHasher } from '@capability-hub/infrastructure/security';
+import {
+  createTestApplication,
+  createTestHub,
+  testPassword,
+  type TestHub,
+} from '../support/application.js';
+import { deferred } from '../support/store.js';
 
 const code = (value: string) => (error: unknown) =>
   error instanceof HubError && error.code === value;
+
+function directoryLogin(hub: TestHub['hub'], authenticator: DirectoryAuthenticator) {
+  return new AuthenticationService(
+    hub.store,
+    hub.identity,
+    hub.sessions,
+    new ScryptPasswordHasher(),
+    {
+      authenticator,
+      defaultRoles: ['reader'],
+    },
+  );
+}
+
+test('目录认证不能抢先初始化平台，并与校验期间创建的同名本地账号各自建号', async (context) => {
+  const { hub, store } = await createTestApplication(context);
+  const identity = { entryUuid: randomUUID(), displayName: '目录成员' };
+  const auth = directoryLogin(hub, { authenticate: async () => identity });
+  await assert.rejects(
+    () => auth.login('member', testPassword, 'test', 'ldap'),
+    code('INVALID_CREDENTIALS'),
+  );
+  assert.equal((await store.all('users')).length, 0);
+  const user = await hub.authentication.setup({
+    username: 'owner',
+    password: testPassword,
+    display_name: '管理员',
+    team_name: '研发',
+  });
+  const entered = deferred(),
+    release = deferred();
+  const pending = directoryLogin(hub, {
+    async authenticate() {
+      entered.resolve();
+      await release.promise;
+      return identity;
+    },
+  }).login('member', 'directory-password', 'test', 'ldap');
+  await entered.promise;
+  try {
+    await hub.administration.createUser(await hub.identity.principal(user.id), {
+      username: 'member',
+      password: testPassword,
+      display_name: '本地成员',
+      group_ids: [],
+    });
+  } finally {
+    release.resolve();
+  }
+  const ldap = await pending;
+  const local = await auth.login('member', testPassword, 'test');
+  assert.equal(ldap.ldap_entry_uuid, identity.entryUuid);
+  assert.equal(local.ldap_entry_uuid, undefined);
+  assert.notEqual(ldap.id, local.id);
+});
+
+test('同一目录条目更名保留账号，复用旧 uid 的其他条目不能继承授权', async (context) => {
+  const { hub } = await createTestHub(context);
+  let entryUuid = randomUUID();
+  const auth = directoryLogin(hub, {
+    authenticate: async () => ({ entryUuid, displayName: '成员' }),
+  });
+  const first = await auth.login('member', testPassword, 'test', 'ldap');
+  const renamed = await auth.login('renamed', testPassword, 'test', 'ldap');
+  assert.equal(renamed.id, first.id);
+  assert.equal(renamed.username, 'renamed');
+  entryUuid = randomUUID();
+  await assert.rejects(
+    () => auth.login('renamed', testPassword, 'test', 'ldap'),
+    code('INVALID_CREDENTIALS'),
+  );
+  await assert.rejects(
+    () => hub.authentication.login('renamed', testPassword, 'test'),
+    code('INVALID_CREDENTIALS'),
+  );
+  await assert.rejects(
+    () => hub.authentication.login('owner', testPassword, 'test', 'ldap'),
+    code('LDAP_DISABLED'),
+  );
+});
+
+test('一个来源的登录失败不会锁住同名另一账号，另一来源的成功也不会清除锁定', async (context) => {
+  const { hub } = await createTestHub(context);
+  const identity = { entryUuid: randomUUID(), displayName: '目录成员' };
+  const directoryPassword = 'separate-directory-password';
+  const auth = directoryLogin(hub, {
+    authenticate: async (_username, password) =>
+      password === directoryPassword ? identity : undefined,
+  });
+  for (const limited of ['local', 'ldap'] as const) {
+    const other = limited === 'ldap' ? 'local' : 'ldap';
+    const address = 'test-' + limited;
+    for (let i = 0; i < 8; i++)
+      await assert.rejects(
+        () => auth.login('owner', 'wrong', address, limited),
+        code('INVALID_CREDENTIALS'),
+      );
+    await auth.login('owner', other === 'local' ? testPassword : directoryPassword, address, other);
+    await assert.rejects(
+      () =>
+        auth.login(
+          'owner',
+          limited === 'local' ? testPassword : directoryPassword,
+          address,
+          limited,
+        ),
+      code('LOGIN_RATE_LIMIT'),
+    );
+  }
+});
 
 test('账号管理输出公开字段，权限按团队生效，外部成员无法创建账号', async (context) => {
   const fixture = await createTestHub(context);

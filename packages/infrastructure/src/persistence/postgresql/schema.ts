@@ -35,7 +35,7 @@ export const hub_revision = pgTable(
  * 索引的字段（如 `username`）物化出来，唯一约束、索引与外键都作用在这些真实列上，
  * 写入方只需提交 JSON。`*_data_check` 要求 `jsonb_typeof(data) = 'object'` 且
  * `data ->> 'id'` 等于主键，生成列不会与 JSON 分叉。
- * 本表：`username` 唯一，登录与重命名冲突都由它裁决，不需要先查后写。
+ * 用户名在各自认证来源内唯一，目录条目标识独立于可变的用户名。
  */
 export const users = pgTable(
   'users',
@@ -44,10 +44,16 @@ export const users = pgTable(
     data: jsonb('data').$type<RecordMap['users']>().notNull(),
     username: text('username')
       .generatedAlwaysAs(sql`(data ->> 'username')`)
-      .notNull()
-      .unique(),
+      .notNull(),
   },
-  (_t): PgTableExtraConfigValue[] => [
+  (t): PgTableExtraConfigValue[] => [
+    uniqueIndex('users_local_username')
+      .on(t.username)
+      .where(sql`(data ->> 'ldap_entry_uuid') IS NULL`),
+    uniqueIndex('users_ldap_username')
+      .on(t.username)
+      .where(sql`(data ->> 'ldap_entry_uuid') IS NOT NULL`),
+    uniqueIndex('users_ldap_entry_uuid').on(sql`(data ->> 'ldap_entry_uuid')`),
     check(
       'users_data_check',
       sql`( jsonb_typeof(data) = 'object' AND jsonb_typeof(data -> 'id') = 'string' AND data ->> 'id' = id ) IS TRUE`,

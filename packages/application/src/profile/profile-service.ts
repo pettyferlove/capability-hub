@@ -1,5 +1,5 @@
 import { auditDefinitions } from '@capability-hub/domain/audit';
-import type { Principal } from '@capability-hub/domain/identity';
+import { userLoginProvider, type Principal } from '@capability-hub/domain/identity';
 import type { RecordStore } from '../ports/index.js';
 import { has, hasInAnyScope } from '@capability-hub/domain/rbac';
 import { z } from 'zod';
@@ -40,6 +40,7 @@ export class ProfileService {
     return {
       id: user.id,
       username: user.username,
+      auth_provider: userLoginProvider(user),
       display_name: user.display_name,
       avatar_color: user.avatar_color ?? 'teal',
       csrf_token: csrfToken,
@@ -74,6 +75,7 @@ export class ProfileService {
     return {
       id: user.id,
       username: user.username,
+      auth_provider: userLoginProvider(user),
       display_name: user.display_name,
       title: user.title ?? '',
       bio: user.bio ?? '',

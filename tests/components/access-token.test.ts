@@ -7,17 +7,18 @@ import { userEvent } from '@testing-library/user-event';
 import { PersonalSecurity } from '../../apps/web/src/features/profile/SecurityPanel.js';
 import { AccessTokenForm } from '../../apps/web/src/features/profile/AccessTokenForm.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
+import type { MeResponse } from '@capability-hub/contracts/http';
 import { deferred } from '../support/store.js';
 
 afterEach(cleanup);
 
-function Provider({ children }: { children: ReactNode }) {
+function Provider({ children, me = null }: { children: ReactNode; me?: MeResponse | null }) {
   const [refresh, setRefresh] = useState(0);
   return createElement(
     HubCtx.Provider,
     {
       value: {
-        me: null,
+        me,
         reviewCount: 0,
         refresh,
         reload: () => setRefresh((value) => value + 1),
@@ -28,6 +29,31 @@ function Provider({ children }: { children: ReactNode }) {
     children,
   );
 }
+
+test('LDAP 账号安全页指向目录改密，保留 Hub 会话与令牌入口', async (context) => {
+  context.mock.method(globalThis, 'fetch', () => Promise.resolve(Response.json([])));
+  const me: MeResponse = {
+    id: 'directory-user',
+    username: 'member',
+    display_name: '目录成员',
+    auth_provider: 'ldap',
+    groups: [],
+    csrf_token: 'test-csrf',
+    features: { git_hosts: [] },
+    capabilities: {
+      can_ai: false,
+      can_admin: false,
+      can_audit: false,
+      can_publish: false,
+      can_review: false,
+    },
+  };
+  render(createElement(Provider, { me, children: createElement(PersonalSecurity) }));
+  assert(await screen.findByText('请在 LDAP 目录中修改账号密码。'));
+  assert.equal(screen.queryByLabelText('当前密码'), null);
+  assert(screen.getByRole('heading', { name: '登录会话' }));
+  assert(await screen.findByRole('button', { name: '创建访问令牌' }));
+});
 
 test('安全设置原位创建、复制和刷新列表，关闭后不再回显令牌', async (context) => {
   history.replaceState(null, '', '/account?tab=security');

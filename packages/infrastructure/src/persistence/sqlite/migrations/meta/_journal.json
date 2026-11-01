@@ -15,6 +15,13 @@
       "when": 1793439387631,
       "tag": "0001_ai_runtime",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793539467074,
+      "tag": "0002_identity_providers",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,3806 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "96d52750-618a-4956-95b0-8fe900566187",
+  "prevId": "37cc32ef-8ab3-401f-9684-ea5535253705",
+  "tables": {
+    "ai_artifacts": {
+      "name": "ai_artifacts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_id'))",
+            "type": "stored"
+          }
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.execution_id'))",
+            "type": "stored"
+          }
+        },
+        "lookup_key": {
+          "name": "lookup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.lookup_key'))",
+            "type": "stored"
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.status'))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.created_at'))",
+            "type": "stored"
+          }
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.updated_at'))",
+            "type": "stored"
+          }
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.position'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "ai_artifacts_execution_position_idx": {
+          "name": "ai_artifacts_execution_position_idx",
+          "columns": [
+            "execution_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_artifacts_owner_position_idx": {
+          "name": "ai_artifacts_owner_position_idx",
+          "columns": [
+            "owner_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_artifacts_lookup_position_idx": {
+          "name": "ai_artifacts_lookup_position_idx",
+          "columns": [
+            "lookup_key",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_artifacts_status_position_idx": {
+          "name": "ai_artifacts_status_position_idx",
+          "columns": [
+            "status",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "ai_artifacts_execution_id_ai_executions_id_fk": {
+          "name": "ai_artifacts_execution_id_ai_executions_id_fk",
+          "tableFrom": "ai_artifacts",
+          "tableTo": "ai_executions",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_artifacts_data_check": {
+          "name": "ai_artifacts_data_check",
+          "value": "(json_valid(data) AND json_type(data) = 'object' AND json_extract(data, '$.id') = id) IS 1"
+        }
+      }
+    },
+    "ai_calls": {
+      "name": "ai_calls",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_id'))",
+            "type": "stored"
+          }
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.execution_id'))",
+            "type": "stored"
+          }
+        },
+        "lookup_key": {
+          "name": "lookup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.lookup_key'))",
+            "type": "stored"
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.status'))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.created_at'))",
+            "type": "stored"
+          }
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.updated_at'))",
+            "type": "stored"
+          }
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.position'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "ai_calls_execution_position_idx": {
+          "name": "ai_calls_execution_position_idx",
+          "columns": [
+            "execution_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_calls_owner_position_idx": {
+          "name": "ai_calls_owner_position_idx",
+          "columns": [
+            "owner_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_calls_lookup_position_idx": {
+          "name": "ai_calls_lookup_position_idx",
+          "columns": [
+            "lookup_key",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_calls_status_position_idx": {
+          "name": "ai_calls_status_position_idx",
+          "columns": [
+            "status",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "ai_calls_execution_id_ai_executions_id_fk": {
+          "name": "ai_calls_execution_id_ai_executions_id_fk",
+          "tableFrom": "ai_calls",
+          "tableTo": "ai_executions",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_calls_data_check": {
+          "name": "ai_calls_data_check",
+          "value": "(json_valid(data) AND json_type(data) = 'object' AND json_extract(data, '$.id') = id) IS 1"
+        }
+      }
+    },
+    "ai_effects": {
+      "name": "ai_effects",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_id'))",
+            "type": "stored"
+          }
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.execution_id'))",
+            "type": "stored"
+          }
+        },
+        "lookup_key": {
+          "name": "lookup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.lookup_key'))",
+            "type": "stored"
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.status'))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.created_at'))",
+            "type": "stored"
+          }
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.updated_at'))",
+            "type": "stored"
+          }
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.position'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "ai_effects_execution_position_idx": {
+          "name": "ai_effects_execution_position_idx",
+          "columns": [
+            "execution_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_effects_owner_position_idx": {
+          "name": "ai_effects_owner_position_idx",
+          "columns": [
+            "owner_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_effects_lookup_position_idx": {
+          "name": "ai_effects_lookup_position_idx",
+          "columns": [
+            "lookup_key",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_effects_status_position_idx": {
+          "name": "ai_effects_status_position_idx",
+          "columns": [
+            "status",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_effects_lookup_uq": {
+          "name": "ai_effects_lookup_uq",
+          "columns": [
+            "lookup_key"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "ai_effects_execution_id_ai_executions_id_fk": {
+          "name": "ai_effects_execution_id_ai_executions_id_fk",
+          "tableFrom": "ai_effects",
+          "tableTo": "ai_executions",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_effects_data_check": {
+          "name": "ai_effects_data_check",
+          "value": "(json_valid(data) AND json_type(data) = 'object' AND json_extract(data, '$.id') = id) IS 1"
+        }
+      }
+    },
+    "ai_events": {
+      "name": "ai_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_id'))",
+            "type": "stored"
+          }
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.execution_id'))",
+            "type": "stored"
+          }
+        },
+        "lookup_key": {
+          "name": "lookup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.lookup_key'))",
+            "type": "stored"
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.status'))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.created_at'))",
+            "type": "stored"
+          }
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.updated_at'))",
+            "type": "stored"
+          }
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.position'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "ai_events_execution_position_idx": {
+          "name": "ai_events_execution_position_idx",
+          "columns": [
+            "execution_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_events_owner_position_idx": {
+          "name": "ai_events_owner_position_idx",
+          "columns": [
+            "owner_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_events_lookup_position_idx": {
+          "name": "ai_events_lookup_position_idx",
+          "columns": [
+            "lookup_key",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_events_status_position_idx": {
+          "name": "ai_events_status_position_idx",
+          "columns": [
+            "status",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_events_stream_seq_uq": {
+          "name": "ai_events_stream_seq_uq",
+          "columns": [
+            "lookup_key",
+            "position"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "ai_events_execution_id_ai_executions_id_fk": {
+          "name": "ai_events_execution_id_ai_executions_id_fk",
+          "tableFrom": "ai_events",
+          "tableTo": "ai_executions",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_events_data_check": {
+          "name": "ai_events_data_check",
+          "value": "(json_valid(data) AND json_type(data) = 'object' AND json_extract(data, '$.id') = id) IS 1"
+        }
+      }
+    },
+    "ai_executions": {
+      "name": "ai_executions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_id'))",
+            "type": "stored"
+          }
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.execution_id'))",
+            "type": "stored"
+          }
+        },
+        "lookup_key": {
+          "name": "lookup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.lookup_key'))",
+            "type": "stored"
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.status'))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.created_at'))",
+            "type": "stored"
+          }
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.updated_at'))",
+            "type": "stored"
+          }
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.position'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "ai_executions_execution_position_idx": {
+          "name": "ai_executions_execution_position_idx",
+          "columns": [
+            "execution_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_executions_owner_position_idx": {
+          "name": "ai_executions_owner_position_idx",
+          "columns": [
+            "owner_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_executions_lookup_position_idx": {
+          "name": "ai_executions_lookup_position_idx",
+          "columns": [
+            "lookup_key",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_executions_status_position_idx": {
+          "name": "ai_executions_status_position_idx",
+          "columns": [
+            "status",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_executions_data_check": {
+          "name": "ai_executions_data_check",
+          "value": "(json_valid(data) AND json_type(data) = 'object' AND json_extract(data, '$.id') = id) IS 1"
+        }
+      }
+    },
+    "ai_interactions": {
+      "name": "ai_interactions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_id'))",
+            "type": "stored"
+          }
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.execution_id'))",
+            "type": "stored"
+          }
+        },
+        "lookup_key": {
+          "name": "lookup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.lookup_key'))",
+            "type": "stored"
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.status'))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.created_at'))",
+            "type": "stored"
+          }
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.updated_at'))",
+            "type": "stored"
+          }
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.position'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "ai_interactions_execution_position_idx": {
+          "name": "ai_interactions_execution_position_idx",
+          "columns": [
+            "execution_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_interactions_owner_position_idx": {
+          "name": "ai_interactions_owner_position_idx",
+          "columns": [
+            "owner_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_interactions_lookup_position_idx": {
+          "name": "ai_interactions_lookup_position_idx",
+          "columns": [
+            "lookup_key",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_interactions_status_position_idx": {
+          "name": "ai_interactions_status_position_idx",
+          "columns": [
+            "status",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_interactions_lookup_uq": {
+          "name": "ai_interactions_lookup_uq",
+          "columns": [
+            "lookup_key"
+          ],
+          "isUnique": true
+        },
+        "ai_interactions_pending_uq": {
+          "name": "ai_interactions_pending_uq",
+          "columns": [
+            "execution_id"
+          ],
+          "isUnique": true,
+          "where": "\"ai_interactions\".\"status\" = 'pending'"
+        }
+      },
+      "foreignKeys": {
+        "ai_interactions_execution_id_ai_executions_id_fk": {
+          "name": "ai_interactions_execution_id_ai_executions_id_fk",
+          "tableFrom": "ai_interactions",
+          "tableTo": "ai_executions",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_interactions_data_check": {
+          "name": "ai_interactions_data_check",
+          "value": "(json_valid(data) AND json_type(data) = 'object' AND json_extract(data, '$.id') = id) IS 1"
+        }
+      }
+    },
+    "ai_messages": {
+      "name": "ai_messages",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_id'))",
+            "type": "stored"
+          }
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.execution_id'))",
+            "type": "stored"
+          }
+        },
+        "lookup_key": {
+          "name": "lookup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.lookup_key'))",
+            "type": "stored"
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.status'))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.created_at'))",
+            "type": "stored"
+          }
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.updated_at'))",
+            "type": "stored"
+          }
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.position'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "ai_messages_execution_position_idx": {
+          "name": "ai_messages_execution_position_idx",
+          "columns": [
+            "execution_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_messages_owner_position_idx": {
+          "name": "ai_messages_owner_position_idx",
+          "columns": [
+            "owner_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_messages_lookup_position_idx": {
+          "name": "ai_messages_lookup_position_idx",
+          "columns": [
+            "lookup_key",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_messages_status_position_idx": {
+          "name": "ai_messages_status_position_idx",
+          "columns": [
+            "status",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "ai_messages_execution_id_ai_executions_id_fk": {
+          "name": "ai_messages_execution_id_ai_executions_id_fk",
+          "tableFrom": "ai_messages",
+          "tableTo": "ai_executions",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_messages_data_check": {
+          "name": "ai_messages_data_check",
+          "value": "(json_valid(data) AND json_type(data) = 'object' AND json_extract(data, '$.id') = id) IS 1"
+        }
+      }
+    },
+    "ai_snapshots": {
+      "name": "ai_snapshots",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_id'))",
+            "type": "stored"
+          }
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.execution_id'))",
+            "type": "stored"
+          }
+        },
+        "lookup_key": {
+          "name": "lookup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.lookup_key'))",
+            "type": "stored"
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.status'))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.created_at'))",
+            "type": "stored"
+          }
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.updated_at'))",
+            "type": "stored"
+          }
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.position'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "ai_snapshots_execution_position_idx": {
+          "name": "ai_snapshots_execution_position_idx",
+          "columns": [
+            "execution_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_snapshots_owner_position_idx": {
+          "name": "ai_snapshots_owner_position_idx",
+          "columns": [
+            "owner_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_snapshots_lookup_position_idx": {
+          "name": "ai_snapshots_lookup_position_idx",
+          "columns": [
+            "lookup_key",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_snapshots_status_position_idx": {
+          "name": "ai_snapshots_status_position_idx",
+          "columns": [
+            "status",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_snapshots_lookup_uq": {
+          "name": "ai_snapshots_lookup_uq",
+          "columns": [
+            "lookup_key"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "ai_snapshots_execution_id_ai_executions_id_fk": {
+          "name": "ai_snapshots_execution_id_ai_executions_id_fk",
+          "tableFrom": "ai_snapshots",
+          "tableTo": "ai_executions",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_snapshots_data_check": {
+          "name": "ai_snapshots_data_check",
+          "value": "(json_valid(data) AND json_type(data) = 'object' AND json_extract(data, '$.id') = id) IS 1"
+        }
+      }
+    },
+    "ai_threads": {
+      "name": "ai_threads",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_id'))",
+            "type": "stored"
+          }
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.execution_id'))",
+            "type": "stored"
+          }
+        },
+        "lookup_key": {
+          "name": "lookup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.lookup_key'))",
+            "type": "stored"
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.status'))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.created_at'))",
+            "type": "stored"
+          }
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.updated_at'))",
+            "type": "stored"
+          }
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.position'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "ai_threads_execution_position_idx": {
+          "name": "ai_threads_execution_position_idx",
+          "columns": [
+            "execution_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_threads_owner_position_idx": {
+          "name": "ai_threads_owner_position_idx",
+          "columns": [
+            "owner_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_threads_lookup_position_idx": {
+          "name": "ai_threads_lookup_position_idx",
+          "columns": [
+            "lookup_key",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_threads_status_position_idx": {
+          "name": "ai_threads_status_position_idx",
+          "columns": [
+            "status",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "ai_threads_execution_id_ai_executions_id_fk": {
+          "name": "ai_threads_execution_id_ai_executions_id_fk",
+          "tableFrom": "ai_threads",
+          "tableTo": "ai_executions",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_threads_data_check": {
+          "name": "ai_threads_data_check",
+          "value": "(json_valid(data) AND json_type(data) = 'object' AND json_extract(data, '$.id') = id) IS 1"
+        }
+      }
+    },
+    "ai_traces": {
+      "name": "ai_traces",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_id'))",
+            "type": "stored"
+          }
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.execution_id'))",
+            "type": "stored"
+          }
+        },
+        "lookup_key": {
+          "name": "lookup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.lookup_key'))",
+            "type": "stored"
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.status'))",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.created_at'))",
+            "type": "stored"
+          }
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.updated_at'))",
+            "type": "stored"
+          }
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.position'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "ai_traces_execution_position_idx": {
+          "name": "ai_traces_execution_position_idx",
+          "columns": [
+            "execution_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_traces_owner_position_idx": {
+          "name": "ai_traces_owner_position_idx",
+          "columns": [
+            "owner_id",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_traces_lookup_position_idx": {
+          "name": "ai_traces_lookup_position_idx",
+          "columns": [
+            "lookup_key",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "ai_traces_status_position_idx": {
+          "name": "ai_traces_status_position_idx",
+          "columns": [
+            "status",
+            "position",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "ai_traces_execution_id_ai_executions_id_fk": {
+          "name": "ai_traces_execution_id_ai_executions_id_fk",
+          "tableFrom": "ai_traces",
+          "tableTo": "ai_executions",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_traces_data_check": {
+          "name": "ai_traces_data_check",
+          "value": "(json_valid(data) AND json_type(data) = 'object' AND json_extract(data, '$.id') = id) IS 1"
+        }
+      }
+    },
+    "asset_feedback": {
+      "name": "asset_feedback",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.asset_id'))",
+            "type": "stored"
+          }
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.version_id'))",
+            "type": "stored"
+          }
+        },
+        "submitted_by": {
+          "name": "submitted_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.submitted_by'))",
+            "type": "stored"
+          }
+        },
+        "request_key": {
+          "name": "request_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.request_key'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "asset_feedback_asset": {
+          "name": "asset_feedback_asset",
+          "columns": [
+            "asset_id"
+          ],
+          "isUnique": false
+        },
+        "asset_feedback_submitted_by_request_key_unique": {
+          "name": "asset_feedback_submitted_by_request_key_unique",
+          "columns": [
+            "submitted_by",
+            "request_key"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "asset_feedback_asset_id_assets_id_fk": {
+          "name": "asset_feedback_asset_id_assets_id_fk",
+          "tableFrom": "asset_feedback",
+          "tableTo": "assets",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "asset_feedback_version_id_versions_id_fk": {
+          "name": "asset_feedback_version_id_versions_id_fk",
+          "tableFrom": "asset_feedback",
+          "tableTo": "versions",
+          "columnsFrom": [
+            "version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "asset_feedback_submitted_by_users_id_fk": {
+          "name": "asset_feedback_submitted_by_users_id_fk",
+          "tableFrom": "asset_feedback",
+          "tableTo": "users",
+          "columnsFrom": [
+            "submitted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "asset_feedback_data_check": {
+          "name": "asset_feedback_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "assets": {
+      "name": "assets",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.slug'))",
+            "type": "stored"
+          }
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.source_id'))",
+            "type": "stored"
+          }
+        },
+        "owner_group_id": {
+          "name": "owner_group_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_group_id'))",
+            "type": "stored"
+          }
+        },
+        "current_release_id": {
+          "name": "current_release_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.current_release_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "assets_slug_unique": {
+          "name": "assets_slug_unique",
+          "columns": [
+            "slug"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "assets_source_id_sources_id_fk": {
+          "name": "assets_source_id_sources_id_fk",
+          "tableFrom": "assets",
+          "tableTo": "sources",
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "assets_owner_group_id_groups_id_fk": {
+          "name": "assets_owner_group_id_groups_id_fk",
+          "tableFrom": "assets",
+          "tableTo": "groups",
+          "columnsFrom": [
+            "owner_group_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "assets_id_current_release_id_releases_asset_id_id_fk": {
+          "name": "assets_id_current_release_id_releases_asset_id_id_fk",
+          "tableFrom": "assets",
+          "tableTo": "releases",
+          "columnsFrom": [
+            "id",
+            "current_release_id"
+          ],
+          "columnsTo": [
+            "asset_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "assets_data_check": {
+          "name": "assets_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "audit": {
+      "name": "audit",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.occurred_at'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "audit_data_check": {
+          "name": "audit_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "bindings": {
+      "name": "bindings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.source_id'))",
+            "type": "stored"
+          }
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.asset_id'))",
+            "type": "stored"
+          }
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.path'))",
+            "type": "stored"
+          }
+        },
+        "retired_at": {
+          "name": "retired_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.retired_at'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "binding_asset": {
+          "name": "binding_asset",
+          "columns": [
+            "asset_id"
+          ],
+          "isUnique": true,
+          "where": "retired_at IS NULL"
+        },
+        "binding_path": {
+          "name": "binding_path",
+          "columns": [
+            "source_id",
+            "path"
+          ],
+          "isUnique": true,
+          "where": "retired_at IS NULL"
+        }
+      },
+      "foreignKeys": {
+        "bindings_source_id_sources_id_fk": {
+          "name": "bindings_source_id_sources_id_fk",
+          "tableFrom": "bindings",
+          "tableTo": "sources",
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "bindings_asset_id_assets_id_fk": {
+          "name": "bindings_asset_id_assets_id_fk",
+          "tableFrom": "bindings",
+          "tableTo": "assets",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "bindings_data_check": {
+          "name": "bindings_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "cli_logins": {
+      "name": "cli_logins",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.code'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "cli_logins_code_unique": {
+          "name": "cli_logins_code_unique",
+          "columns": [
+            "code"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cli_logins_data_check": {
+          "name": "cli_logins_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "git_credentials": {
+      "name": "git_credentials",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.user_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "git_credentials_user_id_users_id_fk": {
+          "name": "git_credentials_user_id_users_id_fk",
+          "tableFrom": "git_credentials",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "git_credentials_data_check": {
+          "name": "git_credentials_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "groups": {
+      "name": "groups",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.name'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "groups_name_unique": {
+          "name": "groups_name_unique",
+          "columns": [
+            "name"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "groups_data_check": {
+          "name": "groups_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "hub_revision": {
+      "name": "hub_revision",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "hub_revision_id_check": {
+          "name": "hub_revision_id_check",
+          "value": "id = 1"
+        }
+      }
+    },
+    "idempotency": {
+      "name": "idempotency",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.principal_id'))",
+            "type": "stored"
+          }
+        },
+        "route": {
+          "name": "route",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.route'))",
+            "type": "stored"
+          }
+        },
+        "KEY": {
+          "name": "KEY",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.key'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "idempotency_principal_id_route_KEY_unique": {
+          "name": "idempotency_principal_id_route_KEY_unique",
+          "columns": [
+            "principal_id",
+            "route",
+            "KEY"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "idempotency_principal_id_users_id_fk": {
+          "name": "idempotency_principal_id_users_id_fk",
+          "tableFrom": "idempotency",
+          "tableTo": "users",
+          "columnsFrom": [
+            "principal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "idempotency_data_check": {
+          "name": "idempotency_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "intakes": {
+      "name": "intakes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.asset_id'))",
+            "type": "stored"
+          }
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.source_id'))",
+            "type": "stored"
+          }
+        },
+        "binding_id": {
+          "name": "binding_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.binding_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "intake_asset": {
+          "name": "intake_asset",
+          "columns": [
+            "asset_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "intakes_asset_id_assets_id_fk": {
+          "name": "intakes_asset_id_assets_id_fk",
+          "tableFrom": "intakes",
+          "tableTo": "assets",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "intakes_source_id_sources_id_fk": {
+          "name": "intakes_source_id_sources_id_fk",
+          "tableFrom": "intakes",
+          "tableTo": "sources",
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "intakes_binding_id_bindings_id_fk": {
+          "name": "intakes_binding_id_bindings_id_fk",
+          "tableFrom": "intakes",
+          "tableTo": "bindings",
+          "columnsFrom": [
+            "binding_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "intakes_data_check": {
+          "name": "intakes_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "jobs": {
+      "name": "jobs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.state'))",
+            "type": "stored"
+          }
+        },
+        "run_after": {
+          "name": "run_after",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.run_after'))",
+            "type": "stored"
+          }
+        },
+        "aggregate_id": {
+          "name": "aggregate_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.aggregate_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "jobs_schedule": {
+          "name": "jobs_schedule",
+          "columns": [
+            "state",
+            "run_after"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "jobs_data_check": {
+          "name": "jobs_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "login_attempts": {
+      "name": "login_attempts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "window_expires_at": {
+          "name": "window_expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.window_expires_at'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "login_attempts_data_check": {
+          "name": "login_attempts_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "memberships": {
+      "name": "memberships",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.user_id'))",
+            "type": "stored"
+          }
+        },
+        "group_id": {
+          "name": "group_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.group_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "memberships_user_id_group_id_unique": {
+          "name": "memberships_user_id_group_id_unique",
+          "columns": [
+            "user_id",
+            "group_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "memberships_user_id_users_id_fk": {
+          "name": "memberships_user_id_users_id_fk",
+          "tableFrom": "memberships",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "memberships_group_id_groups_id_fk": {
+          "name": "memberships_group_id_groups_id_fk",
+          "tableFrom": "memberships",
+          "tableTo": "groups",
+          "columnsFrom": [
+            "group_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "memberships_data_check": {
+          "name": "memberships_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "oauth_clients": {
+      "name": "oauth_clients",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "oauth_clients_data_check": {
+          "name": "oauth_clients_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "oauth_credentials": {
+      "name": "oauth_credentials",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "grant_id": {
+          "name": "grant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.grant_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "oauth_credentials_grant_id": {
+          "name": "oauth_credentials_grant_id",
+          "columns": [
+            "grant_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "oauth_credentials_grant_id_oauth_grants_id_fk": {
+          "name": "oauth_credentials_grant_id_oauth_grants_id_fk",
+          "tableFrom": "oauth_credentials",
+          "tableTo": "oauth_grants",
+          "columnsFrom": [
+            "grant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "oauth_credentials_data_check": {
+          "name": "oauth_credentials_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "oauth_grants": {
+      "name": "oauth_grants",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.client_id'))",
+            "type": "stored"
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.user_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "oauth_grants_client_id": {
+          "name": "oauth_grants_client_id",
+          "columns": [
+            "client_id"
+          ],
+          "isUnique": false
+        },
+        "oauth_grants_user_id": {
+          "name": "oauth_grants_user_id",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "oauth_grants_client_id_oauth_clients_id_fk": {
+          "name": "oauth_grants_client_id_oauth_clients_id_fk",
+          "tableFrom": "oauth_grants",
+          "tableTo": "oauth_clients",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "oauth_grants_user_id_users_id_fk": {
+          "name": "oauth_grants_user_id_users_id_fk",
+          "tableFrom": "oauth_grants",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "oauth_grants_data_check": {
+          "name": "oauth_grants_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "oauth_requests": {
+      "name": "oauth_requests",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.client_id'))",
+            "type": "stored"
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.user_id'))",
+            "type": "stored"
+          }
+        },
+        "grant_id": {
+          "name": "grant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.grant_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "oauth_requests_client_id": {
+          "name": "oauth_requests_client_id",
+          "columns": [
+            "client_id"
+          ],
+          "isUnique": false
+        },
+        "oauth_requests_user_id": {
+          "name": "oauth_requests_user_id",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        },
+        "oauth_requests_grant_id": {
+          "name": "oauth_requests_grant_id",
+          "columns": [
+            "grant_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "oauth_requests_client_id_oauth_clients_id_fk": {
+          "name": "oauth_requests_client_id_oauth_clients_id_fk",
+          "tableFrom": "oauth_requests",
+          "tableTo": "oauth_clients",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "oauth_requests_user_id_users_id_fk": {
+          "name": "oauth_requests_user_id_users_id_fk",
+          "tableFrom": "oauth_requests",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "oauth_requests_grant_id_oauth_grants_id_fk": {
+          "name": "oauth_requests_grant_id_oauth_grants_id_fk",
+          "tableFrom": "oauth_requests",
+          "tableTo": "oauth_grants",
+          "columnsFrom": [
+            "grant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "oauth_requests_data_check": {
+          "name": "oauth_requests_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "recommendations": {
+      "name": "recommendations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.user_id'))",
+            "type": "stored"
+          }
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.version_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "recommendations_user_id_version_id_unique": {
+          "name": "recommendations_user_id_version_id_unique",
+          "columns": [
+            "user_id",
+            "version_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "recommendations_user_id_users_id_fk": {
+          "name": "recommendations_user_id_users_id_fk",
+          "tableFrom": "recommendations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "recommendations_version_id_versions_id_fk": {
+          "name": "recommendations_version_id_versions_id_fk",
+          "tableFrom": "recommendations",
+          "tableTo": "versions",
+          "columnsFrom": [
+            "version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "recommendations_data_check": {
+          "name": "recommendations_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "releases": {
+      "name": "releases",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.asset_id'))",
+            "type": "stored"
+          }
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.version_id'))",
+            "type": "stored"
+          }
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.request_id'))",
+            "type": "stored"
+          }
+        },
+        "release_seq": {
+          "name": "release_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.release_seq'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "releases_request_id_unique": {
+          "name": "releases_request_id_unique",
+          "columns": [
+            "request_id"
+          ],
+          "isUnique": true
+        },
+        "releases_version": {
+          "name": "releases_version",
+          "columns": [
+            "version_id",
+            "release_seq"
+          ],
+          "isUnique": false
+        },
+        "releases_asset_id_release_seq_unique": {
+          "name": "releases_asset_id_release_seq_unique",
+          "columns": [
+            "asset_id",
+            "release_seq"
+          ],
+          "isUnique": true
+        },
+        "releases_asset_id_id_unique": {
+          "name": "releases_asset_id_id_unique",
+          "columns": [
+            "asset_id",
+            "id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "releases_asset_id_assets_id_fk": {
+          "name": "releases_asset_id_assets_id_fk",
+          "tableFrom": "releases",
+          "tableTo": "assets",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "releases_version_id_versions_id_fk": {
+          "name": "releases_version_id_versions_id_fk",
+          "tableFrom": "releases",
+          "tableTo": "versions",
+          "columnsFrom": [
+            "version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "releases_request_id_requests_id_fk": {
+          "name": "releases_request_id_requests_id_fk",
+          "tableFrom": "releases",
+          "tableTo": "requests",
+          "columnsFrom": [
+            "request_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "releases_data_check": {
+          "name": "releases_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "requests": {
+      "name": "requests",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.asset_id'))",
+            "type": "stored"
+          }
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.version_id'))",
+            "type": "stored"
+          }
+        },
+        "source_intake_id": {
+          "name": "source_intake_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.source_intake_id'))",
+            "type": "stored"
+          }
+        },
+        "scan_run_id": {
+          "name": "scan_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.scan_run_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "requests_asset": {
+          "name": "requests_asset",
+          "columns": [
+            "asset_id"
+          ],
+          "isUnique": false
+        },
+        "requests_intake": {
+          "name": "requests_intake",
+          "columns": [
+            "source_intake_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "requests_asset_id_assets_id_fk": {
+          "name": "requests_asset_id_assets_id_fk",
+          "tableFrom": "requests",
+          "tableTo": "assets",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "requests_version_id_versions_id_fk": {
+          "name": "requests_version_id_versions_id_fk",
+          "tableFrom": "requests",
+          "tableTo": "versions",
+          "columnsFrom": [
+            "version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "requests_source_intake_id_intakes_id_fk": {
+          "name": "requests_source_intake_id_intakes_id_fk",
+          "tableFrom": "requests",
+          "tableTo": "intakes",
+          "columnsFrom": [
+            "source_intake_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "requests_scan_run_id_scans_id_fk": {
+          "name": "requests_scan_run_id_scans_id_fk",
+          "tableFrom": "requests",
+          "tableTo": "scans",
+          "columnsFrom": [
+            "scan_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "requests_data_check": {
+          "name": "requests_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "role_bindings": {
+      "name": "role_bindings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.principal_id'))",
+            "type": "stored"
+          }
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.role_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "role_bindings_role_id_roles_id_fk": {
+          "name": "role_bindings_role_id_roles_id_fk",
+          "tableFrom": "role_bindings",
+          "tableTo": "roles",
+          "columnsFrom": [
+            "role_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "role_bindings_data_check": {
+          "name": "role_bindings_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "roles": {
+      "name": "roles",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.name'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "roles_name_unique": {
+          "name": "roles_name_unique",
+          "columns": [
+            "name"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "roles_data_check": {
+          "name": "roles_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "scans": {
+      "name": "scans",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.version_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "scans_version_id_versions_id_fk": {
+          "name": "scans_version_id_versions_id_fk",
+          "tableFrom": "scans",
+          "tableTo": "versions",
+          "columnsFrom": [
+            "version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "scans_data_check": {
+          "name": "scans_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "scenarios": {
+      "name": "scenarios",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.name'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "scenarios_name_unique": {
+          "name": "scenarios_name_unique",
+          "columns": [
+            "name"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "scenarios_data_check": {
+          "name": "scenarios_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "sessions": {
+      "name": "sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.user_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sessions_user_id_users_id_fk": {
+          "name": "sessions_user_id_users_id_fk",
+          "tableFrom": "sessions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sessions_data_check": {
+          "name": "sessions_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "sources": {
+      "name": "sources",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_group_id": {
+          "name": "owner_group_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.owner_group_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sources_owner_group_id_groups_id_fk": {
+          "name": "sources_owner_group_id_groups_id_fk",
+          "tableFrom": "sources",
+          "tableTo": "groups",
+          "columnsFrom": [
+            "owner_group_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sources_data_check": {
+          "name": "sources_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "tokens": {
+      "name": "tokens",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.user_id'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "tokens_user_id_users_id_fk": {
+          "name": "tokens_user_id_users_id_fk",
+          "tableFrom": "tokens",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "tokens_data_check": {
+          "name": "tokens_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.username'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "users_local_username": {
+          "name": "users_local_username",
+          "columns": [
+            "username"
+          ],
+          "isUnique": true,
+          "where": "(data ->> 'ldap_entry_uuid') IS NULL"
+        },
+        "users_ldap_username": {
+          "name": "users_ldap_username",
+          "columns": [
+            "username"
+          ],
+          "isUnique": true,
+          "where": "(data ->> 'ldap_entry_uuid') IS NOT NULL"
+        },
+        "users_ldap_entry_uuid": {
+          "name": "users_ldap_entry_uuid",
+          "columns": [
+            "(data ->> 'ldap_entry_uuid')"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "users_data_check": {
+          "name": "users_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    },
+    "versions": {
+      "name": "versions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.asset_id'))",
+            "type": "stored"
+          }
+        },
+        "version_label": {
+          "name": "version_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "generated": {
+            "as": "(json_extract(data, '$.version_label'))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "versions_asset": {
+          "name": "versions_asset",
+          "columns": [
+            "asset_id"
+          ],
+          "isUnique": false
+        },
+        "versions_asset_id_version_label_unique": {
+          "name": "versions_asset_id_version_label_unique",
+          "columns": [
+            "asset_id",
+            "version_label"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "versions_asset_id_assets_id_fk": {
+          "name": "versions_asset_id_assets_id_fk",
+          "tableFrom": "versions",
+          "tableTo": "assets",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "versions_data_check": {
+          "name": "versions_data_check",
+          "value": "( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {
+      "users_ldap_entry_uuid": {
+        "columns": {
+          "(data ->> 'ldap_entry_uuid')": {
+            "isExpression": true
+          }
+        }
+      }
+    }
+  }
+}

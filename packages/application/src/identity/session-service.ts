@@ -33,7 +33,10 @@ export class SessionService {
     };
     await this.store.tx(async () => {
       const current = await this.identity.activeUser(user.id);
-      if (current.password_hash !== user.password_hash)
+      if (
+        current.password_hash !== user.password_hash ||
+        current.ldap_entry_uuid !== user.ldap_entry_uuid
+      )
         fail(401, 'INVALID_CREDENTIALS', '账号或密码已变化，请重新登录');
       await this.store.insert('sessions', session);
     });

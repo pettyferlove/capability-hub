@@ -1,4 +1,5 @@
 import { openOperations } from './runtime.js';
+import { IdentityService } from '@capability-hub/application';
 import { ScryptPasswordHasher } from '@capability-hub/infrastructure/security';
 import { createInterface } from 'node:readline/promises';
 import { Writable } from 'node:stream';
@@ -21,8 +22,8 @@ const rl = createInterface({ input: process.stdin, output, terminal: true });
 const runtime = await openOperations();
 const { store } = runtime;
 try {
-  const user = await store.find('users', 'username', username);
-  if (!user) throw new Error('账号不存在');
+  const user = await new IdentityService(store).userForLogin(username, 'local');
+  if (!user) throw new Error('本地账号不存在，目录账号请在 LDAP 中恢复密码');
   process.stdout.write(`恢复账号 ${username}。需要具备该实例数据目录的本地访问权限。\n`);
   process.stdout.write('新密码（至少 12 位，不回显）：');
   hidden = true;

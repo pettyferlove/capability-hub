@@ -1,0 +1,23 @@
+dn: dc=hub,dc=test
+objectClass: dcObject
+objectClass: organization
+dc: hub
+o: Capability Hub
+
+dn: cn=hub-reader,dc=hub,dc=test
+objectClass: organizationalRole
+objectClass: simpleSecurityObject
+cn: hub-reader
+userPassword: hub-reader-local
+
+dn: ou=people,dc=hub,dc=test
+objectClass: organizationalUnit
+ou: people
+
+dn: uid=ldap-demo,ou=people,dc=hub,dc=test
+objectClass: inetOrgPerson
+uid: ldap-demo
+cn: LDAP Demo
+sn: Demo
+entryUUID: 7cb751c8-71ae-4a73-ada2-8be9c2dd05f5
+userPassword: hub-demo-local
