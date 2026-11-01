@@ -16,6 +16,12 @@ export class AssetLifecycleService {
     private readonly assets: AssetAccessService,
     private readonly publications: PublicationService,
   ) {}
+  /**
+   * 要求 `asset:maintain`（否则 403/`FORBIDDEN`），仅 Skill 可改（否则 422/`NOT_SKILL`）；
+   * `etag` 走 {@link matchRevision}，缺头 428/`IF_MATCH_REQUIRED`、不匹配 412/`REVISION_CONFLICT`。
+   * 值未变化时直接返回且不递增 revision、不写审计，使重复提交保持幂等；
+   * 变化时在 `store.tx` 内递增 revision、令待审请求失效（`ASSET_USAGE_CHANGED`）并写审计。
+   */
   async updateUsage(p: Principal, id: string, body: unknown, etag: string | undefined) {
     const b = z.object({ requires_api_key: z.boolean() }).strict().parse(body);
     return await this.context.store.tx(async () => {
@@ -38,6 +44,13 @@ export class AssetLifecycleService {
       return next;
     });
   }
+  /**
+   * `deprecated` 是唯一允许由维护者代行的降级路径；其余状态（含 `active`、`blocked`）
+   * 必须持有 `asset:lifecycle`（作用域 team/source/asset），不满足抛 403。
+   * `etag` 经 {@link matchRevision} 校验（428/412）；替代资产不能是自身
+   * （422/`INVALID_REPLACEMENT`）且必须是已发布可读资产（404）。
+   * 在 `store.tx` 内递增 revision、令待审请求失效并写 `asset.<lifecycle>` 审计。
+   */
   async updateState(p: Principal, id: string, body: unknown, etag: string | undefined) {
     const b = z
       .object({
@@ -73,6 +86,11 @@ export class AssetLifecycleService {
       return next;
     });
   }
+  /**
+   * 需要全局 `version:revoke`（无团队作用域），事务外与事务内各校验一次；
+   * 原因为空抛 422/`REASON_REQUIRED`。在 `store.tx` 内把版本置为 `revoked`、
+   * 递增资产 revision 令 `If-Match` 失效、作废待审请求并写 `version.revoked` 审计。
+   */
   async revokeVersion(p: Principal, id: string, reason: string) {
     this.context.identity.require(p, 'version:revoke');
     if (!reason.trim()) fail(422, 'REASON_REQUIRED', '需要撤销原因');
@@ -89,6 +107,15 @@ export class AssetLifecycleService {
       return { ok: true };
     });
   }
+  /**
+   * 迁移需全局 `asset:migrate`，并对新旧来源各自持有 `source:manage` 与 `source:share`；
+   * `etag` 经 {@link matchRevision}（428/412），另要求调用方带上目标来源当前 revision
+   * （不符抛 412/`REVISION_CONFLICT`）。目标须为未屏蔽的 git 来源
+   * （422/`DESTINATION_SOURCE`）、不得与现来源相同（`SAME_SOURCE`），
+   * 且路径不得与目标来源已有绑定重叠（`OVERLAPPING_PATH`）。在 `store.tx` 内退休旧绑定、
+   * 迁移归属团队、让目标来源立即轮询（`next_poll_at`），旧来源无有效绑定时转为 `paused`，
+   * 并作废相关资产的待审请求、写 `asset.source_migrated` 审计。
+   */
   async migrateSource(p: Principal, id: string, body: unknown, etag: string | undefined) {
     const b = z
       .object({
@@ -192,6 +219,14 @@ export class AssetLifecycleService {
       return { asset_id: a.id, binding_id: binding.id, source_id: destination.id };
     });
   }
+  /**
+   * 要求 `asset:maintain`（403）；回退目标必须是同资产、曾发布、未撤销的版本
+   * （否则 409/`ROLLBACK_UNAVAILABLE`），且 `current_policy_digest` 须与当前发布一致
+   * （否则 409/`POLICY_MISMATCH`，防止基于过期策略发起）。本方法不自持事务，
+   * 而是把历史版本作为新发布委托给 {@link PublicationService.submit}，
+   * 幂等由 `Idempotency-Key`（`key`）在 `publication-requests` 作用域内落实，
+   * 故回退与普通提交共用同一键空间，重放同一键返回原申请。
+   */
   async requestRollback(principal: Principal, id: string, body: unknown, key: string | undefined) {
     const b = z
       .object({

@@ -27,6 +27,20 @@ export class SourceSyncService {
     if (!source || source.kind !== 'git') notFound();
     return source;
   }
+  /**
+   * 执行 `source_sync` 作业：固定 Git 提交与凭据修订后，对冻结时启用的每个目标
+   * 生成接收证据。可安全重试——同提交、同来源 revision、同规则集（
+   * `contentScanRuleset`）且已终结的 intake 会直接复用（`reused: true`），不重复
+   * 生成版本。所有写入都经 {@link JobQueue.withLease} 在「租约校验 + 事务」内完成，
+   * 租约丢失 → 409 `LEASE_LOST`。前置条件不满足 → 409 `SOURCE_CONFIG_CHANGED`
+   * （来源暂停/封锁或 revision 与作业输入不符）或 409 `JOB_INPUT_INVALID`（缺
+   * `requested_by`）；同步途中凭据 revision 与 snapshot 不一致 → 409
+   * `CREDENTIAL_CHANGED`。单目标异常本地化为 `failed`（`SOURCE_CONFIG_CHANGED` 记为
+   * `cancelled`），其余目标继续；成功时来源置 `active`、写 `last_success_at`、清
+   * `last_error_code` 并延后 5 分钟轮询，同时按 `TARGET_MISSING` 维护资产
+   * `source_missing_at`。外层错误才把来源标记失败：认证类错误置 `auth_error`，其余
+   * 只记 `last_error_code`；错误一律重新抛出，`snapshot` 在 finally 中关闭。
+   */
   async process(job: Extract<JobRecord, { kind: 'source_sync' }>) {
     const source = await this.getSourceRecord(job.aggregate_id);
     if (

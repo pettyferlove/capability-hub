@@ -45,6 +45,13 @@ const base = z
     expires_at: z.iso.datetime().nullable().default(null),
   })
   .strict();
+/**
+ * 维护用户自备的 Git 凭据：加密落库、按主机与传输方式校验、同步时解密使用。
+ *
+ * 明文只在内存中停留：落库前由 {@link CredentialCipher} 以记录快照作为上下文封装，
+ * 只有密文与指纹入库。每次成功写入都递增 `revision`，使旧 `etag` 与来源侧固化的
+ * 凭据版本失效。所有方法都不走幂等键，写操作以 `revision` 做乐观并发控制。
+ */
 export class GitCredentialService {
   constructor(
     private readonly store: RecordStore,
@@ -74,6 +81,12 @@ export class GitCredentialService {
       ).length,
     };
   }
+  /**
+   * 列出当前身份名下的凭据视图，按创建时间倒序。
+   *
+   * 只按 `user_id` 过滤，不含密文；已撤销/已过期的记录仍会列出，供前端展示状态。
+   * 每行都会全量扫描 `sources` 统计引用数，成本与「凭据数 × 来源数」成正比。
+   */
   async list(principal: Principal) {
     return (
       await Promise.all(
@@ -83,6 +96,14 @@ export class GitCredentialService {
       )
     ).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   }
+  /**
+   * 取可用凭据记录；不存在、已撤销、已过期或所属账号已停用时
+   * 422/`CREDENTIAL_UNAVAILABLE`。
+   *
+   * 供后台流程（同步、来源登记）调用，因此不接受 `Principal`，也不做所有权判断：
+   * 面向用户的入口必须自行确认凭据归属，见 {@link GitCredentialService.select}。
+   * 过期判定使用进程内时钟（`Date.parse(expires_at) <= Date.now()`）。
+   */
   async active(id: string) {
     const r = await this.store.get('git_credentials', id);
     if (
@@ -94,6 +115,14 @@ export class GitCredentialService {
       fail(422, 'CREDENTIAL_UNAVAILABLE', 'Git 凭据已撤销、过期或所属账号已停用，请在个人中心维护');
     return r;
   }
+  /**
+   * 校验凭据可用于给定仓库地址，只做检查不返回密钥材料。
+   *
+   * 传 `existing`（来源当前已绑定的凭据 id）时允许继续沿用他人共享的凭据，否则只能选
+   * 自己的，违反 403/`CREDENTIAL_FORBIDDEN`。主机或传输方式不匹配
+   * （`ssh` 对 `ssh`，其余对 `https`）时 422/`CREDENTIAL_MISMATCH`；可用性同
+   * {@link GitCredentialService.active}。
+   */
   async select(
     principal: Principal,
     id: string,
@@ -109,9 +138,22 @@ export class GitCredentialService {
     if (r.host !== url.host || (r.kind === 'ssh' ? 'ssh' : 'https') !== url.transport)
       fail(422, 'CREDENTIAL_MISMATCH', '凭据的 Git 域名或认证方式与仓库地址不匹配');
   }
+  /**
+   * 读取可用凭据的当前 `revision`，供来源记录固化并在轮换后判定是否需重拉。
+   *
+   * 不可用凭据同样 422/`CREDENTIAL_UNAVAILABLE`，因此该调用同时充当同步前的可用性检查。
+   */
   async currentRevision(id: string): Promise<number> {
     return (await this.active(id)).revision;
   }
+  /**
+   * 解密凭据，返回可交给 Git 传输层的凭据材料。
+   *
+   * 解密前重新校验可用性与主机/传输方式匹配（422/`CREDENTIAL_MISMATCH`），密文缺失时
+   * 422/`CREDENTIAL_UNAVAILABLE`。解密失败（典型为实例密钥不匹配）视为服务端问题：
+   * 500/`CREDENTIAL_DECRYPTION`，需用户重新录入。返回的 `revision`
+   * 便于调用方把材料与来源侧固化的凭据版本对应起来。
+   */
   async resolve(id: string, host: string, transport: string): Promise<ResolvedCredential> {
     const r = await this.active(id);
     if (!r.encrypted) fail(422, 'CREDENTIAL_UNAVAILABLE', 'Git 凭据已撤销');
@@ -131,6 +173,22 @@ export class GitCredentialService {
       fail(500, 'CREDENTIAL_DECRYPTION', '无法解密 Git 凭据，请检查实例密钥或重新维护凭据');
     }
   }
+  /**
+   * 新建或轮换凭据，返回不含密文的视图。
+   *
+   * 前置校验（事务外）：域名必须在管理员允许列表（422/`GIT_HOST_DENIED`）、到期时间须晚于
+   * 当前时间（422/`CREDENTIAL_EXPIRY`）；更新时凭据须属于调用方（否则 404），`etag` 须等于
+   * `"<revision>"`（412/`REVISION_CONFLICT`），且已撤销或要改主机/认证方式时
+   * 422/`CREDENTIAL_IMMUTABLE`。Token 与 SSH 字段互斥，格式约束分别以
+   * 422/`CREDENTIAL_FORMAT`、`SSH_KEY_INVALID`、`SSH_HOST_KEY` 拒绝。
+   *
+   * SSH 私钥与主机公钥的解析由 {@link SshKeyInspector} 在事务外完成（可能较慢）；写入
+   * `git_credentials` 与审计 `credential.rotated`/`credential.created` 在同一事务内，并在
+   * 进入事务后重新检查账号启用状态（401/`UNAUTHENTICATED`）、`revision` 与撤销状态。
+   * @param body - 未信任的请求体，按严格 schema 解析，未知字段直接拒绝
+   * @param id - 省略时新建；提供时轮换该凭据，记录不存在或不属于调用方均为 404
+   * @param etag - 更新时期望的 `revision`，形如 `"3"`
+   */
   async save(principal: Principal, body: unknown, id?: string, etag?: string) {
     const b = base.parse(body);
     if (!this.gitHosts.includes(b.host)) fail(422, 'GIT_HOST_DENIED', 'Git 域名不在管理员允许列表');
@@ -215,6 +273,13 @@ export class GitCredentialService {
       return await this.describe(row);
     });
   }
+  /**
+   * 撤销凭据：清空密文并递增 `revision`，使既有 `etag` 与来源侧固化的凭据版本失效。
+   *
+   * 与状态写入同事务，另需账号仍启用（401/`UNAUTHENTICATED`）、凭据属于调用方（否则 404）、
+   * `etag` 匹配（412/`REVISION_CONFLICT`）。撤销不可逆：之后既不能更新该凭据，引用它的
+   * 来源同步也会因解密入口判定不可用而失败。审计 `credential.revoked`。
+   */
   async revoke(principal: Principal, id: string, etag: string | undefined) {
     return await this.store.tx(async () => {
       if (!(await this.store.get('users', principal.id))?.active)

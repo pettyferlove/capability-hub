@@ -10,6 +10,10 @@ export class AssetCommunityService {
     private readonly context: ApplicationContext,
     private readonly access: AssetAccessService,
   ) {}
+  /**
+   * 只统计仍处于启用状态用户的推荐，停用账户的历史推荐不计入；
+   * 提名取该发布下第一条 `pending` 请求，因此未登录调用不会暴露提名内容归属。
+   */
   async summary(versionId: string, releaseId: string, principal: Principal | null) {
     const recommendations = await filterAsync(
       await this.context.store.where('recommendations', 'version_id', versionId),
@@ -26,6 +30,12 @@ export class AssetCommunityService {
         : null,
     };
   }
+  /**
+   * 推荐是集合语义的开关：重复提交同值不产生新记录，天然幂等，故不经
+   * `IdempotencyService`；整体在 `store.tx` 内执行，先校验版本可读（404）再增删记录。
+   * 变更会写 `asset.recommended` / `asset.recommendation_removed` 审计，
+   * 返回值与 {@link summary} 一致，便于前端就地刷新计数。
+   */
   async rate(p: Principal, input: RecommendationCommand) {
     const b = input;
     return await this.context.store.tx(async () => {

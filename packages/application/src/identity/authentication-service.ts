@@ -17,6 +17,13 @@ export class AuthenticationService {
     private readonly sessions: SessionService,
     private readonly passwords: PasswordHasher,
   ) {}
+  /**
+   * 首次初始化：以「库内无账号」为唯一前置条件，重复调用抛 409/`ALREADY_INITIALIZED`。
+   * 一个事务内建账号、同名团队、成员关系，并授予 `admin`（平台）与 `maintainer`（该团队）绑定，
+   * 最后写审计 `identity.bootstrap`；初始化密钥由路由层校验，本方法不再校验。
+   * 密码哈希在开事务前完成，避免 scrypt 计算期间长时间持有写事务。
+   * @returns 新建的账号记录，调用方据此立刻签发会话
+   */
   async setup(body: SetupCommand) {
     const v = body;
     const password_hash = await this.passwords.hash(v.password);
@@ -50,6 +57,14 @@ export class AuthenticationService {
       return u;
     });
   }
+  /**
+   * 校验密码并返回账号；只验证身份，不建会话，也不进入幂等重放。
+   * 同一 `address` 与归一化用户名 15 分钟内失败满 8 次即 429/`LOGIN_RATE_LIMIT`；
+   * 账号不存在时仍跑一次 dummy 校验以抹平耗时差，凭据错误统一 401/`INVALID_CREDENTIALS`，
+   * 不区分「无此账号」与「密码错误」。失败计数与成功清理都写审计，失败记在 `anonymous` 名下。
+   * @param username - 首尾空格与大小写不敏感，按小写查表
+   * @param address - 客户端地址，只参与限流键的摘要，不落库明文
+   */
   async login(username: string, password: string, address: string) {
     username = username.trim().toLowerCase();
     const key = sha256(address + ':' + username);
@@ -87,6 +102,12 @@ export class AuthenticationService {
     if (!user) fail(401, 'INVALID_CREDENTIALS', '账号或密码错误');
     return user;
   }
+  /**
+   * 改密需要当前密码二次确认，成功后在同一事务内吊销该用户全部会话。
+   * 当前密码不符抛 422/`CURRENT_PASSWORD_INVALID`；账号失效抛 401/`UNAUTHENTICATED`。
+   * 哈希在事务外计算，事务内若发现哈希已被他处改动则抛 409/`AUTH_CONTEXT_CHANGED`，
+   * 防止覆盖并发修改。写审计 `identity.password_changed`。
+   */
   async changePassword(
     principal: Principal,
     currentPassword: string,

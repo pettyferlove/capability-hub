@@ -6,11 +6,21 @@ import { fail, notFound } from '@capability-hub/domain/errors';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from '../catalog/asset-access-service.js';
 
+/**
+ * 审核队列与审核详情的只读投影：视图附带 `context_valid`、`can_decide` 与文件级 diff，
+ * 让前端在点击批准前就能看到上下文是否已失效，减少必然失败的决策请求。
+ */
 export class PublicationQueryService {
   constructor(
     private readonly context: ApplicationContext,
     private readonly assets: AssetAccessService,
   ) {}
+  /**
+   * 列出指定状态的申请详情，只保留当前 principal 可审查、可维护或本人提交的条目，
+   * 三者皆不满足的申请被静默过滤而不是报 403；按 `created_at` 升序返回整套审核视图。
+   * 需要为每条记录逐项读取资产、版本与扫描，结果集随存储规模线性变慢，不分页。
+   * @param state - 申请状态过滤，默认 `pending`（`approved`/`rejected`/`cancelled`/`stale`）。
+   */
   async listRequests(principal: Principal, state = 'pending') {
     return await Promise.all(
       (
@@ -101,6 +111,11 @@ export class PublicationQueryService {
         ),
     };
   }
+  /**
+   * 按 id 读取单个审核视图，供详情页复用队列项的同一套投影（含 `context_valid` 与 diff）。
+   * 申请不存在时 `notFound`；既非审查者、非维护者、也非提交者时抛 403/`FORBIDDEN`，
+   * 因此不能靠猜 id 探测他人申请。
+   */
   async getReview(principal: Principal, id: string) {
     const request = await this.context.store.get('requests', id);
     if (!request) notFound();

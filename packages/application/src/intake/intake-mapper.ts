@@ -1,5 +1,10 @@
 import type { IntakeRecord } from '@capability-hub/domain/models';
 
+/**
+ * 把接收记录投影成对外的详情字段白名单：只逐项挑出可公开的字段，
+ * `payload_ref`（上传字节的 blob 句柄）与 `requires_api_key` 等内部字段不外泄，
+ * `progress` 也只保留步骤与开始时间。
+ */
 export function toIntakeDetails(intake: IntakeRecord) {
   return {
     id: intake.id,

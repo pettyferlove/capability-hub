@@ -8,11 +8,23 @@ import { has } from '@capability-hub/domain/rbac';
 /** 每次从存储读取有效身份及当前授权，不缓存账号和角色。 */
 export class IdentityService {
   constructor(private readonly store: RecordStore) {}
+  /**
+   * 读取仍启用的账号记录；每次直查存储，不缓存，因此停用在下一次调用立即生效。
+   * 记录缺失或 `active` 为 false 抛 401/`UNAUTHENTICATED`。
+   * 返回值含 `password_hash`，只可用于校验，不得进入响应或日志。
+   */
   async activeUser(id: string): Promise<UserRecord> {
     const user = await this.store.get('users', id);
     if (!user?.active) fail(401, 'UNAUTHENTICATED', '账号不可用');
     return user;
   }
+  /**
+   * 依据当前持久化状态重建 {@link Principal}：只并入启用团队，绑定既含直接授予也含团队授予，
+   * 并附上全量角色权限表（以 `role_id` 为键），供 {@link has} 后续判定。
+   * 整个读取在 `store.tx` 内完成，避免角色表与绑定表读到半更新状态；
+   * 账号失效抛 401/`UNAUTHENTICATED`。
+   * 结果不缓存，权限变更下一次请求即生效。
+   */
   async principal(id: string): Promise<Principal> {
     return this.store.tx(async () => {
       const user = await this.store.get('users', id);
@@ -41,6 +53,13 @@ export class IdentityService {
     });
   }
 
+  /**
+   * 权限断言：不满足时抛 403/`FORBIDDEN`，错误信息不含缺少哪项权限，避免探测。
+   * 判定委托 {@link has}——`platform` 绑定全局生效，其它绑定只有 `context` 传入同名作用域 id
+   * 且相等时才生效，漏传即视为拒绝；账号已停用的主体一律拒绝。
+   * @param permission - 须取自 {@link PERMISSIONS}，例如 `identity:manage`、`asset:maintain`
+   * @param context - 当前请求所处作用域，如 `{ team, source, asset }`
+   */
   require(principal: Principal, permission: string, context: Parameters<typeof has>[2] = {}) {
     if (!has(principal, permission, context)) fail(403, 'FORBIDDEN', '当前角色无权执行该操作');
   }

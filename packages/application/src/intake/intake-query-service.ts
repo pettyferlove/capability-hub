@@ -11,11 +11,24 @@ import { createVersionPlan } from './version-plan.js';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from '../catalog/asset-access-service.js';
 
+/**
+ * 接收记录的只读查询：版本建议、列表聚合与单条进度/详情。
+ *
+ * 全部读取均在调用方事务之外执行，且可见性按「本人发起 或 资产维护 或 该接收版本的审核
+ * 权限」逐条裁剪；不存在批量鉴权，列表会对每条记录做一次资产读取。
+ */
 export class IntakeQueryService {
   constructor(
     private readonly context: ApplicationContext,
     private readonly assets: AssetAccessService,
   ) {}
+  /**
+   * 依据当前发布版本与未结束的接收，给出下一个版本号建议与已占用版本。
+   *
+   * 只读，不预留版本号：建议值可能被并发提交抢占。未结束指 `failed`/`cancelled` 以外的
+   * 全部状态，用作占用集合，因此失败后可重试的接收仍会占住版本号直至其结束。
+   * 需要资产维护权限，否则 403/`FORBIDDEN`。
+   */
   async versionPlan(principal: Principal, assetId: string) {
     const asset = await this.assets.getAsset(assetId);
     this.assets.requireMaintenance(principal, asset);
@@ -30,6 +43,15 @@ export class IntakeQueryService {
       ...pending.map((intake) => intake.version_label),
     ]);
   }
+  /**
+   * 分页列出当前身份可见的接收记录，并附带状态聚合计数。
+   *
+   * 可见性：本人发起，或对所属资产有维护权限；其它记录被静默过滤而非报 403。
+   * `q` 对「资产 slug + 版本号 + 类型」做小写子串匹配；`state` 过滤的是聚合后的状态，
+   * 页码越界时回落到最后一页。`counts` 只统计过滤前的可见行，`processing_total` 统计
+   * 当前仍在 `received`/`fetching`/`scanning` 的可见行。内容清单只为当前页读取，
+   * 因此 `file_count` 对尚无版本的行返回 `null`。
+   */
   async list(principal: Principal, input: IntakeListQuery) {
     const query = { page: 1, page_size: 5, q: '', state: 'all', ...input };
     const permitted = await filterAsync(
@@ -133,6 +155,13 @@ export class IntakeQueryService {
       fail(403, 'FORBIDDEN', '无接收记录权限');
     return { intake, asset, requests };
   }
+  /**
+   * 读取接收的进度快照，供前端轮询。
+   *
+   * 只返回步骤与时间戳、当前状态与错误码/文案，不含内容摘要或文件清单。权限与
+   * {@link IntakeQueryService.getDetail} 相同：非本人发起、无资产维护权限且对该接收版本
+   * 无审核权限时 403/`FORBIDDEN`；记录不存在 404。
+   */
   async getProgress(principal: Principal, id: string) {
     const { intake } = await this.visibleIntake(principal, id);
     return {
@@ -145,6 +174,14 @@ export class IntakeQueryService {
       error_message: intake.error_message ?? null,
     };
   }
+  /**
+   * 读取接收的完整详情：版本快照、扫描结果、最新发布申请与待提交策略。
+   *
+   * 可见性与 {@link IntakeQueryService.getProgress} 一致（403/`FORBIDDEN`、404）。
+   * `proposed_policy` 依次取绑定策略、当前发布策略，两者皆无时按资产维护团队组成
+   * `approved_audience` 私有受众；`retryable` 只在未绑定来源版本时为真；
+   * `ruleset_current` 表示该扫描是否由当前 `contentScanRuleset` 得出。
+   */
   async getDetail(principal: Principal, id: string) {
     const { intake, asset, requests } = await this.visibleIntake(principal, id);
     const [version, binding, release, scan] = await Promise.all([

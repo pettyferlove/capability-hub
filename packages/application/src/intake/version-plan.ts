@@ -1,6 +1,13 @@
 import { compareVersionLabels, isFixedVersionLabel } from '@capability-hub/domain/version-labels';
 import { fail } from '@capability-hub/domain/errors';
 
+/**
+ * 依据已占用版本给出下一个 patch/minor/major 建议。
+ *
+ * 只把固定版本（见 {@link isFixedVersionLabel}）纳入比较，`git.commit` 这类浮动标签被忽略；
+ * 最高版本带预发布后缀时，patch 建议沿用当前 patch 数（去掉后缀），否则 patch + 1。
+ * 递增结果若超出 semver 允许的数值范围，直接 409/`VERSION_RANGE_EXHAUSTED` 而不是给出非法建议。
+ */
 export function createVersionPlan(currentVersion: string | null, occupiedVersions: string[]) {
   const occupied = [...new Set(occupiedVersions)];
   const latest =

@@ -32,6 +32,12 @@ export class PublicationService {
     private readonly idempotency: IdempotencyService,
     private readonly onSubmitted?: (principal: Principal, versionId: string) => Promise<void>,
   ) {}
+  /**
+   * 提交与批准共用的策略自洽校验，只读不写；任一规则不满足即抛 422 并中止后续冻结。
+   * 分类与场景必须互为充要（`scenario` ⇔ 非空且不超过 20 个、不可重复），受众 1–100 条
+   * 不可重复，`public` 与 `organization` 只能独占，分发模式只能是 `approved_audience`。
+   * 场景、组、用户逐条回查存储并要求仍 active，因此是异步校验，不能只在请求入口做一次。
+   */
   async validatePolicy(value: Policy) {
     if (
       (value.category === 'scenario') !== !!value.scenario_ids.length ||
@@ -60,6 +66,14 @@ export class PublicationService {
         fail(422, 'INVALID_AUDIENCE', '受众不存在或已停用');
     }
   }
+  /**
+   * 复核接收记录与服务端版本是否同源，并确认来源的分发授权未被 block 或撤销，
+   * 返回来源记录供调用方继续做 `source:share` 判定。来源失效 → 409/`SOURCE_BLOCKED`，
+   * intake 与版本不一致 → 409/`INTAKE_MISMATCH`。
+   * `historical` 为 true 时跳过"来源修订号 + binding 现况"校验：历史导入按当时证据成立，
+   * 不再要求来源配置未变；否则配置漂移、binding 停用或迁移会抛 409/`SOURCE_CONFIG_CHANGED`
+   * 与 `BINDING_CHANGED`。冻结前与批准前各调用一次，确保审核期间证据没被换掉。
+   */
   async verifyEvidence(intake: IntakeRecord, version: VersionRecord, historical = false) {
     const s = await this.context.store.get('sources', intake.source_id);
     if (!s || s.state === 'blocked' || s.distribution_revoked_at)
@@ -89,6 +103,19 @@ export class PublicationService {
     }
     return s;
   }
+  /**
+   * 发起待审申请：把同意凭证、扫描证据、来源修订号与 `rulesDigest` 冻结进同一记录，
+   * 使审核期无需重新读取来源即可判定，且批准时能发现上下文漂移。
+   * 由 `IdempotencyService.execute` 包裹（route `publication-requests`，键取自请求头
+   * `Idempotency-Key`），摘要包含 `historical`，因此同键同摘要重放返回原申请而非新建。
+   * 事务外先做 `asset:maintain` 与版本存在性检查，事务内再复查一次以免检查后被并发改动。
+   * 会抛 422/`NOT_SKILL`（只有 Skill 能声明 `requires_api_key`）、`INVALID_POLICY` 系列，
+   * 409/`UNAVAILABLE`、`BASE_RELEASE_CHANGED`、`SCAN_REQUIRED`、`PENDING_EXISTS`、
+   * `SOURCE_BLOCKED`、`INTAKE_MISMATCH`，并要求 `source:share`（source + owner 团队作用域）。
+   * 成功时写 `publication.submitted` 审计并触发 `onSubmitted` 通知钩子。
+   * @param key - 幂等键，缺失或超长时由幂等层抛 400/`IDEMPOTENCY_REQUIRED`。
+   * @param historical - 历史导入标记，同时落入申请记录并放宽证据复核。
+   */
   async submit(
     principal: Principal,
     body: SubmitPublicationCommand,
@@ -197,6 +224,16 @@ export class PublicationService {
       },
     );
   }
+  /**
+   * 把已发布版本提名为 `general` 候选：复用原申请的来源同意与扫描证据，仅在冻结记录里
+   * 追加 `nomination` 原文，避免提名绕过首次提交的授权链。
+   * 由 `IdempotencyService.execute` 包裹（route `nominations`，键取自 `Idempotency-Key`）。
+   * 需能读取该版本；发布已不是资产当前发布、资产非 active → 409/`BASE_RELEASE_CHANGED`，
+   * 已是 general → 409/`ALREADY_GENERAL`，该版本已有待审申请 → 409/`PENDING_EXISTS`，
+   * 扫描记录不是当前 `contentScanRuleset` 通过 → 409/`SCAN_REQUIRED`（要求维护者重扫）。
+   * 提名固定 `category: 'general'` 且 `scenario_ids` 为空，并把 `base_release_id` 记为
+   * 被提名的发布，成功时写 `publication.nominated` 审计并触发 `onSubmitted`。
+   */
   async nominate(principal: Principal, body: NominateAssetCommand, key: string | undefined) {
     const b = body;
     return await this.idempotency.execute(
@@ -262,6 +299,25 @@ export class PublicationService {
       },
     );
   }
+  /**
+   * 审核决策入口，approve 时在同一事务内写入发布记录、推进版本可用性、
+   * 更新资产 `current_release_id` 与申请状态，任一失败整体回滚。
+   * 权限走 `canReview`：通用范围、含 `public`/`organization` 或跨团队的受众要求平台级
+   * `review:decide`；`scenario` 分类要求覆盖全部场景的 `review:decide`；其余按
+   * `review:decide` + 资产 owner 团队。提交者与通用提名的来源共享者都不得自审，
+   * 否则 403/`SELF_REVIEW`；越权 403/`FORBIDDEN`。
+   * 批准前先确认文件的 blob 与归档/清单存在（503/`BLOB_MISSING`），刻意放在取写事务锁之前。
+   * 由 `IdempotencyService.execute` 包裹（route `decision/<id>`），摘要只含决策体，
+   * 因此同键重放不会重复发版。事务内先 `matchRevision`（缺 `If-Match` → 428，
+   * 修订号不符 → 412），再比对 `policy_digest`（不符 → 409/`POLICY_MISMATCH`）。
+   * `accepted_warnings` 必须与本次扫描的 warning finding 一一对应、不可重复且各附理由，
+   * 否则 422/`INVALID_WARNING_ACCEPTANCE`；漏接受任一告警则 422/`WARNING_ACCEPTANCE_REQUIRED`。
+   * 其余拒绝情形：已处理 409/`REVIEW_RESOLVED`、退回无意见 422/`COMMENT_REQUIRED`、
+   * 上下文漂移 409/`REVIEW_STALE`、内容或扫描失效 409/`CONTENT_UNAVAILABLE`、
+   * 提交者授权失效 409/`CONSENT_REVOKED`。
+   * @param etag - 客户端读取时的修订号（`If-Match` 原样值，含引号）。
+   * @param key - 幂等键，缺失或超长时由幂等层抛 400/`IDEMPOTENCY_REQUIRED`。
+   */
   async decide(
     p: Principal,
     id: string,
@@ -411,6 +467,13 @@ export class PublicationService {
       },
     );
   }
+  /**
+   * 撤回待审申请；自己提交的可直接撤回，其他人代为撤回需要 `asset:maintain`。
+   * `input` 按严格 schema 解析（只允许 `reason`，1–2000 字），形状不符由 zod 直接抛出
+   * 校验错误而非 `HubError`。自行开启 `store.tx`，`matchRevision` 校验 `If-Match`
+   * （缺失 → 428/`IF_MATCH_REQUIRED`，不符 → 412/`REVISION_CONFLICT`），
+   * 只有 `pending` 可撤回（否则 409/`REVIEW_RESOLVED`），成功后写 `publication.cancelled` 审计。
+   */
   async cancel(principal: Principal, id: string, input: unknown, etag: string | undefined) {
     const value = z
       .object({ reason: z.string().trim().min(1).max(2000) })
@@ -434,6 +497,11 @@ export class PublicationService {
     });
   }
 
+  /**
+   * 把该资产所有 `pending` 申请批量置为 `stale` 并记录原因码，防止资产已变更后仍被批准。
+   * 不做授权判断、不自己开事务：资产生命周期、版本撤销与来源变更等副作用在各自事务内调用，
+   * 原因码是调用方给出的常量（如 `ASSET_LIFECYCLE_CHANGED`、`SOURCE_MIGRATED`）。
+   */
   async invalidatePending(assetId: string, reason: string) {
     for (const r of (await this.context.store.all('requests')).filter(
       (r) => r.asset_id === assetId && r.state === 'pending',

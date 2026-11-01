@@ -7,6 +7,11 @@ import type { OAuthGrantRecord } from '@capability-hub/domain/models';
 import type { RecordStore } from '../ports/index.js';
 import type { IdentityService } from './identity-service.js';
 
+/**
+ * RFC 6749 风格的授权错误：`code`（如 `invalid_grant`）原样回给客户端，
+ * `status` 只决定 HTTP 状态码。
+ * 与 {@link HubError} 分开，因为令牌端点要求 OAuth 错误体而不是 Hub 的统一错误格式。
+ */
 export class OAuthError extends Error {
   constructor(
     readonly code: string,
@@ -100,6 +105,13 @@ export class OAuthService {
     this.resource = issuer + '/mcp';
   }
 
+  /**
+   * 动态客户端注册（RFC 7591）：只支持公开客户端，
+   * `token_endpoint_auth_method` 固定 `none`，不签发密钥。
+   * 回调地址 1–10 条，逐条经 {@link redirect} 校验（仅 HTTPS，本机回环可用 HTTP）。
+   * 注册不需要登录、不写审计，`client_id` 可被任何人自建，安全性依赖回调白名单与强制 PKCE。
+   * @param input - 未校验的请求体，`client_name` 缺省「MCP 客户端」（1–80 字符）
+   */
   async register(input: unknown) {
     const request = parse(registration, input);
     request.redirect_uris.forEach(redirect);
@@ -121,6 +133,14 @@ export class OAuthService {
     };
   }
 
+  /**
+   * 受理授权请求并落一条 10 分钟有效的 `pending` 记录，返回其不透明 ID 供同意页使用。
+   * 强制 PKCE（`code_challenge` 必须为 43 字符、`S256`）、`response_type=code`，
+   * `resource` 必须等于 `this.resource`（即 `${issuer}/mcp`）；回调地址须命中注册白名单，
+   * 本机回环只放宽端口，主机、路径与查询须完全一致。
+   * 不合规一律抛 {@link OAuthError}（`invalid_client` / `invalid_redirect_uri` / `invalid_target`
+   * / `invalid_request` / `invalid_scope`），且本方法不校验登录态，同意与否留给 {@link decide}。
+   */
   async begin(input: unknown) {
     const request = parse(authorization, input);
     const client = await this.store.get('oauth_clients', request.client_id);
@@ -147,6 +167,10 @@ export class OAuthService {
     return id;
   }
 
+  /**
+   * 同意页展示用信息：客户端名、回调来源、目标资源、授权范围与过期时间。
+   * 请求不存在、已不是 `pending` 或已超时统一抛 `invalid_grant`，不区分原因，避免被当作探测手段。
+   */
   async describe(id: string) {
     const request = await this.pending(id);
     const client = await this.store.get('oauth_clients', request.client_id);
@@ -166,6 +190,14 @@ export class OAuthService {
     return request;
   }
 
+  /**
+   * 用户同意或拒绝：批准时生成授权码（库中存 `sha256` 摘要，60 秒内可兑换），
+   * 拒绝时回 `error=access_denied`。
+   * `contribute` 只能在请求范围本身就是 `hub:contribute` 时开启，否则抛 `invalid_scope`，
+   * 防止同意页放大客户端申请的权限。必须在网页会话内调用；账号失效抛 401/`UNAUTHENTICATED`。
+   * 写审计 `identity.connection_approved` / `identity.connection_denied`。
+   * @returns 应跳转的 `redirect_uri`，已带 `code` 或 `error`、原 `state` 与 `iss`
+   */
   async decide(principal: Principal, id: string, allow: boolean, contribute: boolean) {
     return this.store.tx(async () => {
       await this.identity.activeUser(principal.id);
@@ -194,6 +226,16 @@ export class OAuthService {
     });
   }
 
+  /**
+   * 令牌端点：授权码换令牌，或用 `refresh_token` 轮换新令牌对。
+   * 授权码必须同时给出 `code_verifier` 与完全一致的 `redirect_uri`，并绑定同一 `client_id`；
+   * 授权码或 refresh_token 被重放时先吊销整个授权（审计 `identity.connection_replay`），
+   * 再在事务提交后报 `invalid_grant`——错误不能随异常回滚，否则吊销会丢失。
+   * 刷新只能沿用或缩小 scope，升到 `hub:contribute` 必须重新授权（`invalid_scope`）。
+   * 访问令牌 1 小时、刷新令牌 30 天，刷新即轮换（旧凭据标记 consumed）。
+   * 失败一律抛 {@link OAuthError}（`invalid_grant` / `invalid_scope` / `invalid_target`），
+   * 不提示具体哪项不符。
+   */
   async exchange(input: unknown) {
     const request = parse(tokenRequest, input);
     if (request.resource !== this.resource)
@@ -292,6 +334,13 @@ export class OAuthService {
       scope: grant.scope === 'hub:contribute' ? 'hub:read hub:contribute' : 'hub:read',
     };
   }
+  /**
+   * Bearer 鉴权：只接受未过期、所属授权存在且未吊销、`resource` 匹配的 `access` 凭据，
+   * 返回授权记录。
+   * 令牌无效时返回 `null`（HTTP 层再转 401）；但账号被停用会抛 401/`UNAUTHENTICATED`，
+   * 因此调用方需同时处理两种失效形态。
+   * 每次调用都重读存储、不缓存；`last_used_at` 至多每 60 秒写一次，避免鉴权路径频繁写库。
+   */
   async authenticate(token: string) {
     return this.store.tx(async () => {
       const credential = await this.store.get('oauth_credentials', sha256(token));
@@ -305,6 +354,10 @@ export class OAuthService {
       return grant;
     });
   }
+  /**
+   * 列出该用户已授权的连接，只含名称、scope 与时间戳；
+   * 刻意不回显 `client_id`、`resource` 与凭据，避免成为令牌相关信息的探测面。
+   */
   async list(userId: string) {
     return (await this.store.where('oauth_grants', 'user_id', userId)).map(
       ({ id, name, scope, created_at, last_used_at, revoked_at }) => ({
@@ -322,6 +375,11 @@ export class OAuthService {
     if (grant && grant.revoked_at === null)
       await this.store.put('oauth_grants', { ...grant, revoked_at: Date.now() });
   }
+  /**
+   * 断开连接（吊销授权）：不删除凭据记录，只置 `revoked_at`，之后所有令牌鉴权一律失败。
+   * 授权不存在或属于他人抛 404；账号失效抛 401/`UNAUTHENTICATED`。
+   * 写审计 `identity.connection_revoked`。
+   */
   async disconnect(userId: string, id: string) {
     await this.store.tx(async () => {
       await this.identity.activeUser(userId);
@@ -331,6 +389,11 @@ export class OAuthService {
       await this.store.audit(userId, 'identity.connection_revoked', id);
     });
   }
+  /**
+   * RFC 7009 令牌吊销：只需持有令牌与对应 `client_id`，不要求登录态，因此不能当作管理接口用。
+   * 令牌未知、已吊销或 `client_id` 不匹配都静默成功（幂等），避免变成令牌探测接口；
+   * 只有真正触发吊销时才写审计 `identity.connection_revoked`。
+   */
   async revoke(input: unknown) {
     const request = parse(z.object({ token: value, client_id: value }), input);
     await this.store.tx(async () => {

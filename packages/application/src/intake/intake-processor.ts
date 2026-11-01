@@ -20,6 +20,25 @@ export class IntakeProcessor {
     private readonly scan: IntakeScanner,
     private readonly onReady?: (requestedBy: string, versionId: string) => Promise<void>,
   ) {}
+  /**
+   * 执行一次 intake/rescan 作业：扫描固定快照并把结果落成候选版本。
+   *
+   * 三段 `jobs.withLease` 各自独立事务：推进到 `scanning`、写入快照证据、最终提交。扫描
+   * （{@link IntakeScanner}）、artifact/manifest 与逐文件 blob 写入落在这些事务之间，
+   * 不持有事务锁，因此期间数据可能变化，提交段会全部重校验。任一段租约失效（过期、
+   * 被取消或已被其它执行者接管）抛 409/`LEASE_LOST`。
+   *
+   * 提交段校验：资产未封禁（409/`ASSET_BLOCKED`）；来源 revision 未变、未封禁、分发未撤销、
+   * 绑定仍启用且指向同一资产/来源（409/`SOURCE_CONFIG_CHANGED`）；同步代未推进
+   * （409/`SOURCE_GENERATION_CHANGED`）；同版本号已存在不同内容
+   * （409/`VERSION_CONTENT_CONFLICT`）；命中已撤销版本（409/`VERSION_REVOKED`）；无可扫描
+   * 内容（409/`NO_CONTENT`）。
+   *
+   * 副作用：新建 `versions`（`unreleased`）与 `scans`、把接收置为 `ready`、更新绑定的
+   * `last_intake_id`、审计 `intake.<state>`（无差别记录 `requested_by`），并 await
+   * `onReady` 通知——它位于同一事务内，失败会连带回滚提交。
+   * @param provided - 调用方已持有的规范化文件；省略时回退读取 `intake.payload_ref` 快照
+   */
   async process(intake: IntakeRecord, job: JobRecord, provided?: ContentFile[]) {
     const a = await this.assets.getAsset(intake.asset_id);
     intake = await this.jobs.withLease(job, async () => {

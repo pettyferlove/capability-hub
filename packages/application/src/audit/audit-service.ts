@@ -166,6 +166,13 @@ export class AuditService {
       facts,
     };
   }
+  /**
+   * 要求 `audit:read` 权限，由 `identity.require` 在方法内强制（路由层另有同名校验）。
+   * 只读取、不改写审计记录，也不开启 `store.tx`：逐条补全上下文时数据可能变化，
+   * 结果不是一致快照。`q` 经 NFKC 归一化后按空白分词，全部词命中才保留。
+   * 分页号会被夹到 `[1, ceil(total / page_size)]` 的有效区间，默认每页 20 条。
+   * 单条记录的 `href` 由调用者的资源可见性决定，身份类记录需 `identity:manage` 才生成链接。
+   */
   async list(principal: Principal, input: AuditLogQuery) {
     this.context.identity.require(principal, 'audit:read');
     const query = { q: '', category: 'all', result: 'all', page: 1, page_size: 20, ...input };

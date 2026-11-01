@@ -14,6 +14,12 @@ export async function resolveAuditActor(
     ? { kind: 'user', name: user.display_name, username: user.username }
     : { kind: 'unknown', name: '未识别的操作者' };
 }
+/**
+ * 按动作定义解析审计对象，供 `RecordStore.audit` 在写入审计时一并落库主体快照。
+ *
+ * 因此它在审计写入路径内运行：只读存储、不得写审计（否则递归）也不得抛业务错误，
+ * 找不到关联记录时返回 `null`，由调用方降级为「关联记录不可用」。
+ */
 export async function resolveAuditSubject(
   store: RecordStore,
   action: string,

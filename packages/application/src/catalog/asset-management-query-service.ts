@@ -6,12 +6,23 @@ import type { AssetAccessService } from './asset-access-service.js';
 import { toVersionSnapshot } from './catalog-mapper.js';
 import type { KeywordOptionsQuery } from './queries.js';
 
+/**
+ * 管理侧只读查询：可见面以 `asset:maintain` 与 `asset:lifecycle` 为准，和目录可见性
+ * （受众 ∩ 发布状态）相互独立；任一权限通过就能看到资源，但能看到的字段不同。
+ */
 export class AssetManagementQueryService {
   constructor(
     private readonly context: ApplicationContext,
     private readonly access: AssetAccessService,
   ) {}
 
+  /**
+   * 资源管理列表，无分页：一次返回当前主体可见的全部资源，适合管理台全量渲染。
+   *
+   * 只在 `asset:maintain` 通过时才查询 intakes/requests，因此仅有 `asset:lifecycle`
+   * 的主体拿到的是空的 `latest_intake`/`pending_requests`，候选数据不外泄；
+   * `latest_intake.state` 在 intake 已 ready 时改用对应请求的状态，反映送审进展。
+   */
   async list(principal: Principal) {
     return Promise.all(
       (await this.context.store.all('assets'))
@@ -82,6 +93,14 @@ export class AssetManagementQueryService {
         }),
     );
   }
+  /**
+   * 发布表单的关键词联想，在单个事务内聚合多个来源。
+   *
+   * 维护者看到 intake、未退休 binding、request、release、version（元数据里的
+   * `applies_to.keywords`）的全部关键词；非维护者只回填其可读发布的
+   * `applies_to.keywords`——未发布内容的关键词属于维护数据，不能借此探测。
+   * 结果按完全匹配优先、覆盖资源数降序、中文排序，截断到 `query.limit`。
+   */
   async keywordOptions(principal: Principal, query: KeywordOptionsQuery) {
     return this.context.store.tx(async () => {
       const terms = new Map<string, { keyword: string; assets: Set<string> }>();
@@ -130,6 +149,13 @@ export class AssetManagementQueryService {
       };
     });
   }
+  /**
+   * 列出资源全部版本及其发布状态，`assetId` 既可以是 id 也可以是 slug。
+   *
+   * 要求 `asset:maintain` 或 `asset:lifecycle`，否则抛 403/`FORBIDDEN`；
+   * 读取成功前写审计 `asset.management_versions`，所以每次调用都留痕。
+   * `published` 表示该版本仍有发布记录，与 `availability` 不是同一维度。
+   */
   async versions(principal: Principal, assetId: string) {
     const asset = await this.access.getAsset(assetId);
     if (
@@ -148,6 +174,12 @@ export class AssetManagementQueryService {
       })),
     );
   }
+  /**
+   * 候选版本详情：版本不存在抛 404；否则要求资源维护权限，或能审该版本对应的
+   * 发布申请，否则 {@link AssetAccessService.requireCandidateAccess} 抛 403/`FORBIDDEN`
+   * 并写审计 `content.management_read`。返回内容用
+   * {@link toVersionSnapshot} 投影，不含对象存储定位；`scans` 为扫描记录原样返回。
+   */
   async versionDetails(principal: Principal, versionId: string) {
     const version = await this.context.store.get('versions', versionId);
     if (!version) notFound();

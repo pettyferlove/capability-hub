@@ -17,6 +17,11 @@ const profileInputSchema = z
   })
   .strict();
 
+/**
+ * 个人资料与能力的只读/自改入口：账号可用性统一由 {@link IdentityService.activeUser} 判定，
+ * 不可用时抛 401/`UNAUTHENTICATED`；写操作自开 `store.tx`，与 HTTP 层的幂等中间件无关。
+ * 凭据数量依赖 {@link GitCredentialService}，`gitHosts` 来自部署配置，仅用于前端展示。
+ */
 export class ProfileService {
   constructor(
     private readonly store: RecordStore,
@@ -25,6 +30,11 @@ export class ProfileService {
     private readonly gitHosts: string[],
   ) {}
 
+  /**
+   * 组装会话引导数据；`csrfToken` 由调用方（会话层）传入并原样回显，此处既不生成也不校验。
+   * 能力位用 `has` 按角色绑定实时求值，角色变更后无需重新登录即生效；
+   * `can_publish` 直接检查绑定权限里是否含 `asset:create` 或 `asset:maintain`。
+   */
   async current(principal: Principal, csrfToken: string) {
     const user = await this.identity.activeUser(principal.id);
     return {
@@ -54,6 +64,11 @@ export class ProfileService {
     };
   }
 
+  /**
+   * 读取调用者自身资料，无额外权限校验，仅要求账号可用；多次读取不构成一致快照。
+   * `stats.credentials` 经 {@link GitCredentialService} 统计未撤销凭据，
+   * `stats.decisions` 只统计 `publication.approved` / `publication.rejected` 两类审计事件。
+   */
   async detail(principal: Principal) {
     const user = await this.identity.activeUser(principal.id);
     return {
@@ -85,6 +100,13 @@ export class ProfileService {
     };
   }
 
+  /**
+   * 乐观并发：`etag` 缺失抛 428/`IF_MATCH_REQUIRED`，与 `user.revision` 不符抛
+   * 412/`REVISION_CONFLICT`。`input` 经 `profileInputSchema` 严格校验（拒绝未知字段），
+   * 失败直接抛 `ZodError`，由 HTTP 层映射成 422/`VALIDATION_ERROR`。
+   * 自己开启 `store.tx`，在同一事务内改写 `users`（`revision` 加一）并写审计
+   * `identity.profile_updated`；未包 `IdempotencyService`，重复提交会再次提升 `revision`。
+   */
   async update(principal: Principal, input: unknown, etag: string | undefined) {
     const value = profileInputSchema.parse(input);
     return await this.store.tx(async () => {
@@ -96,6 +118,10 @@ export class ProfileService {
     });
   }
 
+  /**
+   * 不做权限校验：`userId` 由调用方给定，必须已限定为当前主体，否则会读出他人操作记录。
+   * 按 `occurred_at` 倒序（同刻按 `id` 倒序）取最近 50 条，不开启事务。
+   */
   async activity(userId: string) {
     return (await this.store.where('audit', 'actor_id', userId))
       .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id.localeCompare(a.id))

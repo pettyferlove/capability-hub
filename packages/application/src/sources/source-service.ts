@@ -15,6 +15,11 @@ import type { JobQueue } from '../jobs/job-queue.js';
 import type { PublicationService } from '../publication/publication-service.js';
 import type { IdempotencyService } from '../shared/idempotency-service.js';
 import { matchRevision } from '../shared/revision.js';
+/**
+ * 管理 Git 来源的配置、目标绑定与同步触发。
+ * 读入口统一经 {@link AssetAccessService.requireSourceManagement} 校验
+ * `source:manage`（`team` + `source` 作用域），写入口按操作再单独收紧。
+ */
 export class SourceService {
   constructor(
     private readonly context: ApplicationContext,
@@ -33,6 +38,10 @@ export class SourceService {
     if (!source || source.kind !== 'git') notFound();
     return source;
   }
+  /**
+   * 返回来源详情与未退役目标（附资产 `slug`、`kind`）；要求 `source:manage`
+   * （`team` = 来源所有者团队，`source` = 来源 id），非 Git 来源或不存在 → 404。
+   */
   async get(principal: Principal, id: string) {
     const source = await this.store.get('sources', id);
     if (!source || source.kind !== 'git') notFound();
@@ -50,6 +59,10 @@ export class SourceService {
       ),
     };
   }
+  /**
+   * 列出主体在 `source:manage`（`team` + `source`）范围内可见的 Git 来源，
+   * 逐条复用 {@link get} 拼装目标；不可见的来源直接跳过而非报错。
+   */
   async list(principal: Principal) {
     return await Promise.all(
       (await this.store.all('sources'))
@@ -97,6 +110,21 @@ export class SourceService {
         fail(403, 'CREDENTIAL_FORBIDDEN', '只能选择自己的 Git 凭据');
     }
   }
+  /**
+   * 创建 Git 来源及其目标资产。调用前先做 Git/凭据/目标校验，随后在
+   * {@link IdempotencyService} 的事务内重做校验并写入：`key` 为 Idempotency-Key
+   * （缺失或超过 200 字符 → 400 `IDEMPOTENCY_REQUIRED`，同键异参 → 409
+   * `IDEMPOTENCY_CONFLICT`），请求摘要取自整个命令体。需要 `source:create`
+   * （`team` = 目标团队），身份在事务中被再次读取，过期主体 → 409
+   * `AUTH_CONTEXT_CHANGED`。Git 校验会解析主机并比对允许列表（422 `GIT_URL`、
+   * `GIT_HOST_DENIED`、`GIT_ADDRESS_DENIED`、`GIT_BRANCH`）；SSH 仓库缺
+   * `credential_ref` → 422 `SSH_CREDENTIAL_REQUIRED`，凭据域名/方式不符 → 422
+   * `CREDENTIAL_MISMATCH`，借用他人凭据 → 403 `CREDENTIAL_FORBIDDEN`。目标路径
+   * 重复或启用目标父子重叠 → 422 `DUPLICATE_PATH`/`OVERLAPPING_PATH`，发布策略
+   * 非法 → 422 `INVALID_POLICY`；团队无效 → 422 `INVALID_GROUP`，slug 已占用 →
+   * 409 `SLUG_CONFLICT`。新来源为 `active`、`revision` 1、`generation` 0，5 分钟后
+   * 首次轮询；写入审计 `source.created`。
+   */
   async create(principal: Principal, body: CreateSourceCommand, key: string | undefined) {
     const b = body;
     this.context.identity.require(principal, 'source:create', { team: b.owner_group_id });
@@ -169,6 +197,19 @@ export class SourceService {
       created_at: new Date().toISOString(),
     });
   }
+  /**
+   * 部分更新来源配置；`etag` 必须精确等于来源当前 revision 的 `"<n>"`，缺失 →
+   * 428 `IF_MATCH_REQUIRED`，不符 → 412 `REVISION_CONFLICT`（事务外与事务内各校验
+   * 一次）。权限为 `source:manage`（`team` + `source`）。Git 校验、凭据与目标校验先
+   * 在事务外试跑（避免长校验占用写锁），在自有 `store.tx` 内重取记录、重读主体后
+   * 再写，并自增 revision、把 `next_poll_at` 提前到当前时刻。`targets` 必须覆盖全部
+   * 现有目标（否则 422 `TARGET_SET_INCOMPLETE`），已有目标的 `slug`/`kind`/`asset_id`
+   * 不可改（422 `BINDING_IMMUTABLE`），新增目标不得认领已有资产（409
+   * `SLUG_CONFLICT`），非 `paused` 状态至少保留一个启用目标（422
+   * `ACTIVE_TARGET_REQUIRED`），凭据改为 SSH 未提供 → 422 `SSH_CREDENTIAL_REQUIRED`。
+   * 旧目标的待审发布请求会失效（原因 `SOURCE_CONFIG_CHANGED`），并写审计
+   * `source.updated`。
+   */
   async patch(p: Principal, id: string, body: UpdateSourceCommand, etag: string | undefined) {
     const b = body;
     const before = await this.get(p, id);
@@ -247,6 +288,15 @@ export class SourceService {
       return await this.get(p, id);
     });
   }
+  /**
+   * 撤销来源分发：自有事务内重读主体后要求 `source:share`（`team` = 所有者团队，
+   * `source` = 来源 id），把来源置为 `blocked`、写入 `distribution_revoked_at` 并
+   * 自增 revision；`etag` 缺失/不符 → 428 `IF_MATCH_REQUIRED`/412
+   * `REVISION_CONFLICT`，来源不存在 → 404。该来源名下所有资产的待审发布请求会
+   * 失效（原因 `SOURCE_REVOKED`），`reason`（1–2000 字符，去首尾空白，严格对象，
+   * 多余字段报错）作为审计备注写入 `source.distribution_revoked`；入参非法时直接抛
+   * `ZodError`，由 HTTP 层映射为 422 `VALIDATION_ERROR`。
+   */
   async revokeDistribution(
     principal: Principal,
     id: string,
@@ -279,6 +329,11 @@ export class SourceService {
     });
   }
 
+  /**
+   * 返回来源下某次同步作业的对外视图（状态、尝试次数、时间、错误码与结果）；
+   * 先经 {@link get} 校验来源可见性（`source:manage`）。作业不存在、类型不是
+   * `source_sync` 或不属于该来源一律 404，因此不可用于跨来源探测作业。
+   */
   async getSyncJob(principal: Principal, sourceId: string, jobId: string) {
     await this.get(principal, sourceId);
     const job = await this.store.get('jobs', jobId);
@@ -295,6 +350,15 @@ export class SourceService {
     };
   }
 
+  /**
+   * 触发一次来源同步，返回 `{ job_id, source_revision }`；实际拉取由
+   * SourceSyncService.process 在作业租约下完成。权限同 {@link get}（`source:manage`），
+   * 来源暂停/封锁 → 409 `SOURCE_NOT_ACTIVE`，无启用目标 → 409 `NO_TARGETS`。整体经
+   * {@link IdempotencyService} 包裹（route `source-sync/<id>`，摘要含 source id 与
+   * revision，缺 key → 400 `IDEMPOTENCY_REQUIRED`），事务内复核 revision（变化 →
+   * 409 `SOURCE_CONFIG_CHANGED`）；已有 `queued`/`running` 的 `source_sync` 作业时
+   * 直接复用其 id（单飞，不重复入队），否则入队并写审计 `source.sync_requested`。
+   */
   async sync(principal: Principal, id: string, key: string | undefined) {
     const source = await this.get(principal, id);
     if (source.state === 'paused' || source.state === 'blocked')

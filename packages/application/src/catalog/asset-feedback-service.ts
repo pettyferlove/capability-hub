@@ -39,6 +39,13 @@ export class AssetFeedbackService {
     };
   }
 
+  /**
+   * 在 `store.tx` 内完成：版本可读性（404）→ `consent === true`（422/`FEEDBACK_CONSENT_REQUIRED`）
+   * → 幂等键（缺失或超 200 字符抛 400/`IDEMPOTENCY_REQUIRED`）→ 同键异内容抛
+   * 409/`IDEMPOTENCY_CONFLICT`。幂等键由请求体携带而非 `Idempotency-Key` 头，
+   * 且每用户每小时上限 20 条（429/`FEEDBACK_RATE_LIMIT`，按创建时间滚动计算）。
+   * 写入后记 `asset.feedback_submitted` 审计并触发 `onReported` 回调（回调异常会使整笔回滚）。
+   */
   async report(principal: Principal, input: AssetFeedbackCommand) {
     return this.context.store.tx(async () => {
       const current = await this.context.identity.principal(principal.id);
@@ -81,6 +88,10 @@ export class AssetFeedbackService {
     });
   }
 
+  /**
+   * 维护者可看全部；否则仅提交者本人且其仍可读该版本，其余一律 404，
+   * 使无权者无法通过 id 探测反馈是否存在。
+   */
   async get(principal: Principal, id: string) {
     const current = await this.context.identity.principal(principal.id);
     const record = await this.context.store.get('asset_feedback', id);
@@ -93,6 +104,11 @@ export class AssetFeedbackService {
     return this.present(record, current);
   }
 
+  /**
+   * 维护者可看该资产全部反馈；其他人先要求资产已发布且可读（404），再看得到本人
+   * 且对应版本仍可读的条目。分页为 `page`/`limit`，按创建时间与 id 倒序，
+   * `total` 是过滤后的总数而非本页条数；`status` 过滤在可见性收敛前生效。
+   */
   async list(principal: Principal, assetId: string, query: AssetFeedbackQuery) {
     const current = await this.context.identity.principal(principal.id);
     const asset = await this.access.getAsset(assetId);
@@ -122,6 +138,13 @@ export class AssetFeedbackService {
     };
   }
 
+  /**
+   * 仅资产维护者（403）可改；在 `store.tx` 内以 `input.revision` 做乐观锁，
+   * 不匹配抛 409/`REVISION_CONFLICT`（此处走请求体而非 `If-Match`）。
+   * 置为 `resolved`/`declined` 时必须有处理说明（422/`RESOLUTION_REQUIRED`），
+   * `fixed_version_id` 须属同一资产且状态为 `resolved`（422/`INVALID_FIXED_VERSION`）；
+   * 保存后递增 revision 并写 `asset.feedback_updated` 审计。
+   */
   async update(principal: Principal, id: string, input: AssetFeedbackUpdateCommand) {
     return this.context.store.tx(async () => {
       const current = await this.context.identity.principal(principal.id);

@@ -16,6 +16,11 @@ export class CliLoginService {
     private readonly publicUrl: string,
   ) {}
 
+  /**
+   * 发起 CLI 登录：生成一次性 `device_code`（明文只出现在本次响应）与 8 位大写 `user_code`。
+   * 记录 10 分钟内有效，`challenge` 原样存储，轮询时用 `sha256(verifier)` 与之比对，
+   * 即 verifier 必须在发起前就确定（PKCE 语义）。匿名可调用，不写审计。
+   */
   async request(input: CliLoginCommand) {
     const { challenge } = input;
     const device = randomBytes(32).toString('base64url');
@@ -35,6 +40,12 @@ export class CliLoginService {
     };
   }
 
+  /**
+   * 网页端批准 CLI 登录：把待处理记录绑定到当前账号，必须携带网页会话调用。
+   * 授权码不存在、已过期或状态不再是 pending 抛 400/`CLI_LOGIN_EXPIRED`，
+   * 因此重复批准不会产生第二个令牌；账号失效抛 401/`UNAUTHENTICATED`。
+   * 写审计 `identity.cli_approved`，令牌仍由 {@link poll} 一次性签发。
+   */
   async approve(principal: Principal, input: ApproveCliLoginCommand): Promise<void> {
     const { code } = input;
     await this.store.tx(async () => {
@@ -47,6 +58,12 @@ export class CliLoginService {
     });
   }
 
+  /**
+   * CLI 轮询：未批准时只回报 `pending`；批准后在本次事务内签发 scope 为 `hub:read` 的令牌并置为
+   * consumed，所以同一次授权最多换到一枚令牌。
+   * `device_code` 未知或过期、verifier 与 challenge 不符都抛 400/`CLI_LOGIN_EXPIRED`
+   * （不区分原因）；已消费抛 409/`CLI_LOGIN_USED`。令牌明文只在此返回一次，库中只留摘要。
+   */
   async poll(input: PollCliLoginQuery) {
     const value = input;
     return await this.store.tx(async () => {

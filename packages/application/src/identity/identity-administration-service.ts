@@ -26,6 +26,10 @@ export class IdentityAdministrationService {
     private readonly sessions: SessionService,
     private readonly passwords: PasswordHasher,
   ) {}
+  /**
+   * 补齐内置角色：按稳定的 `key` 判存，已存在的角色跳过而不覆盖，
+   * 因而升级不会冲掉运行中实例的角色配置，可反复调用（幂等）。
+   */
   async initialize() {
     const store = this.store;
     await store.tx(async () => {
@@ -34,6 +38,11 @@ export class IdentityAdministrationService {
           await store.insert('roles', { id: randomUUID(), ...r, builtin: true, revision: 1 });
     });
   }
+  /**
+   * 管理台快照：账号（经 {@link toUserSummary} 过滤字段）、团队、成员关系、角色、绑定与权限清单。
+   * 需要 `identity:manage` 平台权限，否则 403/`FORBIDDEN`。只读，不开事务也不缓存，
+   * 因此并发的变更可能让快照内部略有不一致。
+   */
   async adminSnapshot(principal: Principal) {
     this.identity.require(principal, 'identity:manage');
     return {
@@ -56,6 +65,13 @@ export class IdentityAdministrationService {
     )
       fail(409, 'LAST_ADMIN', '必须保留至少一个有效平台管理员');
   }
+  /**
+   * 新建账号并挂团队。密码哈希在事务外算完，事务内再次校验调用者权限，
+   * 因为哈希期间授权可能已被撤销。
+   * 用户名小写后唯一，重复抛 409/`USERNAME_CONFLICT`；团队必须存在且启用，
+   * 否则 422/`INVALID_GROUP`；团队 ID 去重后建成员关系。写审计 `identity.user_created`。
+   * @param body - 严格 schema：用户名 3–64、显示名 1–80、密码 12–256、最多 50 个团队
+   */
   async createUser(p: Principal, body: unknown) {
     this.identity.require(p, 'identity:manage');
     const b = z
@@ -96,6 +112,11 @@ export class IdentityAdministrationService {
       return await work();
     });
   }
+  /**
+   * 新建团队，允许重名；写审计 `identity.group_created`，返回原始团队记录。
+   * 需 `identity:manage`（403/`FORBIDDEN`），在与 {@link mutate} 相同的双检事务内执行。
+   * @param body - `{ name }`，1–80 字符，未知字段直接拒绝
+   */
   async createGroup(principal: Principal, body: unknown) {
     return await this.mutate(principal, async () => {
       const b = z
@@ -112,6 +133,11 @@ export class IdentityAdministrationService {
       return g;
     });
   }
+  /**
+   * 新建场景，名称全局唯一，重复抛 409/`SCENARIO_CONFLICT`；写审计 `scenario.created`。
+   * 需 `identity:manage`（403/`FORBIDDEN`）。
+   * @param body - `{ name, description? }`，名称 1–80，描述缺省空串、上限 2000 字符
+   */
   async createScenario(principal: Principal, body: unknown) {
     const input = z
       .object({
@@ -132,6 +158,11 @@ export class IdentityAdministrationService {
       return scenario;
     });
   }
+  /**
+   * 新建自定义角色：权限只能取自 {@link PERMISSIONS}，数量不超过权限总数，落库时 `builtin: false`。
+   * 角色本身不带作用域，作用范围由 {@link grantRole} 的绑定决定。
+   * 写审计 `identity.role_created`。需 `identity:manage`（403/`FORBIDDEN`）。
+   */
   async createRole(principal: Principal, body: unknown) {
     return await this.mutate(principal, async () => {
       const b = z
@@ -151,6 +182,13 @@ export class IdentityAdministrationService {
       return r;
     });
   }
+  /**
+   * 给用户或团队绑定角色：主体可以是 user 或 group，作用域为
+   * `platform` | `team` | `source` | `asset` | `scenario`。
+   * 角色或主体不存在抛 422/`INVALID_BINDING`；`platform` 必须 `scope_id` 为空，
+   * 其它作用域必须指向存在的记录，否则 422/`INVALID_SCOPE`。写审计 `identity.role_granted`。
+   * 不检查重复绑定，同一三元组可重复插入（判定时按「存在任一匹配」计算，不影响结果）。
+   */
   async grantRole(principal: Principal, body: unknown) {
     return await this.mutate(principal, async () => {
       const b = z
@@ -190,6 +228,11 @@ export class IdentityAdministrationService {
       return r;
     });
   }
+  /**
+   * 把用户加入团队；成员或团队不存在抛 422/`INVALID_MEMBERSHIP`。
+   * 写审计 `identity.membership_added`。不检查是否已是成员，
+   * 重复调用会产生重复记录（判定不受影响）。
+   */
   async addMembership(principal: Principal, body: unknown) {
     return await this.mutate(principal, async () => {
       const b = z.object({ user_id: z.uuid(), group_id: z.uuid() }).strict().parse(body);
@@ -203,6 +246,12 @@ export class IdentityAdministrationService {
       return r;
     });
   }
+  /**
+   * 撤销一条角色绑定或成员关系：事务内先写审计 `identity.grant_removed` 再删除。
+   * 记录不存在抛 404；删除后若已无有效平台管理员，抛 409/`LAST_ADMIN` 由事务回滚保住授权。
+   * 需 `identity:manage`（403/`FORBIDDEN`）。
+   * @param table - 只接受 `role_bindings` 与 `memberships`
+   */
   async removeGrant(p: Principal, table: 'role_bindings' | 'memberships', id: string) {
     this.identity.require(p, 'identity:manage');
     return await this.store.tx(async () => {
@@ -215,6 +264,15 @@ export class IdentityAdministrationService {
       return { ok: true };
     });
   }
+  /**
+   * 局部更新账号的 `active` / `display_name` / `password`，需 `identity:manage`，并发靠修订号。
+   * `etag` 必须等于当前 `revision`：缺失抛 428/`IF_MATCH_REQUIRED`，
+   * 不符抛 412/`REVISION_CONFLICT`；账号不存在抛 404。
+   * 任何更新都吊销该用户全部会话，改密或停用即刻踢出在线设备。
+   * `active: false` 还会连带作废待处理的 OAuth 同意、CLI 登录，并吊销已授权连接与个人令牌。
+   * 事务末尾校验仍保留有效平台管理员（409/`LAST_ADMIN`）；写审计 `identity.user_updated`，
+   * 密码只记录「已修改」而不记录内容。
+   */
   async updateUser(p: Principal, id: string, body: unknown, etag: string | undefined) {
     this.identity.require(p, 'identity:manage');
     const b = z
@@ -269,6 +327,12 @@ export class IdentityAdministrationService {
       return toUserSummary(updated);
     });
   }
+  /**
+   * 覆写自定义角色的名称与权限（权限自动去重）；内置角色不可改，抛 409/`BUILTIN_ROLE`。
+   * 需 `identity:manage`；角色不存在抛 404，`etag` 缺失 428、不符 412。
+   * 变更后重算平台管理员数量（409/`LAST_ADMIN`），
+   * 写审计 `identity.role_updated` 并保留前后权限差异。
+   */
   async updateRole(p: Principal, id: string, body: unknown, etag: string | undefined) {
     this.identity.require(p, 'identity:manage');
     const b = z
@@ -300,6 +364,12 @@ export class IdentityAdministrationService {
       return next;
     });
   }
+  /**
+   * 局部更新团队名称或启停。停用后，该团队授予的绑定与成员关系在下一次
+   * {@link IdentityService.principal} 重建时全部失效（鉴权不受历史快照影响）。
+   * 需 `identity:manage`；不存在抛 404，`etag` 缺失 428、不符 412。
+   * 写审计 `identity.group_updated`，并在事务末尾校验仍保留有效平台管理员（409/`LAST_ADMIN`）。
+   */
   async updateGroup(p: Principal, id: string, body: unknown, etag: string | undefined) {
     this.identity.require(p, 'identity:manage');
     const b = z

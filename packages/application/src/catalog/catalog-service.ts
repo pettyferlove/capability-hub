@@ -10,7 +10,13 @@ import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
 import type { AssetCommunityService } from './asset-community-service.js';
 
-/** 只检索当前可分发的发布；缓存不保存用户身份或授权结果。 */
+/**
+ * 只检索当前可分发的发布；缓存不保存用户身份或授权结果。
+ *
+ * 候选集按 `store.revision()` 缓存，命中缓存时仍对每个主体重算受众过滤，
+ * 所以缓存不构成越权路径。各查询入口用 `store.tx` 包住整段读取，让一次请求内的
+ * 可见性与分页游标基于同一快照，减少跨查询读到半更新状态的机会。
+ */
 export class CatalogService {
   private catalogCache: { revision: string; rows: CatalogEntry[] } | undefined;
   constructor(
@@ -19,6 +25,16 @@ export class CatalogService {
     private readonly community: AssetCommunityService,
     private readonly cursors: CatalogCursorCodec,
   ) {}
+  /**
+   * 把已解析的发布三元组投影为对外目录视图（详情、搜索结果共用同一形状）。
+   *
+   * 调用方必须先完成可见性判定（{@link CatalogService.visibleCatalog} 或
+   * `requirePublishedAsset`）；本方法不再做受众校验，只计算操作能力：
+   * `can_download` 恒为 true，`can_submit`/`can_lifecycle` 分别对应
+   * `asset:maintain` 与 `asset:lifecycle`，`can_revoke` 只看全局 `version:revoke`。
+   * `replacement_asset_id` 只在替代资源对当前主体也可读时给出，避免泄露不可见
+   * 资源的 id；`revision` 原样返回供后续写操作做乐观并发。
+   */
   async describeAsset(
     asset: AssetRecord,
     version: VersionRecord,
@@ -90,6 +106,13 @@ export class CatalogService {
       revision: asset.revision,
     };
   }
+  /**
+   * 构建与主体无关的候选集，并按 `store.revision()` 记忆化。
+   *
+   * 只收当前发布处于 `active` 生命周期、版本已 `released`、策略来源未封禁/未撤回分发、
+   * 且当前发布与该版本最新发布都是 `approved_audience` 的资源；按发布时间倒序、
+   * id 升序排列以保证无关键词查询时的稳定顺序。
+   */
   private async getCatalog() {
     const revision = await this.context.store.revision();
     if (this.catalogCache?.revision === revision) return this.catalogCache.rows;
@@ -137,6 +160,13 @@ export class CatalogService {
     this.catalogCache = { revision, rows };
     return rows;
   }
+  /**
+   * 在候选集上叠加主体条件：匿名主体按 `public` 受众裁剪，`active === false` 的主体
+   * 看不到任何条目。
+   *
+   * 当前发布与该版本最新发布必须同时对主体匹配受众，即“历史版本受两重受众约束”，
+   * 所以可见集合是两次受众判定的交集，任一发布把主体排除即不可见。
+   */
   private async visibleCatalog(p: Principal | null) {
     return await filterAsync(
       await this.getCatalog(),
@@ -146,9 +176,19 @@ export class CatalogService {
         (await this.access.matchesAudience(p, row.resolved)),
     );
   }
+  /**
+   * 列出启用中的场景，唯一入口是这里的 `store.tx` 包裹。
+   *
+   * 已登录取全部启用场景；匿名主体只看到至少被一条可见发布引用的场景，
+   * 否则场景名本身会暴露未公开内容的存在。停用场景任何情况下都不返回。
+   */
   listScenarios(p: Principal | null) {
     return this.context.store.tx(() => this.listScenariosSnapshot(p));
   }
+  /**
+   * 必须在 {@link CatalogService.listScenarios} 打开的事务内调用，才能与可见性判定
+   * 读到同一份场景与发布数据。
+   */
   private async listScenariosSnapshot(p: Principal | null) {
     const visibleIds = new Set(
       (await this.visibleCatalog(p)).flatMap((row) => row.release.scenario_ids),
@@ -157,9 +197,20 @@ export class CatalogService {
       (s) => s.active && (p || visibleIds.has(s.id)),
     );
   }
+  /**
+   * 关键词联想，只从当前主体可见发布的 `applies_to` 标签里统计。
+   *
+   * 名额分配固定：前 `ceil(limit * 2 / 3)` 个（至少 1 个）按 log(count) 与近 30 天
+   * 新鲜度排序，剩余名额用指数竞赛做加权无放回抽样，让低频但近期的关键词也有曝光。
+   * `random` 注入用于让抽样结果可复现；`limit` 缺省为 8。
+   */
   suggestKeywords(p: Principal | null, input: KeywordSuggestionsQuery, random = Math.random) {
     return this.context.store.tx(() => this.suggestKeywordsSnapshot(p, input, random));
   }
+  /**
+   * 必须在 {@link CatalogService.suggestKeywords} 的事务内运行；`kind`/`category`/
+   * `scenario_id` 是过滤条件，不参与排序权重。
+   */
   private async suggestKeywordsSnapshot(
     p: Principal | null,
     input: KeywordSuggestionsQuery,
@@ -224,9 +275,25 @@ export class CatalogService {
       ],
     };
   }
+  /**
+   * 目录检索，`store.tx` 包住整个查询以保证可见集合与游标校验同源。
+   *
+   * 分页基于偏移量而非稳定键：游标里只有 `fingerprint`、`offset` 与 15 分钟后的
+   * `expires`，`fingerprint` 覆盖归一化后的查询参数（`cursor` 置空）、主体 id、
+   * groups 与 bindings 的摘要以及 `store.revision()`。因此期间内容或授权变化会让
+   * 旧游标失效（抛 400/`CURSOR_EXPIRED`），而不是静默翻到错位的数据。
+   */
   search(p: Principal | null, input: CatalogSearchQuery) {
     return this.context.store.tx(() => this.searchSnapshot(p, input));
   }
+  /**
+   * 检索实现细节，必须在 {@link CatalogService.search} 的事务内调用。
+   *
+   * 打分：slug 精确 100 / 前缀 40 / 包含 25，标签命中 20，描述命中 10，语言与框架
+   * 提示词每个 +2；有词时 score 为 0 的条目被丢弃，无词时按发布顺序全量返回。
+   * `limit` 缺省 20；`counts` 在 `category` 过滤之前统计，`total` 是过滤之后的总数，
+   * 两者不能互推。游标过期或与当前参数不匹配时报 400/`CURSOR_EXPIRED`。
+   */
   private async searchSnapshot(p: Principal | null, input: CatalogSearchQuery) {
     const q = { ...input, q: input.q ?? '', limit: input.limit ?? 20 };
     const query = q.q.normalize('NFKC').toLowerCase();
@@ -321,11 +388,21 @@ export class CatalogService {
       next_cursor,
     };
   }
+  /**
+   * 详情先用 id 或 slug 解析（{@link AssetAccessService.getAsset}），再做可读性校验，
+   * 所以不可见与不存在对外都是 404，不泄露资源是否存在。没有当前发布的资源同样 404。
+   * 结果与搜索结果条目同形，但不带 `score`/`match_reasons`。
+   */
   async getDetail(p: Principal | null, id: string) {
     const { asset, version, release } = await this.access.requirePublishedAsset(p, id);
     return await this.describeAsset(asset, version, release, p);
   }
 
+  /**
+   * 版本历史只保留当前主体可读的版本，其余静默丢弃而不是报错，避免用“缺失条目”
+   * 反推不可见版本；资源本身不可见时仍先由 `requirePublishedAsset` 抛 404。
+   * 条目里的 `release_id` 取该版本最新的发布记录。
+   */
   async listHistory(p: Principal | null, id: string) {
     const a = await this.access.getAsset(id);
     await this.access.requirePublishedAsset(p, id);
