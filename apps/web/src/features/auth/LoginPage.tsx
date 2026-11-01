@@ -19,7 +19,7 @@ import {
 import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { ArrowRight } from '../../shared/icons/lucide.js';
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { Message } from '../../shared/components/Message.js';
 import { PasswordField } from '../../shared/components/PasswordField.js';
@@ -36,7 +36,7 @@ export default function LoginPage({
 }) {
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
-  async function submit(e: FormEvent<HTMLFormElement>) {
+  async function submit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError('');

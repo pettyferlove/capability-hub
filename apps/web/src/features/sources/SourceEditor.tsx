@@ -11,7 +11,7 @@ import {
 } from '../../shared/styles/recipes.js';
 import { targetEditorStyles } from './styles.js';
 import { cn } from '../../shared/styles/cn.js';
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import type { Policy, Applicability } from '@capability-hub/contracts';
 import type { SourceResponse, GitCredentialResponse } from '@capability-hub/contracts/http';
 import { Plus, Trash2 } from '../../shared/icons/lucide.js';
@@ -87,7 +87,7 @@ export function SourceEditor({
   }
   const update = (i: number, v: Partial<SourceTargetDraft>) =>
     setTargets((old) => old.map((t, n) => (n === i ? { ...t, ...v } : t)));
-  async function submit(e: FormEvent) {
+  async function submit(e: SubmitEvent) {
     e.preventDefault();
     setBusy(true);
     setError('');

@@ -12,7 +12,7 @@ const profileInputSchema = z
     display_name: z.string().trim().min(1).max(80),
     title: z.string().trim().max(80),
     bio: z.string().trim().max(500),
-    email: z.union([z.literal(''), z.string().email().max(254)]),
+    email: z.union([z.literal(''), z.email().max(254)]),
     avatar_color: z.enum(['teal', 'blue', 'violet', 'amber', 'rose']),
   })
   .strict();

@@ -12,7 +12,7 @@ import type { HubServices } from '../bootstrap/hub-services.js';
 import { createClientConfiguration } from './client-config.js';
 export const mcpConfigurationInput = z
   .object({
-    version_id: z.string().uuid(),
+    version_id: z.uuid(),
     installation_option_id: z.string().min(1),
     client: agentClientSchema,
     scope: z.enum(['project', 'user']).optional(),
@@ -20,7 +20,7 @@ export const mcpConfigurationInput = z
   .strict();
 export const skillInstallationInput = z
   .object({
-    version_id: z.string().uuid(),
+    version_id: z.uuid(),
     client: agentClientSchema.optional(),
     offset: z.number().int().min(0).default(0),
     max_bytes: z.number().int().min(1).max(262144).default(65536),
@@ -33,10 +33,10 @@ export const skillSharingInput = z
         .object({
           target: z.literal('new'),
           slug: z.string().min(1).max(64),
-          owner_group_id: z.string().uuid(),
+          owner_group_id: z.uuid(),
         })
         .strict(),
-      z.object({ target: z.literal('existing'), asset_id: z.string().uuid() }).strict(),
+      z.object({ target: z.literal('existing'), asset_id: z.uuid() }).strict(),
     ]),
     version_label: z.string().min(1).max(128),
     files: z
@@ -52,7 +52,7 @@ export const skillSharingInput = z
       )
       .min(1)
       .max(100),
-    idempotency_key: z.string().uuid(),
+    idempotency_key: z.uuid(),
   })
   .strict();
 /** 分段交付固定归档，由客户端校验并写入本地文件。 */

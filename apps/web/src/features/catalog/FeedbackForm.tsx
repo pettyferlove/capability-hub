@@ -6,7 +6,7 @@ import { feedbackFormStyles } from './styles.js';
 import { cn } from '../../shared/styles/cn.js';
 import { feedbackKinds, type AssetFeedbackRequest } from '@capability-hub/contracts';
 import type { AssetFeedbackResponse, VersionHistoryResponse } from '@capability-hub/contracts/http';
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { useQuery } from '../../shared/api/use-query.js';
@@ -46,7 +46,7 @@ export function FeedbackForm({
     `/api/assets/${assetId}/versions`,
     versionsRefresh,
   );
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending.current) return;
     const form = event.currentTarget;

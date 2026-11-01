@@ -26,7 +26,7 @@ import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import type { ActivityResponse, ProfileResponse } from '@capability-hub/contracts/http';
 import { History, Save, UserRound, UsersRound } from '../../shared/icons/lucide.js';
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { formFields } from '../../shared/api/form-fields.js';
 import { useQuery } from '../../shared/api/use-query.js';
@@ -54,7 +54,7 @@ export function PersonalProfile() {
   if (!data) return <ProfileSkeleton />;
   const avatarColor =
     avatarDraft?.revision === data.revision ? avatarDraft.color : data.avatar_color;
-  async function save(e: FormEvent<HTMLFormElement>) {
+  async function save(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setFeedback('');

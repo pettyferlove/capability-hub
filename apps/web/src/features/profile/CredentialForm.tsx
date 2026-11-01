@@ -16,7 +16,7 @@ import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import type { GitCredentialResponse } from '@capability-hub/contracts/http';
 import { LockKeyhole } from '../../shared/icons/lucide.js';
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { formFields } from '../../shared/api/form-fields.js';
 import { DateTimeField } from '../../shared/components/DateTimeField.js';
@@ -38,7 +38,7 @@ export function CredentialForm({
   const [kind, setKind] = useState(existing?.kind ?? 'token'),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
-  async function submit(e: FormEvent<HTMLFormElement>) {
+  async function submit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError('');

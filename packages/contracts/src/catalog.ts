@@ -22,7 +22,7 @@ export const keywordSuggestionsQuerySchema = z
   .object({
     kind: assetKindSchema.optional(),
     category: assetCategorySchema.optional(),
-    scenario_id: z.string().uuid().optional(),
+    scenario_id: z.uuid().optional(),
     limit: z.coerce.number().int().min(1).max(20).default(8),
   })
   .strict();

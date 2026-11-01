@@ -9,7 +9,7 @@ import {
 import { cn } from '../../shared/styles/cn.js';
 import type { IssuedTokenResponse } from '@capability-hub/contracts/http';
 import { KeyRound } from '../../shared/icons/lucide.js';
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { CodeBlock } from '../../shared/components/CodeBlock.js';
@@ -34,7 +34,7 @@ export function AccessTokenForm({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function create(event: FormEvent<HTMLFormElement>) {
+  async function create(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending.current || token) return;
     const value = new FormData(event.currentTarget).get('name');

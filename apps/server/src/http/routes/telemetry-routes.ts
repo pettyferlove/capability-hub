@@ -18,7 +18,7 @@ const entrySchema = z
       '/account',
       '/resource',
     ]),
-    request_id: z.string().uuid().optional(),
+    request_id: z.uuid().optional(),
     status: z.number().int().min(0).max(599).optional(),
     code: z
       .string()
@@ -35,7 +35,7 @@ const entrySchema = z
   })
   .strict();
 const batchSchema = z
-  .object({ session_id: z.string().uuid(), entries: z.array(entrySchema).min(1).max(10) })
+  .object({ session_id: z.uuid(), entries: z.array(entrySchema).min(1).max(10) })
   .strict();
 /** 匿名诊断独立校验来源、报文大小和进程内接收预算。 */
 export function registerTelemetryRoutes(app: Express, { hub }: HttpContext): void {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const cliCredentialsSchema = z
-  .object({ url: z.string().url(), token: z.string().regex(/^\S+$/) })
+  .object({ url: z.url(), token: z.string().regex(/^\S+$/) })
   .strict();
 export type CliCredentials = z.infer<typeof cliCredentialsSchema>;
 

@@ -22,7 +22,7 @@ const snapshotSchema = z
     context: z.record(z.string(), z.unknown()),
     timestamp: z.number(),
   })
-  .passthrough();
+  .loose();
 export function decodeSnapshot(value: Json): WorkflowRunState {
   return snapshotSchema.parse(value) as unknown as WorkflowRunState;
 }

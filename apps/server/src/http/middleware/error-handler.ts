@@ -5,7 +5,7 @@ import { AiError } from '@capability-hub/ai';
 import type { Express } from 'express';
 import { type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
-import { ZodError } from 'zod';
+import { flattenError, ZodError } from 'zod';
 import { type RequestMetrics } from '../../observability/operations.js';
 /** 统一处理 API、上传和用例错误，内部异常只写入脱敏日志。 */
 export function registerErrorHandler(
@@ -46,7 +46,7 @@ export function registerErrorHandler(
           : error instanceof HubError
             ? error
             : error instanceof ZodError
-              ? new HubError(422, 'VALIDATION_ERROR', '请检查输入字段', error.flatten())
+              ? new HubError(422, 'VALIDATION_ERROR', '请检查输入字段', flattenError(error))
               : error instanceof multer.MulterError
                 ? new HubError(413, 'UPLOAD_LIMIT', '上传超过大小、文件数或字段限制')
                 : new HubError(500, 'INTERNAL_ERROR', '服务暂时无法完成请求');

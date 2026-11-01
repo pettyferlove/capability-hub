@@ -119,7 +119,7 @@ export function registerProtectedCatalogRoutes(app: Express, { hub }: HttpContex
     '/api/feedback/:id',
     send(
       async (req, res) =>
-        await hub.feedback.get(res.locals.principal, z.string().uuid().parse(req.params.id)),
+        await hub.feedback.get(res.locals.principal, z.uuid().parse(req.params.id)),
     ),
   );
   app.get(
@@ -139,7 +139,7 @@ export function registerProtectedCatalogRoutes(app: Express, { hub }: HttpContex
       async (req, res) =>
         await hub.feedback.update(
           res.locals.principal,
-          z.string().uuid().parse(req.params.id),
+          z.uuid().parse(req.params.id),
           assetFeedbackUpdateRequestSchema.parse(req.body),
         ),
     ),

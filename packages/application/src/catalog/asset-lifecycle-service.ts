@@ -43,7 +43,7 @@ export class AssetLifecycleService {
       .object({
         lifecycle: z.enum(['active', 'deprecated', 'blocked']),
         reason: z.string().trim().min(1).max(2000),
-        replacement_asset_id: z.string().uuid().nullable().optional(),
+        replacement_asset_id: z.uuid().nullable().optional(),
       })
       .strict()
       .parse(body);
@@ -92,7 +92,7 @@ export class AssetLifecycleService {
   async migrateSource(p: Principal, id: string, body: unknown, etag: string | undefined) {
     const b = z
       .object({
-        destination_source_id: z.string().uuid(),
+        destination_source_id: z.uuid(),
         path: z.string().min(1).max(240),
         reason: z.string().trim().min(1).max(2000),
         destination_source_revision: z.number().int().positive(),
@@ -195,7 +195,7 @@ export class AssetLifecycleService {
   async requestRollback(principal: Principal, id: string, body: unknown, key: string | undefined) {
     const b = z
       .object({
-        target_version_id: z.string().uuid(),
+        target_version_id: z.uuid(),
         reason: z.string().trim().min(1).max(2000),
         current_policy_digest: z.string(),
       })

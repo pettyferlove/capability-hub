@@ -5,7 +5,8 @@ import {
   DialogTrigger,
   Heading,
   Popover,
-  Radio,
+  RadioButton,
+  RadioField,
   RadioGroup,
 } from 'react-aria-components';
 import { isThemeMode, isThemePalette, themePalettes } from './appearance.js';
@@ -54,14 +55,12 @@ export function ThemePicker({ palette, mode, setPalette, setMode }: ReturnType<t
             className="mb-5 grid grid-cols-3 gap-1 rounded-xl border border-line bg-page p-1"
           >
             {modes.map(({ id, name, icon: Icon }) => (
-              <Radio
-                key={id}
-                value={id}
-                className="flex cursor-pointer flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-caption text-muted-ink data-[selected]:bg-paper data-[selected]:text-ink data-[selected]:shadow-sm data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-muted-ink"
-              >
-                <Icon size={17} aria-hidden="true" />
-                {name}
-              </Radio>
+              <RadioField key={id} value={id}>
+                <RadioButton className="flex h-full w-full cursor-pointer flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-caption text-muted-ink data-[selected]:bg-paper data-[selected]:text-ink data-[selected]:shadow-sm data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-muted-ink">
+                  <Icon size={17} aria-hidden="true" />
+                  {name}
+                </RadioButton>
+              </RadioField>
             ))}
           </RadioGroup>
           <p className="mb-2 text-label font-medium">主题配色</p>
@@ -74,36 +73,33 @@ export function ThemePicker({ palette, mode, setPalette, setMode }: ReturnType<t
             className="grid gap-1.5"
           >
             {themePalettes.map(({ id, name, description }) => (
-              <Radio
-                key={id}
-                value={id}
-                aria-label={name}
-                className="flex cursor-pointer flex-row items-center gap-3 rounded-xl border border-transparent p-2.5 transition-colors hover:bg-page data-[selected]:border-line data-[selected]:bg-page data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-muted-ink"
-              >
-                {({ isSelected }) => (
-                  <>
-                    <span
-                      data-palette-preview={id}
-                      aria-hidden="true"
-                      className="flex h-10 w-14 shrink-0 items-center gap-1 rounded-lg border border-line bg-page p-1.5"
-                    >
-                      <span className="h-full flex-1 rounded-sm border border-line bg-paper" />
-                      <span className="h-5 w-3 rounded-sm bg-brand" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-body font-medium">{name}</span>
-                      <span className="block text-caption leading-5 text-muted-ink">
-                        {description}
+              <RadioField key={id} value={id} aria-label={name}>
+                <RadioButton className="flex h-full w-full cursor-pointer flex-row items-center gap-3 rounded-xl border border-transparent p-2.5 transition-colors hover:bg-page data-[selected]:border-line data-[selected]:bg-page data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-muted-ink">
+                  {({ isSelected }) => (
+                    <>
+                      <span
+                        data-palette-preview={id}
+                        aria-hidden="true"
+                        className="flex h-10 w-14 shrink-0 items-center gap-1 rounded-lg border border-line bg-page p-1.5"
+                      >
+                        <span className="h-full flex-1 rounded-sm border border-line bg-paper" />
+                        <span className="h-5 w-3 rounded-sm bg-brand" />
                       </span>
-                    </span>
-                    <Check
-                      size={15}
-                      aria-hidden="true"
-                      className={isSelected ? 'shrink-0 text-brand' : 'invisible shrink-0'}
-                    />
-                  </>
-                )}
-              </Radio>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-body font-medium">{name}</span>
+                        <span className="block text-caption leading-5 text-muted-ink">
+                          {description}
+                        </span>
+                      </span>
+                      <Check
+                        size={15}
+                        aria-hidden="true"
+                        className={isSelected ? 'shrink-0 text-brand' : 'invisible shrink-0'}
+                      />
+                    </>
+                  )}
+                </RadioButton>
+              </RadioField>
             ))}
           </RadioGroup>
           <p className="mt-4 border-t border-line pt-3 text-caption leading-5 text-muted-ink">

@@ -8,7 +8,7 @@ import {
   type AssetFeedbackUpdateRequest,
 } from '@capability-hub/contracts';
 import type { AssetFeedbackResponse, VersionHistoryResponse } from '@capability-hub/contracts/http';
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { useQuery } from '../../shared/api/use-query.js';
@@ -83,7 +83,7 @@ function FeedbackResolution({
   const { data: versions } = useQuery<VersionHistoryResponse[]>(
     `/api/management/assets/${f.asset_id}/versions`,
   );
-  async function save(event: FormEvent) {
+  async function save(event: SubmitEvent) {
     event.preventDefault();
     setBusy(true);
     setError('');

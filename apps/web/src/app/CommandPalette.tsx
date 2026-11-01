@@ -123,7 +123,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           aria-controls={resultsId}
           aria-activedescendant={links[index] ? resultsId + '-' + index : undefined}
           onKeyDown={(e) => {
-            // 输入法组合期间回车只确认输入，不打开结果。
+            // 输入法组合期间回车只确认输入，不打开结果；Chrome 组合中 key 是 Unidentified，只留 229 可识别。
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- 组合识别没有未废弃的等价字段。
             if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (e.key === 'ArrowDown') {
               e.preventDefault();

@@ -19,7 +19,7 @@ import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import type { SessionResponse, TokenResponse } from '@capability-hub/contracts/http';
 import { KeyRound, Plus, ShieldCheck } from '../../shared/icons/lucide.js';
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { api, ApiError, mutate } from '../../shared/api/client.js';
 import { formFields } from '../../shared/api/form-fields.js';
 import { useQuery } from '../../shared/api/use-query.js';
@@ -52,7 +52,7 @@ export function PersonalSecurity() {
   function closeTokenForm() {
     if (!issuingToken) setCreatingToken(false);
   }
-  async function change(e: FormEvent<HTMLFormElement>) {
+  async function change(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setFeedback('');

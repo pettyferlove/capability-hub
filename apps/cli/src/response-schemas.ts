@@ -32,7 +32,7 @@ export const manifestResponseSchema = z.object({
   release_id: id.nullable(),
 });
 export const loginResponseSchema = z.object({
-  verification_uri: text.url(),
+  verification_uri: z.url(),
   user_code: text.regex(/^[A-F0-9]{8}$/),
   device_code: text.regex(/^[A-Za-z0-9_-]{43}$/),
   expires_in: z.number().int().positive().max(600),

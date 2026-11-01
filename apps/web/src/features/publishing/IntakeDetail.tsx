@@ -22,7 +22,7 @@ import { PublicationPolicyFields } from './PublicationPolicyFields.js';
 import type { Policy } from '@capability-hub/contracts';
 import type { IntakeResponse } from '@capability-hub/contracts/http';
 import { ArrowRight, ShieldCheck } from '../../shared/icons/lucide.js';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
@@ -236,7 +236,7 @@ export function IntakeDetail({
       />
     );
   }
-  async function submit(e: FormEvent) {
+  async function submit(e: SubmitEvent) {
     e.preventDefault();
     setBusy(true);
     setError('');

@@ -182,7 +182,7 @@ export function checkArchitecture(root: string) {
           const specifier = node.moduleSpecifier.text;
           checkSpecifier(pkg, file, specifier);
           const typeOnly = ts.isImportDeclaration(node)
-            ? node.importClause?.isTypeOnly
+            ? node.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword
             : node.isTypeOnly;
           const named = ts.isImportDeclaration(node)
             ? node.importClause?.namedBindings

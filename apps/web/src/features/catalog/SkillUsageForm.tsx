@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { Message } from '../../shared/components/Message.js';
@@ -20,7 +20,7 @@ export function SkillUsageForm({
   const [required, setRequired] = useState(requiresApiKey);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  async function submit(event: FormEvent) {
+  async function submit(event: SubmitEvent) {
     event.preventDefault();
     setBusy(true);
     setError('');

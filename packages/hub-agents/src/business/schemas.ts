@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 export const businessInput = z
   .object({
-    version_id: z.string().uuid(),
-    feedback_id: z.string().uuid().optional(),
+    version_id: z.uuid(),
+    feedback_id: z.uuid().optional(),
   })
   .strict();
 export const evidenceSchema = z
@@ -16,7 +16,7 @@ export const evidenceSchema = z
 export const publicationSuggestion = z
   .object({
     category: z.enum(['general', 'scenario', 'uncategorized']),
-    scenario_ids: z.array(z.string().uuid()).max(20),
+    scenario_ids: z.array(z.uuid()).max(20),
     keywords: z.array(z.string().trim().min(1).max(128)).min(1).max(20),
     purpose: z.string().trim().min(1).max(2000),
   })

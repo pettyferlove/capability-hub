@@ -11,7 +11,7 @@ import { z } from 'zod';
 import type { HubServices } from '../bootstrap/hub-services.js';
 const input = z
   .object({
-    version_id: z.string().uuid(),
+    version_id: z.uuid(),
     installation_option_id: z.string().min(1),
     client: z.string().min(1).max(64),
     scope: z.enum(['project', 'user']).default('project'),

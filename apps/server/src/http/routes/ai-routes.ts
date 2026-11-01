@@ -77,7 +77,7 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
           fail(422, 'AI_CURSOR_INVALID', '列表游标无效');
         }
         after = z
-          .object({ position: z.number().int().nonnegative(), id: z.string().uuid() })
+          .object({ position: z.number().int().nonnegative(), id: z.uuid() })
           .strict()
           .parse(data);
       }

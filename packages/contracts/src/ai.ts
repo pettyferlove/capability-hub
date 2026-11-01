@@ -11,8 +11,8 @@ export const listAiExecutionsQuerySchema = z
     cursor: z.string().max(500).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(30),
     operation_id: z.enum(['resource-audit', 'feedback-triage']).optional(),
-    version_id: z.string().uuid().optional(),
-    feedback_id: z.string().uuid().optional(),
+    version_id: z.uuid().optional(),
+    feedback_id: z.uuid().optional(),
   })
   .strict();
 export const aiExecutionStatusSchema = z.enum([

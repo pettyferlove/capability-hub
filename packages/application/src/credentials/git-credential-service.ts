@@ -42,7 +42,7 @@ const base = z
     secret: z.string().min(8).max(32768),
     passphrase: z.string().max(1024).default(''),
     host_key: z.string().trim().max(8192).default(''),
-    expires_at: z.string().datetime().nullable().default(null),
+    expires_at: z.iso.datetime().nullable().default(null),
   })
   .strict();
 export class GitCredentialService {

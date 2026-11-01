@@ -182,6 +182,8 @@ export function KeywordField({
             update(draft.slice(0, start) + text + draft.slice(end), true);
           }}
           onKeyDown={(event) => {
+            // Chrome 组合中 key 是 Unidentified，只留 229 可识别。
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- 组合识别没有未废弃的等价字段。
             if (composing.current || event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
               event.preventDefault();

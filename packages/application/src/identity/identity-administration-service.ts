@@ -63,7 +63,7 @@ export class IdentityAdministrationService {
         username: usernameSchema,
         display_name: z.string().trim().min(1).max(80),
         password: passwordSchema,
-        group_ids: z.array(z.string().uuid()).max(50),
+        group_ids: z.array(z.uuid()).max(50),
       })
       .strict()
       .parse(body);
@@ -155,8 +155,8 @@ export class IdentityAdministrationService {
     return await this.mutate(principal, async () => {
       const b = z
         .object({
-          principal_id: z.string().uuid(),
-          role_id: z.string().uuid(),
+          principal_id: z.uuid(),
+          role_id: z.uuid(),
           scope_type: z.enum(['platform', 'team', 'source', 'asset', 'scenario']),
           scope_id: z.string().default(''),
         })
@@ -192,10 +192,7 @@ export class IdentityAdministrationService {
   }
   async addMembership(principal: Principal, body: unknown) {
     return await this.mutate(principal, async () => {
-      const b = z
-        .object({ user_id: z.string().uuid(), group_id: z.string().uuid() })
-        .strict()
-        .parse(body);
+      const b = z.object({ user_id: z.uuid(), group_id: z.uuid() }).strict().parse(body);
       if (
         !(await this.store.get('users', b.user_id)) ||
         !(await this.store.get('groups', b.group_id))

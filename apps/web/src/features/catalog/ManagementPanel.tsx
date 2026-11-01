@@ -39,7 +39,7 @@ import {
   GitBranch,
   MessageSquare,
 } from '../../shared/icons/lucide.js';
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { Overlay } from '../../shared/components/Overlay.js';
@@ -267,7 +267,7 @@ function Controls({
   const { data: sources } = useQuery<SourceResponse[]>(
     action === 'migrate' ? '/api/sources' : null,
   );
-  async function submit(e: FormEvent) {
+  async function submit(e: SubmitEvent) {
     e.preventDefault();
     if (busy) return;
     setBusy(true);

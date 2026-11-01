@@ -134,7 +134,7 @@ export function createMcp(hub: HubServices, p: Principal, scope: TokenRecord['sc
       register(
         'load_skill',
         '读取固定版本 Skill 正文和清单；不执行、不安装',
-        z.object({ version_id: z.string().uuid() }).strict(),
+        z.object({ version_id: z.uuid() }).strict(),
         async ({ version_id, _principal }) => {
           const v = await hub.assetAccess.requireReadableVersion(_principal, version_id);
           if ((await hub.assetAccess.getAsset(v.asset_id)).kind !== 'skill')
@@ -152,7 +152,7 @@ export function createMcp(hub: HubServices, p: Principal, scope: TokenRecord['sc
         '读取固定版本清单中的文件，按 UTF-8 字符边界分页',
         z
           .object({
-            version_id: z.string().uuid(),
+            version_id: z.uuid(),
             path: z.string().min(1).max(240),
             offset: z.number().int().min(0).default(0),
             max_bytes: z.number().int().min(1).max(262144).default(65536),

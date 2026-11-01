@@ -14,7 +14,7 @@ import type {
   SourceResponse,
 } from '@capability-hub/contracts/http';
 import type { ScenarioResponse } from '@capability-hub/contracts/http';
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { formFields } from '../../shared/api/form-fields.js';
 import { useQuery } from '../../shared/api/use-query.js';
@@ -46,7 +46,7 @@ export function IdentityAdminForm({
     [scope, setScope] = useState('platform');
   const { data: sources } = useQuery<SourceResponse[]>('/api/sources');
   const { data: assets } = useQuery<ManagementAssetResponse[]>('/api/management/assets');
-  async function submit(e: FormEvent<HTMLFormElement>) {
+  async function submit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError('');

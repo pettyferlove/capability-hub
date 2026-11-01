@@ -24,7 +24,7 @@ import type {
   ManagementAssetResponse,
 } from '@capability-hub/contracts/http';
 import { ArrowRight, FileArchive, Plug } from '../../shared/icons/lucide.js';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { api, ApiError } from '../../shared/api/client.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { KeywordField } from '../../shared/components/KeywordField.js';
@@ -200,7 +200,7 @@ export function UploadPanel({
     if (next.mode !== 'file')
       applySuggestion(mcpEntryIdentity(next), '已根据连接方式预填；手动修改的信息会保留。');
   }
-  async function upload(event: FormEvent) {
+  async function upload(event: SubmitEvent) {
     event.preventDefault();
     if (
       busy ||

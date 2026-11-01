@@ -22,7 +22,7 @@ import { cn } from '../../shared/styles/cn.js';
 import { intakeStatuses } from '@capability-hub/contracts';
 import type { IntakeListResponse } from '@capability-hub/contracts/http';
 import { RefreshCw, Search, ShieldCheck, X } from '../../shared/icons/lucide.js';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { useQuery } from '../../shared/api/use-query.js';
 import { Empty } from '../../shared/components/Empty.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
@@ -93,7 +93,7 @@ export function IntakeHistoryPanel({
   useEffect(() => {
     if (list.current) list.current.scrollTop = 0;
   }, [filters]);
-  function search(event: FormEvent) {
+  function search(event: SubmitEvent) {
     event.preventDefault();
     setFilters((value) => ({ ...value, page: 1, q: query.trim() }));
   }

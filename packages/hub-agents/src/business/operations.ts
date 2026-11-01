@@ -25,7 +25,7 @@ export function registerBusinessOperations(
   for (const kind of ['resource-audit', 'feedback-triage'] as const) {
     const input =
       kind === 'feedback-triage'
-        ? businessInput.extend({ feedback_id: z.string().uuid() })
+        ? businessInput.extend({ feedback_id: z.uuid() })
         : businessInput.omit({ feedback_id: true });
     const reportSchema =
       kind === 'resource-audit'
