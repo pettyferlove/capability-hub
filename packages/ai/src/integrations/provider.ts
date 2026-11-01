@@ -7,6 +7,7 @@ import type { AiRecordMap } from '../core/records.js';
 import { AiError } from '../core/errors.js';
 import { type ExecutionScope } from '../execution/scope.js';
 import { type AiEventService } from '../execution/events.js';
+
 type EndpointModel = ReturnType<ReturnType<typeof createOpenAICompatible>>;
 
 /**

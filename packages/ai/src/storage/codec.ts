@@ -21,6 +21,7 @@ export function encodeNative(value: unknown): Json {
     throw new AiError('AI_OUTPUT_INVALID', '持久化内容超过限制');
   return asJson(JSON.parse(text));
 }
+
 const snapshotSchema = z
   .object({
     runId: z.string(),

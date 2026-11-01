@@ -157,6 +157,7 @@ export async function prepareConnectionConfig(options: ConnectionConfigOptions) 
     backupDirectory: join(resolve(options.directory), 'config-backups'),
   };
 }
+
 async function readConfig(path: string): Promise<string | null> {
   await safeDirectory(dirname(resolve(path)), false);
   let file;

@@ -1,6 +1,7 @@
 import { contentScanRuleset } from '@capability-hub/domain/content';
 import type { RecordStore } from '@capability-hub/application/ports';
 import { statfsSync } from 'node:fs';
+
 const bounds = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, Infinity];
 
 /**

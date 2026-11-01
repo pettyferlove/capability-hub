@@ -12,6 +12,7 @@ import type { JobQueue } from '../jobs/job-queue.js';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { IdempotencyService } from '../shared/idempotency-service.js';
 import type { IntakeQueryService } from './intake-query-service.js';
+
 const now = () => new Date().toISOString();
 
 /** 接收上传、重试和重新扫描命令；幂等记录与作业创建同时提交。 */

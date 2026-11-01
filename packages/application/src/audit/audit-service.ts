@@ -6,6 +6,7 @@ import type { AuditRecord } from '@capability-hub/domain/models';
 import { has } from '@capability-hub/domain/rbac';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from '../catalog/asset-access-service.js';
+
 const reasonLabels: Record<string, string> = {
   invalid_credentials: '账号或密码错误，或账号已停用',
   'local filesystem owner recovery': '本机文件系统所有者恢复账号访问',

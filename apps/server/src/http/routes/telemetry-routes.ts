@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { fail } from '@capability-hub/domain/errors';
 import { browserEvents, safeText } from '@capability-hub/logging/events';
 import type { HttpContext } from '../context.js';
+
 const entrySchema = z
   .object({
     event: z.enum(browserEvents),

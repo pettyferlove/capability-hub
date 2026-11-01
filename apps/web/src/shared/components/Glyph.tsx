@@ -1,6 +1,7 @@
 import { cn } from '../styles/cn.js';
 import type { AssetResponse } from '@capability-hub/contracts/http';
 import { motion } from 'motion/react';
+
 type Kind = AssetResponse['kind'];
 
 /** FNV-1a 32 位字符串散列，用于稳定生成图案。 */

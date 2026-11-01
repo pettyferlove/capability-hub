@@ -1,6 +1,7 @@
 import { archive, inspect, unzip } from '../content.js';
 import { HubError } from '@capability-hub/domain/errors';
 import type { ScanInput } from '@capability-hub/application/ports';
+
 process.once('message', (input: ScanInput) => {
   void scan(input);
 });

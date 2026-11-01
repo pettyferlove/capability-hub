@@ -1,5 +1,6 @@
 import { reportError } from '../logging.js';
 import { readPreviewText } from './preview.js';
+
 export { PreviewUnavailable } from './preview.js';
 let csrfToken = '';
 
@@ -23,6 +24,7 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 }
+
 async function responseError(response: Response, path: string): Promise<ApiError> {
   const body: unknown = await response.json().catch(() => null);
   const detail =

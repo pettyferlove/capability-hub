@@ -19,6 +19,7 @@ import {
   skillInstallationInput,
   skillSharingInput,
 } from './mcp-actions.js';
+
 const search = {
   query: z.string().max(500),
   scenario_id: z.string().optional(),

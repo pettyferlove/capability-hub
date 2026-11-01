@@ -14,6 +14,7 @@ export class HubApiError extends Error {
     super(`${code}: ${message}`);
   }
 }
+
 const oauthMessages: Record<string, string> = {
   invalid_grant: '授权已失效，请重新运行 connect 完成浏览器授权',
   invalid_client: '客户端注册已失效，请重新连接',

@@ -1,4 +1,5 @@
 import { valid } from 'semver';
+
 export { compare as compareVersionLabels } from 'semver';
 
 /**

@@ -116,6 +116,7 @@ export default function ConnectPage({ routeQuery = location.search }: { routeQue
     </>
   );
 }
+
 function CliApproval({ initialCode }: { initialCode: string }) {
   const [code, setCode] = useState(initialCode);
   const [approved, setApproved] = useState(false);
@@ -160,6 +161,7 @@ function CliApproval({ initialCode }: { initialCode: string }) {
     </section>
   );
 }
+
 function HubConnection() {
   const { me } = useHub();
   const [initial] = useState(() => {

@@ -72,6 +72,7 @@ export function FeedbackDetail({
     </article>
   );
 }
+
 function FeedbackResolution({
   feedback: f,
   onSaved,

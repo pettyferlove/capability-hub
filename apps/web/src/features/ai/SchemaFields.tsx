@@ -18,6 +18,7 @@ const labels: Record<string, string> = {
 function enumLabel(value: Json | undefined): string {
   return value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
 }
+
 function object(value: Json | undefined): Record<string, Json> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
@@ -53,6 +54,7 @@ export function initialValues(schema: Json): Record<string, Json> {
     }),
   );
 }
+
 function JsonField({
   value,
   onChange,

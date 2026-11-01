@@ -4,6 +4,7 @@ import { and, or, eq, gt, lt, asc, desc, inArray, sql } from 'drizzle-orm';
 import { aiSchema } from './ai-schema.js';
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy';
 import type { sqliteSchema } from './record-schema.js';
+
 type Session = Pick<
   SqliteRemoteDatabase<typeof sqliteSchema>,
   'select' | 'insert' | 'update' | 'delete'

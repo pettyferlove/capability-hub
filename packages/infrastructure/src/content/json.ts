@@ -1,4 +1,5 @@
 import { fail } from '@capability-hub/domain/errors';
+
 const MiB = 1024 * 1024;
 // 在 JSON.parse 覆盖重复键前检查嵌套深度与对象成员。
 

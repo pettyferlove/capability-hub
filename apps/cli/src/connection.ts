@@ -149,6 +149,7 @@ export async function connectAgent(
     if (pending && !committed) await revokeConnection(options.url, pending);
   }
 }
+
 async function revokeConnection(url: string, credentials: ConnectionCredentials) {
   try {
     const response = await new HubApiClient(url).request('/oauth/revoke', {

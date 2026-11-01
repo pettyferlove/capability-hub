@@ -25,6 +25,7 @@ import { useTheme } from './theme.js';
 import { AppHeader } from './AppHeader.js';
 import { CommandPalette } from './CommandPalette.js';
 import { PageBoundary } from './PageBoundary.js';
+
 const AssetSheet = lazy(() => import('../features/catalog/AssetSheet.js'));
 const Publish = lazy(() => import('../features/publishing/PublishPage.js'));
 const Review = lazy(() => import('../features/review/ReviewPage.js'));

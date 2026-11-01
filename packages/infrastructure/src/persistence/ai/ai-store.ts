@@ -26,6 +26,7 @@ export function createAiStore(store: RecordStore): AiStore {
   if (!session) throw new Error('AI 存储需要同一基础设施 PersistenceSession');
   return new AiStoreAdapter(session);
 }
+
 class AiStoreAdapter implements AiStore {
   constructor(private readonly session: PersistenceSession) {}
   tx<T>(work: () => T | Promise<T>): Promise<T> {

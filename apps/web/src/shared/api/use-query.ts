@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './client.js';
+
 interface Resource<T> {
   path: string;
   data: T;

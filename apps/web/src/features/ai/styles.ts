@@ -1,4 +1,5 @@
 import { cn } from '../../shared/styles/cn.js';
+
 export const agentDockStyles =
   '@container/dock pointer-events-none fixed w-[800px] bottom-[max(16px,env(safe-area-inset-bottom))] right-4 z-[75] flex max-w-[calc(100%_-_32px)] flex-col items-end gap-2';
 export const stackStyles = 'flex min-w-0 flex-col gap-4';

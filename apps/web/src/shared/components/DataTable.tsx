@@ -14,6 +14,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
+
 function plain(node: ReactNode): string {
   return Children.toArray(node)
     .map((n) =>

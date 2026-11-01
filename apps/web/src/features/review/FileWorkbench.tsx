@@ -486,6 +486,7 @@ export function FileWorkbench({
     </section>
   );
 }
+
 function sortTree(a: Tree, b: Tree) {
   return Number(!!a.file) - Number(!!b.file) || a.name.localeCompare(b.name);
 }

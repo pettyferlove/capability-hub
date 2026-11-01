@@ -5,6 +5,7 @@ import { fail, notFound } from '@capability-hub/domain/errors';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { CredentialCipher, SshKeyInspector, ResolvedCredential } from '../ports/index.js';
+
 const base = z
   .object({
     name: z.string().trim().min(1).max(80),

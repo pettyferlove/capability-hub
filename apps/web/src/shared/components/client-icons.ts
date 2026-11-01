@@ -8,6 +8,7 @@ import gemini from '@iconify-icons/simple-icons/googlegemini';
 import copilot from '@iconify-icons/simple-icons/githubcopilot';
 import pi from '@iconify-icons/lucide/pi';
 import type { AgentClient } from '@capability-hub/contracts';
+
 // 品牌标识静态打包并继承主题文字色；Pi 使用 π 语义符号，不冒充品牌图标。
 export const clientIcons = {
   codex: /* @__PURE__ */ createIcon(codex),

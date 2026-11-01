@@ -13,10 +13,12 @@ function threadValue(row: AiRecordMap['ai_threads']): StorageThreadType {
   const value = row.payload.value as unknown as StorageThreadType;
   return { ...value, createdAt: new Date(value.createdAt), updatedAt: new Date(value.updatedAt) };
 }
+
 function messageValue(row: AiRecordMap['ai_messages']): MastraDBMessage {
   const value = row.payload.value as unknown as MastraDBMessage;
   return { ...value, createdAt: new Date(value.createdAt) };
 }
+
 function matchesMetadata(value: unknown, filter?: Record<string, unknown>): boolean {
   if (!filter) return true;
   return (
@@ -28,6 +30,7 @@ function matchesMetadata(value: unknown, filter?: Record<string, unknown>): bool
     )
   );
 }
+
 function pageRows<T>(rows: T[], page = 0, perPage: number | false = 100) {
   if (
     !Number.isInteger(page) ||

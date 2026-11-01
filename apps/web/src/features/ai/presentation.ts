@@ -78,6 +78,7 @@ export function proposalOf(value: Json | undefined) {
     ? { draft: item.draft, review: item.review, approved: item.approved, comment: item.comment }
     : undefined;
 }
+
 const stepLabels: Record<string, string> = {
   answer: '助手回答',
   investigate: '查阅证据与研判',

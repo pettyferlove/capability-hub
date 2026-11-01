@@ -9,6 +9,7 @@ import type { Principal } from '@capability-hub/domain/identity';
 import { fail } from '@capability-hub/domain/errors';
 import { z } from 'zod';
 import type { HubServices } from '../bootstrap/hub-services.js';
+
 const input = z
   .object({
     version_id: z.uuid(),

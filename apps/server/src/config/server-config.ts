@@ -72,9 +72,11 @@ function flag(environment: NodeJS.ProcessEnv, name: string, defaultValue: boolea
   if (value === 'false') return false;
   throw new Error(name + ' 必须为 true 或 false');
 }
+
 function hostList(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))];
 }
+
 function validate(config: ServerConfig): void {
   if (config.production && !config.secret)
     throw new Error('生产环境必须设置 64 位十六进制 CAPABILITY_HUB_INSTANCE_SECRET');
@@ -129,6 +131,7 @@ function validate(config: ServerConfig): void {
       throw new Error('MinIO 配置无效');
   }
 }
+
 function instanceSecret(directory: string): string {
   const path = join(directory, 'instance.key');
   try {

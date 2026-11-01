@@ -4,6 +4,7 @@ import type { BlobStorage } from '@capability-hub/application/ports';
 import { Client, type ClientOptions } from 'minio';
 import * as http from 'node:http';
 import * as https from 'node:https';
+
 const maxBytes = 128 * 1024 * 1024;
 const missing = (error: unknown) =>
   !!error &&

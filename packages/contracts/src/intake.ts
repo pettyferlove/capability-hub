@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { keywordsSchema, assetKindSchema, assetSlugSchema, uuidSchema } from './primitives.js';
 import { versionLabelPattern, isFixedVersionLabel } from './version-labels.js';
+
 const versionLabel = z
   .string()
   .min(1)

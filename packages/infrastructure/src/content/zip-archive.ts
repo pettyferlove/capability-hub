@@ -6,6 +6,7 @@ import { collisionKey, safePath } from '@capability-hub/domain/paths';
 import yauzl from 'yauzl';
 import yazl from 'yazl';
 import { crc32 } from 'node:zlib';
+
 const MiB = 1024 * 1024;
 
 /**

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 const serviceRoot = fileURLToPath(new URL('../../', import.meta.url));
 function findWorkspace(): string {
   for (let directory = serviceRoot; ; directory = dirname(directory)) {

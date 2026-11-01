@@ -10,6 +10,7 @@ import { digest } from '../core/config.js';
 import { AiError } from '../core/errors.js';
 import { type ExecutionScope } from '../execution/scope.js';
 import { decodeSnapshot, encodeNative } from './codec.js';
+
 const sdkVersion = '1.81.0';
 
 type Arg<K extends keyof WorkflowsStorage> = WorkflowsStorage[K] extends (

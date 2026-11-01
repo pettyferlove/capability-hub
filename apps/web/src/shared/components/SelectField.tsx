@@ -94,6 +94,7 @@ function optionsFrom(children: ReactNode, inheritedDisabled = false, prefix = ''
     ];
   });
 }
+
 function renderOption(item: Option, icons?: Readonly<Record<string, IconComponent>>) {
   const Icon = icons?.[item.value];
   return (

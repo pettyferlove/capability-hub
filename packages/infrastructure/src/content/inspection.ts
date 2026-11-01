@@ -30,6 +30,7 @@ import { boundedJson } from './json.js';
 import { normalizeSkill } from './zip-archive.js';
 import { secretFindings, variableReference } from './secret-detection.js';
 import { localReference, markdownReferences } from './markdown-references.js';
+
 const MiB = 1024 * 1024;
 
 const schemaBytes = readFileSync(
@@ -40,6 +41,7 @@ const ajv = new Ajv({ allErrors: true, strict: false });
 const schema: unknown = boundedJson(schemaBytes.toString());
 if (!schema || typeof schema !== 'object' || Array.isArray(schema))
   throw new Error('MCP schema must be an object');
+
 const schemaId = '$id' in schema && typeof schema.$id === 'string' ? schema.$id : '';
 const validateMcp = ajv.compile<McpServerDocument>(schema);
 
@@ -432,6 +434,7 @@ export function inspect(
     state: 'passed',
   };
 }
+
 interface McpServerDocument {
   name: string;
   description: string;
@@ -470,9 +473,11 @@ function projectInput(value: InstallationInput): InstallationInput {
     ...(value.variables ? { variables: value.variables } : {}),
   };
 }
+
 function projectVariable(value: InputVariable): InputVariable {
   return { name: value.name, ...projectInput(value) };
 }
+
 function projectArgument(value: InstallationArgument): InstallationArgument {
   return value.type === 'named'
     ? { type: 'named', name: value.name, ...projectInput(value) }

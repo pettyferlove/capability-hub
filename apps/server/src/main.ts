@@ -68,6 +68,7 @@ async function main() {
     void stop(1);
   });
 }
+
 await main().catch((err) => {
   createLogger({ service: 'capability-hub' }).fatal({ event: 'server.start_failed', err });
   process.exit(1);

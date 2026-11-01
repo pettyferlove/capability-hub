@@ -21,6 +21,7 @@ export class OAuthError extends Error {
     super(message);
   }
 }
+
 const value = z.string().min(1).max(2048);
 const verifier = z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/);
 const registration = z.object({
@@ -55,12 +56,14 @@ function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   if (!parsed.success) throw new OAuthError('invalid_request', '授权请求格式无效');
   return parsed.data;
 }
+
 function scopeOf(scope: string): OAuthGrantRecord['scope'] {
   const scopes = scope.split(' ');
   if (scopes.some((s) => !['hub:read', 'hub:contribute'].includes(s)))
     throw new OAuthError('invalid_scope', '不支持请求的权限');
   return scopes.includes('hub:contribute') ? 'hub:contribute' : 'hub:read';
 }
+
 function redirect(value: string): URL {
   let url: URL;
   try {
@@ -92,6 +95,7 @@ function matchesRedirect(registered: string, requested: string): boolean {
   }
   return registered === requested;
 }
+
 const secret = () => randomBytes(32).toString('base64url');
 const invalidGrant = () => new OAuthError('invalid_grant', '授权已失效，请重新连接');
 

@@ -10,6 +10,7 @@ import { toUserSummary } from './identity-mapper.js';
 import type { PasswordHasher } from '../ports/index.js';
 import type { IdentityService } from './identity-service.js';
 import type { SessionService } from './session-service.js';
+
 const usernameSchema = z
   .string()
   .min(3)

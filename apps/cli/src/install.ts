@@ -63,6 +63,7 @@ export function validateManifest(value: unknown): asserts value is Manifest {
   )
     fail(422, 'MANIFEST_INVALID', '内容清单根文件或总大小无效');
 }
+
 async function localDiff(path: string) {
   const files: string[] = [];
   async function walk(dir: string, prefix = '') {
@@ -267,6 +268,7 @@ async function directoryExists(path: string): Promise<boolean> {
     throw error;
   }
 }
+
 async function describeDestination(destination: string, manifest: Manifest, dryRun: boolean) {
   const existing = await directoryExists(destination);
   return {

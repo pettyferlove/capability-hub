@@ -11,6 +11,7 @@ import {
 } from 'pino';
 import { pinoHttp } from 'pino-http';
 import { safeError, safeText, sanitize } from './events.js';
+
 export type { Logger, LevelWithSilent } from 'pino';
 
 /**
@@ -32,6 +33,7 @@ function requestFields(value: unknown) {
     route: typeof route.path === 'string' ? route.path : 'unmatched',
   };
 }
+
 function responseFields(value: unknown) {
   const res = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
   return { status: typeof res.statusCode === 'number' ? res.statusCode : undefined };

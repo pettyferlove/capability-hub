@@ -17,6 +17,7 @@ import type { AssetAccessService } from '../catalog/asset-access-service.js';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { IdempotencyService } from '../shared/idempotency-service.js';
 import { matchRevision } from '../shared/revision.js';
+
 const now = () => new Date().toISOString();
 const rulesDigest = digest(
   canonical({

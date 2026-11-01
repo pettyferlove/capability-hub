@@ -22,6 +22,7 @@ import { Overlay } from '../shared/components/Overlay.js';
 import { assetHref } from '../shared/navigation/history-route.js';
 import { navigate } from '../shared/navigation/history-navigation.js';
 import { useHub } from '../shared/context/HubContext.js';
+
 interface PaletteLink {
   label: string;
   description?: string;
