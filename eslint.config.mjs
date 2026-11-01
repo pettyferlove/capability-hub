@@ -1,7 +1,9 @@
 import js from '@eslint/js';
 import { defineConfig } from 'eslint/config';
+import eslintConfigPrettier from 'eslint-config-prettier';
 import jsdoc from 'eslint-plugin-jsdoc';
 import tsdoc from 'eslint-plugin-tsdoc';
+import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
@@ -9,6 +11,8 @@ export default defineConfig(
   {
     files: ['apps/**/*.{ts,tsx}', 'packages/**/*.ts', 'scripts/**/*.ts', 'tests/**/*.ts'],
     plugins: { jsdoc, tsdoc },
+    // 注释按 TypeScript 语法解析，`@param` 缺类型才不会退化成 JSDoc 方言。
+    settings: { jsdoc: { mode: 'typescript' } },
     rules: {
       'tsdoc/syntax': 'warn',
       'jsdoc/no-types': 'error',
@@ -78,15 +82,8 @@ export default defineConfig(
   {
     files: ['scripts/**/*.mjs', 'bin/**/*.mjs', 'eslint.config.mjs'],
     extends: [js.configs.recommended],
-    languageOptions: {
-      globals: {
-        console: 'readonly',
-        process: 'readonly',
-        Buffer: 'readonly',
-        URL: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-      },
-    },
+    languageOptions: { globals: { ...globals.node } },
   },
+  // 关闭与 Prettier 重叠的排版规则；必须放在最后一组，否则会被上面的规则重新打开。
+  eslintConfigPrettier,
 );
