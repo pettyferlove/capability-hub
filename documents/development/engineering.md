@@ -40,9 +40,9 @@ Agent 客户端图标集中在 `client-icons.ts`，使用 Iconify 的 Simple Ico
 
 ## 注释与文档
 
-简体中文注释只解释不变量、边界和非直观原因，技术标识保留原文。删除过时和复述代码的注释，不添加空泛“最佳实践”、工作进度或不存在的保证。
+注释规则见 [AGENTS.md](../../AGENTS.md#code-conventions--common-patterns)。
 
-源码变更同步维护 documents 的对应章节；同一规则只在其归属文档详述，其他位置链接。根 README 只保留项目入口和常用命令。
+文档的改动时机与写法见 [AGENTS.md](../../AGENTS.md#documentation)；同一规则只在其归属文档详述。根 README 只保留项目入口和常用命令。
 
 ## Tailwind 样式
 
