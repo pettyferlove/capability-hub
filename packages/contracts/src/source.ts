@@ -7,6 +7,7 @@ import {
   assetSlugSchema,
   uuidSchema,
 } from './primitives.js';
+
 /**
  * 来源内的一个绑定目标：仓库相对路径 ↔ 资源，携带发布策略与适用范围。
  * 严格模式拒绝未知字段，避免拼错的字段在同步时被静默忽略。
@@ -22,6 +23,7 @@ export const sourceTargetSchema = z
     applies_to: applicabilitySchema.optional(),
   })
   .strict();
+
 /**
  * 登记 Git 来源：`repository_url`（≤2048 字符）只接受 HTTPS、`ssh://` 或 `user@host:path` 形式，
  * 避免把本地路径或畸形地址写进配置。`provider` 目前只有 `generic-git`，绑定目标 1–50 个。
@@ -42,6 +44,7 @@ export const createSourceRequestSchema = z
     targets: z.array(sourceTargetSchema).min(1).max(50),
   })
   .strict();
+
 /**
  * 更新来源：字段全部可选，未提供的保持原值；`credential_ref` 置 `null` 表示解除凭据绑定。
  * `targets` 一旦提供即为全量集合，必须覆盖所有现有目标：已有绑定按 `binding_id` 就地更新，
@@ -68,5 +71,6 @@ export const updateSourceRequestSchema = z
 
 /** {@link createSourceRequestSchema} 的输入侧类型，绑定目标此时仍是请求原样字段。 */
 export type CreateSourceRequest = z.input<typeof createSourceRequestSchema>;
+
 /** {@link updateSourceRequestSchema} 的输入侧类型；所有字段可省略表示部分更新。 */
 export type UpdateSourceRequest = z.input<typeof updateSourceRequestSchema>;

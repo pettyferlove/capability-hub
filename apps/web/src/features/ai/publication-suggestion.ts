@@ -15,6 +15,7 @@ export interface AuditNotice {
   explanation: string;
   evidence: string[];
 }
+
 /**
  * 可回填到发布表单的审计建议，由审计报告派生；结构不符或版本对不上时上游直接返回 `undefined`。
  */

@@ -40,6 +40,7 @@ const pagePlaceholders = {
   login: { title: '登录', variant: 'profile' },
   ai: { title: 'AI 工作台', variant: 'cards' },
 } as const;
+
 /**
  * 应用外壳：先决定整个界面处在「加载中 / 启动失败 / 需登录 / 已就绪」哪一支，只有就绪后才挂载各页面，
  * 因此页面组件可以假定 `me` 存在，不必各自重复鉴权。

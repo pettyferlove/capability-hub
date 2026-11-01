@@ -23,6 +23,7 @@ import { ErrorState } from '../../shared/components/ErrorState.js';
 import { CardGridSkeleton, SummarySkeleton } from '../../shared/components/Skeleton.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { dateLabel } from '../../shared/format/labels.js';
+
 /**
  * 所有指标都取自同一份 `OperationsResponse` 快照，避免不同卡片之间出现时间错位；
  * 重取只由 {@link useHub} 的 `refresh` 变化触发，组件内没有定时器。

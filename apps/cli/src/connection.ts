@@ -55,6 +55,7 @@ export async function openHubConnection(url: string, path: string) {
   }
   return client;
 }
+
 /**
  * 完整接入流程：准备配置 → 复用或新建授权 → 用新令牌实跑一次 `listTools` 与 `search_skills` 验证
  * → 在凭据锁内确认没有被其他进程换过身份 → 写配置再落凭据。顺序是先验证后提交，
@@ -200,6 +201,7 @@ export async function bridgeAgent(url: string, directory: string, agent: AgentCl
     throw error;
   }
 }
+
 /** 只读自检：列出工具数量并打印，用于排查配置是否正确。 */
 export async function checkConnection(url: string, directory: string, agent: AgentClient) {
   const client = await openHubConnection(url, connectionFile(directory, url, agent));

@@ -16,6 +16,7 @@ export interface PostgresOptions {
   /** 池级错误回调：空闲连接断开、服务端主动结束会话等都会走到这里。 */
   onPoolError: (error: Error) => void;
 }
+
 /**
  * 打开 PostgreSQL 驱动并就地完成迁移，返回 {@link RecordDriver}。
  *

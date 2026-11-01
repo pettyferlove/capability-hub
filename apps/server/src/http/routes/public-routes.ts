@@ -11,6 +11,7 @@ import type { Express } from 'express';
 import { loginRequestSchema, setupHttpRequestSchema } from '@capability-hub/contracts';
 import type { HttpContext } from '../context.js';
 import { jsonRoute as send } from '../response.js';
+
 /**
  * 匿名入口，注册在 `security.authenticate` 之前，因此任何一条都不得读取 `res.locals.principal`。
  * `/api/hub-share`、`/INSTALL.md`、`/api/hub-mcp-config`、`/connect/mcp` 只交付公开配置与占位变量，

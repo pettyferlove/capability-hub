@@ -45,6 +45,7 @@ function pageRows<T>(rows: T[], page = 0, perPage: number | false = 100) {
 }
 
 // 会话记忆限制在单次 execution；跨运行知识通过带版本、权限检查的 ResourceResolver 获取。
+
 /**
  * 只读写当前执行会话记忆的 Mastra 存储：跨执行或跨账号访问抛 `AI_FORBIDDEN`，
  * 单个执行条目上限 10000（超出 `AI_BUDGET_EXCEEDED`），分页参数非法抛 `AI_CONFIGURATION`；

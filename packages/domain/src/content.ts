@@ -1,4 +1,5 @@
 import type { Buffer } from 'node:buffer';
+
 /** 扫描与归档使用的字节文件；不属于浏览器传输契约。 */
 export interface ContentFile {
   path: string;
@@ -93,12 +94,14 @@ export interface InstallationInput {
   /** 变量替换映射，供客户端拼接配置文本使用。 */
   variables?: Record<string, unknown>;
 }
+
 /**
  * 具名输入变量（请求头或环境变量），`name` 同时决定客户端配置里的键名。
  */
 export interface InputVariable extends InstallationInput {
   name: string;
 }
+
 /**
  * 安装参数：`named` 带参数名，`positional` 按声明顺序占位，两者不可互换。
  */
@@ -141,6 +144,7 @@ export interface ContentInspection {
   /** 只有检查通过才会返回结论，因此目前只有 `passed` 一个取值；类型保持字面量以便将来收紧。 */
   state: 'passed';
 }
+
 /**
  * 规则集的版本标识，会写入发布请求与扫描记录。规则变化即换版本号，
  * 这样历史版本的「当时扫过什么」可复现，重新扫描也能判断是否需要。

@@ -4,6 +4,7 @@ import type { RecordStore } from '@capability-hub/application/ports';
 import type { PersistenceSession } from '../transaction/persistence-session.js';
 
 const sessions = new WeakMap<RecordStore, PersistenceSession>();
+
 /**
  * 把 AI 端口绑定到具体的持久化会话。`createAiStore` 只认这里登记过的 store，
  * 因此 AI 写入必然与业务写入落在同一事务执行器上，不会出现两套连接。
@@ -12,6 +13,7 @@ const sessions = new WeakMap<RecordStore, PersistenceSession>();
 export function bindPersistenceSession(store: RecordStore, session: PersistenceSession): void {
   sessions.set(store, session);
 }
+
 /**
  * `AiStore` 端口的实现入口。未绑定的 store 直接抛错，而不是退化为独立连接或内存表。
  *

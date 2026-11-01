@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { createClientConfiguration } from '../../integrations/client-config.js';
 import type { HttpContext } from '../context.js';
 import { withRevision as etag, jsonRoute as send } from '../response.js';
+
 /** 读取入口解析可选身份，应用服务核对发布受众。 */
 export function registerCatalogRoutes(app: Express, { hub, security }: HttpContext): void {
   const read = security.optionalAuthenticate;
@@ -106,6 +107,7 @@ export function registerCatalogRoutes(app: Express, { hub, security }: HttpConte
     ),
   );
 }
+
 /** 管理入口要求身份；浏览器会话的写入继续校验 CSRF。 */
 export function registerProtectedCatalogRoutes(app: Express, { hub }: HttpContext): void {
   app.post(

@@ -9,8 +9,10 @@ export const auditCategories = {
   operations: '平台运维',
   other: '其他事件',
 } as const;
+
 /** {@link auditCategories} 的键集合。 */
 export type AuditCategory = keyof typeof auditCategories;
+
 /** 审计主体类型；`unknown` 表示事件里只留下 id、无法还原实体。 */
 export type AuditSubjectKind =
   | 'user'
@@ -31,12 +33,14 @@ export type AuditSubjectKind =
   | 'scenario'
   | 'instance'
   | 'unknown';
+
 /** 事件发生时的操作者快照；账号改名后历史事件仍显示当时记录的名称。 */
 export interface AuditActorSnapshot {
   kind: 'user' | 'anonymous' | 'system' | 'unknown';
   name: string;
   username?: string;
 }
+
 /** 事件发生时的主体快照；主体记录被删时字段退化为占位值。 */
 export interface AuditSubjectSnapshot {
   kind: AuditSubjectKind;

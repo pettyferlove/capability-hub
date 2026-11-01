@@ -81,6 +81,7 @@ function redirect(value: string): URL {
     throw new OAuthError('invalid_redirect_uri', '回调仅支持 HTTPS 或本机 HTTP');
   return url;
 }
+
 /** Loopback 只放宽端口，主机、路径和查询必须与注册信息完全一致。 */
 function matchesRedirect(registered: string, requested: string): boolean {
   const left = redirect(registered);

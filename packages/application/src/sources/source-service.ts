@@ -15,6 +15,7 @@ import type { JobQueue } from '../jobs/job-queue.js';
 import type { PublicationService } from '../publication/publication-service.js';
 import type { IdempotencyService } from '../shared/idempotency-service.js';
 import { matchRevision } from '../shared/revision.js';
+
 /**
  * 管理 Git 来源的配置、目标绑定与同步触发。
  * 读入口统一经 {@link AssetAccessService.requireSourceManagement} 校验

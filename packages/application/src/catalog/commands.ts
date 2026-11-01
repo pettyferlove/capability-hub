@@ -33,6 +33,7 @@ export interface AssetFeedbackCommand {
   /** 必须是字面 `true`：确认已取得上报授权后才允许落库，否则 422/`FEEDBACK_CONSENT_REQUIRED`。 */
   consent: true;
 }
+
 /**
  * 反馈处理状态变更的输入，来自 HTTP 的 JSON body，只能由维护者调用；
  * 每小时 20 条的限额只约束提交，不约束处理。

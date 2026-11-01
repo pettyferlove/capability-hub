@@ -29,6 +29,7 @@ import { Message } from '../../shared/components/Message.js';
 import { PasswordField } from '../../shared/components/PasswordField.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { Glyph } from '../../shared/components/Glyph.js';
+
 /**
  * `initialized` 为假时同一表单走 `/auth/setup`：需二次确认密码，且 `confirm_password`
  * 在提交前被移除、不会发往服务端。失败只渲染服务端错误文案，输入不做清空以便重试。

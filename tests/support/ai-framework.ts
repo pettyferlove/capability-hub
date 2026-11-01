@@ -101,6 +101,7 @@ export async function frameworkFixture(
   };
   return { ...hub, runtime, run, failures };
 }
+
 /** 校验后返回一份指向本地 fixture 服务的 profile 配置；默认 openai 格式。 */
 export function frameworkConfig(
   url = 'https://example.test/v1',

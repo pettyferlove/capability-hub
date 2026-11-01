@@ -58,6 +58,7 @@ const configSchema = z
     ai: aiConfigurationSchema,
   })
   .strict();
+
 /**
  * 已校验的运行时配置。`publicUrl` 在此被归一化为 origin（不带路径/查询）；
  * 生产环境额外要求 64 位十六进制 `secret` 与 HTTPS 公开地址。

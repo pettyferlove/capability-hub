@@ -1,6 +1,7 @@
 import { createLogger } from '@capability-hub/logging/server';
 import { createApp } from './app.js';
 import { loadServerConfig } from './config/server-config.js';
+
 /**
  * 启动与优雅停机。`SIGTERM`/`SIGINT`、监听失败、未捕获异常和未处理的 Promise 拒绝都走同一条
  * `stop()`：只执行一次（`stopping` 去重），退出码取出现过的最严重值；先停 worker，再停止接收

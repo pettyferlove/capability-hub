@@ -6,6 +6,7 @@ export const hubShareResponseSchema = z.object({
   installation_url: z.url(),
   prompt: z.string().min(1),
 });
+
 /** {@link hubShareResponseSchema} 的输出侧类型。 */
 export type HubShareResponse = z.infer<typeof hubShareResponseSchema>;
 

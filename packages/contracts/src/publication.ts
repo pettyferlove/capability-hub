@@ -6,6 +6,7 @@ import {
   keywordsSchema,
   uuidSchema,
 } from './primitives.js';
+
 /**
  * 提交发布申请：`base_release_id` 记录提交时刻的当前发布版本，审核前若已变化则拒绝（409）；
  * 申请要求导入已通过扫描，`purpose` 1–2000 字符用于说明用途。内嵌策略与适用范围会一并冻结成摘要。
@@ -23,6 +24,7 @@ export const submitPublicationRequestSchema = z
     base_release_id: uuidSchema.nullable(),
   })
   .strict();
+
 /**
  * 审核决策：`policy_digest` 由客户端原样回传读取申请时拿到的值，不一致说明策略已变（409）；
  * 并发保护另由 `If-Match` 修订号承担（缺失 428、不符 412），并用幂等键防重复发版。
@@ -62,6 +64,7 @@ export interface SourceConsent {
 
 /** {@link submitPublicationRequestSchema} 的输入侧类型。 */
 export type SubmitPublicationRequest = z.input<typeof submitPublicationRequestSchema>;
+
 /** {@link publicationDecisionRequestSchema} 的输入侧类型，`accepted_warnings` 可省略。 */
 export type PublicationDecisionRequest = z.input<typeof publicationDecisionRequestSchema>;
 
@@ -82,5 +85,6 @@ export const publicationSuggestionSchema = z
       value.keywords.length > 0 &&
       (value.category === 'scenario') === value.scenario_ids.length > 0,
   );
+
 /** {@link publicationSuggestionSchema} 的输出侧类型。 */
 export type PublicationSuggestion = z.infer<typeof publicationSuggestionSchema>;

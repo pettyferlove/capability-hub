@@ -29,6 +29,7 @@ import {
   Select,
   SelectValue,
 } from 'react-aria-components';
+
 /**
  * 受控/非受控二选一：传 `value` 即受控（组件不再改自己的状态），只传 `defaultValue` 则由组件内部维护。
  * 值为空串表示「未选择」，渲染时显示占位文案；`<option value="">` 的标签就是占位文案，没有则用「请选择」。
@@ -115,6 +116,7 @@ function renderOption(item: Option, icons?: Readonly<Record<string, IconComponen
     </ListBoxItem>
   );
 }
+
 /** React Aria 维护原生表单字段和验证，选项沿用 option/optgroup 的声明方式。 */
 export function SelectField({
   children,

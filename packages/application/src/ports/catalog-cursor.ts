@@ -7,6 +7,7 @@ export interface CatalogCursor {
   /** 过期时刻，毫秒时间戳，与 `Date.now()` 同基准。 */
   expires: number;
 }
+
 /**
  * 游标编解码端口。客户端可以自由改写游标，因此实现方必须让它不可伪造（签名或等价的
  * 完整性校验），并且 `decode` 对任何非法输入都返回 `undefined` 而不抛错，

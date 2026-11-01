@@ -14,6 +14,7 @@ interface WorkspacePackage {
   manifest: WorkspaceManifest;
   compilerOptions: ts.CompilerOptions;
 }
+
 /**
  * 守卫分层与包边界：显式白名单的依赖方向、`workspace:*` 版本、只能引用已声明的子路径导出、
  * kebab-case 文件名、import 必须位于正文之前、禁止显式 `any`，以及包级与文件级的运行时循环依赖。

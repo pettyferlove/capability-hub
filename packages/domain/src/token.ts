@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 const epoch = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+
 /**
  * 个人访问令牌记录。`id` 存的是令牌明文（32 字节随机数，base64url）的 SHA-256 十六进制摘要，
  * 明文只在签发响应里出现一次、不落库，因此鉴权就是拿摘要查表。

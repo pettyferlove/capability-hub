@@ -3,6 +3,7 @@ import type { Express } from 'express';
 import { operations } from '../../observability/operations.js';
 import type { HttpContext } from '../context.js';
 import { jsonRoute as send } from '../response.js';
+
 /**
  * 管理面。整组挂在 `/api` 前缀下，先经 `security.authenticate` 要求会话或 Bearer，写操作再过 CSRF；
  * 组内权限由服务层按 `principal` 逐次校验：`/api/admin/operations` 需要 `audit:read`，

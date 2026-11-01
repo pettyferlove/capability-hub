@@ -12,6 +12,7 @@ export interface SetupCommand {
   /** 1–80 字符；初始化时同时创建该团队并授予调用者平台 `admin` 与该团队 `maintainer`。 */
   team_name: string;
 }
+
 /**
  * 访问令牌签发输入，来自 HTTP 的 JSON body（`issueTokenRequestSchema` 解析）；
  * 明文令牌只在签发响应里出现一次，存储侧只保留 SHA-256。
@@ -22,6 +23,7 @@ export interface IssueTokenCommand {
   /** 默认 `hub:read`；`hub:contribute` 决定是否可在 MCP 中调用贡献工具。 */
   scope?: 'hub:read' | 'hub:contribute';
 }
+
 /**
  * CLI 登录发起的输入，来自 CLI 的 HTTP 请求体（`cliLoginRequestSchema` 解析）；
  * 挑战值由 CLI 本地生成，服务端不保存 verifier 明文。
@@ -30,6 +32,7 @@ export interface CliLoginCommand {
   /** PKCE 风格的 64 位小写十六进制挑战，轮询时用 verifier 复核。 */
   challenge: string;
 }
+
 /**
  * 网页批准 CLI 登录的输入，来自 HTTP 的 JSON body（`approveCliLoginRequestSchema` 解析）。
  */
@@ -40,6 +43,7 @@ export interface ApproveCliLoginCommand {
    */
   code: string;
 }
+
 /**
  * CLI 轮询取令牌的输入，来自 CLI 的 HTTP 请求体（`pollCliLoginRequestSchema` 解析）；
  * 每次轮询都在事务内消费授权，成功后状态变为 `consumed`，重复轮询 409/`CLI_LOGIN_USED`。

@@ -14,12 +14,16 @@ export const agentClientIds = [
   'vscode',
   'copilot-cli',
 ] as const;
+
 /** 客户端标识校验：只接受 {@link agentClientIds} 中的值。 */
 export const agentClientSchema = z.enum(agentClientIds);
+
 /** {@link agentClientSchema} 的输出侧类型。 */
 export type AgentClient = z.infer<typeof agentClientSchema>;
+
 /** 配置作用范围：`project` 写入当前仓库，`user` 写入当前用户级配置。 */
 export const agentConfigurationScopeSchema = z.enum(['project', 'user']);
+
 /**
  * 接入页面查询串：`client` 必填，`scope` 默认 `project`，`method` 默认 `oauth`，
  * `permission` 默认 `read`（`contribute` 需显式指定才会申请写权限）；严格模式拒绝未知参数。

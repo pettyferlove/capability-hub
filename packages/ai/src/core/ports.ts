@@ -18,6 +18,7 @@ export interface AiRecordQuery {
   descending?: boolean;
   limit: number;
 }
+
 /**
  * 按表读写的通用端口。`insert` 是新增，主键冲突即失败；`put` 是按 `id` 覆盖更新，记录不存在也失败
  * ——两者都不做 upsert，调用方必须先用 `get` 判断存在性。
@@ -29,6 +30,7 @@ export interface AiQueries {
   put<K extends AiTable>(table: K, record: AiRecordMap[K]): Promise<AiRecordMap[K]>;
   remove(table: AiTable, id: string): Promise<void>;
 }
+
 /**
  * AI 持久化端口。`tx` 是唯一的事务边界：传入的 `work` 内所有读写（含嵌套调用 `tx` 的写入层）
  * 都在同一事务里提交或回滚，嵌套 `tx` 复用外层事务而不是另开新事务。
@@ -36,6 +38,7 @@ export interface AiQueries {
 export interface AiStore extends AiQueries {
   tx<T>(work: () => T | Promise<T>): Promise<T>;
 }
+
 /**
  * 一次调度权租约。`dispatch_id` 是作业 ID，`owner` 是持有者标识，`attempt` 每轮递增，
  * `epoch` 与作业记录的 `lease_epoch` 比对——三者（外加 execution_id）任一不符即视为租约失效，
@@ -49,6 +52,7 @@ export interface ExecutionLease {
   epoch: number;
   attempt: number;
 }
+
 /**
  * 队列桥接端口，宿主侧通常由 worker 实现。`enqueue` 返回新的 `dispatch_id` 并把它写回执行记录；
  * `assert` 在租约失效时抛错（通常是 `AI_LEASE_LOST`），是唯一可依赖的抢占检测点；
@@ -61,6 +65,7 @@ export interface AiQueueBridge {
   finish(lease: ExecutionLease, status: 'succeeded' | 'failed'): Promise<void>;
   retry(lease: ExecutionLease, delayMs: number): Promise<void>;
 }
+
 /**
  * 授权端口，agent 与人工共用同一套 RBAC 判定。实现必须在拒绝时抛错（不得返回布尔值），
  * 且同一执行内可被多次调用：`execute` 在每个步骤前后各校验一次，`tool`/`resource` 在每次
@@ -74,6 +79,7 @@ export interface AiAuthorization {
     resource?: string,
   ): Promise<void>;
 }
+
 /**
  * 凭据解析端口。返回值是明文密钥，只能在构造请求头时内联使用，禁止写入日志、事件或执行记录；
  * 引用格式是环境变量式的大写名称，解析失败应抛错而不是返回空串。
@@ -81,6 +87,7 @@ export interface AiAuthorization {
 export interface CredentialResolver {
   resolve(reference: string): Promise<string>;
 }
+
 /**
  * 一次资源快照。`version` 与 `digest` 用于告诉模型这段内容对应哪个不可变版本，
  * 引用时必须原样回填，宿主据此校验引用没有指向更新的内容。
@@ -92,10 +99,12 @@ export interface AiResource {
   title: string;
   text: string;
 }
+
 /** 资源解析端口；`reference` 由模型给出，实现必须做权限与路径校验，并响应 `signal` 取消。 */
 export interface ResourceResolver {
   resolve(ownerId: string, reference: string, signal: AbortSignal): Promise<AiResource>;
 }
+
 /**
  * 遥测端口。`record` 是同步回调，调用方的 try/catch 会吞掉它抛出的异常——遥测故障不得改变
  * 已经落库的执行结果，但也不提供重试；`attributes` 只接受 JSON，不得携带凭据、模型原文或资源正文。

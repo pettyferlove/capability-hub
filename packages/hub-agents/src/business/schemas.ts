@@ -11,6 +11,7 @@ export const businessInput = z
     feedback_id: z.uuid().optional(),
   })
   .strict();
+
 /**
  * 一次性读取的行区间，行号从 1 开始且两端闭合。`end_line >= start_line` 与「必须落在实际读过
  * 的区间内」由执行阶段校验（越界引用会以 `AI_OUTPUT_INVALID` 拒绝），Schema 本身只限制形态。
@@ -23,6 +24,7 @@ export const evidenceSchema = z
     end_line: z.number().int().positive(),
   })
   .strict();
+
 /**
  * 发布申请草稿建议。`category` 为 `scenario` 当且仅当 `scenario_ids` 非空，且每个 ID 都必须
  * 出现在本次 `publication_scenarios` 工具的返回里；不满足即拒绝，不做自动纠正。
@@ -67,6 +69,7 @@ export const assessmentSchema = z
     suggested_resolution: z.string().min(1).max(1800),
   })
   .strict();
+
 /**
  * 人工确认回执。只有「已采纳 + 目标反馈存在 + 当前主体具备维护权限」三者同时成立时
  * `apply_feedback` 才会写入处理建议，否则该步骤以 `AI_CONFLICT` 失败。
@@ -81,6 +84,7 @@ export const businessDecision = z
       .describe('将反馈标记为处理中并写入建议（需要维护权限）'),
   })
   .strict();
+
 /**
  * 调查阶段传给人工确认步骤的中间结果，必须先落盘为 artifact 才能进入确认，否则恢复时无语义
  * 依据。`content_digest`/`feedback_revision` 是确认阶段的乐观锁基准：反馈在此期间被改动即拒绝写入。
@@ -97,6 +101,7 @@ export const researchSchema = z
     inspected: z.array(evidenceSchema),
   })
   .strict();
+
 /** 最终结果：调查结果 + 人工决定，外加确认阶段的成果 artifact 引用。 */
 export const businessResult = researchSchema
   .extend({

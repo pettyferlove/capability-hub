@@ -5,6 +5,7 @@ import {
   type BrowserLogBatch,
   type BrowserLogEntry,
 } from './events.js';
+
 /**
  * 浏览器日志入口配置。`send` 缺省时按 `POST {endpoint}` 发送（默认 `/telemetry/browser`，
  * 5 秒超时、`credentials: 'omit'` 不带 cookie、不附带任何请求头凭据）。

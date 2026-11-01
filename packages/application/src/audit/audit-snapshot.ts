@@ -1,6 +1,7 @@
 import { auditDefinitions } from '@capability-hub/domain/audit';
 import type { AuditActorSnapshot, AuditSubjectSnapshot } from '@capability-hub/domain/audit';
 import type { RecordStore } from '../ports/index.js';
+
 /** 审计快照只提取明确的展示字段，排除凭据与内部记录正文。 */
 export async function resolveAuditActor(
   store: RecordStore,
@@ -14,6 +15,7 @@ export async function resolveAuditActor(
     ? { kind: 'user', name: user.display_name, username: user.username }
     : { kind: 'unknown', name: '未识别的操作者' };
 }
+
 /**
  * 按动作定义解析审计对象，供 `RecordStore.audit` 在写入审计时一并落库主体快照。
  *

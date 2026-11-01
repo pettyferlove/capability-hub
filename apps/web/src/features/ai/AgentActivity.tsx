@@ -32,6 +32,7 @@ function roleInfo(id: string) {
     };
   return { ...role, ...agentLabels[key], tone: agentToneStyles[key] };
 }
+
 /**
  * 「多 Agent 协作」的角色板，展示规划、表达、风险三个角色的实时进度；其它操作类型返回 `null`。
  */
@@ -81,6 +82,7 @@ export function AgentRoster({ view }: { view: AiExecutionViewResponse }) {
     </section>
   );
 }
+
 /**
  * 单个角色的输出卡片：角色由 `message_id` 冒号前的段位决定，未登记的角色按助手样式兜底；
  * 研判报告不展示正文，只用 `reportReady` 指路「成果」，其余角色在生成中且面板可见时逐字显示。

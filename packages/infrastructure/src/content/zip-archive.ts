@@ -7,6 +7,7 @@ import yauzl from 'yauzl';
 import yazl from 'yazl';
 import { crc32 } from 'node:zlib';
 const MiB = 1024 * 1024;
+
 /**
  * 解压上传的 ZIP 为内存文件列表，不写磁盘、不解压嵌套归档。
  *
@@ -142,6 +143,7 @@ export async function unzip(bytes: Buffer): Promise<ContentFile[]> {
     ),
   );
 }
+
 /**
  * 把「单层根目录包裹」的 Skill 包剥成以 `SKILL.md` 为顶层的形态（GitHub 下载的 ZIP 常见），
  * 并保证整包只有一个 Skill。root 只有一层且恰好一个 `SKILL.md` 时才改写路径，
@@ -161,6 +163,7 @@ export function normalizeSkill(files: ContentFile[]) {
     fail(422, 'SKILL_ROOT', '不接受嵌套 Skill');
   return files;
 }
+
 /**
  * 把文件列表打包为 ZIP 字节流，全部在内存中完成。
  *

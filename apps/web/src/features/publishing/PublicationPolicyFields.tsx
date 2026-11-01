@@ -8,6 +8,7 @@ import { useQuery } from '../../shared/api/use-query.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { Message } from '../../shared/components/Message.js';
+
 /**
  * 发布策略字段：受众是 `public`、`organization`、团队与成员 id 的混选，未知 id 用占位名保留展示而不是
  * 丢弃，避免静默改动既有配置；切换分类会清空已选场景。场景列表来自 `/api/scenarios`。

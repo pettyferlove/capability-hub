@@ -8,6 +8,7 @@ import { fail } from '@capability-hub/domain/errors';
 import { randomUUID } from 'node:crypto';
 import type { RecordStore } from '../ports/index.js';
 const now = () => new Date().toISOString();
+
 /** 使用租约代次约束结果提交，过期执行者不能写回结果。 */
 export class JobQueue {
   constructor(private readonly store: RecordStore) {}

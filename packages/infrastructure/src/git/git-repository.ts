@@ -17,6 +17,7 @@ import type {
 } from '@capability-hub/application/ports';
 import { isRestrictedGitAddress } from './network-policy.js';
 import { sshAskpass } from '../security/ssh-askpass.js';
+
 /** {@link GitRepository} 端口的运行配置；域名与私网例外均由管理员配置，不在请求里传入。 */
 export interface GitRepositoryOptions {
   /** 拉取时使用的临时目录父路径；`init`/`fetch` 的 `HOME` 也指向它，不读系统或全局 git 配置。 */
@@ -27,6 +28,7 @@ export interface GitRepositoryOptions {
   privateGitHosts: readonly string[];
 }
 const shellQuote = (v: string) => "'" + v.replaceAll("'", "'\\''") + "'";
+
 /**
  * `GitRepository` 端口的实现：用受控参数调用系统 `/usr/bin/git` 生成单提交快照。
  *

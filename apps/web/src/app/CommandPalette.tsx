@@ -28,6 +28,7 @@ interface PaletteLink {
   href: string;
   icon: typeof Search;
 }
+
 /**
  * 全局命令面板：空关键词时只列静态快捷入口（同样按登录状态裁剪），有输入时改搜资产。
  * 搜索去抖 200ms，且每次关键词变化都 abort 上一个请求；结果里带 `query`，

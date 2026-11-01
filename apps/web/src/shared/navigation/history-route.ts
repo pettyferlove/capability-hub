@@ -71,6 +71,7 @@ export function loginReturnPath(query: string): string {
 
 /** 审核列表的筛选取值；必须与 `PublicationRequestResponse['state']` 的联合保持一致，任一侧新增状态都要同步。 */
 export const publicationStates = ['pending', 'approved', 'rejected', 'stale', 'cancelled'] as const;
+
 /** `state` 查询参数的合法取值；非法值不会报错，而是在 {@link reviewLocation} 里退回 `pending`。 */
 export type PublicationStateFilter = (typeof publicationStates)[number];
 

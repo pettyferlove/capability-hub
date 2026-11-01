@@ -1,5 +1,6 @@
 import type { Applicability } from '@capability-hub/domain/content';
 import type { Policy } from '@capability-hub/domain/policy';
+
 /**
  * 提交发布的输入，来自 HTTP 的 JSON body（`submitPublicationRequestSchema` 解析）；
  * 服务端会把它连同来源同意、扫描证据一起冻结成规范 JSON，之后的审核只针对该快照。
@@ -20,6 +21,7 @@ export interface SubmitPublicationCommand extends Policy {
    */
   base_release_id: string | null;
 }
+
 /**
  * 审核决策的输入，来自 HTTP 的 JSON body（`publicationDecisionRequestSchema` 解析）；
  * 乐观并发由 `If-Match` 另行提供，不在本对象里。
@@ -37,6 +39,7 @@ export interface PublicationDecisionCommand {
    */
   accepted_warnings: { finding_id: string; reason: string }[];
 }
+
 /**
  * 通用资源提名的输入，来自 HTTP 的 JSON body；调用者需能读取该发布，
  * 候选固定为 `category: 'general'` 且无场景，此处不允许覆盖。

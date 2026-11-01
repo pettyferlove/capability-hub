@@ -13,6 +13,7 @@ export async function filterAsync<T>(
   for (const [index, item] of items.entries()) if (await predicate(item, index)) result.push(item);
   return result;
 }
+
 /**
  * 返回第一个满足条件的元素，命中即短路，后续元素不会再被检查（谓词的副作用也到此为止）。
  *
@@ -26,6 +27,7 @@ export async function findAsync<T>(
   for (const [index, item] of items.entries()) if (await predicate(item, index)) return item;
   return undefined;
 }
+
 /**
  * 是否存在满足条件的元素，命中即短路返回 `true`。
  *
@@ -39,6 +41,7 @@ export async function someAsync<T>(
   for (const [index, item] of items.entries()) if (await predicate(item, index)) return true;
   return false;
 }
+
 /**
  * 是否全部满足条件，遇到第一个不满足即短路返回 `false`。
  *

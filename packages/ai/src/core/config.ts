@@ -39,8 +39,10 @@ export const modelProfileSchema = z
         message: '模型地址必须为受信 API 前缀，HTTP 需显式允许，不接受凭据、查询或操作路径',
       });
   });
+
 /** 解析后的模型配置；该值会被 {@link digest} 固化进执行的 `model_digest`，改动即视为另一套配置。 */
 export type ModelProfile = z.infer<typeof modelProfileSchema>;
+
 /**
  * 单个 MCP 端点配置。`url` 同样只接受不带凭据、查询与片段的 HTTP(S) 地址，明文需 `allow_http`；
  * `read_only_tools` 是显式白名单（1–30 项），只有列出的工具会被暴露给模型——不在名单里的工具
@@ -73,8 +75,10 @@ export const mcpEndpointSchema = z
         message: 'MCP 需要显式配置的 HTTP(S) 地址，不接受内嵌凭据或查询参数',
       });
   });
+
 /** 解析后的 MCP 端点配置；`read_only_tools` 的取值决定该端点上可用的工具集合。 */
 export type McpEndpoint = z.infer<typeof mcpEndpointSchema>;
+
 /**
  * 运行时配额与端点清单。所有上限都是硬上限，超出即拒绝而不是截断：`max_requests` 1–500（默认 96，
  * 单次执行的 provider 调用数）、`max_tools` 1–1000（默认 200，单次执行的工具调用数）、
@@ -108,8 +112,10 @@ export const aiConfigurationSchema = z
     if (config.profiles.length && !config.profiles.some((p) => p.id === config.default_profile))
       ctx.addIssue({ code: 'custom', message: '默认模型配置不存在' });
   });
+
 /** 解析后的运行时配置；构造 `AiRuntime` 时会再次解析，因此本类型只表示已通过校验的取值。 */
 export type AiConfiguration = z.infer<typeof aiConfigurationSchema>;
+
 /**
  * 规范化 JSON 后取小写十六进制 SHA-256：对象键排序、数组顺序保留，因此同一语义内容在不同进程、
  * 不同键序下得到相同摘要。用于 `definition_digest`/`model_digest`/`request_digest` 等恢复期比对，
@@ -131,6 +137,7 @@ export function digest(value: unknown): string {
   };
   return createHash('sha256').update(canonical(value)).digest('hex');
 }
+
 /**
  * 按 ID 取模型配置；缺省或未知 ID 一律抛 `AiError('AI_CONFIGURATION')`，不回落到默认端点，
  * 避免配置漂移被静默掩盖。

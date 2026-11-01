@@ -8,6 +8,7 @@ type Session = Pick<
   SqliteRemoteDatabase<typeof sqliteSchema>,
   'select' | 'insert' | 'update' | 'delete' | 'run'
 >;
+
 /**
  * `RecordQueries` 的 SQLite 实现：读写只经过 `id`/`data`，约束与生成列全部交给 Schema。
  *

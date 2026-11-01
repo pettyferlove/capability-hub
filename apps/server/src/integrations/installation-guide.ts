@@ -1,5 +1,6 @@
 import { publicResourcePath } from '@capability-hub/contracts';
 import type { HubServices } from '../bootstrap/hub-services.js';
+
 /** 以普通 HTTP 文档交付固定版本安装说明。 */
 export async function createInstallationGuide(hub: HubServices, id: string): Promise<string> {
   const version = await hub.assetAccess.requireReadableVersion(null, id);

@@ -36,6 +36,7 @@ import { dateLabel } from '../../shared/format/labels.js';
 import { SessionList } from './SessionList.js';
 import { ConnectedAgents } from './ConnectedAgents.js';
 import { AccessTokenForm } from './AccessTokenForm.js';
+
 /**
  * 账号安全页：聚合已授权 Agent、登录会话与访问令牌三个来源（`/api/connections`、
  * `/api/me/sessions`、`/api/tokens`）。改密成功后派发 `hub:unauthenticated` 使全局回到登录态，

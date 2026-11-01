@@ -15,6 +15,7 @@ export interface McpEntryDraft {
   tokenVariable: string;
   environment: string;
 }
+
 /** 初始值默认走 `url` 模式，Token 变量名预填 `MCP_TOKEN`，省去带鉴权远程入口的必填提醒。 */
 export const emptyMcpEntry: McpEntryDraft = {
   mode: 'url',

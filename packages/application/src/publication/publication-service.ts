@@ -24,6 +24,7 @@ const rulesDigest = digest(
     review_policy: 'non-self-platform-public-general-expanded-scenario-team-v2',
   }),
 );
+
 /** 提交时冻结授权和内容证据；独立审核通过后，发布记录与资产指针在同一事务提交。 */
 export class PublicationService {
   constructor(

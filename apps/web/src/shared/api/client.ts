@@ -2,10 +2,12 @@ import { reportError } from '../logging.js';
 import { readPreviewText } from './preview.js';
 export { PreviewUnavailable } from './preview.js';
 let csrfToken = '';
+
 /** 注入 CSRF 令牌来源：由 `use-session` 在登录/刷新会话成功后写入，退出或失败时清空。 */
 export function setCsrf(value: string): void {
   csrfToken = value;
 }
+
 /**
  * 非 2xx 响应的统一形状，`message` 可直接展示给用户，`status`/`code`/`requestId` 供报障与分支判断。
  * 401 的副作用已在 {@link api} 里处理完（派发 `hub:unauthenticated`），调用方通常只需展示 `message`。
@@ -47,6 +49,7 @@ async function responseError(response: Response, path: string): Promise<ApiError
   });
   return new ApiError(response.status, code, message, requestId);
 }
+
 /**
  * JSON 传输边界；调用方显式使用共享响应类型。
  *
@@ -78,6 +81,7 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
+
 /**
  * 写操作的便捷封装：`revision` 会变成带引号的 `If-Match`，服务端据此做乐观并发校验，
  * 版本已变时返回 412 并抛 {@link ApiError}，调用方应提示刷新而不是静默重试。
@@ -95,6 +99,7 @@ export function mutate<T = void>(
     headers: revision !== undefined ? { 'If-Match': `"${revision}"` } : undefined,
   });
 }
+
 /**
  * 读取归档内单个文件的预览文本。`management` 为真时读候选版本（需登录且通过候选访问授权，
  * 服务端会写管理读取审计），否则只读已发布版本；同一 `path` 两条路径的可见性不同，不要混用。
@@ -113,6 +118,7 @@ export async function fileText(
   if (!response.ok) throw await responseError(response, url);
   return readPreviewText(response);
 }
+
 /** SSE 帧被解析后的形状；`data` 已按 JSON 解析，解析失败会中断整条流而不是跳过该帧。 */
 export interface ServerEvent {
   /** 帧的 `event:` 字段，缺省为 `message`。 */
@@ -121,6 +127,7 @@ export interface ServerEvent {
   id: string;
   data: unknown;
 }
+
 /**
  * 订阅 SSE：连接前带上 `Last-Event-ID` 续传，收到 `data:` 才回调（心跳与注释帧被忽略）。
  * 单条流累计缓冲超过 8MB 抛 502/`STREAM_LIMIT`，防止服务端异常输出撑爆内存。

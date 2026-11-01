@@ -31,6 +31,7 @@ export async function savePrivateJson(path: string, value: unknown): Promise<voi
     await rm(temporary, { force: true });
   }
 }
+
 /**
  * 用 `O_NOFOLLOW | O_NONBLOCK` 打开，拒绝链接、设备等非普通文件；要求组/其他位无权限
  * 且不超过 16 KiB，避免读到被替换或被恶意撑大的文件。

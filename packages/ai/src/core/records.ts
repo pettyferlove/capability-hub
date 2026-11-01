@@ -5,6 +5,7 @@ import { z } from 'zod';
  * 恢复时也不需要再猜测类型。
  */
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+
 /** `Json` 的运行时校验器；边界 DTO 一律经它收敛，非 JSON 值直接失败而不是被静默丢弃。 */
 export const jsonSchema: z.ZodType<Json> = z.json();
 const id = z.string().min(1).max(200);
@@ -19,6 +20,7 @@ const base = {
   created_at: date,
   updated_at: date,
 };
+
 /**
  * 执行状态机。`waiting_input` 是唯一可恢复的暂停态（等待人工交互，且仍受 `deadline` 约束）；
  * 进入 {@link terminalStatuses} 后不再接受任何写入或回答。
@@ -32,8 +34,10 @@ export const executionStatusSchema = z.enum([
   'cancelled',
   'timed_out',
 ]);
+
 /** 终态集合；一旦命中，调度、回答与取消都必须改判为冲突而不是覆盖结果。 */
 export const terminalStatuses = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
+
 /**
  * 执行的可变载荷。`revision` 是乐观锁基准（每次写入递增，调用方带旧值会得到
  * `AI_REVISION_CONFLICT`）；`dispatch_id` 与队列租约一一对应，为 null 表示尚未派发；
@@ -87,10 +91,12 @@ export const executionPayloadSchema = z
       .strict(),
   })
   .strict();
+
 /** 执行记录：`status` 与 `payload` 必须一起更新，单独改状态会绕过修订号与租约校验。 */
 export const executionRecordSchema = z
   .object({ ...base, status: executionStatusSchema, payload: executionPayloadSchema })
   .strict();
+
 /** 解析后（而非自定义断言）的执行记录；任何写入都会先经 `parseAiRecord` 校验。 */
 export type ExecutionRecord = z.infer<typeof executionRecordSchema>;
 
@@ -122,6 +128,7 @@ export const eventTypes = [
   'usage.updated',
   'artifact.created',
 ] as const;
+
 /**
  * 单条事件。`seq` 在同一执行内从 1 单调递增且不能回退，消费端据此判断是否丢帧；
  * `audience` 是可见受众标记，当前运行时统一写 `operator`；`occurred_at` 是产生时间而非落库时间，
@@ -144,10 +151,13 @@ export const eventRecordSchema = z
       .strict(),
   })
   .strict();
+
 /** 事件类型名，取值必须来自 {@link eventTypes}；拼写错误由类型检查拦下，而不是落库后才失败。 */
 export type AiEventType = (typeof eventTypes)[number];
+
 /** 解析后的事件记录；`payload.data` 只允许 JSON，正文与凭据不得写进这里。 */
 export type AiEvent = z.infer<typeof eventRecordSchema>;
+
 /**
  * 原生工作流快照。必须与 `sdk_version`（当前固定 `1.81.0`）一起保存：SDK 升级后旧快照不能直接
  * 反序列化，只能按版本判断并放弃恢复。`snapshot_revision` 是快照自身的版本，`projected_revision`
@@ -169,6 +179,7 @@ export const snapshotRecordSchema = z
       .strict(),
   })
   .strict();
+
 /**
  * 一次人工交互。`pending → answered → applied` 是唯一合法推进顺序，`cancelled` 只能从事前两种进入。
  * `native_path` 是原生工作流里的暂停位置（配合 `occurrence` 区分同位置多次暂停），`request_digest`
@@ -196,6 +207,7 @@ export const interactionRecordSchema = z
       .strict(),
   })
   .strict();
+
 /**
  * 副作用回执。以 `(execution, key)` 为幂等键、`arguments_digest` 校验参数未变：命中已提交的回执
  * 直接复用结果，参数不同或状态为 `unknown` 一律视为恢复不确定。`unknown` 表示崩溃前副作用已发起
@@ -214,6 +226,7 @@ export const effectRecordSchema = z
       .strict(),
   })
   .strict();
+
 /**
  * 会话记忆（`ai_threads`/`ai_messages` 共用）。内容整体放在 `payload.value` 里由 SDK 决定形状，
  * 作用域限定在单次执行：读取时按 `execution_id` + `owner_id` 校验，跨执行访问会被拒绝。
@@ -221,6 +234,7 @@ export const effectRecordSchema = z
 export const memoryRecordSchema = z
   .object({ ...base, payload: z.object({ value: jsonSchema }).strict() })
   .strict();
+
 /**
  * 单次 provider 请求的用量与结果。`pending` 表示已预留但未结算；进程崩溃后启动阶段会把残留的
  * `pending` 一律改判为 `unknown` 并计入 `unknown_requests`——网络请求可能已经发生，不能假定未计费。
@@ -241,6 +255,7 @@ export const callRecordSchema = z
       .strict(),
   })
   .strict();
+
 /** 执行内的时间片段，`parent_id` 为 null 表示根节点；`attributes` 只放 JSON，不得写入正文或凭据。 */
 export const traceRecordSchema = z
   .object({
@@ -255,6 +270,7 @@ export const traceRecordSchema = z
       .strict(),
   })
   .strict();
+
 /** 执行产出的成果；单个成果上限 1 MB（超出即 `AI_BUDGET_EXCEEDED`），`digest` 用于校验内容未被替换。 */
 export const artifactRecordSchema = z
   .object({
@@ -262,6 +278,7 @@ export const artifactRecordSchema = z
     payload: z.object({ name: id, media_type: id, content: jsonSchema, digest: id }).strict(),
   })
   .strict();
+
 /** 表名到 Schema 的映射，是 `AiTable`/`AiRecordMap` 的唯一事实来源；新增表必须加在这里。 */
 export const aiRecordSchemas = {
   ai_executions: executionRecordSchema,
@@ -275,12 +292,16 @@ export const aiRecordSchemas = {
   ai_traces: traceRecordSchema,
   ai_artifacts: artifactRecordSchema,
 };
+
 /** AI 侧可访问的表名，与物理表名一致，不做映射。 */
 export type AiTable = keyof typeof aiRecordSchemas;
+
 /** 表名 → 记录类型的映射，供 `AiQueries` 的泛型约束使用。 */
 export type AiRecordMap = { [K in AiTable]: z.infer<(typeof aiRecordSchemas)[K]> };
+
 /** 表名清单，顺序与映射声明顺序一致；用于遍历建表或清理，不保证稳定不变。 */
 export const aiTables = Object.keys(aiRecordSchemas) as AiTable[];
+
 /**
  * 按表解析并校验记录。用于读路径与写入前收敛：未知表、缺失字段或多余字段都会抛出 ZodError，
  * 因此不接受未经校验的外部数据直接落库。
@@ -288,6 +309,7 @@ export const aiTables = Object.keys(aiRecordSchemas) as AiTable[];
 export function parseAiRecord<K extends AiTable>(table: K, value: unknown): AiRecordMap[K] {
   return aiRecordSchemas[table].parse(value) as AiRecordMap[K];
 }
+
 /** 断言值为纯 JSON；`undefined`、`Date`、`bigint` 等会抛错而不是被静默转换。 */
 export function asJson(value: unknown): Json {
   return jsonSchema.parse(value);

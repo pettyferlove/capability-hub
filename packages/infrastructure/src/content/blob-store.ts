@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { constants, lstatSync, mkdirSync } from 'node:fs';
 import { link, open, readdir, lstat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+
 /** 内容按摘要寻址且不可覆盖；硬链接保证并发写入时原子安装。 */
 export class BlobStore implements BlobStorage {
   readonly kind = 'filesystem';

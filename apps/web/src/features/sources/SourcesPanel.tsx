@@ -54,6 +54,7 @@ import { CardGridSkeleton, DetailSkeleton } from '../../shared/components/Skelet
 import { useHub } from '../../shared/context/HubContext.js';
 import { dateLabel, stateLabel } from '../../shared/format/labels.js';
 import { IntakeDetail } from '../publishing/IntakeDetail.js';
+
 /**
  * 同步任务处于 `queued`/`running` 时每 2 秒轮询一次，进入终态才停止并重载列表；
  * 卸载或切换任务时 abort 请求并清掉定时器，避免旧任务的响应覆盖新状态。

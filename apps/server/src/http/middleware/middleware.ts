@@ -5,6 +5,7 @@ import express from 'express';
 import type { LogContext } from '@capability-hub/logging/server';
 import { type RequestMetrics } from '../../observability/operations.js';
 import type { ServerConfig } from '../../config/server-config.js';
+
 /** 顺序影响安全边界：先记录请求并校验来源，再解析有大小限制的 JSON。 */
 export function configureHttp(
   app: Express,

@@ -8,8 +8,10 @@ export const browserEvents = [
   'react.error',
   'http.failed',
 ] as const;
+
 /** 浏览器上报的事件名，取值来自 {@link browserEvents}；不在其中的事件会被服务端拒绝。 */
 export type BrowserEvent = (typeof browserEvents)[number];
+
 /**
  * 一条浏览器诊断记录。字段全部是结构化枚举或受限形态，正文类内容不再被二次清洗，
  * 因此进入队列前必须已完成脱敏。
@@ -30,6 +32,7 @@ export interface BrowserLogEntry {
   /** 只保留错误类型与调用栈，不含 message。 */
   error?: { type: string; stack?: string };
 }
+
 /**
  * 一次上报批次。同一 `session_id` 的条目才会合并，发送端把单批控制在 30 KiB、10 条以内，
  * 服务端不应假定批次完整覆盖会话。
@@ -41,6 +44,7 @@ export interface BrowserLogBatch {
 
 const sensitiveKey =
   /password|passwd|secret|token|authorization|cookie|credential|passphrase|encrypted|private.?key|setup.?key|api.?key|access.?key|code.?verifier/i;
+
 /** 诊断字符串中的 URL 也移除账号、查询参数和片段。 */
 export function safeText(value: string, limit = 2000): string {
   return value
@@ -59,6 +63,7 @@ export function safeText(value: string, limit = 2000): string {
     )
     .slice(0, limit);
 }
+
 /** 递归保留的错误视图；`cause` 最多下钻 2 层，更深的链路被丢弃以免日志膨胀。 */
 export interface SafeError {
   type: string;
@@ -66,6 +71,7 @@ export interface SafeError {
   stack?: string;
   cause?: SafeError;
 }
+
 /**
  * 把任意异常收敛成可落盘视图：丢弃 `message`（可能含 SQL、输入或凭据），只留名称、错误码
  * 与调用栈。`code` 截断到 80 字符，`stack` 只保留 `at` 行、最多 12 行、4000 字符。
@@ -91,6 +97,7 @@ export function safeError(error: unknown, depth = 0): SafeError {
     ),
   };
 }
+
 /**
  * 递归清洗任意值后落盘：命中敏感键名（password/token/cookie/credential 等）的字段整值替换为
  * `[REDACTED]`，字符串走 {@link safeText}。边界为 8 层深度、100 个数组元素、100 个对象字段；

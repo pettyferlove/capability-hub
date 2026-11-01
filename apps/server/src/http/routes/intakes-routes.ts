@@ -11,6 +11,7 @@ import { z } from 'zod';
 import type { HttpContext } from '../context.js';
 import { idempotencyKey as key, jsonRoute as send } from '../response.js';
 import { streamIntakeProgress } from './intake-events.js';
+
 /**
  * 上传与运营视图。`POST /api/intakes` 只接受一个 multipart 文件：multer 在内存中限制单文件
  * ≤20 MiB、字段数 1、字段 ≤16 KiB、part 数 2，`metadata` 再按契约 schema 校验；该接口与

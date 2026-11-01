@@ -1,6 +1,7 @@
 import type { AiExecutionViewResponse, AiInteractionResponse } from '@capability-hub/contracts';
 
 type MessageBlock = AiExecutionViewResponse['execution']['message_blocks'][number];
+
 /**
  * 单次工具调用的聚合结果，由 `activityItems` 从 `tool.*` 事件合并出，不直接来自接口。
  */
@@ -18,6 +19,7 @@ export interface ToolActivity {
   attempt: number;
   continuation: number;
 }
+
 /**
  * 活动流的一行，统一按 `seq` 升序；同序号时保持消息、工具、交互的拼接顺序。
  */

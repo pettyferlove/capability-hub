@@ -8,6 +8,7 @@ export function externalVariable(name: string): string {
   if (!value) throw new Error(`缺少隔离测试环境变量 ${name}，请运行 pnpm test:external`);
   return value;
 }
+
 /**
  * 在共享 PostgreSQL 上建一次性数据库，返回连接串与 `close()`（关连接池并删库）。
  * 用随机库名保证并行用例互不可见；用毕必须 `close()`，否则会在服务器上留垃圾库。
@@ -29,6 +30,7 @@ export async function externalDatabase() {
     },
   };
 }
+
 /**
  * 建一次性 MinIO bucket，分别返回管理凭据与应用凭据，模拟真实部署里两者的权限差异。
  * `close()` 先清空对象再删 bucket —— 非空 bucket 无法删除。

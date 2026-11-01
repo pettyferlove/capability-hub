@@ -24,5 +24,6 @@ export const assetRecommendationRequestSchema = z
 
 /** {@link nominateAssetRequestSchema} 的输入侧类型，即解析前的原始请求体。 */
 export type NominateAssetRequest = z.input<typeof nominateAssetRequestSchema>;
+
 /** {@link assetRecommendationRequestSchema} 的输入侧类型。 */
 export type AssetRecommendationRequest = z.input<typeof assetRecommendationRequestSchema>;

@@ -11,6 +11,7 @@ import { safeDirectory } from './filesystem.js';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, readlink } from 'node:fs/promises';
+
 /**
  * 清单校验：路径必须已排序且无大小写/规范化碰撞、不能同时是文件与目录，单文件 ≤10 MiB、
  * 总计 ≤100 MiB；`skill` 必须恰有一个非执行的 SKILL.md，`mcp` 只能是单个非执行的 server.json。
@@ -106,6 +107,7 @@ async function localDiff(path: string) {
   for (const f of files) if (!expected.some((e) => e.path === f)) diff.push('新增 ' + f);
   return diff;
 }
+
 /**
  * 把归档原子地装进 `to/<slug>`，全程只写显式给出的目标目录，不执行其中任何内容。
  * 前置校验：slug 合法、清单合规、清单与归档各自的摘要匹配、逐文件比对大小与 SHA-256，

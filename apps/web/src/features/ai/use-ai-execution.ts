@@ -22,6 +22,7 @@ const states: Record<string, AiExecutionViewResponse['execution']['status']> = {
   'execution.timed_out': 'timed_out',
   'execution.retry_scheduled': 'queued',
 };
+
 /**
  * 把单个 SSE 事件合并进执行视图，纯函数、不修改入参（`message_blocks` 逐个浅拷贝）。
  *
@@ -76,6 +77,7 @@ export function applyAiEvent(
     watermark: event.seq,
   };
 }
+
 /**
  * 订阅一次执行的实时视图，`refresh` 变化即重连；`id` 为空时不做任何请求。
  *

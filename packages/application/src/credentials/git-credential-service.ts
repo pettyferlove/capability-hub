@@ -45,6 +45,7 @@ const base = z
     expires_at: z.iso.datetime().nullable().default(null),
   })
   .strict();
+
 /**
  * 维护用户自备的 Git 凭据：加密落库、按主机与传输方式校验、同步时解密使用。
  *

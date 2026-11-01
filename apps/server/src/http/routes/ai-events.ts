@@ -8,6 +8,7 @@ import type { HttpContext } from '../context.js';
 import { executionView } from './ai-views.js';
 
 const connections = new WeakMap<HttpContext['hub'], Map<string, number>>();
+
 /**
  * 执行事件 SSE。同一 principal 最多同时打开 4 条连接，超出 429 `AI_STREAM_LIMIT`；
  * 单条连接最多存活 300 秒后由客户端按 `retry: 1500` 重连，重连时用 `Last-Event-ID`

@@ -37,6 +37,7 @@ export interface AgentInvocation {
   memory?: boolean;
   max_steps?: number;
 }
+
 /**
  * 注册给模型的工具定义。`id` 同时是审计与授权资源名（`authorize('tool', id)`），必须在执行内唯一；
  * `display` 只用于生成人类可读的进度文案，输出会被清洗为可打印字符并截断到 200 字符；
@@ -50,6 +51,7 @@ export interface ToolDefinition<I extends z.ZodType, O extends z.ZodType> {
   display?: (input: z.infer<I>) => string;
   execute(input: z.infer<I>, signal: AbortSignal): Promise<z.infer<O>>;
 }
+
 /**
  * 运行时外部依赖。授权、凭据与资源解析都必须由宿主提供：AI 包自身不含身份系统，
  * 也不直接访问存储凭据。`telemetry` 可选，缺失时静默跳过。

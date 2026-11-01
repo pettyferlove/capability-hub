@@ -22,6 +22,7 @@ const oauthMessages: Record<string, string> = {
   invalid_request: '授权请求格式无效',
   temporarily_unavailable: '授权服务繁忙，请稍后重试',
 };
+
 /**
  * CLI 侧最小的 Hub 客户端：不跟随重定向（`redirect: 'error'`），每次请求 30 秒超时，
  * 非 2xx 一律转成 {@link HubApiError}，错误体按固定上限读取并清洗控制字符后才写入终端，

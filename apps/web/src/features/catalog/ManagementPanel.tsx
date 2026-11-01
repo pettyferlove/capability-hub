@@ -58,6 +58,7 @@ import { Submit } from '../../shared/components/Submit.js';
 import { assetHref, pageHref } from '../../shared/navigation/history-route.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { stateLabel } from '../../shared/format/labels.js';
+
 /** 维护面板正文：先按名称与状态过滤列表，再为选中的资产打开控制抽屉。 */
 export default function ManagementPanel() {
   const { refresh, reload } = useHub();

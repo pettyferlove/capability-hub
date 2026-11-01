@@ -37,6 +37,7 @@ export class AiError extends Error {
     this.name = 'AiError';
   }
 }
+
 /**
  * 把任意异常收敛为 {@link AiError}：Mastra 的结构化输出类错误统一改成 `AI_OUTPUT_INVALID`
  * （原文可能含模型输出，消息固定为中文说明），其它异常一律降级为 `AI_INTERNAL`，避免内部堆栈

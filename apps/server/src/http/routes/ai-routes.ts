@@ -20,6 +20,7 @@ function revision(request: Pick<Request, 'get'>) {
     fail(412, 'REVISION_CONFLICT', '修订号无效');
   return Number(match[1]);
 }
+
 /**
  * AI 工作台。整组先由 `/api/ai` 前置中间件要求登录会话（无会话 401 `UNAUTHENTICATED`），
  * 每条路由再用 `hub.ai.principal` 结合执行记录复核归属，越权按 `AI_FORBIDDEN`/`AI_NOT_FOUND` 处理，

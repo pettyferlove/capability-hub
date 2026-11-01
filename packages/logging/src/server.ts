@@ -36,6 +36,7 @@ function responseFields(value: unknown) {
   const res = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
   return { status: typeof res.statusCode === 'number' ? res.statusCode : undefined };
 }
+
 /**
  * 创建已脱敏的服务端日志器：字符串、对象与异常的序列化、formatter、`child` 与 `setBindings`
  * 的绑定都在写入前经过 {@link safeText}/{@link sanitize}，避免子日志绕过脱敏；敏感键另由 pino

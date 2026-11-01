@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ScanResponse } from './scan-messages.js';
+
 /**
  * 在隔离子进程里执行内容审查与打包，宿主进程不直接解析不可信上传内容。
  *

@@ -12,12 +12,16 @@ export const themePalettes = [
 
 /** `{@link themePalettes}` 里存在的配色 id；持久化数据必须经 {@link isThemePalette} 收窄后才能当它用。 */
 export type ThemePalette = (typeof themePalettes)[number]['id'];
+
 /** `system` 不落 `data-theme`，完全交给 `prefers-color-scheme`，因此会随后续系统切换变化。 */
 export type ThemeMode = 'light' | 'dark' | 'system';
+
 /** 外观偏好的完整快照；每个字段都可能来自不可信的存储值，读取时逐字段回退。 */
 export type Appearance = { palette: ThemePalette; mode: ThemeMode };
+
 /** localStorage 键名，线上已存在的值必须持续可解析，不能随意改名。 */
 export const appearanceStorageKey = 'capability-hub:appearance';
+
 /** 缺字段或字段非法时的兜底值；石墨 + 跟随系统。 */
 export const defaultAppearance: Appearance = { palette: 'graphite', mode: 'system' };
 
@@ -25,6 +29,7 @@ export const defaultAppearance: Appearance = { palette: 'graphite', mode: 'syste
 export function isThemePalette(value: unknown): value is ThemePalette {
   return themePalettes.some((palette) => palette.id === value);
 }
+
 /** 同上，用于 `unknown` → {@link ThemeMode} 的收窄。 */
 export function isThemeMode(value: unknown): value is ThemeMode {
   return value === 'light' || value === 'dark' || value === 'system';

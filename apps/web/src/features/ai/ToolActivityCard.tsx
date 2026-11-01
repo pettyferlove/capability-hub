@@ -18,6 +18,7 @@ const states = {
   failed: { label: '调用失败', Icon: X, tone: 'text-danger' },
   interrupted: { label: '已中断 · 结果未确认', Icon: CirclePause, tone: 'text-muted-ink' },
 };
+
 /**
  * 单次工具调用的折叠卡片，展开后是标识、起止时间与错误码。耗时按 `startedAt`／`endedAt` 计算并
  * 在时钟回拨时钳到 0；`interrupted` 明确提示结果未确认，调用方不应据此认为工具失败。

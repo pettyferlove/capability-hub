@@ -39,6 +39,7 @@ const icons: Record<(typeof hubTools)[number]['name'], IconComponent> = {
   rate_asset: ThumbsUp,
   report_asset_feedback: MessageSquare,
 };
+
 /**
  * 只有 `contribute` 类工具（分享、反馈、推荐）会写团队侧数据、需要额外权限，故只对它们
  * 提示权限；`read` 只查询，`client` 写的是本地配置。

@@ -9,13 +9,16 @@ export interface PasswordHasher {
   hash(password: string): Promise<string>;
   verify(password: string, hash: string): Promise<boolean>;
 }
+
 /** 密文绑定的身份维度：脱离这些字段，密文既不能解密也不应被复用。 */
 export type CredentialIdentity = Pick<GitCredentialRecord, 'id' | 'user_id' | 'host' | 'kind'>;
+
 /** 明文凭据材料；只在内存中短暂存在，不得写入日志、审计或响应。 */
 export interface CredentialSecret {
   secret: string;
   passphrase: string;
 }
+
 /**
  * 凭据密封端口。实现方必须把 {@link CredentialIdentity} 绑定进认证（如 AEAD 的 AAD），
  * 使密文无法跨账号、跨域名或跨认证类型复用，并检测篡改。
@@ -26,6 +29,7 @@ export interface CredentialCipher {
   /** 身份与密文不匹配或密文被篡改时必须抛错，由调用方转成 500/`CREDENTIAL_DECRYPTION`。 */
   open(identity: CredentialIdentity, encrypted: EncryptedCredential): CredentialSecret;
 }
+
 /**
  * SSH 私钥校验端口。实现方需在隔离环境里试签，不得让私钥或口令进入日志与常驻存储。
  */
@@ -36,6 +40,7 @@ export interface SshKeyInspector {
     hostFingerprint: string;
   }>;
 }
+
 /**
  * 可直接交给 Git 传输层的凭据材料。`revision` 与记录当前值对应，
  * 调用方据此判断同步途中是否被轮换。
@@ -47,6 +52,7 @@ export interface ResolvedCredential extends CredentialSecret {
   host_key: string;
   revision: number;
 }
+
 /**
  * Git 凭据解析端口。实现方必须在解密前重新校验可用性以及与 host/transport 的匹配
  * （422/`CREDENTIAL_MISMATCH`、422/`CREDENTIAL_UNAVAILABLE`）。

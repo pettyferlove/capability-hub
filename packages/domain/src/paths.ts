@@ -1,4 +1,5 @@
 import { fail } from './errors.js';
+
 /**
  * 归档内相对路径的唯一校验入口，越界即抛 422 `UNSAFE_PATH`（不截断、不纠正，交由上传方改名）。
  * 约束：NFC 规范化、UTF-8 字节数 ≤ 240、层级 ≤ 12、不含反斜线/冒号/控制字符/孤立代理项，
@@ -34,6 +35,7 @@ export function safePath(path: string, root = false): string {
     fail(422, 'UNSAFE_PATH', '路径包含非法名称或越界片段');
   return path;
 }
+
 /**
  * 来源读取目标的校验，比 {@link safePath} 更严：不接受通配符（`*?[]{}`），
  * 且 MCP 类型必须指向某个 `server.json`。通配符在这里没有意义，只会让「读了哪些文件」无法审计。
@@ -47,6 +49,7 @@ export function sourcePath(path: string, kind: string) {
   if (kind === 'mcp' && !/(^|\/)server\.json$/.test(path))
     fail(422, 'UNSAFE_PATH', 'MCP 目标必须指向 server.json');
 }
+
 /**
  * 判断两路径是否会在大小写不敏感的文件系统上互相覆盖：NFC 归一化后转小写。
  * `toLocaleLowerCase('en-US')` 固定语言环境以免机器设置影响结果；`ß` 额外折叠成 `ss`，

@@ -14,6 +14,7 @@ function headingText(node: ReactNode): string {
     )
     .join('');
 }
+
 /**
  * 标题锚点：小写后去掉字母数字/空白/`_`/`-` 以外的字符（按 Unicode 字母表，中文会保留），空白折叠成 `-`。
  * 本函数不处理同名标题，重复编号由调用方根据出现次数追加。
@@ -25,10 +26,12 @@ export function markdownAnchor(text: string) {
     .trim()
     .replace(/\s+/g, '-');
 }
+
 /** 去掉开头的 YAML front matter；只有成对的 `---` 才被当作元数据，未闭合时原样保留，避免吞掉正文。 */
 export function markdownBody(text: string) {
   return text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '');
 }
+
 /**
  * 取 `href` 中 `#` 之后的片段并解码一次；无片段或百分号编码非法时返回 `undefined`，
  * 让调用方按「没有锚点」处理而不是抛错。
@@ -42,6 +45,7 @@ export function referenceAnchor(href: string) {
     return;
   }
 }
+
 /**
  * 在渲染结果内滚动到 `data-anchor` 匹配的标题；只调整最近的纵向可滚动祖先的 `scrollTop`，
  * 不调用 `scrollIntoView`，以免连带移动整页或其它滚动容器。`scrollMarginTop` 作为粘性头部补偿。

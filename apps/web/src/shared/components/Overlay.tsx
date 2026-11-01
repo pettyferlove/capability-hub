@@ -13,6 +13,7 @@ import { FocusScope, useOverlay, usePreventScroll } from 'react-aria';
 
 import { softSpring, spring } from '../motion/transitions.js';
 import { LoadingScope } from './LoadingScope.js';
+
 /**
  * 弹层基座：portal 到 `body`，Esc 与点击遮罩都会走 `onClose`（`isDismissable`），
  * 打开期间锁滚动、把焦点圈在弹层内并在关闭后还给触发元素。

@@ -21,6 +21,7 @@ interface PageTabsProps<T extends string> {
   /** 本地标签关联面板；页面链接保持链接语义。 */
   panelId?: string;
 }
+
 /**
  * 横向标签条，两种形态：给 `hrefFor` 时渲染为链接（导航型，保持可中键/新标签打开），
  * 否则渲染为 `role="tablist"` 的本地切换并支持方向键/Home/End。

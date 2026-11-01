@@ -43,6 +43,7 @@ import { assetHref, loginHref } from '../../shared/navigation/history-route.js';
 import { AssetContent } from './AssetContent.js';
 import { ApiKeyBadge } from './ApiKeyBadge.js';
 import { SkillUsageForm } from './SkillUsageForm.js';
+
 /** 详情抽屉外壳：先占位骨架，再渲染身份信息、{@link AssetContent} 与维护工具。 */
 export default function AssetSheet({ slug }: { slug: string }) {
   const { refresh, reload, me } = useHub();

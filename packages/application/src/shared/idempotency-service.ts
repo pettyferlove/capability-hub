@@ -4,6 +4,7 @@ import { fail } from '@capability-hub/domain/errors';
 import { randomUUID } from 'node:crypto';
 import type { RecordStore } from '../ports/index.js';
 import type { IdentityService } from '../identity/identity-service.js';
+
 /** 在同一事务中核对当前身份、幂等记录和业务写入；Git 拉取与扫描留在事务外。 */
 export class IdempotencyService {
   constructor(

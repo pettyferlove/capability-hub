@@ -1,4 +1,5 @@
 import type { AuditCategory } from '@capability-hub/domain/audit';
+
 /**
  * 审计列表的过滤条件，来源是 HTTP `GET` 的 query，由 `auditLogQuerySchema` 解析并补默认值；
  * 调用方还需持有 `audit:read`，服务内部不重复校验。

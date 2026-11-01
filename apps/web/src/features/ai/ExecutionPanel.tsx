@@ -30,6 +30,7 @@ import { executionTitle, jsonObject, operationLabels } from './presentation.js';
 import { fillStyles, scrollStyles } from './styles.js';
 
 type Tab = 'activity' | 'result' | 'details';
+
 /**
  * 执行视图的交互外壳：页签切换、状态徽标、错误提示、取消与「前往确认」。
  *

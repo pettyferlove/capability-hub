@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import { createInstallationGuide } from '../../integrations/installation-guide.js';
 import type { HttpContext } from '../context.js';
 import { jsonRoute as send } from '../response.js';
+
 /** 公开安装链接始终按匿名受众校验，不借浏览器或令牌扩大权限。 */
 export function registerInstallationRoutes(app: Express, { hub }: HttpContext): void {
   for (const [prefix, kind] of [

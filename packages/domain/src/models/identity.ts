@@ -133,6 +133,7 @@ export interface OAuthClientRecord {
   redirect_uris: string[];
   created_at: number;
 }
+
 /**
  * 一次授权码流程的请求记录，10 分钟内有效。`code` 以摘要形式落库，
  * `status` 走到 `consumed` 后若同一 code 再次被兑换，会吊销整条授权并记 `identity.connection_replay`。
@@ -156,6 +157,7 @@ export interface OAuthRequestRecord {
   /** 兑换成功后指向生成的授权，用于识别重放并连带吊销。 */
   grant_id: string | null;
 }
+
 /**
  * 已建立的连接授权（用户 × 客户端）。吊销即切断该连接的全部凭据；
  * 刷新时可带上新的 `scope`（不能一次加重到 `hub:contribute`，那需要重新授权），结果会写回本记录。
@@ -173,6 +175,7 @@ export interface OAuthGrantRecord {
   last_used_at: number | null;
   revoked_at: number | null;
 }
+
 /**
  * 连接凭据。访问令牌 1 小时、刷新令牌 30 天；`id` 为令牌明文的 SHA-256 摘要。
  * 刷新令牌一次性使用：`consumed_at` 非空仍被再次使用即判定重放，整条授权被吊销。

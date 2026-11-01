@@ -43,6 +43,7 @@ import { navigate } from '../../shared/navigation/history-navigation.js';
 import { ReviewDetail } from './ReviewDetail.js';
 import { ReviewStatusTabs } from './ReviewStatusTabs.js';
 import type { ChangeFile } from './types.js';
+
 /**
  * 队列与详情共用一份数据：URL 指向的申请不在当前状态列表里时回落第一条。
  * 切状态保留上一份数据（`keepPreviousData`）以免闪空，期间状态条只显示占位而不是旧计数。

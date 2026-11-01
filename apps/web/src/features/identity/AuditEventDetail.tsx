@@ -65,6 +65,7 @@ export function AuditResult({ result }: { result: AuditEventResponse['result'] }
     </span>
   );
 }
+
 /**
  * 把 ISO 时间拆成日期与 24 小时制时分秒两段，供列表与详情共用同一套 `zh-CN` 本地时区格式，
  * 两处必须同源，否则同一事件在表格与抽屉里会显示成不同时间。
@@ -81,6 +82,7 @@ export function auditTimestamp(value: string) {
     }),
   };
 }
+
 /**
  * 事件行的备注列优先展示 `reason`，缺失时回落到分类名，因此失败事件即便没有记录原因
  * 也不会出现空列；`onOpen` 只回传事件本身，分页与筛选仍由父级持有。

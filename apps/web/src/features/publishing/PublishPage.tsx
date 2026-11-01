@@ -14,6 +14,7 @@ import { navigate } from '../../shared/navigation/history-navigation.js';
 import ManagementPanel from '../catalog/ManagementPanel.js';
 import SourcesPanel from '../sources/SourcesPanel.js';
 import { UploadPanel } from './UploadPanel.js';
+
 /**
  * 发布页容器：只负责 tab 解析、`can_publish` 权限拦截与面板挂载，不持有表单状态。切换 tab 时内容区
  * 按 `key` 重挂载，避免上一通道的输入残留。

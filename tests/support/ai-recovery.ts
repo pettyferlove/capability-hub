@@ -27,11 +27,13 @@ export const recoveryConfig = aiConfigurationSchema.parse({
   ],
   default_profile: 'fixture',
 });
+
 /**
  * 可以在事务提交后被观察到的恢复断点：`effect` 是副作用步骤结束，`terminal` 是全流程成功，
  * `resume` 是由挂起转回运行——三种各自对应一类需要重放时不能重复执行的情况。
  */
 export type CrashStage = 'effect' | 'terminal' | 'resume';
+
 /**
  * 带崩溃断点的 AI 运行时夹具：包一层 `AiStore`，在快照写入后把命中的断点推给 `checkpoint`，
  * 让测试能在事务提交、进程尚未返回的瞬间杀掉自己。

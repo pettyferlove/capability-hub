@@ -20,11 +20,13 @@ type RecordTable = SQLiteTableWithColumns<{
     >;
   };
 }>;
+
 /**
  * 单行（`id = 1`）的全局版本计数器，由迁移安装的触发器在业务表写入后自增，
  * 供缓存与同步判断数据是否发生变化。
  */
 export const sqliteRevision = schema.hub_revision;
+
 /** SQLite 方言的全量 Schema 再导出，迁移与 AI 表定义共用这一份。 */
 export const sqliteSchema = schema;
 

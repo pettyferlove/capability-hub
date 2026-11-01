@@ -7,6 +7,7 @@ export async function saveCredentials(path: string, value: CliCredentials) {
 }
 
 export type { CliCredentials } from '@capability-hub/contracts';
+
 /** 校验失败统一提示重新登录，避免把 zod 细节暴露给终端使用者。 */
 export function parseCredentials(value: unknown): CliCredentials {
   const parsed = cliCredentialsSchema.safeParse(value);

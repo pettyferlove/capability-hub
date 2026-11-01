@@ -12,6 +12,7 @@ interface Highlight {
   height: number;
   animate: boolean;
 }
+
 /**
  * 单选分段控件（`radiogroup`）：选中背景块用 ResizeObserver 量出的位置绘制，
  * 尺寸变化（换行、字体加载）后直接重定位不带动画，只有切换选择才播放过渡；`reduceMotion` 时始终瞬时。

@@ -13,6 +13,7 @@ export function executableText(path: string, bytes: Buffer) {
     ) || /^#![^\r\n]{1,256}(?:\r?\n|$)/.test(bytes.subarray(0, 300).toString('utf8'))
   );
 }
+
 /** 内容分类只服务预览和提示，不以语言、扩展名或二进制格式限制分发。 */
 export function contentText(bytes: Buffer): string | null {
   if (archiveResource(bytes)) return null;

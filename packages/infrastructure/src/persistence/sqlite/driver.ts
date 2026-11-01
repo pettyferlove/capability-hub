@@ -20,6 +20,7 @@ function input(value: unknown): SQLInputValue {
     return value;
   throw new TypeError('Unsupported SQLite parameter');
 }
+
 /**
  * 打开（必要时创建）SQLite 数据库并就地完成迁移，返回 {@link RecordDriver}。
  *

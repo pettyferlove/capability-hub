@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import { z } from 'zod';
 import type { HttpContext } from '../context.js';
 import { idempotencyKey as key, jsonRoute as send } from '../response.js';
+
 /**
  * 资产生命周期。写操作全部透传 `If-Match`：缺失 428 `IF_MATCH_REQUIRED`、不符 412
  * `REVISION_CONFLICT`；`rollback-requests` 另带 `Idempotency-Key`，避免重复发起回滚。

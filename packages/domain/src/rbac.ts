@@ -1,4 +1,5 @@
 import type { Principal } from './identity.js';
+
 /**
  * 权限标识的唯一清单，形如 `域:动作`；判定按字面量精确匹配（见 {@link has}），
  * 自定义角色只能从此处取值，所以新增能力必须同时在这里登记，否则任何角色都无法被授予。
@@ -18,6 +19,7 @@ export const PERMISSIONS = [
   'version:revoke',
   'asset:migrate',
 ] as const;
+
 /**
  * 按角色绑定的作用域判定权限：`platform` 绑定全局生效，其余绑定只有在调用方传入同名作用域 id 且相等时才生效；
  * 调用方没传的作用域一律按不匹配处理，因此漏传上下文得到的是拒绝而不是放行。
@@ -41,6 +43,7 @@ export function has(
     )
   );
 }
+
 /**
  * 初始化时写入的内置角色集合。`key` 是稳定标识，改名不影响已有绑定；`admin` 刻意不含 `source:create`
  * 与 `asset:create`/`asset:maintain`，创建类动作留给 `maintainer`，`reader` 权限为空（仅保留登录本身）。

@@ -7,6 +7,7 @@ import type { Express } from 'express';
 import { z } from 'zod';
 import type { HttpContext } from '../context.js';
 import { withRevision as etag, idempotencyKey as key, jsonRoute as send } from '../response.js';
+
 /**
  * 共享申请与审核。`nominate`/`submit`/`decide` 都读 `Idempotency-Key`，重复提交返回首次结果；
  * `decide` 与 `cancel` 用 `If-Match` 比对 `revision`（缺失 428、不符 412），

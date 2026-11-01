@@ -4,6 +4,7 @@ import type { BlobStorage, BlobMaintenance, RecordStore } from '@capability-hub/
 import type { Logger } from '@capability-hub/logging/server';
 import { join } from 'node:path';
 import type { ServerConfig } from '../config/server-config.js';
+
 /**
  * 按配置打开记录存储与对象存储，并在返回前对 blob 做一次健康检查：
  * 对象存储不可用时直接失败，而不是等到第一次读写才暴露。驱动参数已在

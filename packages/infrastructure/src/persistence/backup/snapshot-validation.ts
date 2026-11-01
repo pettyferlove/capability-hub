@@ -36,6 +36,7 @@ export function parseSnapshot(value: unknown): StoreSnapshot {
   }
   return Object.fromEntries(entries) as StoreSnapshot;
 }
+
 /**
  * 列出快照中所有会被引用的 blob 摘要（去重后按字典序），供备份导出前把内容一并打包、
  * 或恢复后校验对象存储是否齐备。

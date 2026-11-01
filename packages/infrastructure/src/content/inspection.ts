@@ -42,6 +42,7 @@ if (!schema || typeof schema !== 'object' || Array.isArray(schema))
   throw new Error('MCP schema must be an object');
 const schemaId = '$id' in schema && typeof schema.$id === 'string' ? schema.$id : '';
 const validateMcp = ajv.compile<McpServerDocument>(schema);
+
 /**
  * 纯函数式内容审查：只读取字节、不落盘、不执行包内任何内容，返回可直接入库的清单与静态提示。
  *

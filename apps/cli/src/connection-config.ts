@@ -27,6 +27,7 @@ export interface ConnectionConfigOptions {
   configFile?: string;
   replace?: boolean;
 }
+
 /**
  * 只读地准备配置变更，返回目标路径、原文与新文本，不写任何文件——调用方可以先给人看。
  * 现有 JSONC/TOML 有语法错误、含重复字段或 `mcpServers` 结构非法时直接报错，绝不试修复后写入；
@@ -174,6 +175,7 @@ async function readConfig(path: string): Promise<string | null> {
     await file.close();
   }
 }
+
 /**
  * 提交阶段：加文件锁后重新读取目标，内容与准备时不一致即放弃（其他程序改过配置）。
  * 有原文时先写 0600 备份，再用临时文件 + rename 替换；写前再比对一次原文，

@@ -1,6 +1,7 @@
 import { fail } from '@capability-hub/domain/errors';
 const MiB = 1024 * 1024;
 // 在 JSON.parse 覆盖重复键前检查嵌套深度与对象成员。
+
 /**
  * 受限 JSON 解析：任何拒绝都以 413/422 抛出，不返回部分结果。
  *

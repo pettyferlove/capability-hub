@@ -1,4 +1,5 @@
 import type { AssetKind } from '@capability-hub/domain/content';
+
 /**
  * 网页上传接收的输入，来自 multipart 表单的元数据字段（`uploadIntakeRequestSchema` 解析），
  * 文件字节另行传入；仅 `upload` 类型来源可接收，Git 来源须走同步流程。
@@ -24,6 +25,7 @@ export type ReceiveIntakeCommand = {
      */
     | { target: 'existing'; asset_id: string; version_mode?: 'automatic' | 'manual' }
   );
+
 /** 列表视图向外暴露的状态，含由关联发布申请推导出的状态，因此并非接收记录本身的 `state`。 */
 export type IntakeStatus =
   | 'processing'
@@ -36,6 +38,7 @@ export type IntakeStatus =
   | 'cancelled'
   | 'deprecated'
   | 'blocked';
+
 /**
  * 接收记录列表的过滤条件，来自 HTTP 的 `GET` query（`intakeListQuerySchema` 解析）；
  * 可见范围是调用者自己提交的记录加上其可维护资产的记录。

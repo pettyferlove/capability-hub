@@ -17,6 +17,7 @@ type Arg<K extends keyof WorkflowsStorage> = WorkflowsStorage[K] extends (
 ) => unknown
   ? A[0]
   : never;
+
 /**
  * 绑定单次执行原生工作流快照的存储：行键由 workflow/run 派生，读取时比对执行归属、
  * SDK 版本与定义摘要，任一不符抛 `AI_RECOVERY_UNCERTAIN`，此时不应再尝试恢复该运行。

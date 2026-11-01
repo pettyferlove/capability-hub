@@ -73,6 +73,7 @@ type Tree = {
   file?: ChangeFile;
   count: number;
 };
+
 /**
  * 默认选中 `SKILL.md`、其次 `server.json`、再退到首个变更文件；`focus` 指向存在变更的文件时
  * 覆盖该默认值，并展开其所在目录把焦点移到预览标题；定位只认 `focus.path`，不存在则不理会。

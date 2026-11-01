@@ -1,5 +1,6 @@
 import type { AssetKind } from '@capability-hub/domain/content';
 import type { Policy } from '@capability-hub/domain/policy';
+
 /**
  * 关键词联想输入，来自管理端 HTTP query（`keywordOptionsQuerySchema` 解析）；
  * 结果只统计调用者有权限看到的关键词，未发布内容不会泄露给非维护者。
@@ -10,6 +11,7 @@ export interface KeywordOptionsQuery {
   /** 1–20，默认 20；超出部分直接截断而不是拒绝。 */
   limit: number;
 }
+
 /**
  * 目录检索输入，来自 HTTP 的 `GET /api/catalog` query（`catalogSearchQuerySchema` 解析）；
  * 可见性由服务端按受众与授权重新判定，客户端传入的过滤条件只做收窄。
@@ -32,6 +34,7 @@ export interface CatalogSearchQuery {
   languages?: string[];
   frameworks?: string[];
 }
+
 /**
  * 关键词推荐输入，来自 HTTP 的 `GET` query（`keywordSuggestionsQuerySchema` 解析）；
  * 结果同时包含高热词与随机探索词，因此同一输入不保证稳定输出。

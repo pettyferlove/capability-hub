@@ -40,6 +40,7 @@ import type { IntakeConnection } from './use-intake-detail.js';
 import { IntakeScan } from './IntakeScan.js';
 import { KeywordField } from '../../shared/components/KeywordField.js';
 import { SkillApiKeyField } from '../../shared/components/SkillApiKeyField.js';
+
 /**
  * 详情工作台：仅当校验通过、规则集未过期且未处于待审核时可编辑（已发布需点重新申请），
  * `asset_lifecycle` 非 `active` 时整页只读。提交前用 `notices` 汇总缺少的必填项与扫描发现，底部操作栏

@@ -11,6 +11,7 @@ export interface ConnectionResponse {
   /** 撤销时间（毫秒），`null` 表示仍有效；撤销后立即失去访问权。 */
   revoked_at: number | null;
 }
+
 /**
  * 待确认的连接授权请求，出现在 `/api/connections/authorize/:id`。
  * 请求创建后 10 分钟过期，过期或已处理的 id 一律按无效授权处理。

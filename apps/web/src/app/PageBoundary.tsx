@@ -9,6 +9,7 @@ import { cn } from '../shared/styles/cn.js';
 import { FileWarning, RefreshCw } from '../shared/icons/lucide.js';
 import { reportError } from '../shared/logging.js';
 import { Component, type ReactNode } from 'react';
+
 /**
  * 页面级错误边界：捕获子树渲染异常后上报 `react.error` 并换成可刷新的兜底页，
  * 不尝试保留任何局部状态。只覆盖渲染期错误，事件处理器与异步回调里的异常仍需各自上报。

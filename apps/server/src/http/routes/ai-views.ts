@@ -31,6 +31,7 @@ export function executionResponse(row: ExecutionRecord) {
     error: payload.error,
   });
 }
+
 /**
  * 评审视图：`watermark` 是本次快照覆盖到的事件位置，客户端据此判断后续增量从哪开始；
  * `resource:` 前缀的产物是被内联进消息的资源证据，不在此列出。

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+
 /** 清单文件项，出现在版本快照响应（{@link VersionSnapshotResponse}）与下载清单里。 */
 export interface ManifestFile {
   /** 归档内相对路径；安装端据此还原目录，禁止 `..` 与绝对路径。 */
@@ -10,12 +11,14 @@ export interface ManifestFile {
   /** 可执行位；解包时需按此还原而非按扩展名推测。 */
   executable: boolean;
 }
+
 /** 版本内容清单：文件数 1–500，路径与摘要的完整性由 {@link manifestSchema} 校验。 */
 export interface Manifest {
   schema_version: 1;
   kind: 'skill' | 'mcp';
   files: ManifestFile[];
 }
+
 /** 扫描发现项，出现在 {@link ScanResponse} 与发布审核详情；`block` 级阻断发布，`warning` 需审核人逐条给出接受理由。 */
 export interface Finding {
   id: string;
@@ -40,6 +43,7 @@ export const manifestFileSchema = z
     executable: z.boolean(),
   })
   .strict();
+
 /**
  * 版本清单：`schema_version` 固定为 1，文件数 1–500，逐项复用 {@link manifestFileSchema} 的大小与摘要上限。
  * 严格模式拒绝未知字段，保证清单摘要在接收端与安装端算出一致结果。
@@ -90,10 +94,12 @@ export interface InstallationInput {
   /** 变量替换映射，供客户端拼接配置文本使用。 */
   variables?: Record<string, unknown>;
 }
+
 /** 具名输入变量（header 或环境变量），变量名同时决定客户端配置里的键。 */
 export interface InputVariable extends InstallationInput {
   name: string;
 }
+
 /** 安装参数：`named` 带参数名，`positional` 按声明顺序占位。 */
 export type InstallationArgument = InstallationInput &
   ({ type: 'named'; name: string } | { type: 'positional' });

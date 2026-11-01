@@ -37,6 +37,7 @@ function storageError(error: unknown): Error {
   failure.cause = error;
   return failure;
 }
+
 /** 私有 S3 存储桶，内容交付统一经过应用授权。 */
 export class MinioBlobStore implements BlobStorage {
   readonly kind = 'minio';

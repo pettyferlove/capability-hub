@@ -23,6 +23,7 @@ import { PersonalSecurity } from '../profile/SecurityPanel.js';
 import { AdministrationPanel } from './AdministrationPanel.js';
 import { AuditPanel } from './AuditPanel.js';
 import { OperationsPanel } from './OperationsPanel.js';
+
 /**
  * 页签容器：`query` 缺省取 `location.search`，其中的 `tab` 若不在当前账号允许的集合内
  * （含拼写错误与越权页签）一律回落到 `profile`，因此永远不会渲染出无权限面板。

@@ -101,6 +101,7 @@ export function registerOAuthRoutes(app: Express, { hub }: HttpContext): void {
     }),
   );
 }
+
 /**
  * 当前登录用户自己的连接管理，注册在 `security.authenticate`/`csrf` 之后。所有操作只用
  * `res.locals.principal.id` 定位连接，不接受请求体里的用户 id，因此无法操作他人的连接；

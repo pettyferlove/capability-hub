@@ -6,6 +6,7 @@ import { validateMigrationHistory, type MigrationHistoryRecord } from '../migrat
 import type { pgSchema } from './record-schema.js';
 
 const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url));
+
 /**
  * 迁移用的固定 advisory lock 键。取事务级锁，因此随事务结束自动释放；
  * 所有实例用同一常量，保证启动时迁移串行执行。

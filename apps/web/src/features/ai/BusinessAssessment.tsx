@@ -22,6 +22,7 @@ const risks: Record<string, string> = {
   high: '高风险',
   unknown: '证据不足',
 };
+
 /**
  * 报告主体：`value` 为整份报告对象，`assessment` 缺失时各区块自动隐藏；
  * 已采纳但没有 `publication_suggestion` 的历史报告会提示改在新研判中重新生成。

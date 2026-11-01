@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
  */
 export const sha256 = (value: string | Buffer): string =>
   createHash('sha256').update(value).digest('hex');
+
 /**
  * 带 `sha256:` 前缀的摘要，用于 `content_digest`、`artifact_digest` 等对外可见的完整性字段；
  * 客户端可据前缀切换算法，因此前缀不可省略。

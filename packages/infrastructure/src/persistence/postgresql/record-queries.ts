@@ -9,6 +9,7 @@ export type PostgresSession = Pick<
   NodePgDatabase<typeof pgSchema>,
   'select' | 'insert' | 'update' | 'delete' | 'execute'
 >;
+
 /**
  * `RecordQueries` 的 PostgreSQL 实现：读写只经过 `id`/`data`，约束与生成列全部交给 Schema。
  *

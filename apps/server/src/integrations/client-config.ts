@@ -17,6 +17,7 @@ const input = z
     scope: z.enum(['project', 'user']).default('project'),
   })
   .strict();
+
 /**
  * 生成客户端 MCP 配置文本。只输出、不执行：远程安装项输出 url + 用环境变量引用替换的秘密 Header，
  * stdio 安装项输出 `npx -y <pkg>@<version>`，平台自身不会运行它。

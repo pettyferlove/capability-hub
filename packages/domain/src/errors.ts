@@ -17,6 +17,7 @@ export class HubError extends Error {
     this.name = 'HubError';
   }
 }
+
 /**
  * 抛出 {@link HubError} 的简写；返回类型为 `never`，调用处不必再补 `return`。
  * 默认不可重试，需要重试语义请直接 `new HubError(..., true)`。
@@ -29,6 +30,7 @@ export class HubError extends Error {
 export function fail(status: number, code: string, message: string, details: unknown = {}): never {
   throw new HubError(status, code, message, details);
 }
+
 /**
  * 统一的 404：资源不存在与无权查看共用同一响应，避免通过状态码差异探测他人资源。
  */

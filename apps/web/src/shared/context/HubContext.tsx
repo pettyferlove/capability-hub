@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { MeResponse } from '@capability-hub/contracts/http';
+
 /** 全局会话上下文：`me` 为 `null` 表示当前未登录（外壳可能仍渲染公开页面）。 */
 export interface HubState {
   /** 当前登录用户；`null` 表示未登录，此时 `capabilities` 不可用，调用方必须先判空。 */
@@ -15,8 +16,10 @@ export interface HubState {
   /** 退出登录；失败会 reject，调用方需要自行展示错误。 */
   logout: () => Promise<void>;
 }
+
 /** 上下文默认 `undefined` 以便区分「未提供」与「未登录」，缺少 Provider 时立刻抛错而不是静默降级。 */
 export const HubCtx = createContext<HubState | undefined>(undefined);
+
 /**
  * 读取全局会话状态；必须在 `<HubCtx.Provider>` 内使用，否则抛错——
  * 这个错误只会在开发期出现（外壳总是提供 Provider），因此不需要调用方兜底。

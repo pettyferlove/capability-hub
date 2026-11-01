@@ -11,6 +11,7 @@ export interface GitDestination {
   port: number;
   username: string;
 }
+
 /**
  * 固定到单个提交的只读快照。临时目录的生命周期由调用方控制，必须 `close`（通常在
  * `finally` 里），否则会残留磁盘内容。
@@ -26,6 +27,7 @@ export interface GitSnapshot {
   read(path: string, kind: AssetKind): Promise<ContentFile[]>;
   close(): Promise<void>;
 }
+
 /**
  * Git 访问端口。实现方必须自己抵御不可信地址：只允许被管理员放行的主机与网络，
  * 并在失败时抛 {@link HubError}（422 `GIT_URL`/`GIT_HOST_DENIED`/`GIT_ADDRESS_DENIED`、

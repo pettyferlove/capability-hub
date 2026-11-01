@@ -7,6 +7,7 @@ const versionLabel = z
   .max(128)
   .regex(versionLabelPattern)
   .refine(isFixedVersionLabel, '版本号超出支持范围');
+
 /**
  * 导入列表可见状态全集（含审核结论），也用作筛选参数 `state` 的取值来源。
  * 与处理机的 {@link IntakeState} 不同，这里表达的是列表上「用户看到的业务状态」。
@@ -23,8 +24,10 @@ export const intakeStatuses = [
   'deprecated',
   'blocked',
 ] as const;
+
 /** {@link intakeStatuses} 的成员类型。 */
 export type IntakeStatus = (typeof intakeStatuses)[number];
+
 /**
  * 导入列表查询：`page` 以字符串传入（1–9999999），转成数字后用于分页；
  * `page_size` 只接受 5/10/20/50 默认 5，`q` 去空白后 ≤200 字符，`state` 默认 `all`。
@@ -97,5 +100,6 @@ export const intakeProgressResponseSchema = z.strictObject({
   error_code: z.string().nullable(),
   error_message: z.string().nullable(),
 });
+
 /** {@link intakeProgressResponseSchema} 的输出侧类型，供轮询接口返回。 */
 export type IntakeProgressResponse = z.infer<typeof intakeProgressResponseSchema>;

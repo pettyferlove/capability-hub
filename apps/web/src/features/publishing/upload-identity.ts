@@ -7,6 +7,7 @@ import type { AssetVersionPlanResponse } from '@capability-hub/contracts/http';
 
 /** 契约层固定版本模式的再导出，表单校验与提交校验共用同一正则，避免两处规则漂移。 */
 export const fixedVersionPattern = versionLabelPattern;
+
 /**
  * 待发布版本的来源：`auto` 在源版本可用时沿用、否则退回 `patch` 建议，`patch`/`minor`/`major`
  * 直接用服务端建议值，`manual` 采用手填值且不依赖版本计划。
@@ -56,6 +57,7 @@ export interface UploadIdentity {
   slugEdited: boolean;
   versionEdited: boolean;
 }
+
 /** 版本预填 `1.0.0` 且两个 `…Edited` 均为 false，使首个自动建议仍可覆盖。 */
 export const emptyUploadIdentity: UploadIdentity = {
   slug: '',
@@ -63,6 +65,7 @@ export const emptyUploadIdentity: UploadIdentity = {
   slugEdited: false,
   versionEdited: false,
 };
+
 /** 建议值可缺省：推断不可靠时省略对应字段，调用方据此保留原值而不是写入空串。 */
 export interface IdentitySuggestion {
   slug?: string;

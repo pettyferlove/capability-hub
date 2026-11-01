@@ -2,6 +2,7 @@ import { createSourceRequestSchema, updateSourceRequestSchema } from '@capabilit
 import type { Express } from 'express';
 import type { HttpContext } from '../context.js';
 import { withRevision as etag, idempotencyKey as key, jsonRoute as send } from '../response.js';
+
 /**
  * Git 来源管理。`POST /api/sources`、`sync` 读 `Idempotency-Key` 以免重复建源或重复触发同步，
  * `sync` 只入队并返回 202，进度用 `GET :id/sync-jobs/:job` 轮询；`PATCH` 与 `revoke-distribution`

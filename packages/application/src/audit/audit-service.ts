@@ -47,6 +47,7 @@ function displayValue(value: unknown, field: string): string {
     );
   return '未记录';
 }
+
 /** 从不可变证据生成展示结果，不返回原始记录正文。 */
 export class AuditService {
   constructor(

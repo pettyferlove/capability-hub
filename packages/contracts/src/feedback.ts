@@ -7,6 +7,7 @@ export const feedbackKinds = {
   capability_gap: '能力缺口',
   suggestion: '改进建议',
 } as const;
+
 /** 反馈状态字典；`resolved` 与 `declined` 视为处理结束，更新时必须填写处理说明。 */
 export const feedbackStatuses = {
   pending: '待处理',
@@ -14,6 +15,7 @@ export const feedbackStatuses = {
   resolved: '已解决',
   declined: '不采纳',
 } as const;
+
 /**
  * 提交反馈：按固定版本记录，`idempotency_key`（去空白后 1–200 字符）由调用方生成，
  * 同键同内容重复提交返回既有记录，同键不同内容返回冲突；`consent` 必须显式为 `true`。
@@ -36,6 +38,7 @@ export const assetFeedbackRequestSchema = z
     consent: z.literal(true),
   })
   .strict();
+
 /**
  * 处理反馈：`revision` 为乐观锁版本，与库中不一致时返回冲突；状态改为 `resolved`/`declined`
  * 时处理说明不得为空。`fixed_version_id` 可显式置 `null` 表示撤销修复版本关联。
@@ -52,6 +55,7 @@ export const assetFeedbackUpdateRequestSchema = z
     (value) => !['resolved', 'declined'].includes(value.status) || value.resolution.length > 0,
     { message: '结束处理时请填写处理说明' },
   );
+
 /** 反馈列表查询：`page` 1–100000 默认 1，`limit` 1–50 默认 10；省略 `status` 表示全部状态。 */
 export const assetFeedbackQuerySchema = z
   .object({
@@ -60,7 +64,9 @@ export const assetFeedbackQuerySchema = z
     status: z.enum(['pending', 'in_progress', 'resolved', 'declined']).optional(),
   })
   .strict();
+
 /** {@link assetFeedbackRequestSchema} 的输入侧类型：可省略带默认值的字段，`consent` 仍需为 `true`。 */
 export type AssetFeedbackRequest = z.input<typeof assetFeedbackRequestSchema>;
+
 /** {@link assetFeedbackUpdateRequestSchema} 的输入侧类型。 */
 export type AssetFeedbackUpdateRequest = z.input<typeof assetFeedbackUpdateRequestSchema>;

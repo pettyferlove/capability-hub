@@ -1,6 +1,7 @@
 import { SerialExecutor } from '../transaction/serial-executor.js';
 
 const sqliteExecutors = new Map<string, { executor: SerialExecutor; references: number }>();
+
 /**
  * 按规范路径取（或创建）该库唯一的串行执行器，带引用计数。
  *

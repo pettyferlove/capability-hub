@@ -10,10 +10,12 @@ export const auditCategories = {
   operations: '平台运维',
   other: '其他事件',
 } as const;
+
 /**
  * 审计分类的键集合。
  */
 export type AuditCategory = keyof typeof auditCategories;
+
 /**
  * 事件作用对象（主体）的种类，决定查询侧去哪张表还原对象名称；
  * 无法确定时用 `unknown`，不要猜一个更具体的种类。
@@ -43,6 +45,7 @@ interface AuditDefinition {
   subject: AuditSubjectKind;
   failure?: boolean;
 }
+
 /**
  * 审计动作的登记表：`label` 是界面文案，`category`/`subject` 决定筛选与对象还原，
  * `failure` 为 true 表示该动作按「操作失败」统计（即使记录里写了 success 也以失败计入）。
@@ -167,6 +170,7 @@ export interface AuditActorSnapshot {
   name: string;
   username?: string;
 }
+
 /**
  * 审计对象快照（写入记录时冗余保存）：只保留展示字段与跳转用 id，
  * 因此对象被删除或改名后，历史记录仍能如实呈现当时的样子，也不会泄露凭据或记录正文。

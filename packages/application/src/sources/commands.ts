@@ -1,6 +1,7 @@
 import type { Applicability } from '@capability-hub/domain/content';
 import type { AssetKind } from '@capability-hub/domain/content';
 import type { Policy } from '@capability-hub/domain/policy';
+
 /**
  * 单个同步目标的策略：复用发布策略字段，并额外声明路径与资源标识。
  * 创建来源时由 HTTP body 提供，更新时可能从库中回填，因此可选标记不代表可省略。
@@ -19,6 +20,7 @@ export interface SourceTarget extends Policy {
   /** `false` 表示保留绑定但不参与同步；省略按启用处理。 */
   enabled?: boolean;
 }
+
 /**
  * 创建 Git 来源的输入，来自 HTTP 的 JSON body（`createSourceRequestSchema` 解析）；
  * 调用者需在 `owner_group_id` 上持有 `source:create`，并自行拥有所选凭据。
@@ -44,6 +46,7 @@ export interface CreateSourceCommand {
    */
   targets: Omit<SourceTarget, 'binding_id' | 'asset_id' | 'enabled'>[];
 }
+
 /**
  * 修改 Git 来源的输入，来自 HTTP 的 JSON body（`updateSourceRequestSchema` 解析），
  * 需 `If-Match` 乐观锁（缺 428、不符 412）与 `source:manage` 权限。

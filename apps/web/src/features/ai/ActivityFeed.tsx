@@ -85,6 +85,7 @@ function InteractionDecision({ interaction }: { interaction: AiInteractionRespon
     </section>
   );
 }
+
 /**
  * 时间线主体：`active` 为 false 时（标签页隐藏）不自动滚动、不抢焦点，避免切回时跳动；
  * 待确认交互仅在 `canManage` 为真时渲染表单，否则只展示决策记录。

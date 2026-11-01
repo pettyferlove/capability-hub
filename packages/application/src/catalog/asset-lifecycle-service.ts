@@ -9,6 +9,7 @@ import type { ApplicationContext } from '../shared/application-context.js';
 import { matchRevision } from '../shared/revision.js';
 import type { AssetAccessService } from './asset-access-service.js';
 const now = () => new Date().toISOString();
+
 /** 处理资产状态、来源迁移和已审核版本回退，保留历史发布证据。 */
 export class AssetLifecycleService {
   constructor(

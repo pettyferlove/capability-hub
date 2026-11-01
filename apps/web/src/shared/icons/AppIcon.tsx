@@ -8,6 +8,7 @@ import type { ComponentType } from 'react';
 export type IconProps = Omit<IconifyProps, 'icon' | 'width' | 'height' | 'children' | 'mode'> & {
   size?: number;
 };
+
 /** 固定图标的组件类型；所有图标共用同一签名，因此可以直接放进映射表或数组渲染。 */
 export type IconComponent = ComponentType<IconProps>;
 

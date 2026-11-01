@@ -23,6 +23,7 @@ import { DialogTitle } from '../../shared/components/DialogTitle.js';
 import { Message } from '../../shared/components/Message.js';
 import { PasswordField } from '../../shared/components/PasswordField.js';
 import { Submit } from '../../shared/components/Submit.js';
+
 /**
  * 账号、团队、角色、绑定与场景共用的编辑表单：`kind` 同时决定提交路径、字段集合与标题，
  * 且每类形态只提交自己的字段。`reset` 与 `edit-role` 必须带 `user`（缺失直接抛错），

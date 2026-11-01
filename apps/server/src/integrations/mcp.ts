@@ -25,6 +25,7 @@ const search = {
   cursor: z.string().optional(),
   limit: z.number().int().min(1).max(50).default(20),
 };
+
 /**
  * 构造一次连接对应的 MCP handler。`hub:read` 连接不注册贡献类工具，即使绕过工具列表直接调用也会
  * 得到 403 `TOKEN_SCOPE`；每次调用还会重新读取 principal，服务层再按当前权限判定，
