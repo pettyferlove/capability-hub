@@ -1,6 +1,6 @@
 import { cn } from '../../shared/styles/cn.js';
 
-export const accountPageStyles = "group/account-page [&_[class~='group/page-tabs']]:mb-6";
+export const accountPageStyles = "group/account-page [&>nav[class~='group/page-tabs']]:mb-6";
 
 export const memberRemoveBtnStyles = cn(
   'inline-flex items-center ml-[5px] pt-0 pr-1 pb-0 pl-1 border-0',

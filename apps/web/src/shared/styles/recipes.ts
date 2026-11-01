@@ -689,13 +689,12 @@ export const pageHeadStyles = cn(
 );
 
 export const pageTabsStyles = cn(
-  'group/page-tabs mb-[var(--section-gap)] flex gap-5 overflow-x-auto border-b border-[color:var(--line)] [scrollbar-width:thin] [scroll-padding-inline:4px]',
+  'group/page-tabs flex gap-5 overflow-x-auto border-b border-[color:var(--line)] [scrollbar-width:thin] [scroll-padding-inline:4px]',
   '[&>:is(a,button)]:relative [&>:is(a,button)]:inline-flex [&>:is(a,button)]:items-center [&>:is(a,button)]:justify-center [&>:is(a,button)]:whitespace-nowrap [&>:is(a,button)]:px-0 [&>:is(a,button)]:text-muted-ink',
   '[&>button]:border-0 [&>button]:bg-transparent [&>button]:py-3.5 [&>button]:text-[length:12px]',
   '[&>a]:py-2 [&>a]:text-body [&>a[aria-current=page]]:font-semibold',
   '[&>a[aria-current=page]]:text-brand [&>button[aria-selected=true]]:text-brand',
   '[&>:is(a,button):focus-visible]:rounded-[5px] [&>:is(a,button):focus-visible]:outline-2 [&>:is(a,button):focus-visible]:outline-brand [&>:is(a,button):focus-visible]:outline-offset-[-3px]',
-  'max-[600px]:mb-5.5',
 );
 
 export const tabLabelStyles = 'inline-flex items-center justify-center gap-2 leading-5';
