@@ -91,3 +91,48 @@ export function readThemePalettes(text: string) {
   });
   return palettes;
 }
+
+/**
+ * 找出缺少分隔空行的位置：import 块之后、模块级代码块之后、模块级 `/** *\/` 文档块之前。
+ * 守卫的是「代码粘连」这一可读性约定——Prettier 只保留已有空行而不会补，
+ * 因此压缩成一整块的文件能通过 `format:check`。类与接口成员之间刻意不加空行，不在此列。
+ * 返回行号（从 1 开始）而不是抛出，方便一次性报出全部位置。
+ */
+export function blankLineViolations(filename: string, text: string): number[] {
+  const source = ts.createSourceFile(
+    filename,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    filename.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const lines = text.split('\n');
+  const blank = (index: number) => lines[index] !== undefined && lines[index].trim() === '';
+  const violations = new Set<number>();
+  const statements = source.statements;
+  const lastImport = statements.findLastIndex((statement) => ts.isImportDeclaration(statement));
+  const blockEnding = (node: ts.Statement) =>
+    ts.isFunctionDeclaration(node) ||
+    ts.isClassDeclaration(node) ||
+    ts.isBlock(node) ||
+    ts.isIfStatement(node) ||
+    ts.isTryStatement(node) ||
+    ts.isSwitchStatement(node) ||
+    ts.isForStatement(node) ||
+    ts.isForOfStatement(node) ||
+    ts.isForInStatement(node) ||
+    ts.isWhileStatement(node) ||
+    ts.isDoStatement(node);
+  statements.forEach((statement, index) => {
+    const doc = ts.getJSDocCommentsAndTags(statement).find(ts.isJSDoc);
+    if (doc) {
+      const start = source.getLineAndCharacterOfPosition(doc.pos).line;
+      if (start > 0 && !blank(start - 1)) violations.add(start);
+    }
+    if (index === statements.length - 1) return;
+    if (index !== lastImport && !blockEnding(statement)) return;
+    const end = source.getLineAndCharacterOfPosition(statement.end).line;
+    if (!blank(end + 1)) violations.add(end + 1);
+  });
+  return [...violations].sort((left, right) => left - right);
+}
