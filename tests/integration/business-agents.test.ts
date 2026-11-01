@@ -262,6 +262,77 @@ test('模型伪造未读取文件的引用时任务失败，不生成可采纳�
   assert.equal((await f.hub.ai.runtime.view(failed.id)).interactions.length, 0);
 });
 
+test('分页读取的相邻区间可连续引用，跨越未读行的引用仍使任务失败', async (t) => {
+  const previous = process.env.AI_FIXTURE_KEY;
+  process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+  t.after(() => {
+    if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+    else process.env.AI_FIXTURE_KEY = previous;
+  });
+  for (const [endLine, status] of [
+    [4, 'waiting_input'],
+    [6, 'failed'],
+  ] as const) {
+    const provider = await fixture('openai', 'tools', false, {
+      ...script,
+      turns: script.turns.flatMap((turn) =>
+        turn.name === 'read_file'
+          ? [1, 3, 6].map((start_line) => ({
+              name: 'read_file',
+              input: { path: 'SKILL.md', start_line, lines: 2 },
+            }))
+          : [turn],
+      ),
+      json: JSON.stringify({
+        ...assessment,
+        findings: [
+          {
+            ...assessment.findings[0],
+            evidence: [{ path: 'SKILL.md', start_line: 1, end_line: endLine }],
+          },
+        ],
+      }),
+    });
+    t.after(provider.close);
+    const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
+    await receiveSkill(f);
+    const execution = await run(f);
+    assert.equal(execution.status, status, `引用 SKILL.md:1–${endLine}`);
+    if (status === 'failed') assert.equal(execution.payload.error?.code, 'AI_OUTPUT_INVALID');
+  }
+});
+
+test('模型给出超量关键词时按序只保留前 8 个，不因数量拒绝整份报告', async (t) => {
+  const keywords = Array.from({ length: 10 }, (_, index) => `检索词${index + 1}`);
+  const provider = await fixture('openai', 'tools', false, {
+    ...script,
+    json: JSON.stringify({
+      ...assessment,
+      publication_suggestion: { ...publicationSuggestion, keywords },
+    }),
+  });
+  t.after(provider.close);
+  const previous = process.env.AI_FIXTURE_KEY;
+  process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+  t.after(() => {
+    if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+    else process.env.AI_FIXTURE_KEY = previous;
+  });
+  const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
+  await receiveSkill(f);
+  const waiting = await run(f);
+  assert.equal(waiting.status, 'waiting_input', JSON.stringify(waiting.payload.error));
+  const artifact = (await f.hub.ai.runtime.view(waiting.id)).artifacts.find(
+    (item) => item.payload.name === 'assessment',
+  );
+  assert(artifact);
+  assert.deepEqual(
+    (artifact.payload.content as { assessment: typeof assessment }).assessment
+      .publication_suggestion.keywords,
+    keywords.slice(0, 8),
+  );
+});
+
 test('MCP 审计按需读取 server.json 和声明工具，明确静态边界并允许不采纳', async (t) => {
   const report = {
     ...assessment,

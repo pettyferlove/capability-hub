@@ -35,10 +35,22 @@ export const publicationSuggestion = z
     category: z.enum(['general', 'scenario', 'uncategorized']),
     /** 已登记的有效场景 ID，去重后最多 20 个。 */
     scenario_ids: z.array(z.uuid()).max(20),
-    /** 检索关键词，1–20 条；保留首次出现的写法，重复项由模型侧自行去除。 */
-    keywords: z.array(z.string().trim().min(1).max(128)).min(1).max(20),
+    /**
+     * 检索关键词；上限比提示的 3–8 条宽，落盘前只保留前 8 条，避免数量略超就重写整份报告。
+     * 保留首次出现的写法，重复项由模型侧自行去除。
+     */
+    keywords: z
+      .array(z.string().trim().min(1).max(128))
+      .min(1)
+      .max(10)
+      .describe('3–8 个检索关键词，按重要性排序，互不包含；用户会搜索的专名或核心能力名词短语'),
     /** 适用对象与用途说明，上限 2000 字符，不得用于声明授权。 */
-    purpose: z.string().trim().min(1).max(2000),
+    purpose: z
+      .string()
+      .trim()
+      .min(1)
+      .max(2000)
+      .describe('单段纯文本，1–2 句约 80 字：面向谁、解决什么；不换行，不罗列功能或关键词'),
   })
   .strict();
 
@@ -48,25 +60,54 @@ export const publicationSuggestion = z
  */
 export const assessmentSchema = z
   .object({
-    summary: z.string().min(1).max(4000),
+    summary: z
+      .string()
+      .min(1)
+      .max(4000)
+      .describe(
+        'Markdown，最多 3 段共约 200 字，段间空一行：首句写结论与风险理由，再写最关键的 1–3 个问题，末句写下一步；不列已读文件或检查范围，不用标题和表格',
+      ),
     /** 资源整体风险判断；`unknown` 表示证据不足，不能与 `low` 混用。 */
     risk: z.enum(['low', 'medium', 'high', 'unknown']),
     findings: z
       .array(
         z
           .object({
-            title: z.string().min(1).max(200),
+            title: z
+              .string()
+              .min(1)
+              .max(200)
+              .describe('纯文本，不超过 30 字的名词短语，不含行号和句末标点'),
             /** `critical` 表示阻断发布依据；`info` 仅作说明。 */
             severity: z.enum(['info', 'warning', 'critical']),
-            explanation: z.string().min(1).max(2000),
-            recommendation: z.string().min(1).max(2000),
-            evidence: z.array(evidenceSchema).max(10),
+            explanation: z
+              .string()
+              .min(1)
+              .max(2000)
+              .describe(
+                'Markdown，1–3 句：现象、影响，以及依据属于事实、推断还是待验证；文件名、命令和变量可用行内代码',
+              ),
+            recommendation: z
+              .string()
+              .min(1)
+              .max(2000)
+              .describe('纯文本，一句可执行动作；多步时每步一行，以「1. 」编号，最多 4 步'),
+            evidence: z.array(evidenceSchema).max(10).describe('支撑本项发现的已读行区间'),
           })
           .strict(),
       )
       .max(30),
-    limitations: z.array(z.string().min(1).max(1000)).max(30),
-    suggested_resolution: z.string().min(1).max(1800),
+    limitations: z
+      .array(z.string().min(1).max(1000))
+      .max(30)
+      .describe('每条一句纯文本，只写一项未验证或缺失的事项'),
+    suggested_resolution: z
+      .string()
+      .min(1)
+      .max(1800)
+      .describe(
+        '纯文本处理说明（反馈研判会写入反馈供提交者查看，资源审计写给维护者）：首句写结论与原因，随后最多 3 行以「1. 」编号的步骤，约 300 字内',
+      ),
   })
   .strict();
 
