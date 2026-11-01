@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { AnyWorkflow } from '@mastra/core/workflows';
 import type { OperationContext } from './context.js';
-import { digest } from './config.js';
-import { AiError } from './errors.js';
-import { asJson } from './records.js';
+import { digest } from '../core/config.js';
+import { AiError } from '../core/errors.js';
+import { asJson } from '../core/records.js';
 
 export interface OperationDefinition {
   id: string;

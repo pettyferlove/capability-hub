@@ -12,16 +12,16 @@ import type {
   AiTelemetry,
   CredentialResolver,
   ResourceResolver,
-} from './ports.js';
-import type { AiConfiguration, ModelProfile } from './config.js';
-import { digest } from './config.js';
-import { asJson, type Json } from './records.js';
-import { AiError, aiFailure } from './errors.js';
-import { type AiEventService, AgentEventMapper } from './events.js';
-import { type ExecutionScope } from './scope.js';
-import { ManagedProvider } from './provider.js';
-import { readStructured, ReportFormatError } from './structured-output.js';
-import { withMcpTools } from './mcp.js';
+} from '../core/ports.js';
+import type { AiConfiguration, ModelProfile } from '../core/config.js';
+import { digest } from '../core/config.js';
+import { asJson, type Json } from '../core/records.js';
+import { AiError, aiFailure } from '../core/errors.js';
+import { type AiEventService, AgentEventMapper } from '../execution/events.js';
+import { type ExecutionScope } from '../execution/scope.js';
+import { ManagedProvider } from '../integrations/provider.js';
+import { readStructured, ReportFormatError } from '../integrations/structured-output.js';
+import { withMcpTools } from '../integrations/mcp.js';
 
 export interface AgentInvocation {
   id: string;

@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { AiStore, AiQueueBridge, ExecutionLease } from './ports.js';
-import type { ExecutionRecord } from './records.js';
-import { AiError } from './errors.js';
+import type { AiStore, AiQueueBridge, ExecutionLease } from '../core/ports.js';
+import type { ExecutionRecord } from '../core/records.js';
+import { AiError } from '../core/errors.js';
 
 export interface RunScope {
   lease: ExecutionLease;

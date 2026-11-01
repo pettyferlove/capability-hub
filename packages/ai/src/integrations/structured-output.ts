@@ -1,6 +1,6 @@
 import { MastraError } from '@mastra/core/error';
 import type { z } from 'zod';
-import { AiError, aiFailure } from './errors.js';
+import { AiError, aiFailure } from '../core/errors.js';
 
 // 只传递校验位置和规则；不把模型原文、SDK 异常或资源内容写入错误及重试指令。
 export class ReportFormatError extends AiError {

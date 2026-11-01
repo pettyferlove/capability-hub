@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import type { AiEvent, AiEventType, ExecutionRecord, Json } from './records.js';
-import type { AiStore } from './ports.js';
+import type { AiEvent, AiEventType, ExecutionRecord, Json } from '../core/records.js';
+import type { AiStore } from '../core/ports.js';
 import { type ExecutionScope } from './scope.js';
-import { AiError } from './errors.js';
+import { AiError } from '../core/errors.js';
 
 function eventText(value: Json | undefined): string {
   if (typeof value !== 'string') throw new AiError('AI_INTERNAL', '文本事件字段无效');

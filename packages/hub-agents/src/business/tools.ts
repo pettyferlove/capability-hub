@@ -1,7 +1,7 @@
 import type { AgentEvidenceService } from '@capability-hub/application';
 import type { AgentInvocation, OperationContext } from '@capability-hub/ai';
 import { z } from 'zod';
-import type { evidenceSchema } from './business-schemas.js';
+import type { evidenceSchema } from './schemas.js';
 
 export function businessTools(
   context: OperationContext,

@@ -1,19 +1,19 @@
-export { AiRuntime } from './runtime.js';
-export { OperationRegistry, type OperationDefinition } from './registry.js';
+export { AiRuntime } from './execution/runtime.js';
+export { OperationRegistry, type OperationDefinition } from './operations/registry.js';
 export {
   OperationContext,
   type AgentInvocation,
   type RuntimeDependencies,
   type ToolDefinition,
-} from './context.js';
-export { AiError, type AiErrorCode, aiFailure } from './errors.js';
+} from './operations/context.js';
+export { AiError, type AiErrorCode, aiFailure } from './core/errors.js';
 export {
   aiConfigurationSchema,
   modelProfileSchema,
   digest,
   type AiConfiguration,
   type ModelProfile,
-} from './config.js';
+} from './core/config.js';
 export type {
   AiAuthorization,
   AiQueueBridge,
@@ -23,5 +23,5 @@ export type {
   ExecutionLease,
   ResourceResolver,
   AiResource,
-} from './ports.js';
-export { terminalStatuses, type ExecutionRecord, type Json } from './records.js';
+} from './core/ports.js';
+export { terminalStatuses, type ExecutionRecord, type Json } from './core/records.js';

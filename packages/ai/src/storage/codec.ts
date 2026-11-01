@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { WorkflowRunState } from '@mastra/core/workflows';
-import { asJson, type Json } from '../records.js';
-import { AiError } from '../errors.js';
+import { asJson, type Json } from '../core/records.js';
+import { AiError } from '../core/errors.js';
 
 // 原生快照与 SDK 版本一起保存；边界 DTO 只允许 JSON，错误不保存供应商响应或堆栈。
 export function encodeNative(value: unknown): Json {

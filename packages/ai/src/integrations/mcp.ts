@@ -1,11 +1,11 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import type { ToolsInput } from '@mastra/core/agent';
 import { z } from 'zod';
-import type { McpEndpoint } from './config.js';
-import type { CredentialResolver } from './ports.js';
-import type { OperationContext } from './context.js';
-import { AiError } from './errors.js';
-import { asJson } from './records.js';
+import type { McpEndpoint } from '../core/config.js';
+import type { CredentialResolver } from '../core/ports.js';
+import type { OperationContext } from '../operations/context.js';
+import { AiError } from '../core/errors.js';
+import { asJson } from '../core/records.js';
 
 export async function withMcpTools<T>(
   context: OperationContext,

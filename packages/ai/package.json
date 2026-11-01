@@ -30,24 +30,24 @@
       "default": "./dist/index.js"
     },
     "./records": {
-      "development": "./src/records.ts",
-      "types": "./dist/records.d.ts",
-      "default": "./dist/records.js"
+      "development": "./src/core/records.ts",
+      "types": "./dist/core/records.d.ts",
+      "default": "./dist/core/records.js"
     },
     "./ports": {
-      "development": "./src/ports.ts",
-      "types": "./dist/ports.d.ts",
-      "default": "./dist/ports.js"
+      "development": "./src/core/ports.ts",
+      "types": "./dist/core/ports.d.ts",
+      "default": "./dist/core/ports.js"
     },
     "./mastra": {
-      "development": "./src/mastra.ts",
-      "types": "./dist/mastra.d.ts",
-      "default": "./dist/mastra.js"
+      "development": "./src/integrations/mastra.ts",
+      "types": "./dist/integrations/mastra.d.ts",
+      "default": "./dist/integrations/mastra.js"
     },
     "./storage": {
-      "development": "./src/storage.ts",
-      "types": "./dist/storage.d.ts",
-      "default": "./dist/storage.js"
+      "development": "./src/storage/index.ts",
+      "types": "./dist/storage/index.d.ts",
+      "default": "./dist/storage/index.js"
     }
   },
   "files": [

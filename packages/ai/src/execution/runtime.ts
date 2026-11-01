@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { Mastra } from '@mastra/core/mastra';
 import { MastraCompositeStore } from '@mastra/core/storage';
 import { createWorkflowStateReader, type AnyWorkflow } from '@mastra/core/workflows';
-import type { AiStore, AiQueueBridge, ExecutionLease } from './ports.js';
+import type { AiStore, AiQueueBridge, ExecutionLease } from '../core/ports.js';
 import {
   asJson,
   eventTypes,
@@ -11,15 +11,15 @@ import {
   type ExecutionRecord,
   type AiRecordMap,
   type Json,
-} from './records.js';
-import { aiConfigurationSchema, digest, profileFor, type AiConfiguration } from './config.js';
-import { AiError, aiFailure } from './errors.js';
+} from '../core/records.js';
+import { aiConfigurationSchema, digest, profileFor, type AiConfiguration } from '../core/config.js';
+import { AiError, aiFailure } from '../core/errors.js';
 import { ExecutionScope } from './scope.js';
 import { AiEventService } from './events.js';
-import { OperationContext, type RuntimeDependencies } from './context.js';
-import { type OperationRegistry, type OperationDefinition } from './registry.js';
-import { ScopedWorkflowsStorage } from './storage/workflows.js';
-import { ScopedMemoryStorage } from './storage/memory.js';
+import { OperationContext, type RuntimeDependencies } from '../operations/context.js';
+import { type OperationRegistry, type OperationDefinition } from '../operations/registry.js';
+import { ScopedWorkflowsStorage } from '../storage/workflows.js';
+import { ScopedMemoryStorage } from '../storage/memory.js';
 
 export class AiRuntime {
   private expirationCursor: { id: string; position: number } | undefined;

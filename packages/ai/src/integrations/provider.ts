@@ -1,12 +1,12 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { randomUUID } from 'node:crypto';
-import type { AiAuthorization, CredentialResolver } from './ports.js';
-import type { AiConfiguration, ModelProfile } from './config.js';
-import type { AiRecordMap } from './records.js';
-import { AiError } from './errors.js';
-import { type ExecutionScope } from './scope.js';
-import { type AiEventService } from './events.js';
+import type { AiAuthorization, CredentialResolver } from '../core/ports.js';
+import type { AiConfiguration, ModelProfile } from '../core/config.js';
+import type { AiRecordMap } from '../core/records.js';
+import { AiError } from '../core/errors.js';
+import { type ExecutionScope } from '../execution/scope.js';
+import { type AiEventService } from '../execution/events.js';
 type EndpointModel = ReturnType<ReturnType<typeof createOpenAICompatible>>;
 
 export class ManagedProvider {

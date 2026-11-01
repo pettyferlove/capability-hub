@@ -5,10 +5,10 @@ import {
 } from '@mastra/core/storage';
 import type { WorkflowRun, WorkflowRuns } from '@mastra/core/storage';
 import type { WorkflowRunState } from '@mastra/core/workflows';
-import type { AiRecordMap } from '../records.js';
-import { digest } from '../config.js';
-import { AiError } from '../errors.js';
-import { type ExecutionScope } from '../scope.js';
+import type { AiRecordMap } from '../core/records.js';
+import { digest } from '../core/config.js';
+import { AiError } from '../core/errors.js';
+import { type ExecutionScope } from '../execution/scope.js';
 import { decodeSnapshot, encodeNative } from './codec.js';
 const sdkVersion = '1.81.0';
 

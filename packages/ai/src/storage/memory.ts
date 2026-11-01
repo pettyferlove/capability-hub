@@ -1,8 +1,8 @@
 import { MemoryStorage } from '@mastra/core/storage';
 import type { MastraDBMessage, StorageThreadType } from '@mastra/core/memory';
-import type { AiRecordMap } from '../records.js';
-import { AiError } from '../errors.js';
-import { type ExecutionScope } from '../scope.js';
+import type { AiRecordMap } from '../core/records.js';
+import { AiError } from '../core/errors.js';
+import { type ExecutionScope } from '../execution/scope.js';
 import { encodeNative } from './codec.js';
 
 type Arg<K extends keyof MemoryStorage> = MemoryStorage[K] extends (...args: infer A) => unknown
