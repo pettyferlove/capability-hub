@@ -110,7 +110,7 @@ Operations: `pnpm backup`, `restore:import`, `restore:check`, `maintenance`, `ac
 ## Code Conventions & Common Patterns
 
 - **Formatting:** Prettier — 2 spaces, single quotes, trailing commas, 100 columns; `.prettierrc.json`.
-  ESLint is type-aware (`projectService`) with `consistent-type-imports` and `no-misused-promises`.
+  ESLint is type-aware (`projectService`) with `consistent-type-imports`, `no-misused-promises`, and `no-deprecated`.
 - **Hard bans** (`scripts/checks/check-architecture.ts`, `scripts/checks/lib/style-policy.ts`):
   explicit `any`; non-kebab `.ts` / non-Pascal `.tsx` filenames; imports after module body; Node
   builtins or `logging/server` in browser entries; hex/RGB/OKLCH or Tailwind palette colors outside

@@ -10,6 +10,7 @@ export default defineConfig(
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
     rules: {
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports', fixStyle: 'inline-type-imports' }],
+      '@typescript-eslint/no-deprecated': 'error',
       '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_', ignoreRestSiblings: true }],
     },
@@ -17,7 +18,11 @@ export default defineConfig(
   {
     files: ['tests/**/*.ts'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
-    rules: { 'no-empty': ['error', { allowEmptyCatch: true }] },
+    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
+    rules: {
+      '@typescript-eslint/no-deprecated': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
   },
   {
     files: ['scripts/**/*.mjs', 'bin/**/*.mjs', 'eslint.config.mjs'],
