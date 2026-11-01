@@ -11,9 +11,9 @@ export function businessTools(
 ): {
   tools: NonNullable<AgentInvocation['tools']>;
   inspected: z.infer<typeof evidenceSchema>[];
-  evidence: { feedbackRead: boolean };
+  evidence: { feedbackRead: boolean; scenarios: Map<string, string> };
 } {
-  const evidence = { feedbackRead: false };
+  const evidence = { feedbackRead: false, scenarios: new Map<string, string>() };
   const inspected: z.infer<typeof evidenceSchema>[] = [];
   const tool = <I extends z.ZodType>(
     id: string,
@@ -32,6 +32,29 @@ export function businessTools(
     });
   const empty = z.object({}).strict();
   const tools = {
+    ...(!feedbackId && {
+      publication_scenarios: tool(
+        'publication-scenarios',
+        '按名称搜索或分页查看已登记的有效场景。推荐场景分类时使用返回的 ID。',
+        z
+          .object({
+            query: z.string().max(128).default(''),
+            offset: z.number().int().min(0).default(0),
+          })
+          .strict(),
+        async ({ query, offset }) => {
+          const available = (await service.publicationScenarios(context.ownerId, versionId)).filter(
+            (s) => s.name.toLowerCase().includes(query.toLowerCase()),
+          );
+          const items = available.slice(offset, offset + 30);
+          for (const item of items) evidence.scenarios.set(item.id, item.name);
+          return {
+            items,
+            next_offset: offset + items.length < available.length ? offset + items.length : null,
+          };
+        },
+      ),
+    }),
     resource_overview: tool(
       'resource-overview',
       '读取当前固定版本的类型、入口文件与摘要。先使用此工具确定审计入口。',

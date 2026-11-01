@@ -2,6 +2,7 @@ import { cn } from '../../shared/styles/cn.js';
 
 export const intakeDetailStyles = cn(
   'group/intake-detail border-t [border-top-style:solid] border-t-[color:var(--line)] mt-5 pt-6 flex flex-col gap-5 [&_h3]:flex',
+  '[&>nav[role=tablist]]:mb-0',
   '[&_h3]:items-center [&_h3]:gap-2.5 [&_h3]:[overflow-wrap:anywhere] [&_h4]:text-[length:12px]',
   "[[class~='group/publish-page']_&]:max-h-[calc(100vh_-_410px)]",
   "[[class~='group/publish-page']_&]:min-h-55 [[class~='group/publish-page']_&]:overflow-y-auto",
@@ -470,8 +471,7 @@ export const publishPageStyles = cn(
   "max-[760px]:[&_[class~='group/page-head']_h1]:text-[length:27px]",
   "max-[600px]:[&_[class~='group/page-head']_h1]:text-[length:25px]",
   "[&_[class~='group/page-tabs']]:mb-[var(--section-gap)]",
-  "[&_[class~='group/page-tabs']_>_button]:pt-2.5 [&_[class~='group/page-tabs']_>_button]:pr-0",
-  "[&_[class~='group/page-tabs']_>_button]:pb-3 [&_[class~='group/page-tabs']_>_button]:pl-0",
+  "[&_[class~='group/page-tabs']_>_button]:py-3",
 );
 
 export const uploadZoneStyles = cn(

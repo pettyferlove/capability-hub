@@ -1,11 +1,9 @@
 import {
   pageTabsStyles,
-  animatedTabsStyles,
   tabLabelStyles,
   tabIndicatorStyles,
   activeStyles,
 } from '../styles/recipes.js';
-import { cn } from '../styles/cn.js';
 import { motion, useReducedMotion } from 'motion/react';
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { spring } from '../motion/transitions.js';
@@ -59,7 +57,7 @@ export function PageTabs<T extends string>({
   return (
     <nav
       ref={navigation}
-      className={cn(pageTabsStyles, animatedTabsStyles)}
+      className={pageTabsStyles}
       aria-label={label}
       role={hrefFor ? undefined : 'tablist'}
     >

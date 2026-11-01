@@ -21,7 +21,16 @@ const roles = {
 };
 function roleInfo(id: string) {
   const key = Object.hasOwn(roles, id) ? (id as keyof typeof roles) : 'assistant';
-  return { ...roles[key], ...agentLabels[key], tone: agentToneStyles[key] };
+  const role = roles[key];
+  if (id === 'resource-audit' || id === 'feedback-triage' || id === 'assessment')
+    return {
+      ...role,
+      ...agentLabels[id],
+      Icon: id === 'assessment' ? Pencil : ShieldCheck,
+      phase: id === 'assessment' ? '报告整理' : '查阅证据',
+      tone: agentToneStyles[id === 'assessment' ? 'editor' : 'reviewer'],
+    };
+  return { ...role, ...agentLabels[key], tone: agentToneStyles[key] };
 }
 export function AgentRoster({ view }: { view: AiExecutionViewResponse }) {
   if (view.execution.operation_id !== 'agent-lab') return null;
@@ -71,14 +80,17 @@ export function AgentRoster({ view }: { view: AiExecutionViewResponse }) {
 }
 export function AgentMessageCard({
   block,
+  reportReady,
   running,
   active,
 }: {
   block: AiExecutionViewResponse['execution']['message_blocks'][number];
+  reportReady: boolean;
   running: boolean;
   active: boolean;
 }) {
-  const info = roleInfo(block.message_id.split(':')[0]);
+  const role = block.message_id.split(':')[0];
+  const info = roleInfo(role);
   const streaming = running && !block.complete;
   return (
     <article className={cn(agentCardStyles, info.tone.border)} aria-label={info.title}>
@@ -129,7 +141,17 @@ export function AgentMessageCard({
         </span>
       </header>
       <div className="px-5 py-4 sm:px-6 sm:py-5">
-        <StreamingText text={block.text} live={streaming && active} />
+        {role === 'assessment' ? (
+          <p className="text-muted-ink">
+            {reportReady
+              ? '报告已整理，可在「成果」中查看发现、建议和证据引用。'
+              : running
+                ? '正在整理并校验研判报告…'
+                : '报告整理已结束，处理状态见运行详情。'}
+          </p>
+        ) : (
+          <StreamingText text={block.text} live={streaming && active} />
+        )}
       </div>
     </article>
   );

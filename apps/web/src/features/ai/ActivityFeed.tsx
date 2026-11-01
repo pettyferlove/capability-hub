@@ -60,7 +60,9 @@ function InteractionDecision({ interaction }: { interaction: AiInteractionRespon
       )}
       {answered &&
         (typeof response.approved === 'boolean' ? (
-          <p className="font-medium">{response.approved ? '采纳草案' : '暂不采纳'}</p>
+          <p className="font-medium">
+            {response.approved ? (request.assessment ? '采纳研判' : '采纳草案') : '暂不采纳'}
+          </p>
         ) : (
           <AiText
             text={
@@ -90,6 +92,7 @@ export function ActivityFeed({
   focusRequest: number;
 }) {
   const { execution } = view;
+  const reportReady = view.artifacts.some((artifact) => artifact.name === 'assessment');
   const viewport = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const confirmation = useRef<HTMLDivElement>(null);
@@ -147,7 +150,7 @@ export function ActivityFeed({
           setAway(!follow.current);
         }}
       >
-        <div ref={content} className={cn(readingWidthStyles, 'pb-18')}>
+        <div ref={content} className={readingWidthStyles}>
           {prompt && (
             <section
               aria-label="任务目标"
@@ -203,6 +206,7 @@ export function ActivityFeed({
                   {item.kind === 'message' ? (
                     <AgentMessageCard
                       block={item.block}
+                      reportReady={reportReady}
                       running={execution.status === 'running'}
                       active={active}
                     />
@@ -271,7 +275,10 @@ export function ActivityFeed({
             )}
             onClick={() => {
               follow.current = true;
-              if (viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
+              if (viewport.current) {
+                viewport.current.focus({ preventScroll: true });
+                viewport.current.scrollTop = viewport.current.scrollHeight;
+              }
               setAway(false);
             }}
           >

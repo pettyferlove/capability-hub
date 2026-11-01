@@ -68,6 +68,7 @@ export function ExecutionDetails({
         .filter((item) => item.status === 'answered' || item.status === 'applied')
         .map((interaction) => {
           const response = jsonObject(interaction.response);
+          const request = jsonObject(interaction.request);
           return (
             <section
               key={interaction.id}
@@ -79,7 +80,13 @@ export function ExecutionDetails({
               </h3>
               {typeof response.approved === 'boolean' ? (
                 <>
-                  <p>{response.approved ? '采纳草案' : '暂不采纳'}</p>
+                  <p>
+                    {response.approved
+                      ? request.assessment
+                        ? '采纳研判'
+                        : '采纳草案'
+                      : '暂不采纳'}
+                  </p>
                   {typeof response.comment === 'string' && response.comment && (
                     <p className="mt-2 whitespace-pre-wrap break-words text-muted-ink">
                       {response.comment}

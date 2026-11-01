@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { acceptedSuggestion } from '../../apps/web/src/features/ai/publication-suggestion.js';
+import { executionResponse } from '../../apps/server/src/http/routes/ai-views.js';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { AgentEvidenceService } from '@capability-hub/application';
@@ -20,7 +22,14 @@ import {
   emptyMcpEntry,
 } from '../../apps/web/src/features/publishing/mcp-entry.js';
 
+const publicationSuggestion = {
+  category: 'general',
+  scenario_ids: [],
+  keywords: ['异常输入', '数据校验'],
+  purpose: '供维护者检查异常输入。',
+};
 const assessment = {
+  publication_suggestion: publicationSuggestion,
   summary: '入口文档需要明确异常输入行为。',
   risk: 'medium',
   findings: [
@@ -46,6 +55,11 @@ const script = {
   text: '已检查 SKILL.md 第 1–3 行，建议补充异常输入说明；未执行脚本。',
   json: JSON.stringify(assessment),
 };
+const feedbackJson = JSON.stringify(
+  Object.fromEntries(
+    Object.entries(assessment).filter(([key]) => key !== 'publication_suggestion'),
+  ),
+);
 async function run(f: TestHub) {
   const job = await f.hub.jobs.claim('business-test', ['ai_execution']);
   assert(job);
@@ -63,7 +77,13 @@ async function run(f: TestHub) {
 }
 
 test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报告，发布申请保持待审', async (t) => {
-  const provider = await fixture('openai', 'tools', false, script);
+  const scenarioId = randomUUID();
+  const suggested = { ...publicationSuggestion, category: 'scenario', scenario_ids: [scenarioId] };
+  const provider = await fixture('openai', 'tools', false, {
+    ...script,
+    turns: [...script.turns, { name: 'publication_scenarios', input: { query: '工程' } }],
+    json: JSON.stringify({ ...assessment, publication_suggestion: suggested }),
+  });
   t.after(provider.close);
   const previous = process.env.AI_FIXTURE_KEY;
   process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
@@ -72,6 +92,12 @@ test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报�
     else process.env.AI_FIXTURE_KEY = previous;
   });
   const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
+  await f.store.insert('scenarios', {
+    id: scenarioId,
+    name: '工程实践',
+    description: '工程工作流',
+    active: true,
+  });
   const intake = await receiveSkill(f);
   const beforePublication = await f.hub.ai.runtime.store.list('ai_executions', { limit: 100 });
   assert.equal(beforePublication.length, 1, '上传校验完成后即排队，无需提交发布申请');
@@ -108,14 +134,32 @@ test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报�
   );
   const done = await run(f);
   assert.equal(done.status, 'succeeded', JSON.stringify(done.payload.error));
+  assert.deepEqual(
+    (done.payload.result as { assessment: typeof assessment }).assessment.publication_suggestion,
+    suggested,
+  );
+  assert.deepEqual(acceptedSuggestion(executionResponse(done)), {
+    executionId: done.id,
+    versionId: intake.version_id,
+    digest: intake.content_digest,
+    fields: suggested,
+    notices: [
+      {
+        title: assessment.findings[0].title,
+        explanation: assessment.findings[0].explanation,
+        evidence: ['SKILL.md:1–3'],
+      },
+    ],
+  });
   assert.equal((await f.store.get('requests', request.id))?.state, 'pending');
   assert.equal((await f.store.all('releases')).length, 0);
-  assert.equal(provider.requests.length, 7, '人工恢复不重复调用模型');
+  assert.equal(provider.requests.length, 8, '人工恢复不重复调用模型');
 });
 
 test('反馈提交自动排队且幂等，采纳后仅写入处理中，效果回执与业务写入共同提交', async (t) => {
   const provider = await fixture('openai', 'tools', false, {
     ...script,
+    json: feedbackJson,
     turns: [...script.turns, { name: 'read_feedback', input: {} }],
   });
   t.after(provider.close);
@@ -283,11 +327,13 @@ test('MCP 审计按需读取 server.json 和声明工具，明确静态边界并
   const done = await run(f);
   assert.equal(done.status, 'succeeded');
   assert.equal((done.payload.result as { approved: boolean }).approved, false);
+  assert.equal(acceptedSuggestion(executionResponse(done)), undefined);
 });
 
 test('等待确认期间反馈被人工修改时，Agent 写回冲突不覆盖人工处理', async (t) => {
   const provider = await fixture('openai', 'tools', false, {
     ...script,
+    json: feedbackJson,
     turns: [...script.turns, { name: 'read_feedback', input: {} }],
   });
   t.after(provider.close);

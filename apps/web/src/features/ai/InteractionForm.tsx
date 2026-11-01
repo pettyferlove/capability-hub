@@ -1,5 +1,7 @@
 import { BusinessAssessment } from './BusinessAssessment.js';
-import { useState } from 'react';
+import { QuickReview } from './quick-review.js';
+import { createPortal } from 'react-dom';
+import { useContext, useRef, useState } from 'react';
 import type { AiInteractionResponse } from '@capability-hub/contracts';
 import { useAiCommand } from './use-ai-command.js';
 import {
@@ -37,25 +39,35 @@ export function InteractionForm({
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
   const command = useAiCommand();
+  const quick = useContext(QuickReview);
+  const sending = useRef(false);
   const request = jsonObject(interaction.request);
   const fields = jsonObject(jsonObject(interaction.response_schema).properties);
   const business = !!request.assessment;
   const approval = jsonObject(fields.approved).type === 'boolean';
-  const submit = async () => {
-    if (busy || submitted) return;
+  const submit = async (response = value, origin?: DOMRect) => {
+    if (sending.current || submitted) return;
+    sending.current = true;
     setBusy(true);
     setError('');
     try {
       await command(
         `/api/ai/executions/${executionId}/interactions/${interaction.id}/respond`,
-        { response: value },
+        { response },
         interaction.revision,
       );
       setSubmitted(true);
+      if (response.approved === true && origin)
+        quick?.onAdopt?.({
+          executionId,
+          x: origin.left + origin.width / 2,
+          y: origin.top + origin.height / 2,
+        });
       onDone();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '提交失败');
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };
@@ -64,10 +76,43 @@ export function InteractionForm({
       className={interactionCardStyles}
       onSubmit={(event) => {
         event.preventDefault();
-        void submit();
+        const button = event.nativeEvent.submitter;
+        void submit(value, button?.getBoundingClientRect());
       }}
       aria-label="人工确认"
     >
+      {quick?.slot &&
+        business &&
+        approval &&
+        decision !== false &&
+        !value.apply_feedback &&
+        createPortal(
+          <div className="flex flex-col items-end gap-1">
+            <button
+              type="button"
+              disabled={busy || submitted}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-full bg-brand px-3.5 text-caption font-semibold text-on-brand hover:bg-brand-hover disabled:opacity-70"
+              onClick={(event) => {
+                void submit(
+                  { ...value, approved: true },
+                  event.currentTarget.getBoundingClientRect(),
+                );
+              }}
+            >
+              <Check size={14} />
+              {submitted ? '已采纳，正在继续' : busy ? '正在采纳…' : '快速采纳'}
+            </button>
+            {error && (
+              <span
+                role="alert"
+                className="max-w-48 break-words rounded bg-danger-soft px-2 py-1 text-caption text-danger"
+              >
+                {error}
+              </span>
+            )}
+          </div>,
+          quick.slot,
+        )}
       <div className="border-b border-warning/20 bg-warning-soft/35 px-5 py-4">
         <div className="space-y-4">
           <div>

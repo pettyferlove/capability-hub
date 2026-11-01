@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { audienceIcons, classificationIcons } from '../../shared/components/select-icons.js';
 import { policyFieldsStyles } from './styles.js';
 import { chipsStyles, checkLabelStyles } from '../../shared/styles/recipes.js';
@@ -10,8 +11,10 @@ import { Message } from '../../shared/components/Message.js';
 export function PublicationPolicyFields({
   value,
   onChange,
+  categoryHint,
 }: {
   value: Policy;
+  categoryHint?: ReactNode;
   onChange: (v: Policy) => void;
 }) {
   const { me } = useHub();
@@ -35,22 +38,25 @@ export function PublicationPolicyFields({
       audienceOptions.set(id, `${id.startsWith('group:') ? '团队' : '成员'} ${id.split(':')[1]}`);
   return (
     <div className={policyFieldsStyles}>
-      <label>
-        分类
-        <SelectField
-          optionIcons={classificationIcons}
-          value={value.category}
-          onValueChange={(nextValue) =>
-            update({ category: nextValue as Policy['category'], scenario_ids: [] })
-          }
-        >
-          <option value="uncategorized">未分类</option>
-          <option value="scenario">场景</option>
-          <option value="general">通用</option>
-        </SelectField>
-      </label>
+      <div>
+        <label data-draft-field="category">
+          分类
+          <SelectField
+            optionIcons={classificationIcons}
+            value={value.category}
+            onValueChange={(nextValue) =>
+              update({ category: nextValue as Policy['category'], scenario_ids: [] })
+            }
+          >
+            <option value="uncategorized">未分类</option>
+            <option value="scenario">场景</option>
+            <option value="general">通用</option>
+          </SelectField>
+        </label>
+        {categoryHint}
+      </div>
       {value.category === 'scenario' && (
-        <fieldset>
+        <fieldset data-review-target="scenarios" tabIndex={-1}>
           <legend>适用场景</legend>
           {scenarioError && <Message error>{scenarioError}</Message>}
           {scenariosLoading && <small>正在读取场景…</small>}
@@ -102,7 +108,7 @@ export function PublicationPolicyFields({
         </SelectField>
       </label>
       {audienceMode === 'restricted' && (
-        <fieldset>
+        <fieldset data-review-target="audience" tabIndex={-1}>
           <legend>指定受众</legend>
           <div className={chipsStyles}>
             {[...audienceOptions].map(([id, name]) => (

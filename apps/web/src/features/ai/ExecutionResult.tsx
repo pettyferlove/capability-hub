@@ -27,7 +27,9 @@ export function ExecutionResult({ view }: { view: AiExecutionViewResponse }) {
     const report =
       view.execution.result ?? view.artifacts.find((item) => item.name === 'assessment')?.content;
     return report ? (
-      <BusinessAssessment value={report} />
+      <div className={readingWidthStyles}>
+        <BusinessAssessment value={report} />
+      </div>
     ) : (
       <p className="p-6 text-muted-ink">Agent 正在收集证据，报告将在调查完成后出现。</p>
     );

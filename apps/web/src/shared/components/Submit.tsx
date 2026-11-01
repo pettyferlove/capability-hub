@@ -11,6 +11,7 @@ export function Submit({
   busy?: boolean;
   children: ReactNode;
   disabled?: boolean;
+  form?: string;
   type?: 'button' | 'submit';
   onClick?: () => void;
   className?: string;

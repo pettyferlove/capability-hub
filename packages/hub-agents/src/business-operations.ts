@@ -4,6 +4,7 @@ import type { AgentEvidenceService } from '@capability-hub/application';
 import { z } from 'zod';
 import {
   assessmentSchema,
+  publicationSuggestion,
   businessDecision,
   businessInput,
   businessResult,
@@ -26,19 +27,25 @@ export function registerBusinessOperations(
       kind === 'feedback-triage'
         ? businessInput.extend({ feedback_id: z.string().uuid() })
         : businessInput.omit({ feedback_id: true });
+    const reportSchema =
+      kind === 'resource-audit'
+        ? assessmentSchema.extend({ publication_suggestion: publicationSuggestion })
+        : assessmentSchema;
+    const researchOutput = researchSchema.extend({ assessment: reportSchema });
+    const resultSchema = businessResult.extend({ assessment: reportSchema });
     registry.register({
       id: kind,
-      version: '2',
+      version: kind === 'resource-audit' ? '3' : '2',
       title: kind === 'resource-audit' ? '资源审计' : '反馈研判',
       description: '自主查阅固定版本证据，形成可追溯建议并等待人工确认。',
       input,
-      output: businessResult,
+      output: resultSchema,
       interactions: { 'human-review': businessDecision },
       create: (context) => {
         const research = createStep({
           id: 'investigate',
           inputSchema: input,
-          outputSchema: researchSchema,
+          outputSchema: researchOutput,
           execute: ({ inputData }) =>
             context.step('investigate', async () => {
               const target = businessInput.parse(inputData);
@@ -56,7 +63,11 @@ export function registerBusinessOperations(
               );
               const investigation = await context.agent({
                 id: kind,
-                instructions,
+                instructions:
+                  kind === 'resource-audit'
+                    ? instructions +
+                      ' 同时调查资源用途，提出便于发现的检索关键词、分类及共享目的。场景分类必须先查 publication_scenarios，只引用已登记的有效 ID。'
+                    : instructions,
                 max_steps: 64,
                 tools,
                 prompt: `任务：${kind === 'resource-audit' ? '审计资源的安全性、完整性与可用性' : '核实反馈，定位原因并提出处理建议'}。目标：${overview.slug}，版本 ${overview.version_label}。入口：${overview.entry_file}。先调用工具读取证据。`,
@@ -65,16 +76,34 @@ export function registerBusinessOperations(
                 throw new AiError('AI_OUTPUT_INVALID', '研判未读取资源入口文件，不能形成审计结论');
               if (target.feedback_id && !evidence.feedbackRead)
                 throw new AiError('AI_OUTPUT_INVALID', '研判未读取反馈证据');
+              const audit = kind === 'resource-audit';
               const assessment = await context.step('assessment', () =>
                 context.structured(
                   {
                     id: 'assessment',
-                    instructions,
-                    prompt: `依据已完成的调查整理结构化报告。不要补造证据；引用必须落在以下实际读取范围内：${JSON.stringify(inspected)}\n调查结论：\n${investigation.text}`,
+                    instructions: audit
+                      ? instructions +
+                        ' publication_suggestion 必须填写。推荐能描述真实用途的关键词，category 为 general、scenario 或 uncategorized。仅 scenario 可填写非空的已登记 scenario_ids，其余为空。purpose 简洁说明适用对象和用途，不代替人声明所有权、授权或发布批准。'
+                      : instructions,
+                    prompt: `依据已完成的调查整理结构化报告。不要补造证据；引用必须落在以下实际读取范围内：${JSON.stringify(inspected)}\n调查结论：\n${investigation.text}${audit ? '\n已查看的可选场景：' + JSON.stringify([...evidence.scenarios]) : ''}`,
                   },
-                  assessmentSchema,
+                  reportSchema,
                 ),
               );
+              if (audit) {
+                const suggestion = publicationSuggestion.parse(
+                  'publication_suggestion' in assessment
+                    ? assessment.publication_suggestion
+                    : undefined,
+                );
+                const ids = suggestion.scenario_ids;
+                if (
+                  (suggestion.category === 'scenario') !== ids.length > 0 ||
+                  new Set(ids).size !== ids.length ||
+                  (ids.length && !ids.every((id) => evidence.scenarios.has(id)))
+                )
+                  throw new AiError('AI_OUTPUT_INVALID', '发布建议引用了无效场景，不能填入申请');
+              }
               for (const finding of assessment.findings)
                 for (const citation of finding.evidence)
                   if (
@@ -106,19 +135,19 @@ export function registerBusinessOperations(
               return result;
             }),
         });
-        const confirmed = researchSchema.extend({ decision: businessDecision });
+        const confirmed = researchOutput.extend({ decision: businessDecision });
         const review = createStep({
           id: 'human-review',
-          inputSchema: researchSchema,
+          inputSchema: researchOutput,
           outputSchema: confirmed,
           resumeSchema: businessDecision,
-          suspendSchema: z.object({ question: z.string(), assessment: researchSchema }).strict(),
+          suspendSchema: z.object({ question: z.string(), assessment: researchOutput }).strict(),
           execute: async ({ inputData, resumeData, suspend }) => {
             if (!resumeData)
               return suspend({
                 question: inputData.feedback_id
                   ? '是否采纳反馈研判？可选择写入处理建议。'
-                  : '是否采纳资源审计？发布仍需独立人工审核。',
+                  : '采纳后将建议分类、关键词和共享目的填入此版本的发布申请草稿。是否采纳？',
                 assessment: inputData,
               });
             if (
@@ -132,7 +161,7 @@ export function registerBusinessOperations(
         const finish = createStep({
           id: 'record-assessment',
           inputSchema: confirmed,
-          outputSchema: businessResult,
+          outputSchema: resultSchema,
           execute: ({ inputData }) =>
             context.step('record-assessment', async () => {
               const { decision, ...research } = inputData;
@@ -176,7 +205,7 @@ export function registerBusinessOperations(
         return createWorkflow({
           id: kind,
           inputSchema: input,
-          outputSchema: businessResult,
+          outputSchema: resultSchema,
           options: { autoRestartActiveRuns: false },
           retryConfig: { attempts: 0, delay: 0 },
         })

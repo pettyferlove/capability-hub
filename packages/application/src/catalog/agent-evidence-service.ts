@@ -48,6 +48,13 @@ export class AgentEvidenceService {
     };
   }
 
+  async publicationScenarios(ownerId: string, versionId: string) {
+    await this.version(ownerId, versionId);
+    return (await this.context.store.all('scenarios'))
+      .filter((s) => s.active)
+      .map(({ id, name }) => ({ id, name }));
+  }
+
   async files(ownerId: string, id: string, offset: number, limit: number) {
     const { version } = await this.version(ownerId, id);
     return {

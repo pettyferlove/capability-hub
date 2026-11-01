@@ -54,6 +54,7 @@ const stepLabels: Record<string, string> = {
   answer: '助手回答',
   investigate: '查阅证据与研判',
   assessment: '整理研判报告',
+  'repair-output': '重新整理报告格式',
   'human-review': '人工确认',
   'record-assessment': '记录处理结果',
   draft: '规划草案',
@@ -62,6 +63,7 @@ const stepLabels: Record<string, string> = {
   'save-result': '保存成果',
 };
 export const toolLabels: Record<string, string> = {
+  'publication-scenarios': '匹配发布场景',
   'resource-overview': '确认资源入口',
   'mcp-declarations': '核对 MCP 声明',
   'list-files': '浏览文件目录',

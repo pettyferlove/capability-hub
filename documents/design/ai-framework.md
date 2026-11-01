@@ -50,13 +50,13 @@ Mastra 公共构造函数从 `@capability-hub/ai/mastra` 导出。定义通过 `
 
 ## 模型与资源边界
 
-结构化输出通过 Mastra 的 `jsonPromptInjection: 'system'` 显式向模型发送完整 JSON Schema，避免兼容端点的 JSON 模式只约束语法却遗漏字段定义。返回结果仍严格校验，不使用未校验的降级报告或隐式请求重试。已识别的结构化字段校验失败、缺失结果及输出截断映射为 `AI_OUTPUT_INVALID`；错误说明保留原因分类，不透传 SDK 校验详情或原始结果。运行详情在失败节点同时显示错误说明与代码。
+结构化输出通过 Mastra 的 `jsonPromptInjection: 'system'` 显式向模型发送完整 JSON Schema，避免兼容端点的 JSON 模式只约束语法却遗漏字段定义。模型客户端会按 Schema 将无歧义的字符串表示还原为整数、布尔值、JSON 数组或对象，并重新严格校验。仍不匹配、没有生成对象或输出截断时，无工具且不使用记忆的格式化步骤最多再请求一次；使用原调查资料、字段位置及规则，不重跑调查。纠正请求同样受权限、预算、超时和租约约束。两次均未通过时不会保存业务报告或进入人工采纳。已识别的结构化字段校验失败、缺失结果及输出截断映射为 `AI_OUTPUT_INVALID`；错误说明保留原因分类，不透传 SDK 校验详情或原始结果。运行详情在失败节点同时显示错误说明与代码。
 
 只支持两种协议：`openai` 使用 Chat Completions，`anthropic` 使用 Messages；均由官方 AI SDK provider 生成请求。配置地址是 API 前缀，不能包含最终操作路径、用户信息、查询或 fragment。HTTP 需要 `allow_http=true`。凭据仅在发送请求时通过环境变量名解析，不存入配置、快照或 SSE。
 
 实际请求先在数据库预留，再访问模型。每次请求重新检查执行授权，重定向被拒绝。每次执行默认最多 96 次模型请求、200 次工具调用；单请求默认最多输出 4096 token、60 秒超时。默认单次活跃调度最多 10 分钟，总执行期限 24 小时，最多 8 次人工继续。流事件默认最多 10 MB，终止事件保留写入空间。每执行最多 100 个成果，单个最多 1 MB，合计最多 4 MB（包含内部资源证据）。配置字段和边界由 `aiConfigurationSchema` 定义。
 
-预算是请求数、工具数、输出上限、时间及事件字节限制；不是精确计费预算。Token 用量取自 provider 返回值；只有流完整结束且输入、输出用量均已确认才记为已知，崩溃、取消、断流或用量不完整时增加 unknown 计数，已收到的部分计数仅供诊断，不猜测费用。OpenAI 使用最终 usage 帧，Anthropic 的起始输出计数不作为最终用量，累计输出取自 message_delta，分别遵循 [Chat Completions 流协议](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events) 和 [Messages 流协议](https://platform.claude.com/docs/en/build-with-claude/streaming)。OpenAI `[DONE]` 与 Anthropic `message_stop` 之前断流均为失败。传输失败会中止当前作用域，阻止 SDK 隐式重试增加请求。失败执行不会自动重新向模型收费；用户需创建新执行。
+预算是请求数、工具数、输出上限、时间及事件字节限制；不是精确计费预算。Token 用量取自 provider 返回值；只有流完整结束且输入、输出用量均已确认才记为已知，崩溃、取消、断流或用量不完整时增加 unknown 计数，已收到的部分计数仅供诊断，不猜测费用。OpenAI 使用最终 usage 帧，Anthropic 的起始输出计数不作为最终用量，累计输出取自 message_delta，分别遵循 [Chat Completions 流协议](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events) 和 [Messages 流协议](https://platform.claude.com/docs/en/build-with-claude/streaming)。OpenAI `[DONE]` 与 Anthropic `message_stop` 之前断流均为失败。传输失败会中止当前作用域，阻止 SDK 隐式重试增加请求。已终止的失败执行不会自动重新向模型收费；用户需创建新执行。
 
 资源引用为 `version:<版本 ID>/<文件路径>`。宿主检查当前资源可读权限、固定版本摘要、UTF-8 和 128 KB 上限；使用过的证据保存于内部成果。在模型/工具执行、人工继续、结果读取、历史列表与 SSE 推送前重查资源权限。详情快照、SSE 批次及缺口重置与权限检查共用事务，避免检查后读到新提交的受限资源派生内容。失去资源访问权后不能继续读取派生内容。
 

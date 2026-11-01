@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useId, useState, type ReactNode } from 'react';
 import {
   aiExecutionViewResponseSchema,
   type AiExecutionViewResponse,
@@ -51,6 +51,17 @@ export function ExecutionPanel({
   const resultReady = execution.result !== null || view.artifacts.length > 0;
   const [tab, setChoice] = useState<Tab>('activity');
   const [focusRequest, setFocusRequest] = useState(0);
+  const entered = useRef(false);
+  useEffect(() => {
+    if (compact && visible && !entered.current) {
+      if (execution.status === 'succeeded') setChoice('result');
+      if (execution.status === 'waiting_input') {
+        setChoice('activity');
+        setFocusRequest((value) => value + 1);
+      }
+    }
+    entered.current = visible;
+  }, [compact, visible, execution.status]);
   const panelId = useId();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -107,7 +118,7 @@ export function ExecutionPanel({
     }
   };
   return (
-    <div className={fillStyles}>
+    <div className={cn(fillStyles, '@container/execution')}>
       <header className="shrink-0 border-b border-[color:var(--line)] bg-paper px-5 pt-5 sm:px-7">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">

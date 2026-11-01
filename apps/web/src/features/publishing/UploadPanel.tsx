@@ -17,7 +17,6 @@ import {
   panelStyles,
   panelHeadingStyles,
   stepNumberStyles,
-  inlineIconStyles,
 } from '../../shared/styles/recipes.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import type {
@@ -336,19 +335,19 @@ export function UploadPanel({
                       {
                         id: 'skill',
                         label: (
-                          <span className={inlineIconStyles}>
+                          <>
                             <FileArchive size={15} />
                             Skill ZIP
-                          </span>
+                          </>
                         ),
                       },
                       {
                         id: 'mcp',
                         label: (
-                          <span className={inlineIconStyles}>
+                          <>
                             <Plug size={15} />
                             MCP 服务
-                          </span>
+                          </>
                         ),
                       },
                     ]}

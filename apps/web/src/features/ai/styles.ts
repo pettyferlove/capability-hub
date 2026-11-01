@@ -1,8 +1,6 @@
 import { cn } from '../../shared/styles/cn.js';
 export const agentDockStyles =
-  'fixed bottom-[max(16px,env(safe-area-inset-bottom))] right-4 z-[75] flex max-w-[calc(100%_-_32px)] flex-col items-end gap-2';
-export const agentDockToggleStyles =
-  'flex w-[min(360px,calc(100vw_-_32px))] items-center gap-3 rounded-2xl border border-brand/30 bg-paper px-4 py-3 shadow-overlay transition-colors hover:bg-brand-soft';
+  '@container/dock pointer-events-none fixed w-[800px] bottom-[max(16px,env(safe-area-inset-bottom))] right-4 z-[75] flex max-w-[calc(100%_-_32px)] flex-col items-end gap-2';
 export const stackStyles = 'flex min-w-0 flex-col gap-4';
 export const fillStyles = 'flex min-h-0 min-w-0 flex-1 flex-col';
 export const scrollStyles =
@@ -73,7 +71,8 @@ export const messageStyles = cn(
   '[&_table]:my-4 [&_table]:block [&_table]:overflow-auto [&_th]:border [&_td]:border [&_th]:border-[color:var(--line)] [&_td]:border-[color:var(--line)] [&_th]:bg-page [&_th]:p-2.5 [&_td]:p-2.5 [&_th]:text-left',
   '[&_blockquote]:my-4 [&_blockquote]:border-l-2 [&_blockquote]:border-brand/40 [&_blockquote]:pl-4 [&_blockquote]:text-muted-ink [&_hr]:my-5 [&_hr]:border-[color:var(--line)]',
 );
-export const readingWidthStyles = 'mx-auto w-full max-w-220 px-5 py-6 sm:px-8 lg:px-10';
+export const readingWidthStyles =
+  'mx-auto w-full min-w-0 max-w-220 px-4 py-4 @min-[640px]/execution:px-8 @min-[640px]/execution:py-6';
 export const statusStyles =
   'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium';
 export const statusToneStyles = {
@@ -91,7 +90,7 @@ export const metricStyles =
   'flex min-w-0 flex-col gap-1 rounded-xl border border-[color:var(--line)] bg-page/50 p-4';
 
 export const activityTrackStyles =
-  'relative space-y-5 before:pointer-events-none before:absolute before:inset-y-4 before:left-5 before:w-px before:bg-[color:var(--line)]';
+  'flex min-w-0 flex-col gap-4 [&>div]:relative [&>div+div]:before:pointer-events-none [&>div+div]:before:absolute [&>div+div]:before:-top-4 [&>div+div]:before:left-5 [&>div+div]:before:h-4 [&>div+div]:before:w-px [&>div+div]:before:bg-[color:var(--line)]';
 export const agentCardStyles =
   'relative min-w-0 overflow-hidden rounded-2xl border bg-paper [box-shadow:0_2px_8px_color-mix(in_srgb,_var(--shadow-ink)_3%,_transparent)]';
 export const agentToneStyles = {
@@ -121,6 +120,6 @@ export const agentToneStyles = {
   },
 };
 export const toolCardStyles =
-  'relative ml-4 bg-page/70 [&>summary]:gap-3 [&>summary]:py-3 [&>summary]:text-ink';
+  'relative bg-page/70 [&>summary]:gap-3 [&>summary]:py-3 [&>summary]:text-ink';
 export const interactionCardStyles =
   'relative overflow-hidden rounded-2xl border border-warning/40 bg-paper [box-shadow:0_0_0_3px_var(--warning-soft)]';

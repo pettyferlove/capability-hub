@@ -190,14 +190,11 @@ export const inlineIconStyles = 'inline-flex items-center gap-1.5';
 
 export const filterTabsStyles = cn(
   'flex gap-[21px] [&_>_button]:flex [&_>_button]:items-center [&_>_button]:gap-[7px]',
-  '[&_>_button]:border-0 [&_>_button]:border-b-2 [&_>_button]:[border-bottom-style:solid] [&_>_button]:border-b-transparent',
+  '[&_>_button]:border-0 [&_>_button]:leading-5',
   '[&_>_button]:[background:none] [&_>_button]:pt-3 [&_>_button]:pr-0 [&_>_button]:pb-3',
   '[&_>_button]:pl-0 [&_>_button]:text-muted-ink [&_>_button]:text-[length:12px]',
   "[&_>_button]:whitespace-nowrap [&_>_button[class~='group/selected']]:text-brand",
-  "[&_>_button[class~='group/selected']]:border-t-[color:var(--brand)]",
-  "[&_>_button[class~='group/selected']]:border-r-[color:var(--brand)]",
-  "[&_>_button[class~='group/selected']]:border-b-[color:var(--brand)]",
-  "[&_>_button[class~='group/selected']]:border-l-[color:var(--brand)]",
+  "[&_>_button[class~='group/selected']]:[box-shadow:inset_0_-2px_var(--brand)]",
   "[&_>_button[class~='group/selected']]:font-semibold [&_>_button_>_span]:text-muted-ink",
   '[&_>_button_>_span]:text-[length:11px] [&_>_button_>_span]:min-w-[15px] max-[600px]:gap-[19px]',
   'max-[600px]:[&_>_button]:text-[length:12px] max-[600px]:[&_>_button]:pt-[11px]',
@@ -692,37 +689,19 @@ export const pageHeadStyles = cn(
 );
 
 export const pageTabsStyles = cn(
-  'flex gap-5 border-b [border-bottom-style:solid] border-b-[color:var(--line)] mb-[var(--section-gap)] overflow-x-auto',
-  '[scrollbar-width:thin] [scroll-padding-inline:4px] [&_>_button]:flex [&_>_button]:items-center',
-  '[&_>_button]:gap-2 [&_>_button]:text-muted-ink [&_>_button]:text-[length:12px]',
-  '[&_>_button]:border-0 [&_>_button]:[background:none] [&_>_button]:pt-3 [&_>_button]:pr-0',
-  '[&_>_button]:pb-[15px] [&_>_button]:pl-0 [&_>_button]:whitespace-nowrap',
-  "[&_>_button]:border-b-2 [&_>_button]:[border-bottom-style:solid] [&_>_button]:border-b-transparent [&_>_button[class~='group/active']]:text-brand",
-  "[&_>_button[class~='group/active']]:border-b-[color:var(--brand)] max-[600px]:gap-5.5",
-  'max-[600px]:mb-5.5 max-[600px]:[&_>_button]:text-[length:12px] group/page-tabs',
-  '[&_>_a]:inline-flex [&_>_a]:items-center [&_>_a]:gap-2 [&_>_a]:pt-0 [&_>_a]:pr-0',
-  '[&_>_a]:pb-[15px] [&_>_a]:pl-0 [&_>_a]:border-b-2 [&_>_a]:[border-bottom-style:solid] [&_>_a]:border-b-transparent',
-  '[&_>_a]:text-muted-ink [&_>_a]:whitespace-nowrap [&_>_a]:text-body',
-  "[&_>_a[class~='group/active']]:border-t-[color:var(--brand)]",
-  "[&_>_a[class~='group/active']]:border-r-[color:var(--brand)]",
-  "[&_>_a[class~='group/active']]:border-b-[color:var(--brand)]",
-  "[&_>_a[class~='group/active']]:border-l-[color:var(--brand)]",
-  "[&_>_a[class~='group/active']]:text-brand [&_>_a[class~='group/active']]:font-semibold",
-  'max-[760px]:gap-5',
+  'group/page-tabs mb-[var(--section-gap)] flex gap-5 overflow-x-auto border-b border-[color:var(--line)] [scrollbar-width:thin] [scroll-padding-inline:4px]',
+  '[&>:is(a,button)]:relative [&>:is(a,button)]:inline-flex [&>:is(a,button)]:items-center [&>:is(a,button)]:justify-center [&>:is(a,button)]:whitespace-nowrap [&>:is(a,button)]:px-0 [&>:is(a,button)]:text-muted-ink',
+  '[&>button]:border-0 [&>button]:bg-transparent [&>button]:py-3.5 [&>button]:text-[length:12px]',
+  '[&>a]:py-2 [&>a]:text-body [&>a[aria-current=page]]:font-semibold',
+  '[&>a[aria-current=page]]:text-brand [&>button[aria-selected=true]]:text-brand',
+  '[&>:is(a,button):focus-visible]:rounded-[5px] [&>:is(a,button):focus-visible]:outline-2 [&>:is(a,button):focus-visible]:outline-brand [&>:is(a,button):focus-visible]:outline-offset-[-3px]',
+  'max-[600px]:mb-5.5',
 );
 
-export const animatedTabsStyles = cn(
-  '[&_>_a]:relative [&_>_a]:border-b-transparent! [&_>_button]:relative',
-  '[&_>_button]:border-b-transparent!',
-  '[&_>_a:focus-visible]:[outline:2px_solid_var(--brand)] [&_>_a:focus-visible]:[outline-offset:-3px]',
-  '[&_>_a:focus-visible]:rounded-[5px] [&_>_button:focus-visible]:[outline:2px_solid_var(--brand)]',
-  '[&_>_button:focus-visible]:[outline-offset:-3px] [&_>_button:focus-visible]:rounded-[5px]',
-);
-
-export const tabLabelStyles = 'inline-flex items-center gap-2';
+export const tabLabelStyles = 'inline-flex items-center justify-center gap-2 leading-5';
 
 export const tabIndicatorStyles =
-  'absolute bottom-[-1px] left-0 right-0 h-0.5 bg-brand rounded-[2px] pointer-events-none';
+  'absolute inset-x-0 bottom-0 h-0.5 rounded-[2px] bg-brand pointer-events-none';
 
 export const queryRegionStyles = 'relative min-w-0';
 

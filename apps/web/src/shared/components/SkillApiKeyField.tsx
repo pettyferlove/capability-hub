@@ -12,20 +12,21 @@ export function SkillApiKeyField({
 }) {
   const hintId = useId();
   return (
-    <div className="flex min-w-0 flex-col gap-[var(--space-2)]">
-      <label className={checkLabelStyles}>
-        <input
-          type="checkbox"
-          checked={checked}
-          disabled={disabled}
-          aria-describedby={hintId}
-          onChange={(event) => onChange(event.target.checked)}
-        />
-        <span>使用时需要 API Key</span>
-      </label>
-      <p id={hintId} className={subtleStyles}>
-        若全部或部分功能需要使用者自行配置 API Key，请勾选，并在 Skill 文档中说明配置方式。
-      </p>
-    </div>
+    <label className={checkLabelStyles}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        aria-labelledby={hintId + '-label'}
+        aria-describedby={hintId}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="flex flex-col gap-1">
+        <span id={hintId + '-label'}>使用时需要 API Key</span>
+        <span id={hintId} className={subtleStyles}>
+          若全部或部分功能需要使用者自行配置 API Key，请勾选，并在 Skill 文档中说明配置方式。
+        </span>
+      </span>
+    </label>
   );
 }

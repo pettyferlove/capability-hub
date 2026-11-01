@@ -39,7 +39,7 @@ test('失败时间线显示具体原因及错误代码，避免只显示执行�
   assert(within(timeline).getByText(error.code));
 });
 
-test('Agent 悬浮卡收起时仍接收工具事件，展开和收起保留人工确认草稿', async (t) => {
+test('状态条接收实时活动，快速采纳复用人工意见，失败可幂等重试', async (t) => {
   let view = executionView({
     operation_id: 'resource-audit',
     status: 'running',
@@ -52,8 +52,44 @@ test('Agent 悬浮卡收起时仍接收工具事件，展开和收起保留人�
       stream = controller;
     },
   });
+  const attempts: string[] = [];
+  let starts = 0;
   t.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
-    assert(!options.method || options.method === 'GET', '查看及收起面板不得提交或取消任务');
+    if (options.method === 'POST' && path === '/api/ai/executions') {
+      assert.deepEqual(JSON.parse(String(options.body)), {
+        operation_id: 'resource-audit',
+        model_profile: 'primary',
+        input: { version_id: 'version' },
+      });
+      starts++;
+      view = executionView({
+        id: 'next',
+        operation_id: 'resource-audit',
+        status: 'queued',
+        input: { version_id: 'version' },
+      });
+      return Response.json(view.execution);
+    }
+    if (options.method === 'POST') {
+      assert.equal(path, '/api/ai/executions/execution/interactions/review/respond');
+      assert.deepEqual(JSON.parse(String(options.body)), {
+        response: { approved: true, comment: '需要补充说明' },
+      });
+      const headers = new Headers(options.headers);
+      assert.equal(headers.get('If-Match'), '"1"');
+      attempts.push(headers.get('Idempotency-Key')!);
+      if (attempts.length === 1) throw new Error('网络暂不可用');
+      view = {
+        ...view,
+        execution: {
+          ...view.execution,
+          status: 'succeeded',
+          result: { ...businessReport, approved: true },
+        },
+        interactions: [],
+      };
+      return Response.json({});
+    }
     if (path === '/api/ai/catalog')
       return Response.json({
         default_profile: 'primary',
@@ -62,8 +98,14 @@ test('Agent 悬浮卡收起时仍接收工具事件，展开和收起保留人�
       });
     if (path.startsWith('/api/ai/executions?'))
       return Response.json({ items: [view.execution], next_cursor: null });
+    if (path === '/api/ai/executions/next/events')
+      return new Response(new ReadableStream(), {
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
     if (path.endsWith('/events'))
-      return new Response(response, { headers: { 'Content-Type': 'text/event-stream' } });
+      return new Response(attempts.length ? '' : response, {
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
     assert.equal(path, '/api/ai/executions/execution');
     return Response.json(view);
   });
@@ -129,6 +171,37 @@ test('Agent 悬浮卡收起时仍接收工具事件，展开和收起保留人�
       /SKILL.md/,
     ),
   );
+  const message = {
+    ...event,
+    seq: 2,
+    type: 'message.started',
+    data: { message_id: 'resource-audit:one', block_id: 'notes', format: 'text' },
+  };
+  const delta = {
+    ...event,
+    seq: 3,
+    type: 'message.delta',
+    data: {
+      message_id: 'resource-audit:one',
+      block_id: 'notes',
+      offset: 0,
+      delta: '入口文档引用了两个脚本',
+    },
+  };
+  await act(async () => {
+    for (const item of [message, delta])
+      stream.enqueue(
+        encoder.encode(
+          `event: ${item.type}\nid: execution:operator:${item.seq}\ndata: ${JSON.stringify(item)}\n\n`,
+        ),
+      );
+  });
+  await waitFor(() =>
+    assert.match(
+      screen.getByRole('button', { name: '展开 Agent 实时状态' }).textContent ?? '',
+      /入口文档引用了两个脚本/,
+    ),
+  );
   view = {
     ...view,
     execution: { ...view.execution, status: 'waiting_input', last_seq: 1 },
@@ -174,6 +247,21 @@ test('Agent 悬浮卡收起时仍接收工具事件，展开和收起保留人�
   assert((screen.getByRole('radio', { name: '采纳研判' }) as HTMLInputElement).checked);
   fireEvent.keyDown(screen.getByRole('textbox', { name: '补充意见' }), { key: 'Escape' });
   assert.equal(document.activeElement, screen.getByRole('button', { name: '展开 Agent 实时状态' }));
+  assert.equal(attempts.length, 0);
+  assert.equal(screen.queryByRole('button', { name: '发起新研判' }), null);
+  fireEvent.click(screen.getByRole('button', { name: '快速采纳' }));
+  await screen.findByRole('alert', { name: '' });
+  fireEvent.click(screen.getByRole('button', { name: '快速采纳' }));
+  await waitFor(() => assert.equal(screen.queryByRole('button', { name: '快速采纳' }), null));
+  assert.equal(attempts.length, 2);
+  assert(attempts[0] && attempts[0] === attempts[1]);
+  const brief = within(screen.getByRole('region', { name: 'Agent 任务简报' }));
+  await brief.findByText(/已采纳/);
+  assert(!brief.queryByText(businessReport.assessment.findings[0]!.recommendation));
+  fireEvent.click(await brief.findByRole('button', { name: '发起新研判' }));
+  await brief.findByText('任务已排队');
+  assert.equal(starts, 1);
+  assert.equal(brief.queryByRole('button', { name: '发起新研判' }), null);
 });
 
 const businessReport = {

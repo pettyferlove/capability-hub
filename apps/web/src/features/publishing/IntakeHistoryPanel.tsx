@@ -36,6 +36,8 @@ import { QueryRegion } from '../../shared/components/QueryRegion.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { useIntakeDetail } from './use-intake-detail.js';
 import { IntakeDetail } from './IntakeDetail.js';
+import type { ReviewOrigin } from '../ai/quick-review.js';
+import type { AuditSuggestion } from '../ai/publication-suggestion.js';
 import { BusinessAgentPanel } from '../ai/BusinessAgentPanel.js';
 import { IntakeHistoryRow, statusLabels } from './IntakeHistoryRow.js';
 
@@ -46,7 +48,11 @@ export function IntakeHistoryPanel({
   active: string;
   onSelect: (id: string) => void;
 }) {
-  const { refresh, reload } = useHub();
+  const { refresh, reload, me } = useHub();
+  const [suggestion, setSuggestion] = useState<AuditSuggestion>();
+  const [footerSlot, setFooterSlot] = useState<HTMLDivElement | null>(null);
+  const [origin, setOrigin] = useState<ReviewOrigin>();
+  useEffect(() => setOrigin(undefined), [active]);
   const [query, setQuery] = useState('');
   const [listRefresh, setListRefresh] = useState(0);
   const [filters, setFilters] = useState({ page: 1, pageSize: 5, q: '', state: 'all' });
@@ -199,29 +205,44 @@ export function IntakeHistoryPanel({
             <X size={20} />
           </button>
         </div>
-        <div className={publishIntakeBodyStyles}>
-          {detailError ? (
-            <ErrorState message={detailError} retry={reload} />
-          ) : detailLoading && !detail ? (
-            <Loading label="正在加载接收详情…" />
-          ) : (
-            detail && (
-              <IntakeDetail
-                key={detail.id}
-                intake={detail}
-                onSelect={onSelect}
-                connection={connection}
-              />
-            )
+        <div className="relative flex min-h-0 flex-1 flex-col lg:static">
+          <div
+            data-intake-scroll
+            className={cn(
+              publishIntakeBodyStyles,
+              detail?.version_id && me?.capabilities.can_ai && 'max-lg:pb-24 max-[600px]:pb-24',
+            )}
+          >
+            {detailError ? (
+              <ErrorState message={detailError} retry={reload} />
+            ) : detailLoading && !detail ? (
+              <Loading label="正在加载接收详情…" />
+            ) : (
+              detail && (
+                <IntakeDetail
+                  footerSlot={footerSlot}
+                  key={detail.id}
+                  intake={detail}
+                  origin={origin}
+                  suggestion={me?.capabilities.can_ai ? suggestion : undefined}
+                  onSelect={onSelect}
+                  connection={connection}
+                />
+              )
+            )}
+          </div>
+          {detail?.version_id && (
+            <BusinessAgentPanel
+              className="absolute lg:top-5 lg:bottom-auto lg:right-[calc(100%_+_20px)] lg:max-w-[calc(100vw_-_100%_-_40px)]"
+              key={detail.version_id}
+              versionId={detail.version_id}
+              onAdopt={setOrigin}
+              onSuggestion={setSuggestion}
+              title={detail.asset_slug}
+            />
           )}
         </div>
-        {detail?.version_id && (
-          <BusinessAgentPanel
-            key={detail.version_id}
-            versionId={detail.version_id}
-            title={detail.asset_slug}
-          />
-        )}
+        <div ref={setFooterSlot} className="shrink-0 empty:hidden" />
       </Overlay>
     </section>
   );

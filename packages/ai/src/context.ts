@@ -20,6 +20,7 @@ import { AiError, aiFailure } from './errors.js';
 import { type AiEventService, AgentEventMapper } from './events.js';
 import { type ExecutionScope } from './scope.js';
 import { ManagedProvider } from './provider.js';
+import { readStructured, ReportFormatError } from './structured-output.js';
 import { withMcpTools } from './mcp.js';
 
 export interface AgentInvocation {
@@ -151,20 +152,43 @@ export class OperationContext {
     return tool;
   }
   async agent(options: AgentInvocation): Promise<{ text: string }> {
-    const { text } = await this.invoke(options);
-    return { text };
+    return this.invoke(options, (text) => ({ text }));
   }
   async structured<T extends z.ZodType>(options: AgentInvocation, schema: T): Promise<z.infer<T>> {
-    const result = await this.invoke(options, schema);
-    const parsed = schema.safeParse(result.object);
-    if (!parsed.success) throw new AiError('AI_OUTPUT_INVALID', '模型结构化结果不符合约定');
-    asJson(parsed.data);
-    return parsed.data;
+    const run = async (invocation: AgentInvocation) => {
+      const object = await this.invoke(
+        invocation,
+        (_text, read) => readStructured(read, schema),
+        schema,
+      );
+      asJson(object);
+      return object;
+    };
+    try {
+      return await run(options);
+    } catch (error) {
+      if (
+        !(error instanceof ReportFormatError) ||
+        options.memory ||
+        Object.keys(options.tools ?? {}).length
+      )
+        throw error;
+      return this.step('repair-output', () =>
+        run({
+          ...options,
+          instructions:
+            options.instructions +
+            '\n上一份报告未通过格式校验。请根据原始资料和 Schema 重新生成，仅输出完整 JSON，不补造证据。校验提示：' +
+            error.hint,
+        }),
+      );
+    }
   }
-  private async invoke(
+  private async invoke<T>(
     options: AgentInvocation,
+    finish: (text: string, read: () => Promise<unknown>) => Promise<T> | T,
     schema?: z.ZodType,
-  ): Promise<{ text: string; object: unknown }> {
+  ) {
     await this.authorize('execute');
     if (options.prompt.length > 64000 || options.instructions.length > 32000)
       throw new AiError('AI_BUDGET_EXCEEDED', '模型输入超过长度限制');
@@ -225,14 +249,14 @@ export class OperationContext {
         : await managed.stream(options.prompt, streamOptions);
       for await (const chunk of stream.fullStream) {
         this.signal.throwIfAborted();
-        await mapper.accept(chunk);
+        if (!schema) await mapper.accept(chunk);
       }
       await mapper.flush();
       provider.assertSuccess();
       const text = await stream.text;
       if (!schema && !text.trim()) throw new AiError('AI_OUTPUT_INVALID', '模型未返回有效内容');
       await this.authorize('execute');
-      return { text, object: schema ? await stream.object : undefined };
+      return await finish(text, async () => stream.object);
     } catch (error) {
       provider.assertSuccess();
       throw aiFailure(error);

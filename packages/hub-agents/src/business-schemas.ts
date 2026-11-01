@@ -13,6 +13,15 @@ export const evidenceSchema = z
     end_line: z.number().int().positive(),
   })
   .strict();
+export const publicationSuggestion = z
+  .object({
+    category: z.enum(['general', 'scenario', 'uncategorized']),
+    scenario_ids: z.array(z.string().uuid()).max(20),
+    keywords: z.array(z.string().trim().min(1).max(128)).min(1).max(20),
+    purpose: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+
 export const assessmentSchema = z
   .object({
     summary: z.string().min(1).max(4000),

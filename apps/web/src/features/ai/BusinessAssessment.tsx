@@ -1,3 +1,5 @@
+import { reportSuggestion } from './publication-suggestion.js';
+import { SuggestionPreview } from './SuggestionPreview.js';
 import { AiText } from './AiText.js';
 import { jsonObject, type Json } from './presentation.js';
 import { ShieldCheck, FileText, Info } from '../../shared/icons/lucide.js';
@@ -15,14 +17,15 @@ const risks: Record<string, string> = {
   unknown: '证据不足',
 };
 export function BusinessAssessment({ value }: { value: Json }) {
+  const suggestion = reportSuggestion(value);
   const report = jsonObject(value);
   const assessment = jsonObject(report.assessment);
   const findings = Array.isArray(assessment.findings) ? assessment.findings : [];
   const inspected = Array.isArray(report.inspected) ? report.inspected : [];
   const limitations = Array.isArray(assessment.limitations) ? assessment.limitations : [];
   return (
-    <div className="space-y-5" aria-label="业务研判报告">
-      <section className="rounded-2xl border border-brand/20 bg-brand-soft/40 p-5 sm:p-6">
+    <div className="min-w-0 space-y-5 [overflow-wrap:anywhere]" aria-label="业务研判报告">
+      <section className="rounded-2xl border border-brand/20 bg-brand-soft/40 p-4 @min-[640px]/execution:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h3 className="flex items-center gap-2 text-section">
             <ShieldCheck size={19} />
@@ -48,7 +51,13 @@ export function BusinessAssessment({ value }: { value: Json }) {
           <p className="mt-2 whitespace-pre-wrap">{report.comment}</p>
         )}
       </section>
-      <div className="flex items-center justify-between">
+      {suggestion && <SuggestionPreview fields={suggestion} />}
+      {!suggestion && !report.feedback_id && report.approved === true && (
+        <p className="rounded-xl border border-separator p-3 text-caption text-muted-ink">
+          这份历史报告未生成发布建议。在「任务记录与模型设置」中发起新研判，即可生成分类、关键词和共享目的。
+        </p>
+      )}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h3 className="font-semibold">发现与建议</h3>
         <span className="text-muted-ink">
           {findings.length} 项发现 · {new Set(inspected.map((item) => jsonObject(item).path)).size}{' '}

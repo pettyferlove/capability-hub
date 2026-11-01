@@ -19,7 +19,12 @@ export function IntakeScan({ scan }: { scan: ScanResponse }) {
         <small>{scan.ruleset_version}</small>
       </div>
       {risks.map((f) => (
-        <div className={cn(intakeScanRiskStyles, `group/${f.severity}`)} key={f.id}>
+        <div
+          tabIndex={-1}
+          data-review-target={'scan-' + f.id}
+          className={cn(intakeScanRiskStyles, `group/${f.severity}`)}
+          key={f.id}
+        >
           <span className={tagStyles}>{f.severity === 'block' ? '阻断' : '需确认'}</span>
           <div>
             <code>

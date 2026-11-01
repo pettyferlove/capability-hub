@@ -119,11 +119,13 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.id)}
             className={cn(
               kfocusStyles,
-              'relative cursor-pointer rounded-full px-3 py-1.5 text-[12px] transition-colors',
+              'relative inline-flex min-h-8 cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-[12px] leading-5 transition-colors',
               on ? 'text-foreground' : 'text-muted hover:text-foreground',
             )}
           >
-            <span className="relative z-10 whitespace-nowrap">{o.label}</span>
+            <span className="relative z-10 inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
+              {o.label}
+            </span>
           </button>
         );
       })}

@@ -244,3 +244,80 @@ test('提交审核沿用已展示基线，成功后链接新申请', async (cont
   );
   assert.equal(submitted?.base_release_id, next.current_release_id);
 });
+
+test('采纳结果仅填同版本草稿，保留先前输入，显式替换后按现有人工提交路径发布', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f);
+  const fields = {
+    category: 'general' as const,
+    scenario_ids: [],
+    keywords: ['Git', '提交规范'],
+    purpose: '供研发团队统一提交信息。',
+  };
+  const suggestion = {
+    notices: [
+      { title: '请核对入口权限', explanation: '入口文件引用了脚本', evidence: ['SKILL.md:2–4'] },
+    ],
+    executionId: 'task',
+    versionId: intake.version_id,
+    digest: intake.content_digest!,
+    fields,
+  };
+  let submitted: Record<string, unknown> | undefined;
+  t.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path === '/api/scenarios') return Response.json([]);
+    assert.equal(path, '/api/publication-requests');
+    submitted = JSON.parse(String(options.body)) as Record<string, unknown>;
+    return Response.json({ id: 'request' });
+  });
+  const view = render(
+    page(
+      createElement(IntakeDetail, { intake, suggestion: { ...suggestion, versionId: 'other' } }),
+    ),
+  );
+  assert.equal(screen.queryByLabelText('分类的 AI 建议'), null);
+  const user = userEvent.setup();
+  const purpose = screen.getByRole('textbox', {
+    name: '共享目的与授权确认',
+  }) as HTMLTextAreaElement;
+  await user.type(purpose, '自己的用途');
+  view.rerender(
+    page(createElement(IntakeDetail, { intake, suggestion: { ...suggestion, pending: true } })),
+  );
+  assert(within(screen.getByLabelText('关键词的 AI 建议')).getByText('Git · 提交规范'));
+  assert.equal(screen.queryByRole('button', { name: '移除关键词 Git' }), null);
+  assert.equal(screen.queryByRole('button', { name: '使用共享目的建议' }), null);
+  await user.click(screen.getByRole('tab', { name: '01 校验与证据' }));
+  view.rerender(
+    page(
+      createElement(IntakeDetail, {
+        intake,
+        suggestion,
+        origin: { executionId: 'task', x: 10, y: 10 },
+      }),
+    ),
+  );
+  await screen.findByText('共享目的 · 保留手动填写');
+  assert(screen.getByText('关键词 · 已填入'));
+  await screen.findByRole('button', { name: '移除关键词 Git' });
+  assert.equal(purpose.value, '自己的用途');
+  await user.click(screen.getByRole('button', { name: '使用共享目的建议' }));
+  assert.equal(purpose.value, fields.purpose);
+  await user.click(screen.getByRole('button', { name: /项待核对/ }));
+  await user.click(screen.getByRole('button', { name: /请核对入口权限/ }));
+  assert.match(document.activeElement?.textContent ?? '', /SKILL.md:2–4/);
+  await user.click(screen.getByRole('button', { name: '填写发布申请' }));
+  assert.equal(submitted, undefined);
+  await user.click(screen.getByRole('button', { name: '确认内容并提交审核' }));
+  await screen.findByRole('link', { name: '查看审核' });
+  assert.deepEqual(submitted, {
+    source_intake_id: intake.id,
+    version_id: intake.version_id,
+    ...intake.proposed_policy,
+    category: 'general',
+    applies_to: { ...intake.proposed_applies_to, keywords: fields.keywords },
+    requires_api_key: intake.proposed_requires_api_key,
+    purpose: fields.purpose,
+    base_release_id: intake.current_release_id,
+  });
+});

@@ -81,8 +81,40 @@ for (const format of ['openai', 'anthropic'] as const)
       limit: 10,
     });
     assert(!JSON.stringify(snapshots).includes('private-model-output'));
-    assert.equal(provider.requests.length, 1, '格式失败不隐式重试或使用未校验的降级结果');
+    assert.equal(provider.requests.length, 2);
+    assert(!JSON.stringify(provider.requests[1].body).includes('private-model-output'));
+    assert(!result.payload.message_text.includes('private-model-output'));
   });
+
+for (const format of ['openai', 'anthropic'] as const)
+  for (const local of [true, false])
+    test(`AI ${format} ${local ? '本地解析字符串行号' : '按字段提示重新整理一次'}后仍严格校验`, async (t) => {
+      const report = { evidence: [{ line: 7 }], verdict: 'ok' };
+      const provider = await fixture(format, 'json', false, {
+        turns: [],
+        text: JSON.stringify({ evidence: [{ line: local ? '7' : 'not-a-line' }], verdict: 'ok' }),
+        json: JSON.stringify(report),
+      });
+      t.after(provider.close);
+      const hub = await frameworkFixture(t, frameworkConfig(provider.url, format), (context) =>
+        context.structured(
+          { id: 'report', instructions: 'Return JSON.', prompt: 'Summarize inspected evidence.' },
+          z
+            .object({
+              evidence: z.array(z.object({ line: z.number().int().positive() }).strict()),
+              verdict: z.literal('ok'),
+            })
+            .strict(),
+        ),
+      );
+      const submitted = await hub.runtime.submit(hub.admin.id, 'framework-test', {});
+      await hub.run();
+      const result = await hub.runtime.get(submitted.id);
+      assert.equal(result.status, 'succeeded', JSON.stringify(result.payload.error));
+      assert.deepEqual(result.payload.result, report);
+      assert.equal(result.payload.usage.requests, local ? 1 : 2);
+      if (!local) assert(JSON.stringify(provider.requests[1].body).includes('evidence.0.line'));
+    });
 
 for (const format of ['openai', 'anthropic'] as const)
   test(

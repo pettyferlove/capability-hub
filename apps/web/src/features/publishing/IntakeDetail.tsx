@@ -1,3 +1,10 @@
+import { createPortal } from 'react-dom';
+import { FieldSuggestion } from './FieldSuggestion.js';
+import { SubmittedFields } from './SubmittedFields.js';
+import { PublicationFooter, type PublicationNotice } from './PublicationFooter.js';
+import { DraftReceipt, type DraftChange } from './DraftReceipt.js';
+import type { ReviewOrigin } from '../ai/quick-review.js';
+import { categoryLabels, type AuditSuggestion } from '../ai/publication-suggestion.js';
 import { PageTabs } from '../../shared/components/PageTabs.js';
 import { VersionComparison } from '../../shared/components/VersionComparison.js';
 import { intakeDetailStyles, intakeSnapshotStyles, intakePublishedStyles } from './styles.js';
@@ -15,7 +22,7 @@ import { PublicationPolicyFields } from './PublicationPolicyFields.js';
 import type { Policy } from '@capability-hub/contracts';
 import type { IntakeResponse } from '@capability-hub/contracts/http';
 import { ArrowRight, ShieldCheck } from '../../shared/icons/lucide.js';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
@@ -30,10 +37,16 @@ import { KeywordField } from '../../shared/components/KeywordField.js';
 import { SkillApiKeyField } from '../../shared/components/SkillApiKeyField.js';
 export function IntakeDetail({
   intake: i,
+  suggestion,
+  origin,
   onSelect,
   connection,
+  footerSlot,
 }: {
   intake: IntakeResponse;
+  footerSlot?: HTMLElement | null;
+  suggestion?: AuditSuggestion;
+  origin?: ReviewOrigin;
   connection?: IntakeConnection;
   onSelect?: (id: string) => void;
 }) {
@@ -57,8 +70,172 @@ export function IntakeDetail({
     setSubmitted('');
     setReapplying(false);
     setError('');
-    setPurpose('');
+    setPurpose(i.publication?.source_consent.purpose ?? '');
+    applied.current = '';
+    edited.current = {
+      category: i.proposed_policy.category !== 'uncategorized',
+      keywords: false,
+      purpose: !!i.publication?.source_consent.purpose,
+    };
   }, [i.id]);
+  const edited = useRef({ category: false, keywords: false, purpose: false });
+  const applied = useRef('');
+  const [receipt, setReceipt] = useState<{
+    id: string;
+    origin?: ReviewOrigin;
+    changes: DraftChange[];
+  }>();
+  const source = receipt?.origin ?? origin;
+  const proposal =
+    suggestion?.versionId === i.version_id && suggestion?.digest === i.content_digest
+      ? suggestion
+      : undefined;
+  const editable =
+    !inactive &&
+    i.state === 'ready' &&
+    i.ruleset_current &&
+    !submitted &&
+    i.publication?.state !== 'pending' &&
+    (i.publication?.state !== 'approved' || reapplying);
+  const formId = useId();
+  const root = useRef<HTMLDivElement>(null);
+  const [jump, setJump] = useState<PublicationNotice>();
+  function locate(notice: PublicationNotice) {
+    setSection(notice.evidence ? 'evidence' : 'publication');
+    setJump(notice);
+  }
+  useLayoutEffect(() => {
+    if (!jump) return;
+    const target = Array.from(
+      root.current?.querySelectorAll<HTMLElement>('[data-review-target]') ?? [],
+    ).find((node) => node.dataset.reviewTarget === jump.target);
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView?.({ block: 'center' });
+    setJump(undefined);
+  }, [jump]);
+  const notices: PublicationNotice[] = [];
+  if (editable) {
+    if (value.category === 'scenario' && !value.scenario_ids.length)
+      notices.push({ target: 'scenarios', evidence: false, text: '场景分类还缺少适用场景' });
+    if (!value.distribution.audience.length)
+      notices.push({ target: 'audience', evidence: false, text: '请指定至少一个受众' });
+    if (i.version?.manifest.kind === 'skill' && i.proposed_requires_api_key && !requiresApiKey)
+      notices.push({
+        target: 'api-key',
+        evidence: false,
+        text: '接收记录标记了需要 API Key，请核对当前设置',
+      });
+    for (const finding of i.scan?.findings ?? [])
+      if (finding.severity !== 'info')
+        notices.push({
+          target: 'scan-' + finding.id,
+          evidence: true,
+          text: finding.file + ' · ' + finding.evidence_summary,
+        });
+    proposal?.notices?.forEach((notice, index) =>
+      notices.push({ target: 'audit-' + index, evidence: true, text: notice.title }),
+    );
+  }
+  function fillProposal(field?: DraftChange['field'], button?: DOMRect) {
+    if (!proposal || proposal.pending || !editable) return;
+    if (field) edited.current[field] = true;
+    const fields = proposal.fields;
+    const writeCategory = field ? field === 'category' : !edited.current.category;
+    const writeKeywords = field ? field === 'keywords' : !edited.current.keywords;
+    const writePurpose = field ? field === 'purpose' : !edited.current.purpose;
+    const existing = appliesTo.keywords ?? [];
+    const seen = new Set(existing.map((word) => word.toLowerCase()));
+    const additions = fields.keywords.filter((word) => !seen.has(word.toLowerCase()));
+    const keywords = [...existing, ...additions].slice(0, 20);
+    const changedCategory =
+      value.category !== fields.category ||
+      [...value.scenario_ids].sort().join() !== [...fields.scenario_ids].sort().join();
+    const changedKeywords = JSON.stringify(existing) !== JSON.stringify(keywords);
+    if (writeCategory)
+      setValue({ ...value, category: fields.category, scenario_ids: fields.scenario_ids });
+    if (writeKeywords) setAppliesTo({ ...appliesTo, keywords });
+    if (writePurpose) setPurpose(fields.purpose);
+    const changes: DraftChange[] = [
+      {
+        field: 'category',
+        label: '分类',
+        value: categoryLabels[writeCategory ? fields.category : value.category],
+        result: !writeCategory ? '保留手动填写' : changedCategory ? '已填入' : '已有相同内容',
+      },
+      {
+        field: 'keywords',
+        label: '关键词',
+        value: (writeKeywords ? keywords : existing).join(' · '),
+        result: !writeKeywords
+          ? '保留手动填写'
+          : changedKeywords
+            ? '已填入'
+            : additions.length
+              ? '已达关键词上限'
+              : '已有相同内容',
+      },
+      {
+        field: 'purpose',
+        label: '共享目的',
+        value: writePurpose ? fields.purpose : purpose,
+        result: !writePurpose
+          ? '保留手动填写'
+          : purpose !== fields.purpose
+            ? '已填入'
+            : '已有相同内容',
+      },
+    ];
+    setReceipt({
+      id: proposal.executionId,
+      changes: field ? changes.filter((change) => change.field === field) : changes,
+      origin: button && {
+        executionId: proposal.executionId,
+        x: button.left + button.width / 2,
+        y: button.top + button.height / 2,
+      },
+    });
+    applied.current = proposal.executionId;
+  }
+  useEffect(() => {
+    if (proposal && !proposal.pending && applied.current !== proposal.executionId) fillProposal();
+  }, [proposal, editable]);
+  useEffect(() => {
+    if (origin && receipt?.id === origin.executionId && editable) setSection('publication');
+  }, [origin, receipt?.id, editable]);
+  function hint(field: DraftChange['field']) {
+    if (!proposal) return;
+    const fields = proposal.fields;
+    const keywords = new Set((appliesTo.keywords ?? []).map((term) => term.toLowerCase()));
+    const missing = fields.keywords.filter((term) => !keywords.has(term.toLowerCase()));
+    const categoriesMatch =
+      value.category === fields.category &&
+      value.scenario_ids.length === fields.scenario_ids.length &&
+      fields.scenario_ids.every((id) => value.scenario_ids.includes(id));
+    const config = {
+      category: {
+        label: '分类',
+        values: [categoryLabels[fields.category]],
+        matched: categoriesMatch,
+      },
+      keywords: {
+        label: '关键词',
+        values: missing.length ? missing : fields.keywords,
+        matched: missing.length === 0,
+      },
+      purpose: { label: '共享目的', values: [fields.purpose], matched: purpose === fields.purpose },
+    }[field];
+    return (
+      <FieldSuggestion
+        {...config}
+        pending={proposal.pending}
+        onApply={
+          field === 'keywords' && keywords.size >= 20
+            ? undefined
+            : (event) => fillProposal(field, event.currentTarget.getBoundingClientRect())
+        }
+      />
+    );
+  }
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -81,8 +258,41 @@ export function IntakeDetail({
       setBusy(false);
     }
   }
+  const reviewId = submitted || (i.publication?.state === 'pending' ? i.publication.id : '');
+  const reviewHref = submitted
+    ? '/review?request=' + submitted
+    : '/review?state=pending&request=' + reviewId;
+  const footer = (editable || reviewId) && (
+    <PublicationFooter
+      notices={section === 'publication' ? notices : []}
+      locate={locate}
+      hint={reviewId ? '申请已提交，等待人工审核' : '请确认用途和受众后提交人工审核'}
+      action={
+        reviewId ? (
+          <a href={reviewHref} className={cn(btnStyles, btnPrimaryStyles)}>
+            查看审核
+            <ArrowRight size={15} />
+          </a>
+        ) : section === 'publication' ? (
+          <Submit form={formId} type="submit" busy={busy}>
+            确认内容并提交审核
+            <ArrowRight size={16} />
+          </Submit>
+        ) : (
+          <button
+            type="button"
+            className={cn(btnStyles, btnPrimaryStyles)}
+            onClick={() => setSection('publication')}
+          >
+            填写发布申请
+            <ArrowRight size={15} />
+          </button>
+        )
+      }
+    />
+  );
   return (
-    <div className={intakeDetailStyles}>
+    <div ref={root} className={intakeDetailStyles}>
       <h3>
         {i.asset_slug} <span className={tagStyles}>{intakeLabel(i)}</span>
       </h3>
@@ -141,6 +351,27 @@ export function IntakeDetail({
             candidate={i.version}
           />
         )}
+        {!!proposal?.notices?.length && (
+          <section aria-label="研判核对依据" className="space-y-3">
+            <h4 className="font-semibold">研判核对依据</h4>
+            {proposal.notices.map((notice, index) => (
+              <article
+                key={index}
+                tabIndex={-1}
+                data-review-target={'audit-' + index}
+                className="space-y-2 rounded-lg border border-warning/25 bg-warning-soft/40 p-3 focus:outline-brand"
+              >
+                <strong>{notice.title}</strong>
+                <p>{notice.explanation}</p>
+                {notice.evidence.map((ref, index) => (
+                  <code key={index} className="mr-2 break-all text-caption">
+                    {ref}
+                  </code>
+                ))}
+              </article>
+            ))}
+          </section>
+        )}
         {i.scan && <IntakeScan scan={i.scan} />}
         {i.version && (
           <details className={intakeSnapshotStyles}>
@@ -191,27 +422,18 @@ export function IntakeDetail({
         id="intake-workspace-publication"
         role="tabpanel"
         aria-labelledby="intake-workspace-tab-publication"
-        className="w-full space-y-5 pb-24"
+        className="w-full space-y-5"
       >
         {i.state !== 'ready' && <Message>完成资源校验后即可填写发布申请。</Message>}
         {!inactive &&
           i.state === 'ready' &&
           (i.ruleset_current || i.publication?.state === 'approved') &&
           (submitted || i.publication?.state === 'pending' ? (
-            <Message>
-              已提交人工审核。当前发布在审核通过前保持原样。
-              <a
-                href={
-                  submitted
-                    ? `/review?request=${submitted}`
-                    : i.publication
-                      ? `/review?state=${i.publication.state}&request=${i.publication.id}`
-                      : '/review'
-                }
-              >
-                查看审核
-              </a>
-            </Message>
+            i.publication?.state === 'pending' ? (
+              <SubmittedFields publication={i.publication} suggestion={proposal} />
+            ) : (
+              <Message>已提交人工审核。</Message>
+            )
           ) : i.publication?.state === 'approved' && !reapplying ? (
             <div className={intakePublishedStyles}>
               <ShieldCheck size={27} />
@@ -234,62 +456,92 @@ export function IntakeDetail({
               </button>
             </div>
           ) : (
-            <form
-              onSubmit={submit}
-              className={cn(formStackStyles, 'md:grid md:grid-cols-2 md:items-start md:gap-6')}
-            >
+            <form id={formId} onSubmit={submit} className={formStackStyles}>
+              {source &&
+                receipt?.id === proposal?.executionId &&
+                receipt &&
+                receipt.id === source.executionId && (
+                  <DraftReceipt
+                    visible={section === 'publication'}
+                    origin={source}
+                    changes={receipt.changes}
+                  />
+                )}
               {i.publication &&
                 ['rejected', 'stale', 'cancelled'].includes(i.publication.state) && (
-                  <div className="md:col-span-2">
-                    <Message>
-                      {i.publication.decision_reason ||
-                        i.publication.stale_reason ||
-                        '上次申请未发布。'}{' '}
-                      请核对后重新提交。
-                    </Message>
-                  </div>
+                  <Message>
+                    {i.publication.decision_reason ||
+                      i.publication.stale_reason ||
+                      '上次申请未发布。'}{' '}
+                    请核对后重新提交。
+                  </Message>
                 )}
               <section
                 className="space-y-4 rounded-2xl border border-[color:var(--line)] bg-page/50 p-5"
                 aria-label="分发设置"
               >
                 <h4 className="font-semibold">分发设置</h4>
-                <PublicationPolicyFields value={value} onChange={setValue} />
+                <PublicationPolicyFields
+                  categoryHint={hint('category')}
+                  value={value}
+                  onChange={(next) => {
+                    if (
+                      next.category !== value.category ||
+                      next.scenario_ids !== value.scenario_ids
+                    )
+                      edited.current.category = true;
+                    setValue(next);
+                  }}
+                />
               </section>
               <section className="flex min-w-0 flex-col gap-4" aria-label="内容说明">
                 <h4 className="font-semibold">内容说明</h4>
-                <KeywordField
-                  value={appliesTo.keywords ?? []}
-                  onChange={(keywords) => setAppliesTo({ ...appliesTo, keywords })}
-                />
+                <div
+                  data-draft-field="keywords"
+                  onInput={() => {
+                    edited.current.keywords = true;
+                  }}
+                >
+                  <KeywordField
+                    value={appliesTo.keywords ?? []}
+                    onChange={(keywords) => {
+                      if (JSON.stringify(keywords) !== JSON.stringify(appliesTo.keywords ?? []))
+                        edited.current.keywords = true;
+                      setAppliesTo({ ...appliesTo, keywords });
+                    }}
+                  />
+                  {hint('keywords')}
+                </div>
                 {i.version?.manifest.kind === 'skill' && (
-                  <SkillApiKeyField
-                    checked={requiresApiKey}
-                    onChange={setRequiresApiKey}
-                    disabled={busy}
-                  />
+                  <div tabIndex={-1} data-review-target="api-key">
+                    <SkillApiKeyField
+                      checked={requiresApiKey}
+                      onChange={setRequiresApiKey}
+                      disabled={busy}
+                    />
+                  </div>
                 )}
-                <label>
-                  共享目的与授权确认
-                  <textarea
-                    value={purpose}
-                    onChange={(e) => setPurpose(e.target.value)}
-                    required
-                    maxLength={2000}
-                    placeholder="说明内容适用范围，并确认你有权将此快照共享给所选受众。"
-                  />
-                </label>
+                <div>
+                  <label data-draft-field="purpose">
+                    共享目的与授权确认
+                    <textarea
+                      value={purpose}
+                      onChange={(e) => {
+                        edited.current.purpose = true;
+                        setPurpose(e.target.value);
+                      }}
+                      required
+                      maxLength={2000}
+                      placeholder="说明内容适用范围，并确认你有权将此快照共享给所选受众。"
+                    />
+                  </label>
+                  {hint('purpose')}
+                </div>
               </section>
-              <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-[color:var(--line)] pt-4 md:col-span-2">
-                <p className={subtleStyles}>提交后进入人工审核；Agent 建议供审核参考。</p>
-                <Submit busy={busy}>
-                  确认内容并提交审核
-                  <ArrowRight size={16} />
-                </Submit>
-              </footer>
             </form>
           ))}
       </div>
+      {footerSlot ? createPortal(footer, footerSlot) : footer}
     </div>
   );
 }

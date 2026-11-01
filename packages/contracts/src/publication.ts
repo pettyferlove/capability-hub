@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { distributionPolicySchema } from './policy.js';
-import { applicabilitySchema, assetCategorySchema, uuidSchema } from './primitives.js';
+import {
+  applicabilitySchema,
+  assetCategorySchema,
+  keywordsSchema,
+  uuidSchema,
+} from './primitives.js';
 export const submitPublicationRequestSchema = z
   .object({
     source_intake_id: uuidSchema,
@@ -39,3 +44,18 @@ export interface SourceConsent {
 
 export type SubmitPublicationRequest = z.input<typeof submitPublicationRequestSchema>;
 export type PublicationDecisionRequest = z.input<typeof publicationDecisionRequestSchema>;
+
+export const publicationSuggestionSchema = z
+  .object({
+    category: assetCategorySchema,
+    scenario_ids: z.array(uuidSchema).max(20),
+    keywords: keywordsSchema,
+    purpose: z.string().trim().min(1).max(2000),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.keywords.length > 0 &&
+      (value.category === 'scenario') === value.scenario_ids.length > 0,
+  );
+export type PublicationSuggestion = z.infer<typeof publicationSuggestionSchema>;
