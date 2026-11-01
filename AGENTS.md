@@ -143,6 +143,7 @@ Operations: `pnpm backup`, `restore:import`, `restore:check`, `maintenance`, `ac
   identifiers stay English. Never describe what changed or why, never comment obvious code, and
   delete stale or restating comments. No empty "best practices", progress notes, or guarantees.
   Module-level `/** */` blocks start after one blank line; class and interface members stay dense.
+  Keep one blank line after the import block and after a module-level block statement.
 - **Dependencies:** internal deps are `workspace:*` only; shared versions come from the `catalog:` in
   `pnpm-workspace.yaml`. Exports need `development` → `src/*.ts`, `types`/`default` → `dist/*`.
 
