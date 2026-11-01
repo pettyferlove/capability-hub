@@ -14,6 +14,7 @@ import { ExecutionResult } from '../../apps/web/src/features/ai/ExecutionResult.
 import { ActivityFeed } from '../../apps/web/src/features/ai/ActivityFeed.js';
 import { activityItems, businessPhase } from '../../apps/web/src/features/ai/activity.js';
 import { advanceStreamCursor } from '../../apps/web/src/features/ai/stream-text.js';
+import { recentTrail } from '../../apps/web/src/features/ai/agent-brief.js';
 import { InteractionForm } from '../../apps/web/src/features/ai/InteractionForm.js';
 import { BusinessAgentPanel } from '../../apps/web/src/features/ai/BusinessAgentPanel.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
@@ -657,6 +658,111 @@ test('研判阶段由步骤与人工交互推断，只进不退，中断时停�
     view.interactions = interactions as typeof view.interactions;
     assert.deepEqual(businessPhase(view), { index, halted }, name);
   }
+});
+
+test('最近动作取每段输出的最新一句，跳过无文字输出，中断与人工决定如实呈现', () => {
+  const view = executionView({
+    operation_id: 'resource-audit',
+    status: 'cancelled',
+    message_blocks: [
+      { id: 'empty', message_id: 'resource-audit:a', text: '', complete: false },
+      {
+        id: 'note',
+        message_id: 'resource-audit:b',
+        text: '入口已读完。\n- **下一步**核对脚本',
+        complete: false,
+      },
+      { id: 'report', message_id: 'assessment:c', text: '{}', complete: true },
+    ],
+  });
+  view.activity = [
+    activityEvent(1, 'tool.started', {
+      tool_id: 'read-file',
+      invocation_id: 'read',
+      display: 'SKILL.md',
+    }),
+    activityEvent(2, 'tool.completed', { tool_id: 'read-file', invocation_id: 'read' }),
+    activityEvent(3, 'message.started', {
+      block_id: 'empty',
+      message_id: 'resource-audit:a',
+      format: 'text',
+    }),
+    activityEvent(4, 'message.started', {
+      block_id: 'note',
+      message_id: 'resource-audit:b',
+      format: 'text',
+    }),
+    activityEvent(5, 'message.started', {
+      block_id: 'report',
+      message_id: 'assessment:c',
+      format: 'text',
+    }),
+    activityEvent(6, 'interaction.requested', {
+      interaction_id: 'review',
+      request: {},
+      response_schema: {},
+      revision: 1,
+    }),
+  ];
+  view.interactions = [
+    {
+      id: 'review',
+      status: 'applied',
+      revision: 2,
+      request: {},
+      response_schema: {},
+      response: { approved: false },
+      expires_at: Date.now(),
+    },
+  ];
+  assert.deepEqual(
+    recentTrail(view).map(({ id, label, detail, state, thought, duration }) => ({
+      id,
+      label,
+      detail,
+      state,
+      thought,
+      duration,
+    })),
+    [
+      {
+        id: 'read',
+        label: '读取文件片段',
+        detail: 'SKILL.md',
+        state: 'completed',
+        thought: undefined,
+        duration: 100,
+      },
+      {
+        id: 'note',
+        label: '下一步核对脚本',
+        detail: undefined,
+        state: 'interrupted',
+        thought: true,
+        duration: undefined,
+      },
+      {
+        id: 'report',
+        label: '整理研判报告',
+        detail: undefined,
+        state: 'completed',
+        thought: undefined,
+        duration: undefined,
+      },
+      {
+        id: 'review',
+        label: '人工确认',
+        detail: '未采纳',
+        state: 'completed',
+        thought: undefined,
+        duration: undefined,
+      },
+    ],
+  );
+  assert.deepEqual(
+    recentTrail(view, 2).map((item) => item.id),
+    ['report', 'review'],
+  );
 });
 
 test('人工回答后在协作过程留下决策记录，不再提供确认表单', () => {

@@ -247,6 +247,7 @@ function BusinessWorkspace({
           emptyLabel={!catalog ? '正在连接' : !profile ? '尚未配置模型' : '尚未发起'}
           error={error || execution.error}
           open={open}
+          docked={!!beside}
           toggleRef={toggle}
           panelId={panelId}
           onToggle={() => setOpen((value) => !value)}
