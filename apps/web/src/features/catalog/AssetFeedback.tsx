@@ -142,13 +142,7 @@ export function AssetFeedback({ assetId, versionId }: { assetId: string; version
               ) : detail.data.asset_id !== assetId ? (
                 <Message error>此反馈不属于当前资产，请返回列表重新选择。</Message>
               ) : (
-                <FeedbackDetail
-                  feedback={detail.data}
-                  onSaved={() => {
-                    setReceipt('处理结果已保存。');
-                    reload();
-                  }}
-                />
+                <FeedbackDetail key={detail.data.id} feedback={detail.data} onRefresh={reload} />
               )
             ) : (
               <>
@@ -186,19 +180,21 @@ export function AssetFeedback({ assetId, versionId }: { assetId: string; version
                             <li key={feedback.id}>
                               <button
                                 type="button"
-                                className="w-full rounded-xl border border-[color:var(--line)] bg-paper p-4 text-left hover:bg-page focus-visible:outline-brand"
+                                className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 rounded-xl border border-separator bg-paper p-4 text-left hover:bg-page focus-visible:outline-brand"
                                 onClick={() => {
                                   setSelected(feedback.id);
                                   setReceipt('');
                                 }}
                               >
-                                <span className="flex items-start justify-between gap-3">
-                                  <strong className="min-w-0 break-all">{feedback.title}</strong>
-                                  <span className={tagStyles}>
-                                    {feedbackStatuses[feedback.status]}
-                                  </span>
+                                <strong className="min-w-0 [overflow-wrap:anywhere]">
+                                  {feedback.title}
+                                </strong>
+                                <span
+                                  className={cn(tagStyles, 'justify-self-end whitespace-nowrap')}
+                                >
+                                  {feedbackStatuses[feedback.status]}
                                 </span>
-                                <span className="mt-2 flex flex-wrap items-center gap-2 text-muted-ink">
+                                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-ink">
                                   <span>
                                     {feedbackKinds[feedback.kind]} · {feedback.version_label}
                                   </span>
@@ -206,8 +202,17 @@ export function AssetFeedback({ assetId, versionId }: { assetId: string; version
                                     <span className="text-warning">阻塞任务</span>
                                   )}
                                   <span>{dateLabel(feedback.created_at)}</span>
-                                  <ArrowRight size={14} />
                                 </span>
+                                <ArrowRight
+                                  aria-hidden="true"
+                                  size={14}
+                                  className="self-center justify-self-end text-muted-ink"
+                                />
+                                {feedback.resolution && (
+                                  <span className="col-span-2 truncate text-caption text-muted-ink">
+                                    处理说明 · {feedback.resolution}
+                                  </span>
+                                )}
                               </button>
                             </li>
                           ))}

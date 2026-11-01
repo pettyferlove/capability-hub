@@ -46,7 +46,7 @@ interface BusinessAgentPanelProps {
   feedbackId?: string;
   title: string;
   /** 选中执行状态转为 `succeeded` 时回调；内部用 ref 持有最新引用，父组件无需 memo。 */
-  onCompleted?: () => void;
+  onCompleted?: (execution: AiExecutionResponse) => void;
   /** 结论变化时回传当前应采用的建议（待确认优先于已成功记录），`undefined` 表示无可采用建议。 */
   onSuggestion?: (suggestion: AuditSuggestion | undefined) => void;
   onAdopt?: (origin: ReviewOrigin) => void;
@@ -147,7 +147,7 @@ function BusinessWorkspace({
   useEffect(() => {
     const latest = execution.view?.execution;
     if (latest) setHistory((items) => items.map((item) => (item.id === latest.id ? latest : item)));
-    if (latest?.status === 'succeeded') completed.current?.();
+    if (latest?.status === 'succeeded') completed.current?.(latest);
   }, [execution.view?.execution.id, execution.view?.execution.status]);
   const view = execution.view?.execution.id === selected ? execution.view : undefined;
   const selectedRecord = view?.execution ?? history.find((item) => item.id === selected);

@@ -439,6 +439,7 @@ export const assetDetailScrollStyles = cn(
 );
 
 export const feedbackDetailStyles = cn(
+  '[&:has(>aside)>form]:pb-16',
   '[&_fieldset]:border-0 [&_fieldset]:pt-0 [&_fieldset]:pr-0 [&_fieldset]:pb-0 [&_fieldset]:pl-0',
   '[&_fieldset]:mt-0 [&_fieldset]:mr-0 [&_fieldset]:mb-0 [&_fieldset]:ml-0 [&_fieldset]:min-w-0',
   '[overflow-wrap:anywhere] border-t [border-top-style:solid] border-t-[color:var(--line)] pt-[var(--space-4)]',

@@ -2,7 +2,7 @@ import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { createElement } from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { FeedbackForm } from '../../apps/web/src/features/catalog/FeedbackForm.js';
 import { FeedbackDetail } from '../../apps/web/src/features/catalog/FeedbackDetail.js';
@@ -98,7 +98,7 @@ test('反馈内容以普通文本展示，普通提交者没有处理控件', ()
           logout: async () => {},
         },
       },
-      createElement(FeedbackDetail, { feedback, onSaved: () => {} }),
+      createElement(FeedbackDetail, { feedback, onRefresh: () => {} }),
     ),
   );
   assert(screen.getByText('<script>alert(1)</script>'));
@@ -135,7 +135,7 @@ test('维护者保存时携带所见修订，冲突保留处理说明并提示�
       },
       createElement(FeedbackDetail, {
         feedback: { ...feedback, can_manage: true },
-        onSaved: () => assert.fail('冲突不能视为成功'),
+        onRefresh: () => assert.fail('冲突不能视为成功'),
       }),
     ),
   );
@@ -172,7 +172,7 @@ test('匿名访问不请求反馈接口，只展示登录说明', (context) => {
   assert(screen.getByText('登录后可提交和查看反馈。'));
 });
 
-function feedbackPage() {
+function feedbackPage(canAi = false) {
   return createElement(
     HubCtx.Provider,
     {
@@ -184,7 +184,7 @@ function feedbackPage() {
           csrf_token: '',
           groups: [],
           capabilities: {
-            can_ai: false,
+            can_ai: canAi,
             can_admin: false,
             can_publish: false,
             can_review: false,
@@ -235,4 +235,112 @@ test('反馈列表与详情切换，表单返回保留草稿，成功后打开�
   await user.click(screen.getByRole('button', { name: '提交反馈' }));
   assert(await screen.findByText('反馈已提交，可在此查看后续处理结果。'));
   assert(await screen.findByRole('article', { name: '反馈详情：导入失败' }));
+});
+
+test('处理说明保存后立即在详情顶部展示，返回列表后仍可识别该结果', async (context) => {
+  let current = { ...feedback, can_manage: true };
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path.includes('/feedback?page=')) return Response.json({ items: [current], total: 1 });
+    if (path.endsWith('/versions')) return Response.json([]);
+    assert.equal(path, '/api/feedback/feedback-1');
+    if (options.method === 'PATCH') {
+      const update = JSON.parse(String(options.body)) as { resolution: string };
+      current = {
+        ...current,
+        resolution: update.resolution.trim(),
+        updated_by: 'reader',
+        revision: 2,
+      };
+    }
+    return Response.json(current);
+  });
+  const user = userEvent.setup();
+  render(feedbackPage());
+  await user.click(await screen.findByRole('button', { name: /导入失败/ }));
+  const result = await screen.findByRole('region', { name: '处理结果' });
+  assert(within(result).getByText('尚无处理记录。'));
+  assert.equal(screen.queryByText('处理结果已保存。'), null);
+  await user.type(screen.getByRole('textbox', { name: '处理说明' }), '已记录复现步骤');
+  await user.click(screen.getByRole('button', { name: '保存处理结果' }));
+  assert(await within(result).findByText('已记录复现步骤'));
+  assert(within(result).getByText('处理结果已保存。'));
+  assert.equal(document.activeElement, result);
+  await user.click(screen.getByRole('button', { name: '返回反馈列表' }));
+  const row = await screen.findByRole('button', { name: /导入失败.*处理说明 · 已记录复现步骤/ });
+  await user.click(row);
+  assert(
+    await within(await screen.findByRole('region', { name: '处理结果' })).findByText(
+      '已记录复现步骤',
+    ),
+  );
+  assert.equal(screen.queryByText('处理结果已保存。'), null);
+});
+
+test('已采纳研判填入空白草稿，保留手工修改，尚未保存时不显示保存回执', async (context) => {
+  const record = { ...feedback, can_manage: true };
+  const execution = {
+    id: 'triage',
+    owner_id: 'reader',
+    operation_id: 'feedback-triage',
+    model_profile: 'primary',
+    status: 'succeeded',
+    revision: 1,
+    attempt: 1,
+    continuation: 0,
+    input: { feedback_id: record.id, version_id: record.version_id },
+    result: {
+      approved: true,
+      feedback_applied: false,
+      feedback_id: record.id,
+      version_id: record.version_id,
+      feedback_revision: record.revision,
+      assessment: { suggested_resolution: '核对导入格式' },
+    },
+    created_at: record.created_at,
+    updated_at: record.updated_at,
+    deadline: 1800000000000,
+    last_seq: 0,
+    message_text: '',
+    message_blocks: [],
+    error: null,
+    usage: { requests: 1, tools: 1, input_tokens: 20, output_tokens: 8, unknown_requests: 0 },
+  };
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    assert.equal(options.method ?? 'GET', 'GET');
+    if (path.includes('/feedback?page=')) return Response.json({ items: [record], total: 1 });
+    if (path === '/api/feedback/' + record.id) return Response.json(record);
+    if (path.endsWith('/versions')) return Response.json([]);
+    if (path === '/api/ai/catalog')
+      return Response.json({
+        default_profile: 'primary',
+        profiles: [{ id: 'primary', label: '模型', format: 'openai', model: 'fixture' }],
+        operations: [],
+      });
+    if (path.includes('/ai/executions?'))
+      return Response.json({ items: [execution], next_cursor: null });
+    if (path.endsWith('/events'))
+      return new Response('', { headers: { 'Content-Type': 'text/event-stream' } });
+    assert.equal(path, '/api/ai/executions/triage');
+    return Response.json({
+      execution,
+      artifacts: [],
+      interactions: [],
+      activity: [],
+      activity_truncated: false,
+      watermark: 0,
+    });
+  });
+  const user = userEvent.setup();
+  render(feedbackPage(true));
+  await user.click(await screen.findByRole('button', { name: /导入失败/ }));
+  await user.click(await screen.findByRole('button', { name: '研判已采纳 · 查看处理说明草稿' }));
+  const editor = screen.getByRole('textbox', { name: '处理说明' }) as HTMLTextAreaElement;
+  assert.equal(editor.value, '核对导入格式');
+  assert(screen.getByText('尚无处理记录。'));
+  assert.equal(screen.queryByText('处理结果已保存。'), null);
+  await user.clear(editor);
+  await user.type(editor, '我的说明');
+  assert.equal(editor.value, '我的说明');
+  await user.click(screen.getByRole('button', { name: '使用研判建议替换当前说明' }));
+  assert.equal(editor.value, '核对导入格式');
 });
