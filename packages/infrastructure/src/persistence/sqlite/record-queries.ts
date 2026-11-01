@@ -76,4 +76,10 @@ export class SqliteQueries implements RecordQueries {
   async health(): Promise<void> {
     await this.db.run(sql`select 1`);
   }
+  async sizeBytes(): Promise<number> {
+    const [row] = await this.db
+      .select({ bytes: sql<number>`page_count * page_size` })
+      .from(sql`pragma_page_count(), pragma_page_size()`);
+    return row.bytes;
+  }
 }

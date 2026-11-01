@@ -4,7 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { openRecordStore, snapshotStore, restoreStore } from '@capability-hub/infrastructure/store';
 import { MinioBlobStore } from '@capability-hub/infrastructure/content';
 import { HubError } from '@capability-hub/domain/errors';
+import type { OperationsResponse } from '@capability-hub/contracts/http';
 import { createTestHub, publishSkill } from '../support/application.js';
+import { frameworkConfig } from '../support/ai-framework.js';
+import { signIn } from '../support/http.js';
 import { externalDatabase, externalBucket } from '../support/external.js';
 import { createSqliteStore, deferred } from '../support/store.js';
 import { assertFrozenEvidence } from '../support/evidence.js';
@@ -177,6 +180,88 @@ test('真实 PostgreSQL 与 MinIO 完成扫描、独立审核、分发与撤权�
       '"1"',
     );
     await assert.rejects(() => fixture.hub.content.getManifest(null, version.id));
+  } finally {
+    await fixture.close();
+    await resource.close();
+    await database.close();
+  }
+});
+
+test('运维接口从 PostgreSQL 汇总执行与容量，从受限 MinIO 存储桶探测读写', async (context) => {
+  const database = await externalDatabase();
+  const resource = await externalBucket();
+  const fixture = await createTestHub(context, {
+    ai: frameworkConfig(),
+    database: { driver: 'postgresql', url: database.url, poolSize: 4 },
+    objectStorage: {
+      driver: 'minio',
+      endpoint: resource.endpoint,
+      accessKey: resource.options.accessKey,
+      secretKey: resource.options.secretKey,
+      bucket: resource.bucket,
+      region: 'us-east-1',
+      prefix: 'blobs/',
+    },
+  });
+  try {
+    const execution = await fixture.hub.ai.runtime.submit(fixture.admin.id, 'assistant', {
+      prompt: '测试任务',
+    });
+    const admin = await signIn(fixture);
+    const response = await admin.get('/api/admin/operations').expect(200);
+    const data = response.body as OperationsResponse;
+    assert.equal(data.database.driver, 'postgresql');
+    assert.equal(data.database.available, true);
+    assert(data.database.size_bytes && data.database.size_bytes > 0);
+    assert.equal(data.database.pool_limit, 4);
+    assert.equal(data.object_storage.driver, 'minio');
+    assert.equal(data.object_storage.available, true);
+    assert.equal(data.object_storage.bucket, resource.bucket);
+    assert.equal(data.object_storage.prefix, 'blobs/');
+    assert.deepEqual(data.agents.operations.find((agent) => agent.id === 'assistant')?.activity, {
+      by_status: { queued: 1 },
+      last_activity_at: execution.updated_at,
+    });
+    assert.deepEqual(
+      data.agents.daily_activity?.flatMap((day) => day.counts),
+      [{ operation_id: 'assistant', status: 'queued', count: 1, error_code: null }],
+    );
+    const id = randomUUID();
+    const createdAt = '2025-01-02T16:00:00.000Z';
+    await fixture.hub.ai.runtime.store.insert('ai_executions', {
+      ...execution,
+      id,
+      execution_id: id,
+      created_at: createdAt,
+      position: Date.parse(createdAt),
+      status: 'failed',
+      payload: {
+        ...execution.payload,
+        error: { code: 'AI_PROVIDER_FAILED', message: 'private', retryable: false },
+      },
+    });
+    assert.deepEqual(
+      await fixture.hub.ai.runtime.store.summarizeExecutionDays(
+        '2025-01-01T16:00:00.000Z',
+        createdAt,
+      ),
+      [
+        {
+          day_index: 1,
+          operation_id: 'assistant',
+          status: 'failed',
+          error_code: 'AI_PROVIDER_FAILED',
+          count: 1,
+        },
+      ],
+    );
+    for (const value of [
+      database.url,
+      resource.endpoint,
+      resource.options.accessKey,
+      resource.options.secretKey,
+    ])
+      assert(!response.text.includes(value));
   } finally {
     await fixture.close();
     await resource.close();

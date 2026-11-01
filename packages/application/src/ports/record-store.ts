@@ -50,6 +50,8 @@ export interface RecordStore {
   ): Promise<void>;
   /** 全局修订号（字符串比较），随写入变化，用作缓存键；不可当作并发令牌或单调数值。 */
   revision(): Promise<string>;
+  /** 当前数据库占用的字节数；SQLite 按数据库页计量。 */
+  sizeBytes(): Promise<number>;
   health(): Promise<void>;
   close(): Promise<void>;
 }

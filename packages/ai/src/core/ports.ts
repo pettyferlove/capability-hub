@@ -26,6 +26,27 @@ export interface AiRecordQuery {
 export interface AiQueries {
   get<K extends AiTable>(table: K, id: string): Promise<AiRecordMap[K] | undefined>;
   list<K extends AiTable>(table: K, query: AiRecordQuery): Promise<AiRecordMap[K][]>;
+  summarizeExecutions(): Promise<
+    {
+      operation_id: string;
+      status: ExecutionRecord['status'];
+      count: number;
+      last_activity_at: string;
+    }[]
+  >;
+  /** 从 from 起按连续 24 小时分组，按创建时间选取截至 through 的执行。 */
+  summarizeExecutionDays(
+    from: string,
+    through: string,
+  ): Promise<
+    {
+      day_index: number;
+      operation_id: string;
+      status: ExecutionRecord['status'];
+      error_code: string | null;
+      count: number;
+    }[]
+  >;
   insert<K extends AiTable>(table: K, record: AiRecordMap[K]): Promise<AiRecordMap[K]>;
   put<K extends AiTable>(table: K, record: AiRecordMap[K]): Promise<AiRecordMap[K]>;
   remove(table: AiTable, id: string): Promise<void>;

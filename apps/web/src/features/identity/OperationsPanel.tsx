@@ -22,7 +22,22 @@ import { useQuery } from '../../shared/api/use-query.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { CardGridSkeleton, SummarySkeleton } from '../../shared/components/Skeleton.js';
 import { useHub } from '../../shared/context/HubContext.js';
-import { dateLabel } from '../../shared/format/labels.js';
+import { bytesLabel, dateLabel } from '../../shared/format/labels.js';
+import { OperationsAgents } from './OperationsAgents.js';
+import { OperationsAnalytics } from './OperationsAnalytics.js';
+import { OperationsStorage } from './OperationsStorage.js';
+
+function p95Duration(http: OperationsResponse['http']) {
+  if (!http.requests) return '—';
+  const index = http.duration_buckets.findIndex(
+    ({ cumulative }) => cumulative >= Math.ceil(http.requests * 0.95),
+  );
+  const bucket = http.duration_buckets[index];
+  if (!bucket) return '—';
+  if (bucket.upper_ms !== null) return `≤ ${bucket.upper_ms} ms`;
+  const previous = http.duration_buckets[index - 1]?.upper_ms;
+  return previous == null ? '—' : `> ${previous} ms`;
+}
 
 /**
  * 所有指标都取自同一份 `OperationsResponse` 快照，避免不同卡片之间出现时间错位；
@@ -38,14 +53,15 @@ export function OperationsPanel() {
         <CardGridSkeleton label="正在加载实例运行状态…" count={3} variant="stat" />
         <div className={operationsGridStyles}>
           <section className={panelStyles}>
-            <SummarySkeleton label="正在加载请求与访问控制…" />
+            <SummarySkeleton label="正在加载数据库与对象存储…" />
           </section>
           <section className={panelStyles}>
-            <SummarySkeleton label="正在加载处理与检查状态…" />
+            <SummarySkeleton label="正在加载 Agent 运行状态…" />
           </section>
         </div>
       </div>
     );
+  const { jobs, scans } = data;
   const statuses = data.http.by_status;
   const total = data.http.requests;
   const successful = Object.entries(statuses)
@@ -69,6 +85,9 @@ export function OperationsPanel() {
           刷新
         </button>
       </div>
+      <OperationsStorage data={data} />
+      <OperationsAnalytics agents={data.agents} />
+      <OperationsAgents agents={data.agents} workerState={data.worker_state} />
       <div className={operationsCardsStyles}>
         <div>
           <span>HTTP 请求</span>
@@ -83,21 +102,25 @@ export function OperationsPanel() {
         <div>
           <span>等待 / 执行中的作业</span>
           <strong>
-            {data.jobs.by_state.queued ?? 0}
-            <em>/ {data.jobs.by_state.running ?? 0}</em>
+            {jobs ? (jobs.by_state.queued ?? 0) : '—'}
+            <em>/ {jobs ? (jobs.by_state.running ?? 0) : '—'}</em>
           </strong>
           <small>
-            最长等待 {data.jobs.oldest_wait_seconds} 秒 · 重试 {data.jobs.retrying}
+            {jobs
+              ? `最长等待 ${jobs.oldest_wait_seconds} 秒 · 重试 ${jobs.retrying}`
+              : '作业统计暂不可用'}
           </small>
         </div>
         <div>
-          <span>可用磁盘</span>
+          <span>实例数据目录可用磁盘</span>
           <strong>
             {data.disk.available ? ((data.disk.free_bytes ?? 0) / 1073741824).toFixed(1) : '不可用'}
             <em>{data.disk.available ? 'GiB' : ''}</em>
           </strong>
           <small>
-            最近备份 {data.last_backup_at ? dateLabel(data.last_backup_at) : '暂无成功记录'}
+            {data.disk.available && data.disk.total_bytes !== undefined
+              ? `总容量 ${(data.disk.total_bytes / 1073741824).toFixed(1)} GiB`
+              : '未取得磁盘容量'}
           </small>
         </div>
       </div>
@@ -105,6 +128,18 @@ export function OperationsPanel() {
         <section className={panelStyles}>
           <h3>请求与访问控制</h3>
           <dl>
+            <div>
+              <dt>统计起点</dt>
+              <dd>{dateLabel(data.http.since)}</dd>
+            </div>
+            <div>
+              <dt>P95 请求耗时（分桶）</dt>
+              <dd>{p95Duration(data.http)}</dd>
+            </div>
+            <div>
+              <dt>进程常驻内存</dt>
+              <dd>{bytesLabel(data.memory_rss_bytes)}</dd>
+            </div>
             <div>
               <dt>401 / 403</dt>
               <dd>{denied}</dd>
@@ -133,42 +168,44 @@ export function OperationsPanel() {
           <dl>
             <div>
               <dt>已完成作业</dt>
-              <dd>{data.jobs.by_state.succeeded ?? 0}</dd>
+              <dd>{jobs ? (jobs.by_state.succeeded ?? 0) : '—'}</dd>
             </div>
             <div>
               <dt>失败作业</dt>
-              <dd>{data.jobs.by_state.failed ?? 0}</dd>
+              <dd>{jobs ? (jobs.by_state.failed ?? 0) : '—'}</dd>
             </div>
             <div>
               <dt>过期租约</dt>
-              <dd>{data.jobs.expired_leases}</dd>
+              <dd>{jobs?.expired_leases ?? '—'}</dd>
             </div>
             <div>
               <dt>扫描阻断</dt>
-              <dd>{data.scans.by_state.blocked ?? 0}</dd>
+              <dd>{scans ? (scans.by_state.blocked ?? 0) : '—'}</dd>
             </div>
             <div>
               <dt>规则集</dt>
               <dd>
-                <code>{data.scans.ruleset}</code>
+                <code>{scans?.ruleset ?? '—'}</code>
               </dd>
             </div>
           </dl>
           <p className={subtleStyles}>扫描通过表示未发现当前规则的阻断项，仍需独立人工审核。</p>
         </section>
       </div>
-      {data.jobs.recent_failures.length > 0 && (
+      {jobs && jobs.recent_failures.length > 0 && (
         <section className={panelStyles}>
           <h3>最近失败作业</h3>
           <div className={operationsFailuresStyles}>
-            {data.jobs.recent_failures.map((job, index: number) => (
+            {jobs.recent_failures.map((job, index: number) => (
               <div key={index}>
                 <span>
                   {(
-                    { intake: '内容接收', rescan: '重新扫描', source_sync: '来源同步' } as Record<
-                      string,
-                      string
-                    >
+                    {
+                      intake: '内容接收',
+                      rescan: '重新扫描',
+                      source_sync: '来源同步',
+                      ai_execution: 'Agent 执行',
+                    } as Record<string, string>
                   )[job.kind] ?? job.kind}
                 </span>
                 <code>{job.error_code ?? 'UNKNOWN'}</code>

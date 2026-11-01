@@ -76,4 +76,10 @@ export class PgQueries implements RecordQueries {
   async health(): Promise<void> {
     await this.db.execute(sql`select 1`);
   }
+  async sizeBytes(): Promise<number> {
+    const result = await this.db.execute<{ bytes: string }>(
+      sql`select pg_database_size(current_database()) as bytes`,
+    );
+    return Number(result.rows[0].bytes);
+  }
 }

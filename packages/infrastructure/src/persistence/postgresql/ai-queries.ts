@@ -1,6 +1,11 @@
 import type { AiQueries, AiRecordQuery } from '@capability-hub/ai/ports';
-import { parseAiRecord, type AiTable, type AiRecordMap } from '@capability-hub/ai/records';
-import { and, or, eq, gt, lt, asc, desc, inArray, sql } from 'drizzle-orm';
+import {
+  executionStatusSchema,
+  parseAiRecord,
+  type AiTable,
+  type AiRecordMap,
+} from '@capability-hub/ai/records';
+import { and, or, eq, gt, lt, asc, desc, count, inArray, sql } from 'drizzle-orm';
 import { aiSchema } from './ai-schema.js';
 import type { PostgresSession as Session } from './record-queries.js';
 
@@ -48,6 +53,41 @@ export class PgAiQueries implements AiQueries {
       .orderBy(order(t.position), order(t.id))
       .limit(query.limit);
     return rows.map((row) => parseAiRecord(table, row.data));
+  }
+  async summarizeExecutions() {
+    const t = aiSchema.ai_executions;
+    const operation = sql<string>`${t.data}->'payload'->>'operation_id'`;
+    return await this.db
+      .select({
+        operation_id: operation,
+        status: sql`${t.status}`.mapWith((value: unknown) => executionStatusSchema.parse(value)),
+        count: count(),
+        last_activity_at: sql<string>`max(${t.updated_at})`,
+      })
+      .from(t)
+      .groupBy(operation, t.status);
+  }
+  async summarizeExecutionDays(from: string, through: string) {
+    const t = aiSchema.ai_executions;
+    const operation = sql<string>`${t.data}->'payload'->>'operation_id'`;
+    const error = sql<string | null>`case when ${t.status} in ('failed', 'timed_out')
+      then ${t.data}->'payload'->'error'->>'code' end`;
+    return await this.db
+      .select({
+        day_index:
+          sql<number>`floor(extract(epoch from (${t.created_at}::timestamptz - ${from}::timestamptz)) / 86400)::int`.as(
+            'day_index',
+          ),
+        operation_id: operation,
+        status: sql`${t.status}`.mapWith((value: unknown) => executionStatusSchema.parse(value)),
+        error_code: error,
+        count: count(),
+      })
+      .from(t)
+      .where(
+        sql`${t.created_at}::timestamptz between ${from}::timestamptz and ${through}::timestamptz`,
+      )
+      .groupBy(sql`day_index`, operation, t.status, error);
   }
   async insert<K extends AiTable>(table: K, record: AiRecordMap[K]): Promise<AiRecordMap[K]> {
     const value = parseAiRecord(table, record);

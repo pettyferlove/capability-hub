@@ -1,11 +1,52 @@
+import type { AiCatalogResponse, AiExecutionResponse } from '../ai.js';
+
+interface StorageProbe {
+  available: boolean;
+  duration_ms: number;
+}
+
+/** 按北京时间的创建日期统计保留的执行，状态取采样时的值。 */
+export interface AgentExecutionDay {
+  date: string;
+  counts: {
+    operation_id: string;
+    status: AiExecutionResponse['status'];
+    error_code: string | null;
+    count: number;
+  }[];
+}
+
 /**
- * 运维巡检快照，出现在运维页：HTTP 指标统计自 `http.since` 起的累计值，
- * 队列与扫描计数为当前状态，磁盘信息在探测失败时只有 `available: false`。
+ * HTTP 计数自 `http.since` 起累计。作业、扫描或 Agent 活动为 null 时表示采样失败，
+ * 成功采样后的空计数表示没有记录。
  */
 export interface OperationsResponse {
   observed_at: string;
   memory_rss_bytes: number;
-  last_backup_at: string | null;
+  /** null 表示没有成功备份记录；读取备份审计失败时省略。 */
+  last_backup_at?: string | null;
+  worker_state: 'stopped' | 'idle' | 'busy';
+  database: StorageProbe & {
+    driver: 'sqlite' | 'postgresql';
+    size_bytes: number | null;
+    pool_limit: number | null;
+  };
+  object_storage: StorageProbe &
+    (
+      { driver: 'filesystem' } | { driver: 'minio'; bucket: string; prefix: string; region: string }
+    );
+  agents: Pick<AiCatalogResponse, 'profiles' | 'default_profile'> & {
+    daily_activity: AgentExecutionDay[] | null;
+    operations: {
+      id: string;
+      title: string;
+      version: string;
+      activity: {
+        by_status: Partial<Record<AiExecutionResponse['status'], number>>;
+        last_activity_at: string | null;
+      } | null;
+    }[];
+  };
   http: {
     since: string;
     requests: number;
@@ -22,7 +63,7 @@ export interface OperationsResponse {
     retrying: number;
     expired_leases: number;
     recent_failures: { kind: string; error_code: string | null; created_at: string }[];
-  };
-  scans: { by_state: Record<string, number>; ruleset: string };
+  } | null;
+  scans: { by_state: Record<string, number>; ruleset: string } | null;
   disk: { available: boolean; free_bytes?: number; total_bytes?: number };
 }

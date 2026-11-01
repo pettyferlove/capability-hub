@@ -39,6 +39,25 @@ export const aiExecutionStatusSchema = z.enum([
   'timed_out',
 ]);
 
+/** 跨账号汇总只展示这些错误类别，执行详情中的错误原文保持独立授权。 */
+export const aiExecutionErrorLabels = {
+  AI_CONFIGURATION: '配置错误',
+  AI_NOT_FOUND: '目标不存在',
+  AI_FORBIDDEN: '权限不足',
+  AI_CONFLICT: '执行状态冲突',
+  AI_REVISION_CONFLICT: '修订冲突',
+  AI_LEASE_LOST: '调度租约失效',
+  AI_BUDGET_EXCEEDED: '执行预算耗尽',
+  AI_DEADLINE_EXCEEDED: '执行超时',
+  AI_PROVIDER_FAILED: '模型服务调用失败',
+  AI_STREAM_INCOMPLETE: '模型响应流中断',
+  AI_OUTPUT_INVALID: '模型输出格式错误',
+  AI_RECOVERY_UNCERTAIN: '执行恢复状态不确定',
+  AI_CANCELLED: '执行已取消',
+  AI_INTERRUPTED: '执行被中断',
+  AI_INTERNAL: '内部执行错误',
+} as const;
+
 /**
  * 累计用量：请求数与工具调用数、输入输出 token 数均为累计值。
  * `unknown_requests` 记录上游未回传用量或执行中断后无法核实的请求数，只增不减。

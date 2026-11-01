@@ -65,7 +65,7 @@ export async function createApp(
     const app = express();
     const metrics = new RequestMetrics();
     const security = new HttpSecurity(hub);
-    const context = { hub, sources, metrics, security };
+    const context = { hub, sources, metrics, security, worker };
     configureHttp(app, config, metrics, logs);
     registerTelemetryRoutes(app, context);
     registerOAuthRoutes(app, context);

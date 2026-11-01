@@ -38,6 +38,12 @@ class AiStoreAdapter implements AiStore {
   list<K extends AiTable>(table: K, query: AiRecordQuery) {
     return this.session.execute((q) => q.ai.list(table, query));
   }
+  summarizeExecutions() {
+    return this.session.execute((q) => q.ai.summarizeExecutions());
+  }
+  summarizeExecutionDays(from: string, through: string) {
+    return this.session.execute((q) => q.ai.summarizeExecutionDays(from, through));
+  }
   private async owner<K extends AiTable>(table: K, record: AiRecordMap[K]) {
     if (table === 'ai_executions') {
       if (record.execution_id !== record.id) throw new Error('执行 ID 不一致');

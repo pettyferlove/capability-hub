@@ -11,8 +11,8 @@ import { jsonRoute as send } from '../response.js';
  * `PATCH` 把 `If-Match` 修订号交给 `matchRevision`：缺失 → 428 `IF_MATCH_REQUIRED`，
  * 不符 → 412 `REVISION_CONFLICT`；其余失败以 `HubError` 抛给统一错误处理器映射状态码。
  */
-export function registerIdentityRoutes(app: Express, { hub, metrics }: HttpContext): void {
-  const { store, identity, administration, config } = hub;
+export function registerIdentityRoutes(app: Express, { hub, metrics, worker }: HttpContext): void {
+  const { identity, administration } = hub;
   app.get(
     '/api/admin/identity',
     send(async (_req, res) => await administration.adminSnapshot(res.locals.principal)),
@@ -21,7 +21,7 @@ export function registerIdentityRoutes(app: Express, { hub, metrics }: HttpConte
     '/api/admin/operations',
     send(async (_req, res) => {
       identity.require(res.locals.principal, 'audit:read');
-      return await operations(store, metrics, config.dataDir);
+      return await operations(hub, metrics, worker);
     }),
   );
   app.post(

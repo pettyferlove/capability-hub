@@ -27,6 +27,10 @@ export class HubWorker {
   get busy() {
     return this.running !== undefined || this.aiActive !== undefined;
   }
+  get status(): 'stopped' | 'idle' | 'busy' {
+    if (this.busy) return 'busy';
+    return this.timer ? 'idle' : 'stopped';
+  }
   start() {
     if (this.timer || this.stopped) return;
     const run = () => {
