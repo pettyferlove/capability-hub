@@ -3,6 +3,19 @@ import type { AgentInvocation, OperationContext } from '@capability-hub/ai';
 import { z } from 'zod';
 import type { evidenceSchema } from './schemas.js';
 
+/**
+ * 为业务 agent 装配只读证据工具。所有工具都只读固定版本，不连接远端、不执行资源内的指令；
+ * 每次调用都经 {@link OperationContext.tool} 触发 `authorize('tool', id)` 并在同一执行写入
+ * 事务内推进修订，因此工具调用本身就有审计副作用，权限不足立即抛 `AiError`。
+ *
+ * 返回的 `inspected` 与 `evidence` 是本次执行内累计的证据账本（非快照），调用方必须在同一闭包
+ * 内读取：`inspected` 只记录 `read-file` 命中的行区间，`evidence.feedbackRead` 只有在
+ * `read-feedback` 成功后才为 true——两者被用于拒绝「未读证据即下结论」的报告。
+ * 工具集必须按执行新建，不能跨执行复用。
+ *
+ * @param feedbackId - 传入时额外开放 `read-feedback`，并收起 `publication-scenarios`
+ * （反馈研判不涉及发布建议）。
+ */
 export function businessTools(
   context: OperationContext,
   service: AgentEvidenceService,

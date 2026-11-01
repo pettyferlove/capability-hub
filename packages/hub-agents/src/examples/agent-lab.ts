@@ -3,6 +3,13 @@ import { createStep, createWorkflow } from '@capability-hub/ai/mastra';
 import { z } from 'zod';
 import { instructions, textTool } from './shared.js';
 
+/**
+ * 注册协作与审批演示操作（`agent-lab` v1）：草案 → 并行（表达检查 / 风险检查）→ 人工审批 →
+ * 保存成果并打分。审批是唯一暂停点，`require_approval` 为 true 时没有回执就挂起等待；
+ * 审查步骤走 `.parallel()`，两路都在同一执行作用域内，任一路失败即整步失败。
+ * 保存阶段用 `context.artifact`/`context.evaluate`，都是按执行幂等的效果，重复运行时
+ * 复用首次成果而不是重复写入。
+ */
 export function registerAgentLab(registry: OperationRegistry) {
   const input = z
     .object({

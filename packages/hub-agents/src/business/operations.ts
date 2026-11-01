@@ -18,6 +18,18 @@ Skill 必须从 SKILL.md 开始，跟随有意义的引用检查脚本、配置�
 按需使用目录、分段读取、搜索、静态扫描和版本比较，不要索要整个包。没有读取的内容不能声称已检查。
 区分事实、推断和待验证事项，引用实际读过的文件及行号，明确检查范围与缺失证据。不要修改资源、发布版本或自动结束反馈。`;
 
+/**
+ * 注册资源审计（`resource-audit`，v3）与反馈研判（`feedback-triage`，v2）两个操作。流程固定为
+ * 「调查 → 人工确认 → 记录」三段，任何一段都不能跳过：
+ * - 调查阶段必须实际读过入口文件（Skill 的 `SKILL.md`、MCP 的 `server.json`），反馈研判还必须
+ *   读过目标反馈，否则以 `AI_OUTPUT_INVALID` 失败；
+ * - 报告引用必须落在已读行区间内，发布建议只能引用本次工具返回过的场景 ID；
+ * - 人工确认是唯一的暂停点（`human-review`），回写反馈走 `context.effect` 幂等效果，落库前
+ *   重新校验维护权限与反馈修订号，二者任一变化即 `AI_FORBIDDEN` / `AI_CONFLICT`。
+ *
+ * 操作本身不修改资源、不发布版本、不关闭反馈，这些仍由人工走各自的 HTTP 命令完成。
+ * `service` 与人工共用同一权限边界，agent 拿不到额外授权。
+ */
 export function registerBusinessOperations(
   registry: OperationRegistry,
   service: AgentEvidenceService,

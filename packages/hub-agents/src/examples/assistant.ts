@@ -5,6 +5,14 @@ import { instructions, textTool } from './shared.js';
 
 const textOutput = z.object({ text: z.string().min(1) }).strict();
 
+/**
+ * 注册基础助手操作（`assistant` v1）：单步流式回答，开启会话记忆，供验证流式事件、工具调用
+ * 与用量记录。记忆由执行作用域限定在单次 execution 内（`ScopedMemoryStorage` 拒绝跨执行读取），
+ * 跨运行知识只能经 ResourceResolver 获取。`retryConfig.attempts: 0` 表示 provider 失败不自动
+ * 重试，只有队列针对中断才会重新调度，避免重复计费。
+ * 传入 `mcp_endpoint` 时先经 `withMcpTools` 换取只读工具集，端点未登记或工具不可读会直接
+ * 失败而不是降级运行。
+ */
 export function registerAssistant(registry: OperationRegistry) {
   const assistantInput = z
     .object({

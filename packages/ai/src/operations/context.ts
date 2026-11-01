@@ -23,6 +23,12 @@ import { ManagedProvider } from '../integrations/provider.js';
 import { readStructured, ReportFormatError } from '../integrations/structured-output.js';
 import { withMcpTools } from '../integrations/mcp.js';
 
+/**
+ * 一次 agent 调用。`instructions` 是系统指令，`prompt` 是用户内容（资源正文只能出现在这里，
+ * 不得拼进 `instructions`）；`max_steps` 默认 5 且硬性截断到 100（超出即按 100 走），
+ * 它是工具循环轮数上限，不是超时；
+ * `memory: true` 时记忆仍限定在当前执行内。
+ */
 export interface AgentInvocation {
   id: string;
   instructions: string;
@@ -31,6 +37,11 @@ export interface AgentInvocation {
   memory?: boolean;
   max_steps?: number;
 }
+/**
+ * 注册给模型的工具定义。`id` 同时是审计与授权资源名（`authorize('tool', id)`），必须在执行内唯一；
+ * `display` 只用于生成人类可读的进度文案，输出会被清洗为可打印字符并截断到 200 字符；
+ * `execute` 收到执行 `signal`，必须在长耗时操作中主动检查，取消后不允许继续产生副作用。
+ */
 export interface ToolDefinition<I extends z.ZodType, O extends z.ZodType> {
   id: string;
   description: string;
@@ -39,6 +50,10 @@ export interface ToolDefinition<I extends z.ZodType, O extends z.ZodType> {
   display?: (input: z.infer<I>) => string;
   execute(input: z.infer<I>, signal: AbortSignal): Promise<z.infer<O>>;
 }
+/**
+ * 运行时外部依赖。授权、凭据与资源解析都必须由宿主提供：AI 包自身不含身份系统，
+ * 也不直接访问存储凭据。`telemetry` 可选，缺失时静默跳过。
+ */
 export interface RuntimeDependencies {
   authorization: AiAuthorization;
   credentials: CredentialResolver;

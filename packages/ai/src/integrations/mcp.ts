@@ -7,6 +7,18 @@ import type { OperationContext } from '../operations/context.js';
 import { AiError } from '../core/errors.js';
 import { asJson } from '../core/records.js';
 
+/**
+ * 以已登记的 MCP 端点换一份只读工具集，交给 `work` 使用，结束后关闭连接。
+ *
+ * 约束与副作用：
+ * - `work` 之前先 `authorize('tool', 'mcp:<endpoint>')`，每次调用工具前还会再授权
+ *   `mcp:<endpoint>:<tool>`，权限在执行中途被收回即失败；
+ * - 逐页列目录最多 10 页，只暴露 `read_only_tools` 白名单内、且声明了 `readOnlyHint` 的工具，
+ *   白名单里有但端点不存在同名工具时视为配置错误；单个工具 Schema 上限 32 KB、结果上限 128 KB；
+ * - 每个工具的 input schema 与说明会作为 artifact 落库，供后续核对；
+ * - 请求只能打到登记的 origin + path（否则 `AI_FORBIDDEN`），重定向一律禁止，凭据按
+ *   `credential_ref` 现场解析进 `Authorization` 头；单请求超时 30 秒，并与执行 `signal` 合并。
+ */
 export async function withMcpTools<T>(
   context: OperationContext,
   endpoint: McpEndpoint,

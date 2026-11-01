@@ -5,8 +5,13 @@ import {
   type BrowserLogBatch,
   type BrowserLogEntry,
 } from './events.js';
+/**
+ * 浏览器日志入口配置。`send` 缺省时按 `POST {endpoint}` 发送（默认 `/telemetry/browser`，
+ * 5 秒超时、`credentials: 'omit'` 不带 cookie、不附带任何请求头凭据）。
+ */
 export interface BrowserLoggingOptions {
   endpoint?: string;
+  /** 缺省时按 `crypto.randomUUID()` 生成，仅用于服务端合并同页会话。 */
   sessionId?: string;
   send?: (batch: BrowserLogBatch) => Promise<void>;
 }
@@ -56,6 +61,12 @@ export function createBrowserLogTransport(
   };
 }
 
+/**
+ * 安装浏览器侧日志：监听 `error`/`unhandledrejection`/`pagehide`，并每 5 秒冲刷一次队列。
+ * 只上报白名单页面名与 UUID 形态的 request_id，正文与凭据不入日志。返回对象的 `dispose`
+ * 必须由挂载方在卸载时调用，否则定时器与全局监听会泄漏。
+ * 此入口不得引用任何 Node 内建模块，Web 端只能从 `@capability-hub/logging/browser` 导入。
+ */
 export function installBrowserLogging(options: BrowserLoggingOptions = {}) {
   const endpoint = options.endpoint ?? '/telemetry/browser';
   const transport = createBrowserLogTransport(

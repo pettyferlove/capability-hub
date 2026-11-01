@@ -72,6 +72,17 @@ function validate<T extends z.ZodType>(schema: T, candidate: unknown): z.infer<T
   throw new ReportFormatError('模型结构化结果的字段或类型不符合约定', hint);
 }
 
+/**
+ * 读取模型的结构化结果并按 `schema` 校验，是唯一允许把模型输出转成业务类型的入口。
+ *
+ * 恢复策略刻意保守：只在 Schema 明确报出 `invalid_type` 的字段上，把「类型无歧义的 JSON 文本」
+ * 还原成数字/布尔/数组/对象（不补字段、不丢字段、不猜枚举），随后重校验。
+ * `read` 抛出的 MastraError 中，`STRUCTURED_OUTPUT_SCHEMA_VALIDATION_FAILED` 会取回原文（上限
+ * 256000 字符）再判定；`OBJECT_UNDEFINED`/`TRUNCATED` 直接转成 {@link ReportFormatError}；
+ * 其余 MastraError 原样抛出，不做兜底。
+ * 失败时抛 {@link ReportFormatError}，`hint` 只含字段路径与 issue code（最多 8 条），
+ * 不回传模型原文、SDK 异常或资源内容。
+ */
 export async function readStructured<T extends z.ZodType>(
   read: () => Promise<unknown>,
   schema: T,

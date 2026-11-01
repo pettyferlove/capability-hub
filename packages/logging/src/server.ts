@@ -13,6 +13,10 @@ import { pinoHttp } from 'pino-http';
 import { safeError, safeText, sanitize } from './events.js';
 export type { Logger, LevelWithSilent } from 'pino';
 
+/**
+ * 服务端日志配置；`level` 默认 `info`，`environment` 默认 `development`，两者直接作为 pino
+ * 绑定字段落盘，会进入每一条日志。
+ */
 export interface LoggingOptions {
   service: string;
   level?: LevelWithSilent;
@@ -32,6 +36,12 @@ function responseFields(value: unknown) {
   const res = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
   return { status: typeof res.statusCode === 'number' ? res.statusCode : undefined };
 }
+/**
+ * 创建已脱敏的服务端日志器：字符串、对象与异常的序列化、formatter、`child` 与 `setBindings`
+ * 的绑定都在写入前经过 {@link safeText}/{@link sanitize}，避免子日志绕过脱敏；敏感键另由 pino
+ * `redact` 兜底。仅限 Node 进程使用——它依赖 `node:async_hooks` 等内建模块，
+ * 浏览器侧只能走 `@capability-hub/logging/browser`。
+ */
 export function createLogger(options: LoggingOptions): Logger {
   const logger = pino(
     {

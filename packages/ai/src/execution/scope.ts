@@ -3,6 +3,11 @@ import type { AiStore, AiQueueBridge, ExecutionLease } from '../core/ports.js';
 import type { ExecutionRecord } from '../core/records.js';
 import { AiError } from '../core/errors.js';
 
+/**
+ * 单轮执行的作用域。`controller` 的 abort reason 必须是 {@link AiError}：只有
+ * `AI_INTERRUPTED`/`AI_LEASE_LOST`/`AI_CANCELLED`/`AI_DEADLINE_EXCEEDED` 会被写库路径直接抛出，
+ * 其它原因视为普通失败。`definition_digest` 是进入本轮时的定义摘要，用于发现运行期换了定义。
+ */
 export interface RunScope {
   lease: ExecutionLease;
   owner_id: string;

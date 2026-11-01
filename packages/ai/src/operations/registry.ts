@@ -5,6 +5,13 @@ import { digest } from '../core/config.js';
 import { AiError } from '../core/errors.js';
 import { asJson } from '../core/records.js';
 
+/**
+ * 一个可执行操作的声明。`id` 必须匹配 `^[a-z][a-z0-9-]{0,63}$` 且全局唯一；`version` 参与
+ * `definition_digest`，改动输入/输出/交互 Schema 或 `create` 行为都必须升版本，否则进行中的执行
+ * 恢复时会因摘要不一致而判为 `AI_RECOVERY_UNCERTAIN`。
+ * `interactions` 以原生工作流暂停路径（`stepA/stepB`）为键：未声明的暂停点会让执行失败，
+ * 一次执行也只允许一个明确的暂停点。
+ */
 export interface OperationDefinition {
   id: string;
   version: string;
