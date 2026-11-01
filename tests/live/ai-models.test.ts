@@ -9,8 +9,10 @@ import { frameworkFixture } from '../support/ai-framework.js';
 const path = process.env.AI_LIVE_CONFIG;
 if (!path)
   throw new Error('AI_LIVE_CONFIG must name an explicit protected model configuration file');
+
 const config = aiConfigurationSchema.parse(JSON.parse(await readFile(path, 'utf8')));
 if (!config.profiles.length) throw new Error('Live verification requires a configured model');
+
 for (const profile of config.profiles)
   test(
     `真实模型 ${profile.id} (${profile.format})：原生工具、流、结构化输出与用量`,

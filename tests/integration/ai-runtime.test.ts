@@ -27,6 +27,7 @@ function config(baseUrl = 'https://example.test/v1', format: 'openai' | 'anthrop
     default_profile: 'fixture',
   });
 }
+
 test('AI 原生暂停、持久回答、换运行时恢复与效果回执共用 Hub 事务', async (t) => {
   const hub = await createTestHub(t, { ai: config() });
   const value = z.object({ value: z.number() }).strict();

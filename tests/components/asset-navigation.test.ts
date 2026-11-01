@@ -25,6 +25,7 @@ function Background() {
     createElement('a', { href: '/asset/example?tab=feedback' }, '查看详情'),
   );
 }
+
 function NavigationFixture() {
   const route = useAppRoute();
   return createElement(

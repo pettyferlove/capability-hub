@@ -34,6 +34,7 @@ async function requestAuthorization(fixture: TestHub, scope = 'hub:read') {
   )!;
   return { http, verifier, client, query, id };
 }
+
 async function grant(fixture: TestHub, contribute = false, username = 'owner') {
   const flow = await requestAuthorization(
     fixture,
@@ -58,6 +59,7 @@ async function grant(fixture: TestHub, contribute = false, username = 'owner') {
   const issued = await flow.http.post('/oauth/token').type('form').send(exchange).expect(200);
   return { ...flow, browser, exchange, tokens: issued.body };
 }
+
 const rpc = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
 
 test('OAuth 元数据、浏览器登录与 CSRF 确认、默认读取、MCP 专用凭据和撤销形成闭环', async (context) => {

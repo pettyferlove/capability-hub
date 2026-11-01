@@ -3,8 +3,10 @@ import { sha256 } from '@capability-hub/domain/canonical';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { openOperations } from './runtime.js';
+
 const source = resolve(process.argv[2] ?? '');
 if (!process.argv[2]) throw new Error('请指定备份目录');
+
 const manifest: unknown = JSON.parse(await readFile(join(source, 'backup.json'), 'utf8'));
 if (
   !manifest ||
@@ -14,8 +16,10 @@ if (
   !('records_sha256' in manifest)
 )
   throw new Error('备份清单无效');
+
 const records = await readFile(join(source, 'records.json'));
 if (sha256(records) !== manifest.records_sha256) throw new Error('备份记录摘要不匹配');
+
 const snapshot = parseSnapshot(JSON.parse(records.toString()));
 const runtime = await openOperations();
 try {

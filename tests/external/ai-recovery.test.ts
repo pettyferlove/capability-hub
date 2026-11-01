@@ -21,6 +21,7 @@ for (const stage of ['effect', 'terminal', 'resume'] as const)
       await database.close();
     }
   });
+
 test('PostgreSQL AI 租约隔离、事务回滚和跨数据库备份', async (t) => {
   const database = await externalDatabase();
   const store = await openRecordStore({

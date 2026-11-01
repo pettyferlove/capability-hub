@@ -3,6 +3,7 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isBuiltin } from 'node:module';
 import ts from 'typescript';
+
 interface WorkspaceManifest {
   name: string;
   exports?: Record<string, string | Record<string, string>>;

@@ -551,6 +551,7 @@ function activityEvent(seq: number, type: string, data: unknown) {
     data,
   });
 }
+
 test('工具按调用编号归并，穿插于 Agent 输出之间，失败和中断不伪装成功', () => {
   const view = executionView({
     status: 'running',

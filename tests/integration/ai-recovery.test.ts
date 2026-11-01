@@ -7,6 +7,7 @@ for (const stage of ['effect', 'terminal', 'resume'] as const)
     const fixture = await createSqliteStore(t);
     await assertCrashRecovery(t, fixture.store, { driver: 'sqlite', path: fixture.path }, stage);
   });
+
 test('SQLite AI 过期、接管与共享事务回滚、完整备份恢复', async (t) => {
   const fixture = await createSqliteStore(t);
   await assertLeaseIsolation(t, fixture.store);

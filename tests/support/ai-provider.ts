@@ -1,6 +1,7 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { once } from 'node:events';
 import { deferred } from './store.js';
+
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Invalid fixture request');
@@ -257,9 +258,11 @@ export async function fixture(
     },
   };
 }
+
 function data(res: ServerResponse, value: unknown) {
   res.write(`data: ${JSON.stringify(value)}\n\n`);
 }
+
 function event(res: ServerResponse, type: string, value: Record<string, unknown>) {
   res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...value })}\n\n`);
 }

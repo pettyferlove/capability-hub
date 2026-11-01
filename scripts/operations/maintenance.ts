@@ -1,6 +1,7 @@
 import { blobReferences } from '@capability-hub/infrastructure/store';
 import { openOperations } from './runtime.js';
 import { purgeAiHistory } from '@capability-hub/infrastructure/ai';
+
 const runtime = await openOperations();
 const { store, blobs } = runtime;
 let removed = 0;
@@ -38,6 +39,7 @@ try {
 } finally {
   await runtime.close();
 }
+
 process.stdout.write(
   `已清理过期运行记录和 ${aiRemoved} 个超过 30 天的 AI 终态执行；清理 ${removed} 个至少 24 小时未被任何版本或接收记录引用的对象。\n`,
 );

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { HubError } from '@capability-hub/domain/errors';
 import { createTestHub, publishSkill } from '../support/application.js';
+
 const code = (expected: string) => (error: unknown) =>
   error instanceof HubError && error.code === expected;
 

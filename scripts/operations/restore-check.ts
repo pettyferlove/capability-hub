@@ -1,4 +1,5 @@
 import { openOperations } from './runtime.js';
+
 const runtime = await openOperations(process.argv[2]);
 const { store, blobs } = runtime;
 const errors: string[] = [];
@@ -36,6 +37,7 @@ try {
 } finally {
   await runtime.close();
 }
+
 if (errors.length) {
   process.stderr.write(errors.join('\n') + '\n');
   process.exitCode = 1;

@@ -3,6 +3,7 @@ import { sha256 } from '@capability-hub/domain/canonical';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { openOperations } from './runtime.js';
+
 const dest = resolve(
   process.argv[2] ?? `output/backups/${new Date().toISOString().replace(/[:.]/g, '-')}`,
 );

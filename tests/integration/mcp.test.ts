@@ -20,6 +20,7 @@ async function connect(origin: string, token: string) {
   );
   return client;
 }
+
 function object(value: unknown): Record<string, unknown> {
   assert(value && typeof value === 'object' && !Array.isArray(value));
   return value as Record<string, unknown>;

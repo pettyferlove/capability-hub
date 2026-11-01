@@ -2,12 +2,14 @@ import { openOperations } from './runtime.js';
 import { ScryptPasswordHasher } from '@capability-hub/infrastructure/security';
 import { createInterface } from 'node:readline/promises';
 import { Writable } from 'node:stream';
+
 const index = process.argv.indexOf('--username');
 const username = index >= 0 ? process.argv[index + 1]?.trim().toLowerCase() : undefined;
 if (!username || !process.stdin.isTTY) {
   process.stderr.write('请在本地交互终端运行：pnpm account:recover --username ACCOUNT\n');
   process.exit(1);
 }
+
 let hidden = false;
 const output = new Writable({
   write(chunk: Uint8Array, _encoding, callback) {

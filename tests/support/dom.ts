@@ -51,6 +51,7 @@ for (const name of [
   if (value !== undefined)
     Object.defineProperty(globalThis, name, { value, writable: true, configurable: true });
 }
+
 Object.defineProperty(globalThis, 'getComputedStyle', {
   value: window.getComputedStyle.bind(window),
   configurable: true,
@@ -75,6 +76,7 @@ class ResizeObserver {
   unobserve(): void {}
   disconnect(): void {}
 }
+
 Object.defineProperty(globalThis, 'ResizeObserver', { value: ResizeObserver, configurable: true });
 Object.defineProperty(window, 'ResizeObserver', { value: ResizeObserver, configurable: true });
 Object.defineProperty(window, 'matchMedia', {

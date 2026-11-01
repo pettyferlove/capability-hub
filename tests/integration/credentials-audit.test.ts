@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { HubError } from '@capability-hub/domain/errors';
 import { createTestHub } from '../support/application.js';
+
 const code = (expected: string) => (error: unknown) =>
   error instanceof HubError && error.code === expected;
 

@@ -40,6 +40,7 @@ async function installation(context: TestContext, body?: string) {
     source: { hub_url: 'https://hub.example.test' },
   };
 }
+
 const code = (expected: string) => (error: unknown) =>
   error instanceof HubError && error.code === expected;
 

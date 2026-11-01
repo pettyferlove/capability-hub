@@ -19,6 +19,7 @@ async function login(origin: string) {
   assert(cookie);
   return cookie.split(';')[0]!;
 }
+
 function stream(response: Response) {
   assert(response.body);
   const reader = response.body.getReader();
