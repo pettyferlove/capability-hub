@@ -92,6 +92,7 @@ export class AiRuntime {
           usage: { requests: 0, tools: 0, input_tokens: 0, output_tokens: 0, unknown_requests: 0 },
         },
       };
+      await this.dependencies.authorization.authorize(ownerId, 'submit', execution);
       await this.store.insert('ai_executions', execution);
       execution.payload.dispatch_id = await this.queue.enqueue(id);
       await this.events.append(execution, 'execution.queued', { operation_id: operationId });
@@ -315,7 +316,7 @@ export class AiRuntime {
                 const reader = createWorkflowStateReader(state);
                 if (state.status !== 'suspended') {
                   if (state.status !== 'success')
-                    throw new AiError('AI_INTERNAL', '原生工作流未成功完成');
+                    throw context.failure ?? new AiError('AI_INTERNAL', '原生工作流未成功完成');
                   const output = asJson(definition.output.parse(reader.getResult()));
                   await this.complete(current.id, output);
                   return;

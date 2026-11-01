@@ -29,11 +29,124 @@ for (const format of ['openai', 'anthropic'] as const)
     const result = await hub.runtime.get(execution.id);
     assert.equal(result.status, 'succeeded', JSON.stringify(result.payload.error));
     assert.deepEqual(result.payload.result, { verdict: 'ok', count: 7 });
+    const request = provider.requests[0].body;
+    const system =
+      format === 'anthropic'
+        ? request.system
+        : (request.messages as { role: string; content: string }[]).filter(
+            (message) => message.role === 'system',
+          );
+    const instructions = JSON.stringify(system);
+    assert(
+      instructions.includes('\\"properties\\"'),
+      '模型必须收到字段 Schema，不能只有 JSON 模式',
+    );
+    assert(instructions.includes('\\"required\\"'));
+    assert(instructions.includes('\\"verdict\\"'));
+    assert(instructions.includes('\\"count\\"'));
     assert.equal(
       (await hub.runtime.store.list('ai_traces', { execution_id: execution.id, limit: 10 })).length,
       1,
     );
   });
+
+for (const format of ['openai', 'anthropic'] as const)
+  test(`AI ${format} 非约定报告保留输出错误分类且不泄露原始校验结果`, async (t) => {
+    const invalid = JSON.stringify({ 结论: 'private-model-output', 风险: '低' });
+    const provider = await fixture(format, 'json', false, {
+      turns: [],
+      text: invalid,
+      json: invalid,
+    });
+    t.after(provider.close);
+    const hub = await frameworkFixture(t, frameworkConfig(provider.url, format), (context) =>
+      context.step('report', () =>
+        context.structured(
+          { id: 'report', instructions: 'Return JSON.', prompt: 'Summarize the report.' },
+          z.object({ summary: z.string(), risk: z.enum(['low', 'high']) }).strict(),
+        ),
+      ),
+    );
+    const submitted = await hub.runtime.submit(hub.admin.id, 'framework-test', {});
+    await hub.run();
+    const result = await hub.runtime.get(submitted.id);
+    assert.equal(result.status, 'failed');
+    assert.deepEqual(result.payload.error, {
+      code: 'AI_OUTPUT_INVALID',
+      message: '模型结构化结果的字段或类型不符合约定',
+      retryable: false,
+    });
+    const snapshots = await hub.runtime.store.list('ai_snapshots', {
+      execution_id: submitted.id,
+      limit: 10,
+    });
+    assert(!JSON.stringify(snapshots).includes('private-model-output'));
+    assert.equal(provider.requests.length, 1, '格式失败不隐式重试或使用未校验的降级结果');
+  });
+
+for (const format of ['openai', 'anthropic'] as const)
+  test(
+    `AI ${format} 工具续轮复用响应块标识仍保持文本和重放偏移连续`,
+    { timeout: 20000 },
+    async (t) => {
+      const texts = ['先检查入口🔍', '继续检查引用文档', '完成检查✅'];
+      const provider = await fixture(format, 'tools', false, {
+        turns: texts.slice(0, 2).map((text) => ({ name: 'inspect_text', input: { text }, text })),
+        text: texts[2],
+        json: '{}',
+      });
+      t.after(provider.close);
+      const hub = await frameworkFixture(t, frameworkConfig(provider.url, format), (context) =>
+        context.agent({
+          id: 'multi-turn',
+          instructions: 'Inspect text',
+          prompt: 'Read in steps',
+          tools: {
+            inspect_text: context.tool({
+              id: 'inspect-text',
+              description: 'Count',
+              input: z.object({ text: z.string() }),
+              output: z.object({ count: z.number() }),
+              execute: async ({ text }) => ({ count: text.length }),
+            }),
+          },
+        }),
+      );
+      const submitted = await hub.runtime.submit(hub.admin.id, 'framework-test', {});
+      await hub.run();
+      const result = await hub.runtime.get(submitted.id);
+      assert.equal(result.status, 'succeeded', JSON.stringify(result.payload.error));
+      assert.deepEqual(
+        result.payload.message_blocks.map((block) => block.text).filter(Boolean),
+        texts,
+      );
+      assert.equal(
+        new Set(result.payload.message_blocks.map((block) => block.id)).size,
+        result.payload.message_blocks.length,
+      );
+      assert(result.payload.message_blocks.every((block) => block.complete));
+      const replay = new Map<string, string>();
+      const events = await hub.runtime.store.list('ai_events', {
+        execution_id: submitted.id,
+        limit: 1000,
+      });
+      for (const { payload: event } of events) {
+        const id = String(event.data.block_id);
+        if (event.type === 'message.started') {
+          assert(!replay.has(id));
+          replay.set(id, '');
+        }
+        if (event.type === 'message.delta') {
+          assert.equal(event.data.offset, replay.get(id)?.length);
+          replay.set(id, replay.get(id)! + String(event.data.delta));
+        }
+        if (event.type === 'message.completed')
+          assert.equal(event.data.length, replay.get(id)?.length);
+      }
+      assert.deepEqual([...replay.values()].filter(Boolean), texts);
+      assert.equal(result.payload.message_text, texts.join(''));
+    },
+  );
 
 test('AI 请求预算在第二次真实网络请求之前终止原生工具循环', { timeout: 20000 }, async (t) => {
   const provider = await fixture('openai', 'tools');

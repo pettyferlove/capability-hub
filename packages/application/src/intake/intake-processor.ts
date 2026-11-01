@@ -18,6 +18,7 @@ export class IntakeProcessor {
     private readonly assets: AssetAccessService,
     private readonly jobs: JobQueue,
     private readonly scan: IntakeScanner,
+    private readonly onReady?: (requestedBy: string, versionId: string) => Promise<void>,
   ) {}
   async process(intake: IntakeRecord, job: JobRecord, provided?: ContentFile[]) {
     const a = await this.assets.getAsset(intake.asset_id);
@@ -156,6 +157,7 @@ export class IntakeProcessor {
           ...(result.error_code ? { error_code: result.error_code } : {}),
         },
       );
+      await this.onReady?.(intake.requested_by, version.id);
       return result;
     });
   }

@@ -9,7 +9,16 @@ function record(value: unknown): Record<string, unknown> {
 
 export type Format = 'openai' | 'anthropic';
 export type Mode = 'tools' | 'text' | 'json' | 'rate-limit' | 'truncated';
-export async function fixture(format: Format, mode: Mode = 'tools', gated = false) {
+export async function fixture(
+  format: Format,
+  mode: Mode = 'tools',
+  gated = false,
+  script?: {
+    turns: { name: string; input: Record<string, unknown>; text?: string }[];
+    text: string;
+    json: string;
+  },
+) {
   const requests: { path: string; body: Record<string, unknown>; authenticated: boolean }[] = [];
   const firstDelta = deferred();
   const release = deferred();
@@ -40,8 +49,15 @@ export async function fixture(format: Format, mode: Mode = 'tools', gated = fals
         );
         return;
       }
-      const toolTurn = mode === 'tools' && requests.length === 1;
-      const text = mode === 'json' ? '{"verdict":"ok","count":7}' : 'AI 流式输出 42';
+      const planned = script?.turns[requests.length - 1];
+      const toolTurn = script ? !!planned : mode === 'tools' && requests.length === 1;
+      const text = script
+        ? requests.length > script.turns.length + 1
+          ? script.json
+          : script.text
+        : mode === 'json'
+          ? '{"verdict":"ok","count":7}'
+          : 'AI 流式输出 42';
       if (!body.stream) {
         res.writeHead(200, { 'content-type': 'application/json' });
         const tools = Array.isArray(body.tools) ? body.tools : [];
@@ -99,17 +115,21 @@ export async function fixture(format: Format, mode: Mode = 'tools', gated = fals
           });
         chunk({ role: 'assistant', content: '' });
         if (toolTurn) {
+          if (planned?.text) chunk({ content: planned.text });
           chunk({
             tool_calls: [
               {
                 index: 0,
                 id: 'call-ai',
                 type: 'function',
-                function: { name: 'inspect_text', arguments: '{"text":' },
+                function: {
+                  name: planned?.name ?? 'inspect_text',
+                  arguments: planned ? JSON.stringify(planned.input) : '{"text":',
+                },
               },
             ],
           });
-          chunk({ tool_calls: [{ index: 0, function: { arguments: '"hello"}' } }] });
+          if (!planned) chunk({ tool_calls: [{ index: 0, function: { arguments: '"hello"}' } }] });
           chunk({}, 'tool_calls');
         } else {
           chunk({ content: text.slice(0, 3) });
@@ -145,18 +165,38 @@ export async function fixture(format: Format, mode: Mode = 'tools', gated = fals
           },
         });
         if (toolTurn) {
+          if (planned?.text) {
+            event(res, 'content_block_start', {
+              index: 0,
+              content_block: { type: 'text', text: '' },
+            });
+            event(res, 'content_block_delta', {
+              index: 0,
+              delta: { type: 'text_delta', text: planned.text },
+            });
+            event(res, 'content_block_stop', { index: 0 });
+          }
           event(res, 'content_block_start', {
-            index: 0,
-            content_block: { type: 'tool_use', id: 'toolu-ai', name: 'inspect_text', input: {} },
+            index: planned?.text ? 1 : 0,
+            content_block: {
+              type: 'tool_use',
+              id: 'toolu-ai',
+              name: planned?.name ?? 'inspect_text',
+              input: {},
+            },
           });
           event(res, 'content_block_delta', {
-            index: 0,
-            delta: { type: 'input_json_delta', partial_json: '{"text":' },
+            index: planned?.text ? 1 : 0,
+            delta: {
+              type: 'input_json_delta',
+              partial_json: planned ? JSON.stringify(planned.input) : '{"text":',
+            },
           });
-          event(res, 'content_block_delta', {
-            index: 0,
-            delta: { type: 'input_json_delta', partial_json: '"hello"}' },
-          });
+          if (!planned)
+            event(res, 'content_block_delta', {
+              index: 0,
+              delta: { type: 'input_json_delta', partial_json: '"hello"}' },
+            });
         } else {
           event(res, 'content_block_start', {
             index: 0,
@@ -177,7 +217,7 @@ export async function fixture(format: Format, mode: Mode = 'tools', gated = fals
             delta: { type: 'text_delta', text: text.slice(3) },
           });
         }
-        event(res, 'content_block_stop', { index: 0 });
+        event(res, 'content_block_stop', { index: toolTurn && planned?.text ? 1 : 0 });
         event(res, 'message_delta', {
           delta: { stop_reason: toolTurn ? 'tool_use' : 'end_turn', stop_sequence: null },
           usage: { output_tokens: 8 },

@@ -36,6 +36,7 @@ import { QueryRegion } from '../../shared/components/QueryRegion.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { useIntakeDetail } from './use-intake-detail.js';
 import { IntakeDetail } from './IntakeDetail.js';
+import { BusinessAgentPanel } from '../ai/BusinessAgentPanel.js';
 import { IntakeHistoryRow, statusLabels } from './IntakeHistoryRow.js';
 
 export function IntakeHistoryPanel({
@@ -179,6 +180,7 @@ export function IntakeHistoryPanel({
       <Overlay
         open={!!active}
         onClose={() => onSelect('')}
+        size="workspace"
         label="校验与发布申请"
         variant="sheet"
         loadingKey={active}
@@ -213,6 +215,13 @@ export function IntakeHistoryPanel({
             )
           )}
         </div>
+        {detail?.version_id && (
+          <BusinessAgentPanel
+            key={detail.version_id}
+            versionId={detail.version_id}
+            title={detail.asset_slug}
+          />
+        )}
       </Overlay>
     </section>
   );

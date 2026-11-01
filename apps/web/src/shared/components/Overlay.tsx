@@ -27,7 +27,7 @@ export function Overlay({
   label: string;
   children: ReactNode;
   variant: 'sheet' | 'palette' | 'showcase';
-  size?: 'default' | 'wide';
+  size?: 'default' | 'wide' | 'workspace';
   loadingKey?: string;
 }) {
   const dialog = useRef<HTMLDivElement>(null);
@@ -65,6 +65,7 @@ export function Overlay({
                     overlaySheetStyles,
                     'absolute bottom-0 right-0 top-0 flex flex-col overflow-hidden bg-background shadow-overlay sm:rounded-l-[28px]',
                     size === 'wide' ? overlaySheetWideStyles : '',
+                    size === 'workspace' && 'w-full max-w-[1280px]',
                   )}
                   style={{
                     paddingTop: 'env(safe-area-inset-top, 0px)',

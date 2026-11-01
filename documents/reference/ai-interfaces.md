@@ -16,6 +16,12 @@
 
 `activity` 与执行投影在同一事务读取，是同一执行、operator audience、水位以内的持久事件 envelope，按 seq 升序排列。查询先排除 `message.delta`、`message.completed`、`usage.updated` 和 `execution.completed`，再取最近 1000 条，文本流不会挤掉工具调用。`activity_truncated` 表示更早的活动已省略；消息全文、完成状态、用量与结果由 `execution` 提供，完整人工回答由 `interactions` 提供。客户端校验归属、排序、事件类型和水位；接收后续 SSE 时仅将相同类型的事件加入活动列表并保持上限。活动快照不会改变 seq 或重放游标规则。
 
+## 业务任务
+
+首批操作 `resource-audit` 输入 `{version_id}`，`feedback-triage` 输入 `{version_id, feedback_id}`。完整业务规则见 [反馈研判与资源审计](../design/business-agents.md)。列表可附加 `operation_id`、`version_id`、`feedback_id`，过滤仍遵循当前用户和资源权限；游标推进扫描页，空结果但有 `next_cursor` 时仍可继续。
+
+人工回答为 `{approved, comment?, apply_feedback?}`；写回反馈需要明确采纳与维护权限。交互 revision 只保护回答，业务写回另校验反馈 revision。
+
 ## SSE 传输
 
 响应为 `text/event-stream; charset=utf-8`，`Cache-Control: private, no-store, no-transform`，`X-Accel-Buffering: no`。代理必须关闭缓冲。浏览器通过唯一 API 传输模块以 fetch 读取，不额外创建未授权通道。
@@ -53,25 +59,25 @@
 
 ## 持久事件负载
 
-| type                                                              | data                                                           |
-| ----------------------------------------------------------------- | -------------------------------------------------------------- |
-| execution.queued                                                  | 首次 `{operation_id}`，人工继续 `{continuation}`               |
-| execution.started / execution.waiting_input / execution.cancelled | `{}`                                                           |
-| execution.completed                                               | `{result}`                                                     |
-| execution.failed / execution.timed_out                            | `{error:{code,message,retryable}}`                             |
-| execution.retry_scheduled                                         | `{reason:"interrupted"}`                                       |
-| step.started                                                      | `{step_id}`                                                    |
-| step.completed                                                    | `{step_id,duration_ms}`                                        |
-| step.failed                                                       | `{step_id,code}`                                               |
-| message.started                                                   | `{message_id,block_id,format:"text"}`                          |
-| message.delta                                                     | `{message_id,block_id,offset,delta}`                           |
-| message.completed                                                 | `{message_id,block_id,length}`                                 |
-| tool.started / tool.completed                                     | `{tool_id,invocation_id}`                                      |
-| tool.failed                                                       | `{tool_id,invocation_id,code}`                                 |
-| interaction.requested                                             | `{interaction_id,request,response_schema,revision}`            |
-| interaction.responded                                             | `{interaction_id}`                                             |
-| usage.updated                                                     | `{requests,tools,input_tokens,output_tokens,unknown_requests}` |
-| artifact.created                                                  | `{artifact_id,name,media_type}`                                |
+| type                                                              | data                                                               |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------ |
+| execution.queued                                                  | 首次 `{operation_id}`，人工继续 `{continuation}`                   |
+| execution.started / execution.waiting_input / execution.cancelled | `{}`                                                               |
+| execution.completed                                               | `{result}`                                                         |
+| execution.failed / execution.timed_out                            | `{error:{code,message,retryable}}`                                 |
+| execution.retry_scheduled                                         | `{reason:"interrupted"}`                                           |
+| step.started                                                      | `{step_id}`                                                        |
+| step.completed                                                    | `{step_id,duration_ms}`                                            |
+| step.failed                                                       | `{step_id,code}`                                                   |
+| message.started                                                   | `{message_id,block_id,format:"text"}`                              |
+| message.delta                                                     | `{message_id,block_id,offset,delta}`                               |
+| message.completed                                                 | `{message_id,block_id,length}`                                     |
+| tool.started / tool.completed                                     | `{tool_id,invocation_id}`（started 可附 `display`，最多 200 字符） |
+| tool.failed                                                       | `{tool_id,invocation_id,code}`                                     |
+| interaction.requested                                             | `{interaction_id,request,response_schema,revision}`                |
+| interaction.responded                                             | `{interaction_id}`                                                 |
+| usage.updated                                                     | `{requests,tools,input_tokens,output_tokens,unknown_requests}`     |
+| artifact.created                                                  | `{artifact_id,name,media_type}`                                    |
 
 文本 offset 和 length 以 JavaScript UTF-16 code unit 计数，客户端必须使用字符串 `.length`，不能使用字节数或 Unicode 码点数。多个并行 Agent 使用独立 message/block ID，不能把它们当作同一文本流。普通增量按 4 KiB 或 50 ms 合并后持久化，未落盘文本不会对 UI 发布。
 

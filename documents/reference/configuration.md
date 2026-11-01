@@ -35,9 +35,8 @@ Compose 专用变量包括 CAPABILITY_HUB_IMAGE、POSTGRES_IMAGE、MINIO_IMAGE�
 ```dotenv
 CAPABILITY_HUB_AI_CONFIG=.data/ai-config.json
 HUB_AI_PRIMARY_KEY=<实际凭据>
-HUB_AI_MESSAGES_KEY=<实际凭据>
 ```
 
-JSON 中仅保存环境变量名，不直接保存 key。两个协议配置可以指向不同供应商，也可以只保留其中一个；`default_profile` 必须存在。支持字段、默认预算和 MCP 白名单见 [AI 框架](../design/ai-framework.md)。修改后重启服务；现有执行绑定原模型配置摘要，不能静默改用另一个模型恢复。
+JSON 中仅保存环境变量名，不直接保存 key。`format` 选择接口协议，`credential_ref` 独立指定供应商或账号的密钥变量，两者没有固定对应关系。示例中的两种协议使用同一供应商账号，因此都引用 `HUB_AI_PRIMARY_KEY`；使用不同供应商或账号时，分别指定各自的变量名即可。也可以只保留一个模型配置；`default_profile` 必须存在。支持字段、默认预算和 MCP 白名单见 [AI 框架](../design/ai-framework.md)。修改后重启服务；现有执行绑定原模型配置摘要，不能静默改用另一个模型恢复。
 
 容器需要以只读方式挂载配置文件，并设置容器内的绝对路径及 `credential_ref` 对应环境变量。默认 Compose 未自动传递 AI 凭据，部署者需显式配置环境变量或秘密注入。凭据不得进入 Web 构建。

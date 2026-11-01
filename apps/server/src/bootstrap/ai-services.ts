@@ -12,6 +12,7 @@ import type {
   JobQueue,
   AssetContentService,
   AssetAccessService,
+  AgentEvidenceService,
 } from '@capability-hub/application';
 import type { RecordStore } from '@capability-hub/application/ports';
 import { has } from '@capability-hub/domain/rbac';
@@ -32,9 +33,28 @@ export class HubAiServices {
     access: AssetAccessService,
     content: AssetContentService,
     config: ServerConfig,
+    private readonly evidence: AgentEvidenceService,
   ) {
     const aiStore = createAiStore(store);
     this.recheckResources = async (principal, execution) => {
+      if (['resource-audit', 'feedback-triage'].includes(execution.payload.operation_id)) {
+        const input = execution.payload.input;
+        if (
+          !input ||
+          typeof input !== 'object' ||
+          Array.isArray(input) ||
+          typeof input.version_id !== 'string'
+        )
+          throw new AiError('AI_CONFIGURATION', '业务目标不完整');
+        await evidence.version(principal.id, input.version_id);
+        if (execution.payload.operation_id === 'feedback-triage') {
+          if (typeof input.feedback_id !== 'string')
+            throw new AiError('AI_CONFIGURATION', '反馈目标不完整');
+          const feedback = await evidence.feedbackTarget(principal.id, input.feedback_id);
+          if (feedback.version_id !== input.version_id)
+            throw new AiError('AI_CONFLICT', '反馈与资源版本不匹配');
+        }
+      }
       for (const artifact of await aiStore.list('ai_artifacts', {
         execution_id: execution.id,
         limit: 1000,
@@ -97,7 +117,7 @@ export class HubAiServices {
     this.runtime = new AiRuntime(
       aiStore,
       new HubAiQueue(store, jobs),
-      createHubAgentRegistry(),
+      createHubAgentRegistry(evidence),
       {
         authorization,
         resources,
@@ -112,13 +132,76 @@ export class HubAiServices {
       config.ai,
     );
   }
+  async autoSubmit(
+    principal: Principal | string,
+    operation: 'resource-audit' | 'feedback-triage',
+    versionId: string,
+    feedbackId?: string,
+  ) {
+    if (!this.runtime.config.profiles.length) return;
+    await this.runtime.store.tx(async () => {
+      const ownerId = typeof principal === 'string' ? principal : principal.id;
+      try {
+        await this.identity.activeUser(ownerId);
+      } catch (error) {
+        if (error instanceof HubError && [401, 403, 404].includes(error.status)) return;
+        throw error;
+      }
+      const fresh = await this.identity.principal(ownerId);
+      if (!has(fresh, 'ai:execute')) return;
+      // 先检查可选业务权限，避免在嵌套提交事务失败后吞掉异常却污染外层事务。
+      try {
+        await this.evidence.version(fresh.id, versionId);
+      } catch (error) {
+        if (error instanceof HubError && [403, 404, 409].includes(error.status)) return;
+        throw error;
+      }
+      // 上传、重扫及发布申请共享同一固定版本的任务；自动触发不重试失败任务。
+      let after: { position: number; id: string } | undefined;
+      for (;;) {
+        const page = await this.runtime.store.list('ai_executions', {
+          owner_id: fresh.id,
+          lookup_key: operation,
+          after,
+          limit: 100,
+        });
+        if (
+          page.some((item) => {
+            const input = item.payload.input;
+            return (
+              input &&
+              typeof input === 'object' &&
+              !Array.isArray(input) &&
+              input.version_id === versionId &&
+              input.feedback_id === feedbackId
+            );
+          })
+        )
+          return;
+        if (page.length < 100) break;
+        const last = page[page.length - 1];
+        after = { position: last.position, id: last.id };
+      }
+      await this.runtime.submit(fresh.id, operation, {
+        version_id: versionId,
+        ...(feedbackId ? { feedback_id: feedbackId } : {}),
+      });
+    });
+  }
+
   async principal(principal: Principal, execution?: ExecutionRecord, inspect = false) {
     const fresh = await this.identity.principal(principal.id);
     if (!has(fresh, 'ai:execute') && !(inspect && has(fresh, 'ai:inspect')))
       throw new AiError('AI_FORBIDDEN', '当前账号无权访问 AI 工作台');
     if (execution && execution.owner_id !== fresh.id && !(inspect && has(fresh, 'ai:inspect')))
       throw new AiError('AI_NOT_FOUND', 'AI 执行不存在');
-    if (execution) await this.recheckResources(fresh, execution);
+    try {
+      if (execution) await this.recheckResources(fresh, execution);
+    } catch (error) {
+      if (error instanceof HubError)
+        throw new AiError('AI_FORBIDDEN', '执行引用的业务资源不可访问');
+      throw error;
+    }
     return fresh;
   }
 }

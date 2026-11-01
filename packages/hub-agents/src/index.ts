@@ -1,3 +1,5 @@
+import type { AgentEvidenceService } from '@capability-hub/application';
+import { registerBusinessOperations } from './business-operations.js';
 import { OperationRegistry, type OperationContext } from '@capability-hub/ai';
 import { createStep, createWorkflow } from '@capability-hub/ai/mastra';
 import { z } from 'zod';
@@ -16,7 +18,7 @@ function textTool(context: OperationContext) {
   });
 }
 
-export function createHubAgentRegistry() {
+export function createHubAgentRegistry(evidence?: AgentEvidenceService) {
   const registry = new OperationRegistry();
   const assistantInput = z
     .object({
@@ -213,5 +215,6 @@ export function createHubAgentRegistry() {
         .commit();
     },
   });
+  if (evidence) registerBusinessOperations(registry, evidence);
   return registry;
 }

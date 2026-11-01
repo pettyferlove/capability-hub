@@ -90,6 +90,13 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
       const last = rows.at(-1);
       const visible = [];
       for (const row of rows) {
+        if (query.operation_id && row.payload.operation_id !== query.operation_id) continue;
+        if (query.version_id || query.feedback_id) {
+          const target = row.payload.input;
+          if (!target || typeof target !== 'object' || Array.isArray(target)) continue;
+          if (query.version_id && target.version_id !== query.version_id) continue;
+          if (query.feedback_id && target.feedback_id !== query.feedback_id) continue;
+        }
         try {
           await hub.ai.principal(principal, row, true);
           visible.push(executionResponse(row));

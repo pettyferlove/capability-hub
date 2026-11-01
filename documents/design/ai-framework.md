@@ -44,13 +44,17 @@ Mastra 公共构造函数从 `@capability-hub/ai/mastra` 导出。定义通过 `
 
 协作成果将草案、审查意见、采纳结论和补充意见合并为可读视图，不在同一视图重复展示相同成果与最终结果。演示完整性检查仅表示是否存在审查内容，不代表事实准确性或质量评分。原始输入、结果和成果数据放在运行详情的折叠区。人工审批明确选择采纳或暂不采纳后才能提交；确认卡片中的草案和审查副本默认折叠，按需展开，与协作过程共用滚动区域。
 
+流式文本块使用每次 Agent 调用内单调递增的块标识，不能直接使用模型响应的块 ID：工具续轮可能复用同一响应 ID。写入增量前核验块存在、尚未结束且 UTF-16 偏移连续；结束事件核验最终长度，快照与 SSE 重放使用相同块标识。
+
 模型文本复用安全 Markdown 渲染，不挂载原始 HTML 或远程图片。刷新页面可按 URL 中的 execution ID 恢复视图。断开浏览器连接不会取消执行。
 
 ## 模型与资源边界
 
+结构化输出通过 Mastra 的 `jsonPromptInjection: 'system'` 显式向模型发送完整 JSON Schema，避免兼容端点的 JSON 模式只约束语法却遗漏字段定义。返回结果仍严格校验，不使用未校验的降级报告或隐式请求重试。已识别的结构化字段校验失败、缺失结果及输出截断映射为 `AI_OUTPUT_INVALID`；错误说明保留原因分类，不透传 SDK 校验详情或原始结果。运行详情在失败节点同时显示错误说明与代码。
+
 只支持两种协议：`openai` 使用 Chat Completions，`anthropic` 使用 Messages；均由官方 AI SDK provider 生成请求。配置地址是 API 前缀，不能包含最终操作路径、用户信息、查询或 fragment。HTTP 需要 `allow_http=true`。凭据仅在发送请求时通过环境变量名解析，不存入配置、快照或 SSE。
 
-实际请求先在数据库预留，再访问模型。每次请求重新检查执行授权，重定向被拒绝。每次执行默认最多 24 次模型请求、40 次工具调用；单请求默认最多输出 4096 token、60 秒超时。默认单次活跃调度最多 10 分钟，总执行期限 24 小时，最多 8 次人工继续。流事件默认最多 10 MB，终止事件保留写入空间。每执行最多 100 个成果，单个最多 1 MB，合计最多 4 MB（包含内部资源证据）。配置字段和边界由 `aiConfigurationSchema` 定义。
+实际请求先在数据库预留，再访问模型。每次请求重新检查执行授权，重定向被拒绝。每次执行默认最多 96 次模型请求、200 次工具调用；单请求默认最多输出 4096 token、60 秒超时。默认单次活跃调度最多 10 分钟，总执行期限 24 小时，最多 8 次人工继续。流事件默认最多 10 MB，终止事件保留写入空间。每执行最多 100 个成果，单个最多 1 MB，合计最多 4 MB（包含内部资源证据）。配置字段和边界由 `aiConfigurationSchema` 定义。
 
 预算是请求数、工具数、输出上限、时间及事件字节限制；不是精确计费预算。Token 用量取自 provider 返回值；只有流完整结束且输入、输出用量均已确认才记为已知，崩溃、取消、断流或用量不完整时增加 unknown 计数，已收到的部分计数仅供诊断，不猜测费用。OpenAI 使用最终 usage 帧，Anthropic 的起始输出计数不作为最终用量，累计输出取自 message_delta，分别遵循 [Chat Completions 流协议](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events) 和 [Messages 流协议](https://platform.claude.com/docs/en/build-with-claude/streaming)。OpenAI `[DONE]` 与 Anthropic `message_stop` 之前断流均为失败。传输失败会中止当前作用域，阻止 SDK 隐式重试增加请求。失败执行不会自动重新向模型收费；用户需创建新执行。
 
@@ -113,3 +117,7 @@ SQLite 与 PostgreSQL 均使用独立 AI 表、约束和索引，通过新增 Dr
 默认 `pnpm test` 覆盖两类协议、工具循环、结构化输出、实时 SSE/重放/撤权、人工恢复、预算与流截断，以及 SQLite 的真实 SIGKILL 故障窗口。`pnpm test:external` 使用隔离 PostgreSQL 验证同样的强杀恢复、租约隔离和跨数据库备份。确定性协议夹具不能代替供应商联调；真实模型与浏览器验收需单独报告。
 
 HTTP 与 SSE 契约见 [AI 接口](../reference/ai-interfaces.md)，部署配置见 [配置](../reference/configuration.md)。原生 API 行为参考 [Mastra 工作流](https://mastra.ai/docs/workflows/overview) 与 [流式输出](https://mastra.ai/docs/guides/streaming)，实际版本以锁文件为准。
+
+## 首批业务接入
+
+反馈研判与资源审计的触发、证据工具、人工写回及页面规则见 [业务 Agent](business-agents.md)。工具可声明显式的 `display` 投影，仅供持久活动展示；框架限制为 200 字符并去除控制字符，禁止自动透传参数。业务步骤失败时保留当前执行中捕获的安全 AI 错误，未知原生失败继续使用通用错误。

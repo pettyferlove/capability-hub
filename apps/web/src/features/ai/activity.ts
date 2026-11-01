@@ -6,6 +6,7 @@ export interface ToolActivity {
   id: string;
   seq: number;
   name: string;
+  display?: string;
   state: 'running' | 'completed' | 'failed' | 'interrupted';
   startedAt?: string;
   endedAt?: string;
@@ -42,6 +43,7 @@ export function activityItems(view: AiExecutionViewResponse): ActivityItem[] {
       attempt: event.attempt,
       continuation: event.continuation,
     };
+    if (typeof event.data.display === 'string') item.display = event.data.display;
     if (event.type === 'tool.started') item.startedAt = event.occurred_at;
     else {
       item.state = event.type === 'tool.completed' ? 'completed' : 'failed';

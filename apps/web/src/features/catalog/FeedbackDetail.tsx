@@ -1,3 +1,4 @@
+import { BusinessAgentPanel } from '../ai/BusinessAgentPanel.js';
 import { feedbackStatusIcons } from '../../shared/components/select-icons.js';
 import { feedbackDetailStyles } from './styles.js';
 import { subtleStyles, formStackStyles } from '../../shared/styles/recipes.js';
@@ -55,6 +56,12 @@ export function FeedbackDetail({
           ) : null,
         )}
       </dl>
+      <BusinessAgentPanel
+        versionId={f.version_id}
+        feedbackId={f.id}
+        title={f.title}
+        onCompleted={onSaved}
+      />
       {f.can_manage && (
         <FeedbackResolution key={f.id + ':' + f.revision} feedback={f} onSaved={onSaved} />
       )}

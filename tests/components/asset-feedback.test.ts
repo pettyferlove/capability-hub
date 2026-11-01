@@ -85,7 +85,22 @@ test('反馈表单要求授权，失败保留内容和幂等键，修改内容�
 });
 
 test('反馈内容以普通文本展示，普通提交者没有处理控件', () => {
-  render(createElement(FeedbackDetail, { feedback, onSaved: () => {} }));
+  render(
+    createElement(
+      HubCtx.Provider,
+      {
+        value: {
+          me: null,
+          refresh: 0,
+          reviewCount: 0,
+          reload: () => {},
+          openPalette: () => {},
+          logout: async () => {},
+        },
+      },
+      createElement(FeedbackDetail, { feedback, onSaved: () => {} }),
+    ),
+  );
   assert(screen.getByText('<script>alert(1)</script>'));
   assert.equal(document.querySelector('script'), null);
   assert.equal(screen.queryByRole('button', { name: '保存处理结果' }), null);
@@ -106,10 +121,23 @@ test('维护者保存时携带所见修订，冲突保留处理说明并提示�
   });
   const user = userEvent.setup();
   render(
-    createElement(FeedbackDetail, {
-      feedback: { ...feedback, can_manage: true },
-      onSaved: () => assert.fail('冲突不能视为成功'),
-    }),
+    createElement(
+      HubCtx.Provider,
+      {
+        value: {
+          me: null,
+          refresh: 0,
+          reviewCount: 0,
+          reload: () => {},
+          openPalette: () => {},
+          logout: async () => {},
+        },
+      },
+      createElement(FeedbackDetail, {
+        feedback: { ...feedback, can_manage: true },
+        onSaved: () => assert.fail('冲突不能视为成功'),
+      }),
+    ),
   );
   await user.type(screen.getByRole('textbox', { name: '处理说明' }), '待确认复现');
   await user.click(screen.getByRole('button', { name: '保存处理结果' }));

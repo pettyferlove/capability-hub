@@ -30,5 +30,6 @@ export type * from './catalog/queries.js';
 export type * from './catalog/commands.js';
 export type * from './audit/queries.js';
 export { AssetFeedbackService } from './catalog/asset-feedback-service.js';
+export { AgentEvidenceService } from './catalog/agent-evidence-service.js';
 
 export { OAuthService, OAuthError } from './identity/oauth-service.js';

@@ -1,3 +1,4 @@
+import { BusinessAssessment } from './BusinessAssessment.js';
 import type { AiExecutionViewResponse } from '@capability-hub/contracts';
 import {
   Check,
@@ -21,6 +22,16 @@ import {
 } from './styles.js';
 
 export function ExecutionResult({ view }: { view: AiExecutionViewResponse }) {
+  const business = ['resource-audit', 'feedback-triage'].includes(view.execution.operation_id);
+  if (business) {
+    const report =
+      view.execution.result ?? view.artifacts.find((item) => item.name === 'assessment')?.content;
+    return report ? (
+      <BusinessAssessment value={report} />
+    ) : (
+      <p className="p-6 text-muted-ink">Agent 正在收集证据，报告将在调查完成后出现。</p>
+    );
+  }
   const resultProposal =
     view.execution.operation_id === 'agent-lab' ? proposalOf(view.execution.result) : undefined;
   const proposalArtifact = view.artifacts.find(

@@ -12,9 +12,14 @@ export const statusLabels: Record<AiExecutionResponse['status'], string> = {
 };
 export const operationLabels: Record<string, string> = {
   assistant: '基础助手',
+  'resource-audit': '资源审计',
+  'feedback-triage': '反馈研判',
   'agent-lab': '多 Agent 协作',
 };
 export const agentLabels: Record<string, { title: string; description: string }> = {
+  'resource-audit': { title: '资源审计员', description: '自主查阅 · 逐项核实' },
+  'feedback-triage': { title: '反馈研判员', description: '复核观察 · 定位证据' },
+  assessment: { title: '研判报告', description: '整理发现 · 明确检查范围' },
   assistant: { title: '助手', description: '理解问题 · 调用工具' },
   planner: { title: '规划助手', description: '整理依据 · 生成草案' },
   editor: { title: '表达审查', description: '检查表达与可执行性' },
@@ -47,10 +52,24 @@ export function proposalOf(value: Json | undefined) {
 }
 const stepLabels: Record<string, string> = {
   answer: '助手回答',
+  investigate: '查阅证据与研判',
+  assessment: '整理研判报告',
+  'human-review': '人工确认',
+  'record-assessment': '记录处理结果',
   draft: '规划草案',
   clarity: '表达审查',
   risk: '风险审查',
   'save-result': '保存成果',
+};
+export const toolLabels: Record<string, string> = {
+  'resource-overview': '确认资源入口',
+  'mcp-declarations': '核对 MCP 声明',
+  'list-files': '浏览文件目录',
+  'read-file': '读取文件片段',
+  'search-files': '搜索资源内容',
+  'scan-findings': '核对静态检查',
+  'compare-release': '比较发布版本',
+  'read-feedback': '查阅反馈证据',
 };
 const eventLabels: Record<string, string> = {
   'execution.queued': '任务已进入队列',
@@ -76,7 +95,9 @@ export function eventLabel(event: AiEventResponse): string | undefined {
   }
   if (event.type.startsWith('tool.')) {
     const tool = typeof event.data.tool_id === 'string' ? event.data.tool_id : '工具';
-    const name = ['inspect-text', 'inspect_text'].includes(tool) ? '文本统计' : tool;
+    const name = ['inspect-text', 'inspect_text'].includes(tool)
+      ? '文本统计'
+      : (toolLabels[tool] ?? tool);
     return `${name} · ${event.type.endsWith('started') ? '正在调用' : event.type.endsWith('completed') ? '调用完成' : '调用失败'}`;
   }
   return eventLabels[event.type];

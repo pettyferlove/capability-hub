@@ -384,8 +384,11 @@ test('AI 引用资源撤销后详情、列表与事件均不能继续披露派�
   await hub.worker.tick();
   await hub.worker.waitForIdle();
   await client.get(`/api/ai/executions/${row.id}`).expect(200);
+  await hub.worker.tick();
+  await hub.worker.waitForIdle();
+  assert.equal((await hub.hub.ai.runtime.get(row.id)).status, 'succeeded');
   const before = await client.get('/api/ai/executions').expect(200);
-  assert.equal(before.body.items.length, 1);
+  assert.equal(before.body.items.length, 2);
   const asset = await hub.store.get('assets', publication.intake.asset_id);
   assert(asset);
   await hub.store.put('assets', { ...asset, lifecycle: 'blocked' });

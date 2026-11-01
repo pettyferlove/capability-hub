@@ -1,4 +1,8 @@
 import { cn } from '../../shared/styles/cn.js';
+export const agentDockStyles =
+  'fixed bottom-[max(16px,env(safe-area-inset-bottom))] right-4 z-[75] flex max-w-[calc(100%_-_32px)] flex-col items-end gap-2';
+export const agentDockToggleStyles =
+  'flex w-[min(360px,calc(100vw_-_32px))] items-center gap-3 rounded-2xl border border-brand/30 bg-paper px-4 py-3 shadow-overlay transition-colors hover:bg-brand-soft';
 export const stackStyles = 'flex min-w-0 flex-col gap-4';
 export const fillStyles = 'flex min-h-0 min-w-0 flex-1 flex-col';
 export const scrollStyles =

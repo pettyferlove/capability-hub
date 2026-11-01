@@ -30,11 +30,15 @@ export function ExecutionPanel({
   canManage,
   connection,
   onRefresh,
+  compact = false,
+  visible = true,
 }: {
   view: AiExecutionViewResponse;
   canManage: boolean;
   connection: string;
   onRefresh: () => void;
+  compact?: boolean;
+  visible?: boolean;
 }) {
   const { execution } = view;
   const pending = view.interactions.find(
@@ -107,14 +111,19 @@ export function ExecutionPanel({
       <header className="shrink-0 border-b border-[color:var(--line)] bg-paper px-5 pt-5 sm:px-7">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <p className="mb-2 flex items-center gap-2 text-caption text-muted-ink">
-              <SquareTerminal size={14} />
-              {operationLabels[execution.operation_id] ?? execution.operation_id}
-              <span aria-hidden="true">/</span>
-              {new Date(execution.created_at).toLocaleDateString()}
-            </p>
+            {!compact && (
+              <p className="mb-2 flex items-center gap-2 text-caption text-muted-ink">
+                <SquareTerminal size={14} />
+                {operationLabels[execution.operation_id] ?? execution.operation_id}
+                <span aria-hidden="true">/</span>
+                {new Date(execution.created_at).toLocaleDateString()}
+              </p>
+            )}
             <h2
-              className="line-clamp-2 text-section leading-snug"
+              className={cn(
+                'line-clamp-2 leading-snug',
+                compact ? 'text-body font-semibold' : 'text-section',
+              )}
               title={executionTitle(execution)}
             >
               {executionTitle(execution)}
@@ -186,7 +195,7 @@ export function ExecutionPanel({
         <ActivityFeed
           view={view}
           canManage={canManage}
-          active={tab === 'activity'}
+          active={visible && tab === 'activity'}
           onRefresh={onRefresh}
           focusRequest={focusRequest}
         />

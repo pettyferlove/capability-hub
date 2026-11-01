@@ -11,6 +11,9 @@ const labels: Record<string, string> = {
   skill_ref: '参考 Skill（可选）',
   approved: '采用这份草案',
   comment: '补充意见',
+  version_id: '固定版本 ID',
+  feedback_id: '反馈 ID',
+  apply_feedback: '将反馈标记为处理中，并写入处理建议（需维护权限）',
 };
 function enumLabel(value: Json | undefined): string {
   return value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');

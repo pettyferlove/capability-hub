@@ -107,6 +107,12 @@ export function ExecutionDetails({
                   aria-hidden="true"
                 />
                 <p className="text-body">{event.label}</p>
+                {event.type === 'execution.failed' && execution.error && (
+                  <div className="my-2 rounded-lg bg-danger-soft px-3 py-2 text-danger">
+                    <p>{execution.error.message}</p>
+                    <p className="mt-1 text-caption">{execution.error.code}</p>
+                  </div>
+                )}
                 <time
                   className="text-caption tabular-nums text-muted-ink"
                   dateTime={event.occurred_at}

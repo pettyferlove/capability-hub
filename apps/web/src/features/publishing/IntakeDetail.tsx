@@ -1,3 +1,4 @@
+import { PageTabs } from '../../shared/components/PageTabs.js';
 import { VersionComparison } from '../../shared/components/VersionComparison.js';
 import { intakeDetailStyles, intakeSnapshotStyles, intakePublishedStyles } from './styles.js';
 import {
@@ -37,6 +38,7 @@ export function IntakeDetail({
   onSelect?: (id: string) => void;
 }) {
   const { reload } = useHub();
+  const [section, setSection] = useState(i.state === 'ready' ? 'publication' : 'evidence');
   const inactive = i.asset_lifecycle !== 'active';
   const [requiresApiKey, setRequiresApiKey] = useState(
     i.publication?.requires_api_key ?? i.proposed_requires_api_key,
@@ -84,7 +86,6 @@ export function IntakeDetail({
       <h3>
         {i.asset_slug} <span className={tagStyles}>{intakeLabel(i)}</span>
       </h3>
-      <IntakeProgress intake={i} connection={connection} />
       {inactive && (
         <Message>
           资产已{i.asset_lifecycle === 'deprecated' ? '弃用' : '封禁'}，当前不能提交审核。
@@ -114,132 +115,181 @@ export function IntakeDetail({
       )}
       {error && <Message error>{error}</Message>}
       {i.version && (
-        <VersionComparison
-          kind={i.version.manifest.kind}
-          previous={i.current_version}
-          candidate={i.version}
+        <PageTabs
+          label="校验与发布步骤"
+          panelId="intake-workspace"
+          value={section}
+          onValueChange={setSection}
+          items={[
+            { id: 'evidence', label: '01 校验与证据' },
+            { id: 'publication', label: '02 发布申请' },
+          ]}
         />
       )}
-      {i.scan && <IntakeScan scan={i.scan} />}
-      {i.version && (
-        <details className={intakeSnapshotStyles}>
-          <summary>
-            <ShieldCheck size={14} />
-            <strong>{i.version.version_label}</strong>
-            <span>
-              {i.version.manifest.files.length} 个文件 ·{' '}
-              {bytesLabel(i.version.manifest.files.reduce((sum, f) => sum + f.size, 0))}
-            </span>
-          </summary>
-          <div>
-            <span>固定内容快照</span>
-            <code>{i.version.content_digest}</code>
-          </div>
-        </details>
-      )}
-      {!inactive && ['ready', 'failed'].includes(i.state) && i.version && !i.ruleset_current && (
-        <Message>
-          扫描规则已更新；重新申请分发前请先按最新规则扫描此固定内容。
-          <button
-            className={textBtnStyles}
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              setError('');
-              try {
-                const result = await mutate<{ intake_id: string }>(
-                  '/api/intakes/' + i.id + '/rescan',
-                  {},
-                );
-                onSelect?.(result.intake_id);
-                reload();
-              } catch (e) {
-                setError(errorMessage(e));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            重新扫描固定快照
-          </button>
-        </Message>
-      )}
-      {!inactive &&
-        i.state === 'ready' &&
-        (i.ruleset_current || i.publication?.state === 'approved') &&
-        (submitted || i.publication?.state === 'pending' ? (
+      <div
+        hidden={section !== 'evidence'}
+        id="intake-workspace-evidence"
+        role="tabpanel"
+        aria-labelledby="intake-workspace-tab-evidence"
+        className="space-y-5"
+      >
+        <IntakeProgress intake={i} connection={connection} />
+        {i.version && (
+          <VersionComparison
+            kind={i.version.manifest.kind}
+            previous={i.current_version}
+            candidate={i.version}
+          />
+        )}
+        {i.scan && <IntakeScan scan={i.scan} />}
+        {i.version && (
+          <details className={intakeSnapshotStyles}>
+            <summary>
+              <ShieldCheck size={14} />
+              <strong>{i.version.version_label}</strong>
+              <span>
+                {i.version.manifest.files.length} 个文件 ·{' '}
+                {bytesLabel(i.version.manifest.files.reduce((sum, f) => sum + f.size, 0))}
+              </span>
+            </summary>
+            <div>
+              <span>固定内容快照</span>
+              <code>{i.version.content_digest}</code>
+            </div>
+          </details>
+        )}
+        {!inactive && ['ready', 'failed'].includes(i.state) && i.version && !i.ruleset_current && (
           <Message>
-            已提交人工审核。当前发布在审核通过前保持原样。
-            <a
-              href={
-                submitted
-                  ? `/review?request=${submitted}`
-                  : i.publication
-                    ? `/review?state=${i.publication.state}&request=${i.publication.id}`
-                    : '/review'
-              }
-            >
-              查看审核
-            </a>
-          </Message>
-        ) : i.publication?.state === 'approved' && !reapplying ? (
-          <div className={intakePublishedStyles}>
-            <ShieldCheck size={27} />
-            <h4>此快照已审核发布</h4>
-            <p>调整分类或分发范围时，需要创建新的审核申请。</p>
-            {i.can_view_catalog ? (
-              <a className={cn(btnStyles, btnPrimaryStyles)} href={assetHref(i.asset_slug)}>
-                查看目录详情
-                <ArrowRight size={15} />
-              </a>
-            ) : (
-              <p className={subtleStyles}>当前发布不可访问，可从资产维护查看版本记录。</p>
-            )}
+            扫描规则已更新；重新申请分发前请先按最新规则扫描此固定内容。
             <button
               className={textBtnStyles}
-              disabled={!i.ruleset_current}
-              onClick={() => setReapplying(true)}
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                setError('');
+                try {
+                  const result = await mutate<{ intake_id: string }>(
+                    '/api/intakes/' + i.id + '/rescan',
+                    {},
+                  );
+                  onSelect?.(result.intake_id);
+                  reload();
+                } catch (e) {
+                  setError(errorMessage(e));
+                } finally {
+                  setBusy(false);
+                }
+              }}
             >
-              重新申请分发
+              重新扫描固定快照
             </button>
-          </div>
-        ) : (
-          <form onSubmit={submit} className={formStackStyles}>
-            {i.publication && ['rejected', 'stale', 'cancelled'].includes(i.publication.state) && (
-              <Message>
-                {i.publication.decision_reason || i.publication.stale_reason || '上次申请未发布。'}{' '}
-                请核对后重新提交。
-              </Message>
-            )}
-            <PublicationPolicyFields value={value} onChange={setValue} />
-            <KeywordField
-              value={appliesTo.keywords ?? []}
-              onChange={(keywords) => setAppliesTo({ ...appliesTo, keywords })}
-            />
-            {i.version?.manifest.kind === 'skill' && (
-              <SkillApiKeyField
-                checked={requiresApiKey}
-                onChange={setRequiresApiKey}
-                disabled={busy}
-              />
-            )}
-            <label>
-              共享目的与授权确认
-              <textarea
-                value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
-                required
-                maxLength={2000}
-                placeholder="说明内容适用范围，并确认你有权将此快照共享给所选受众。"
-              />
-            </label>
-            <p className={subtleStyles}>提交后进入人工审核；审核通过前，目录继续使用当前发布。</p>
-            <Submit busy={busy}>
-              确认内容并提交审核
-              <ArrowRight size={16} />
-            </Submit>
-          </form>
-        ))}
+          </Message>
+        )}
+      </div>
+      <div
+        hidden={section !== 'publication'}
+        id="intake-workspace-publication"
+        role="tabpanel"
+        aria-labelledby="intake-workspace-tab-publication"
+        className="w-full space-y-5 pb-24"
+      >
+        {i.state !== 'ready' && <Message>完成资源校验后即可填写发布申请。</Message>}
+        {!inactive &&
+          i.state === 'ready' &&
+          (i.ruleset_current || i.publication?.state === 'approved') &&
+          (submitted || i.publication?.state === 'pending' ? (
+            <Message>
+              已提交人工审核。当前发布在审核通过前保持原样。
+              <a
+                href={
+                  submitted
+                    ? `/review?request=${submitted}`
+                    : i.publication
+                      ? `/review?state=${i.publication.state}&request=${i.publication.id}`
+                      : '/review'
+                }
+              >
+                查看审核
+              </a>
+            </Message>
+          ) : i.publication?.state === 'approved' && !reapplying ? (
+            <div className={intakePublishedStyles}>
+              <ShieldCheck size={27} />
+              <h4>此快照已审核发布</h4>
+              <p>调整分类或分发范围时，需要创建新的审核申请。</p>
+              {i.can_view_catalog ? (
+                <a className={cn(btnStyles, btnPrimaryStyles)} href={assetHref(i.asset_slug)}>
+                  查看目录详情
+                  <ArrowRight size={15} />
+                </a>
+              ) : (
+                <p className={subtleStyles}>当前发布不可访问，可从资产维护查看版本记录。</p>
+              )}
+              <button
+                className={textBtnStyles}
+                disabled={!i.ruleset_current}
+                onClick={() => setReapplying(true)}
+              >
+                重新申请分发
+              </button>
+            </div>
+          ) : (
+            <form
+              onSubmit={submit}
+              className={cn(formStackStyles, 'md:grid md:grid-cols-2 md:items-start md:gap-6')}
+            >
+              {i.publication &&
+                ['rejected', 'stale', 'cancelled'].includes(i.publication.state) && (
+                  <div className="md:col-span-2">
+                    <Message>
+                      {i.publication.decision_reason ||
+                        i.publication.stale_reason ||
+                        '上次申请未发布。'}{' '}
+                      请核对后重新提交。
+                    </Message>
+                  </div>
+                )}
+              <section
+                className="space-y-4 rounded-2xl border border-[color:var(--line)] bg-page/50 p-5"
+                aria-label="分发设置"
+              >
+                <h4 className="font-semibold">分发设置</h4>
+                <PublicationPolicyFields value={value} onChange={setValue} />
+              </section>
+              <section className="flex min-w-0 flex-col gap-4" aria-label="内容说明">
+                <h4 className="font-semibold">内容说明</h4>
+                <KeywordField
+                  value={appliesTo.keywords ?? []}
+                  onChange={(keywords) => setAppliesTo({ ...appliesTo, keywords })}
+                />
+                {i.version?.manifest.kind === 'skill' && (
+                  <SkillApiKeyField
+                    checked={requiresApiKey}
+                    onChange={setRequiresApiKey}
+                    disabled={busy}
+                  />
+                )}
+                <label>
+                  共享目的与授权确认
+                  <textarea
+                    value={purpose}
+                    onChange={(e) => setPurpose(e.target.value)}
+                    required
+                    maxLength={2000}
+                    placeholder="说明内容适用范围，并确认你有权将此快照共享给所选受众。"
+                  />
+                </label>
+              </section>
+              <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-[color:var(--line)] pt-4 md:col-span-2">
+                <p className={subtleStyles}>提交后进入人工审核；Agent 建议供审核参考。</p>
+                <Submit busy={busy}>
+                  确认内容并提交审核
+                  <ArrowRight size={16} />
+                </Submit>
+              </footer>
+            </form>
+          ))}
+      </div>
     </div>
   );
 }

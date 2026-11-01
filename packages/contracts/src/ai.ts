@@ -10,6 +10,9 @@ export const listAiExecutionsQuerySchema = z
   .object({
     cursor: z.string().max(500).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(30),
+    operation_id: z.enum(['resource-audit', 'feedback-triage']).optional(),
+    version_id: z.string().uuid().optional(),
+    feedback_id: z.string().uuid().optional(),
   })
   .strict();
 export const aiExecutionStatusSchema = z.enum([
@@ -158,7 +161,9 @@ const eventDataSchemas = {
   'message.completed': z
     .object({ message_id: id, block_id: id, length: z.number().int().nonnegative() })
     .strict(),
-  'tool.started': z.object({ tool_id: id, invocation_id: id }).strict(),
+  'tool.started': z
+    .object({ tool_id: id, invocation_id: id, display: z.string().max(200).optional() })
+    .strict(),
   'tool.completed': z.object({ tool_id: id, invocation_id: id }).strict(),
   'tool.failed': z.object({ tool_id: id, invocation_id: id, code: z.string() }).strict(),
   'interaction.requested': z

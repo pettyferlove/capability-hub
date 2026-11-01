@@ -1,3 +1,4 @@
+import { BusinessAssessment } from './BusinessAssessment.js';
 import { useState } from 'react';
 import type { AiInteractionResponse } from '@capability-hub/contracts';
 import { useAiCommand } from './use-ai-command.js';
@@ -38,6 +39,7 @@ export function InteractionForm({
   const command = useAiCommand();
   const request = jsonObject(interaction.request);
   const fields = jsonObject(jsonObject(interaction.response_schema).properties);
+  const business = !!request.assessment;
   const approval = jsonObject(fields.approved).type === 'boolean';
   const submit = async () => {
     if (busy || submitted) return;
@@ -81,8 +83,9 @@ export function InteractionForm({
             </p>
           </div>
           {typeof interaction.request === 'string' && <AiText text={interaction.request} />}
+          {business && <BusinessAssessment value={request.assessment} />}
           {Object.entries(request)
-            .filter(([key]) => key !== 'question')
+            .filter(([key]) => key !== 'question' && key !== 'assessment')
             .map(([key, item]) => (
               <details key={key} className={disclosureStyles}>
                 <summary>
@@ -108,7 +111,7 @@ export function InteractionForm({
               <legend className="mb-2 font-medium">你的决定</legend>
               <div className="flex flex-wrap gap-3">
                 {[
-                  { approved: true, label: '采纳草案', Icon: Check },
+                  { approved: true, label: business ? '采纳研判' : '采纳草案', Icon: Check },
                   { approved: false, label: '暂不采纳', Icon: X },
                 ].map((option) => (
                   <label
@@ -129,7 +132,11 @@ export function InteractionForm({
                       className="accent-brand"
                       onChange={() => {
                         setDecision(option.approved);
-                        setValue({ ...value, approved: option.approved });
+                        setValue({
+                          ...value,
+                          approved: option.approved,
+                          ...(business && !option.approved ? { apply_feedback: false } : {}),
+                        });
                       }}
                     />
                     <option.Icon size={14} />
@@ -141,7 +148,17 @@ export function InteractionForm({
           )}
           <SchemaFields
             schema={interaction.response_schema}
-            names={approval ? Object.keys(fields).filter((key) => key !== 'approved') : undefined}
+            names={
+              approval
+                ? Object.keys(fields).filter(
+                    (key) =>
+                      key !== 'approved' &&
+                      (key !== 'apply_feedback' ||
+                        (decision === true &&
+                          jsonObject(request.assessment).can_apply_feedback === true)),
+                  )
+                : undefined
+            }
             value={value}
             onChange={setValue}
             disabled={busy || submitted}

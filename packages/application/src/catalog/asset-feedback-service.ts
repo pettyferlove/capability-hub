@@ -13,6 +13,11 @@ export class AssetFeedbackService {
   constructor(
     private readonly context: ApplicationContext,
     private readonly access: AssetAccessService,
+    private readonly onReported?: (
+      principal: Principal,
+      versionId: string,
+      feedbackId: string,
+    ) => Promise<void>,
   ) {}
 
   private async present(record: AssetFeedbackRecord, principal: Principal) {
@@ -71,6 +76,7 @@ export class AssetFeedbackService {
         revision: 1,
       });
       await this.context.store.audit(current.id, 'asset.feedback_submitted', version.id);
+      await this.onReported?.(current, version.id, record.id);
       return this.present(record, current);
     });
   }

@@ -35,6 +35,7 @@ export interface ToolDefinition<I extends z.ZodType, O extends z.ZodType> {
   description: string;
   input: I;
   output: O;
+  display?: (input: z.infer<I>) => string;
   execute(input: z.infer<I>, signal: AbortSignal): Promise<z.infer<O>>;
 }
 export interface RuntimeDependencies {
@@ -45,6 +46,7 @@ export interface RuntimeDependencies {
 }
 
 export class OperationContext {
+  failure: AiError | undefined;
   private readonly governedTools = new WeakSet<object>();
   constructor(
     readonly scope: ExecutionScope,
@@ -87,9 +89,11 @@ export class OperationContext {
       await this.trace(name, started, { status: 'succeeded' });
       return output;
     } catch (error) {
+      const failure = aiFailure(error);
+      this.failure ??= failure;
       if (!this.signal.aborted)
-        await this.events.emit('step.failed', { step_id: name, code: aiFailure(error).code });
-      throw error;
+        await this.events.emit('step.failed', { step_id: name, code: failure.code });
+      throw failure;
     }
   }
   tool<I extends z.ZodType, O extends z.ZodType>(definition: ToolDefinition<I, O>) {
@@ -105,19 +109,25 @@ export class OperationContext {
       outputSchema: schemas.output,
       execute: async (input) => {
         await this.authorize('tool', definition.id);
+        const parsedInput = definition.input.parse(input);
+        const display = definition
+          .display?.(parsedInput)
+          .replace(/\p{Cc}/gu, ' ')
+          .slice(0, 200);
         const invocation = randomUUID();
         await this.scope.write(async (execution) => {
           if (execution.payload.usage.tools >= this.config.max_tools)
             throw new AiError('AI_BUDGET_EXCEEDED', '工具调用次数已达到上限');
           execution.payload.usage.tools++;
           await this.events.append(execution, 'tool.started', {
+            ...(display ? { display } : {}),
             tool_id: definition.id,
             invocation_id: invocation,
           });
         });
         try {
           const output = definition.output.parse(
-            await definition.execute(definition.input.parse(input), this.signal),
+            await definition.execute(parsedInput, this.signal),
           );
           asJson(output);
           await this.authorize('tool', definition.id);
@@ -199,7 +209,7 @@ export class OperationContext {
     const managed = mastra.getAgent('invocation');
     try {
       const streamOptions = {
-        maxSteps: Math.min(options.max_steps ?? 5, 10),
+        maxSteps: Math.min(options.max_steps ?? 5, 100),
         abortSignal: this.signal,
         modelSettings: { maxRetries: 0, maxOutputTokens: this.profile.max_output_tokens },
         ...(options.memory
@@ -207,7 +217,11 @@ export class OperationContext {
           : {}),
       };
       const stream = schema
-        ? await managed.stream(options.prompt, { ...streamOptions, structuredOutput: { schema } })
+        ? await managed.stream(options.prompt, {
+            ...streamOptions,
+            // JSON 模式只保证语法，兼容端点未必传递 Schema；显式将字段约束交给模型。
+            structuredOutput: { schema, jsonPromptInjection: 'system' },
+          })
         : await managed.stream(options.prompt, streamOptions);
       for await (const chunk of stream.fullStream) {
         this.signal.throwIfAborted();
@@ -221,7 +235,7 @@ export class OperationContext {
       return { text, object: schema ? await stream.object : undefined };
     } catch (error) {
       provider.assertSuccess();
-      throw error;
+      throw aiFailure(error);
     } finally {
       await mapper.close();
       await mastra.shutdown();

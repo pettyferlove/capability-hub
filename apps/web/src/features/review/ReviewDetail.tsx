@@ -1,3 +1,4 @@
+import { BusinessAgentPanel } from '../ai/BusinessAgentPanel.js';
 import { VersionComparison } from '../../shared/components/VersionComparison.js';
 import {
   reviewOverviewStyles,
@@ -356,6 +357,7 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
           </button>
         </div>
       </section>
+      <BusinessAgentPanel versionId={r.version_id} title={r.asset.slug} />
       {r.nomination && (
         <section className={nominationReviewSummaryStyles}>
           <h3>通用提名理由</h3>

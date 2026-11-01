@@ -1,3 +1,4 @@
+import { toolLabels } from './presentation.js';
 import {
   Check,
   ChevronDown,
@@ -33,14 +34,14 @@ export function ToolActivityCard({ tool }: { tool: ToolActivity }) {
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-2">
             <strong className="break-all text-body text-ink">
-              {known ? '文本统计' : tool.name}
+              {known ? '文本统计' : (toolLabels[tool.name] ?? tool.name)}
             </strong>
             <span className="rounded bg-paper px-1.5 py-0.5 text-caption text-muted-ink">
               工具调用
             </span>
           </span>
           <span className="mt-0.5 block text-caption text-muted-ink">
-            {known ? '统计文本字符数与行数' : '执行任务所需的工具操作'}
+            {tool.display ?? (known ? '统计文本字符数与行数' : '执行任务所需的工具操作')}
           </span>
           <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className={cn('flex items-center gap-1.5 text-caption', state.tone)}>

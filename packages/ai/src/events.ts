@@ -20,6 +20,12 @@ export class AiEventService {
     type: AiEventType,
     data: Record<string, Json>,
   ): Promise<AiEvent> {
+    const block = execution.payload.message_blocks.find((item) => item.id === data.block_id);
+    if (type === 'message.started' && block) throw new AiError('AI_INTERNAL', '消息块标识重复');
+    if (type === 'message.delta' && (!block || block.complete || block.text.length !== data.offset))
+      throw new AiError('AI_INTERNAL', '消息增量偏移不连续');
+    if (type === 'message.completed' && (!block || block.text.length !== data.length))
+      throw new AiError('AI_INTERNAL', '消息结束长度不一致');
     const seq = execution.payload.last_seq + 1;
     const now = new Date().toISOString();
     const event: AiEvent = {
@@ -60,9 +66,7 @@ export class AiEventService {
         text: '',
         complete: false,
       });
-    const block = execution.payload.message_blocks.find((item) => item.id === data.block_id);
     if (type === 'message.delta' && block) {
-      if (block.text.length !== data.offset) throw new AiError('AI_INTERNAL', '消息增量偏移不连续');
       block.text += eventText(data.delta);
     }
     if (type === 'message.completed' && block) block.complete = true;
@@ -78,6 +82,8 @@ export class AiEventService {
 }
 
 export class AgentEventMapper {
+  private readonly blocks = new Map<string, string>();
+  private blockSequence = 0;
   private readonly offsets = new Map<string, number>();
   private pending: { id: string; text: string } | undefined;
   private lastFlush = Date.now();
@@ -97,8 +103,9 @@ export class AgentEventMapper {
     const payload =
       'payload' in raw && raw.payload && typeof raw.payload === 'object' ? raw.payload : {};
     const item = payload as Record<string, unknown>;
+    const sourceId = typeof item.id === 'string' ? item.id : 'text';
     if (raw.type === 'text-delta' && typeof item.text === 'string') {
-      const id = this.prefix + ':' + (typeof item.id === 'string' ? item.id : 'text');
+      const id = this.blockId(sourceId);
       if (this.pending && this.pending.id !== id) await this.flushPending();
       this.pending ??= { id, text: '' };
       this.pending.text += item.text;
@@ -114,7 +121,10 @@ export class AgentEventMapper {
     }
     await this.flushPending();
     if (raw.type === 'text-start') {
-      const id = this.prefix + ':' + (typeof item.id === 'string' ? item.id : 'text');
+      if (this.blocks.has(sourceId)) throw new AiError('AI_INTERNAL', '消息块尚未结束');
+      // 模型的块 ID 仅在单轮响应内唯一；工具续轮可能再次从 0 开始。
+      const id = `${this.prefix}:${++this.blockSequence}`;
+      this.blocks.set(sourceId, id);
       this.offsets.set(id, 0);
       await this.events.emit('message.started', {
         message_id: this.prefix,
@@ -122,13 +132,20 @@ export class AgentEventMapper {
         format: 'text',
       });
     } else if (raw.type === 'text-end') {
-      const id = this.prefix + ':' + (typeof item.id === 'string' ? item.id : 'text');
+      const id = this.blockId(sourceId);
       await this.events.emit('message.completed', {
         message_id: this.prefix,
         block_id: id,
         length: this.offsets.get(id) ?? 0,
       });
+      this.blocks.delete(sourceId);
+      this.offsets.delete(id);
     }
+  }
+  private blockId(sourceId: string): string {
+    const id = this.blocks.get(sourceId);
+    if (!id) throw new AiError('AI_INTERNAL', '消息块尚未开始');
+    return id;
   }
   async flush(): Promise<void> {
     this.serial = this.serial.then(() => this.flushPending());

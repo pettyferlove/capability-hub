@@ -466,6 +466,9 @@ importers:
       '@capability-hub/ai':
         specifier: workspace:*
         version: file:packages/ai(express@5.3.0)
+      '@capability-hub/application':
+        specifier: workspace:*
+        version: link:../application
       zod:
         specifier: 'catalog:'
         version: 4.6.7

@@ -1,5 +1,6 @@
 import {
   AssetAccessService,
+  AgentEvidenceService,
   AssetFeedbackService,
   AssetCommunityService,
   AssetContentService,
@@ -99,7 +100,12 @@ export class HubServices {
     this.git = new GitRepositoryAdapter(config, this.credentials);
     this.assetAccess = new AssetAccessService(store, this.identity);
     this.assetManagement = new AssetManagementQueryService(context, this.assetAccess);
-    this.feedback = new AssetFeedbackService(context, this.assetAccess);
+    this.feedback = new AssetFeedbackService(
+      context,
+      this.assetAccess,
+      (principal, versionId, feedbackId) =>
+        this.ai.autoSubmit(principal, 'feedback-triage', versionId, feedbackId),
+    );
     this.community = new AssetCommunityService(context, this.assetAccess);
     this.catalog = new CatalogService(
       context,
@@ -111,7 +117,13 @@ export class HubServices {
     this.idempotency = new IdempotencyService(store, this.identity);
     this.jobs = new JobQueue(store);
     this.intakeQueries = new IntakeQueryService(context, this.assetAccess);
-    this.intakeProcessor = new IntakeProcessor(context, this.assetAccess, this.jobs, scanIsolated);
+    this.intakeProcessor = new IntakeProcessor(
+      context,
+      this.assetAccess,
+      this.jobs,
+      scanIsolated,
+      (requestedBy, versionId) => this.ai.autoSubmit(requestedBy, 'resource-audit', versionId),
+    );
     this.intakes = new IntakeService(
       context,
       this.assetAccess,
@@ -120,7 +132,12 @@ export class HubServices {
       this.intakeQueries,
     );
     this.publicationQueries = new PublicationQueryService(context, this.assetAccess);
-    this.publications = new PublicationService(context, this.assetAccess, this.idempotency);
+    this.publications = new PublicationService(
+      context,
+      this.assetAccess,
+      this.idempotency,
+      (principal, versionId) => this.ai.autoSubmit(principal, 'resource-audit', versionId),
+    );
     this.lifecycle = new AssetLifecycleService(context, this.assetAccess, this.publications);
     this.audit = new AuditService(context, this.assetAccess);
     this.sources = new SourceService(
@@ -147,6 +164,7 @@ export class HubServices {
       this.assetAccess,
       this.content,
       config,
+      new AgentEvidenceService(context, this.assetAccess, this.content, this.feedback),
     );
   }
 }

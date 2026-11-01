@@ -14,13 +14,13 @@
       "format": "anthropic",
       "base_url": "https://api.deepseek.com/anthropic/v1",
       "model": "deepseek-flash",
-      "credential_ref": "HUB_AI_MESSAGES_KEY"
+      "credential_ref": "HUB_AI_PRIMARY_KEY"
     }
   ],
   "default_profile": "primary",
   "mcp_endpoints": [],
-  "max_requests": 24,
-  "max_tools": 40,
+  "max_requests": 96,
+  "max_tools": 200,
   "max_event_bytes": 10000000,
   "execution_timeout_ms": 86400000,
   "active_timeout_ms": 600000,

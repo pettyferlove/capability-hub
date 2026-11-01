@@ -30,6 +30,7 @@ export class PublicationService {
     private readonly context: ApplicationContext,
     private readonly assets: AssetAccessService,
     private readonly idempotency: IdempotencyService,
+    private readonly onSubmitted?: (principal: Principal, versionId: string) => Promise<void>,
   ) {}
   async validatePolicy(value: Policy) {
     if (
@@ -191,6 +192,7 @@ export class PublicationService {
           request.id,
           b.purpose,
         );
+        await this.onSubmitted?.(principal, request.version_id);
         return request;
       },
     );
@@ -255,6 +257,7 @@ export class PublicationService {
           revision: 1,
         });
         await this.context.store.audit(principal.id, 'publication.nominated', request.id, b.reason);
+        await this.onSubmitted?.(principal, request.version_id);
         return request;
       },
     );

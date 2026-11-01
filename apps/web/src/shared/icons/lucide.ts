@@ -1,4 +1,7 @@
 import { createIcon } from './AppIcon.js';
+import MinusData from '@iconify-icons/lucide/minus';
+import Maximize2Data from '@iconify-icons/lucide/maximize-2';
+import Minimize2Data from '@iconify-icons/lucide/minimize-2';
 import ActivityData from '@iconify-icons/lucide/activity';
 import AlertCircleData from '@iconify-icons/lucide/alert-circle';
 import AlertTriangleData from '@iconify-icons/lucide/alert-triangle';
@@ -207,3 +210,6 @@ export const Workflow = /* @__PURE__ */ createIcon(WorkflowData);
 export const WrapText = /* @__PURE__ */ createIcon(WrapTextData);
 export const Wrench = /* @__PURE__ */ createIcon(WrenchData);
 export const X = /* @__PURE__ */ createIcon(XData);
+export const Minus = /* @__PURE__ */ createIcon(MinusData);
+export const Maximize2 = /* @__PURE__ */ createIcon(Maximize2Data);
+export const Minimize2 = /* @__PURE__ */ createIcon(Minimize2Data);

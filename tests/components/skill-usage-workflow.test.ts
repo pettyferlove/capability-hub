@@ -235,6 +235,7 @@ test('提交审核沿用已展示基线，成功后链接新申请', async (cont
   });
   render(page(createElement(IntakeDetail, { intake: next })));
   const user = userEvent.setup();
+  await user.click(screen.getByRole('tab', { name: '02 发布申请' }));
   await user.type(screen.getByRole('textbox', { name: '共享目的与授权确认' }), '核对新版本并共享');
   await user.click(screen.getByRole('button', { name: '确认内容并提交审核' }));
   assert.equal(

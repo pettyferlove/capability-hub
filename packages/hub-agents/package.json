@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@capability-hub/ai": "workspace:*",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@capability-hub/application": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",
