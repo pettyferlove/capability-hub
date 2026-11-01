@@ -507,6 +507,14 @@ const schemas = {
   recommendations: z.strictObject({ ...base, user_id: id, version_id: id, created_at: date }),
 } satisfies { [K in TableName]: z.ZodType<RecordMap[K]> };
 
+/**
+ * 记录进出存储前的唯一校验入口：`strictObject` 会拒绝多余字段，因此未登记的字段不会静默落库或回灌。
+ * 校验失败抛 `ZodError`，HTTP 层统一转成 422 `VALIDATION_ERROR`。
+ *
+ * @param table - 目标表名，决定采用哪份 schema
+ * @param value - 待校验的原始记录（来自数据库 JSON 或外部输入）
+ * @returns 已剔除类型的记录，字段与 `RecordMap` 对齐
+ */
 export function parseRecord<K extends TableName>(table: K, value: unknown): RecordMap[K] {
   return schemas[table].parse(value) as RecordMap[K];
 }

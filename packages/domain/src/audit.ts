@@ -1,3 +1,7 @@
+/**
+ * 审计事件的一级分类，键写入事件、值是给界面看的简体中文标签；
+ * 未登记的动作在查询侧一律归到 `other`，因此新增分类要同步前端筛选选项。
+ */
 export const auditCategories = {
   identity: '账号与权限',
   publication: '发布与审核',
@@ -6,7 +10,14 @@ export const auditCategories = {
   operations: '平台运维',
   other: '其他事件',
 } as const;
+/**
+ * 审计分类的键集合。
+ */
 export type AuditCategory = keyof typeof auditCategories;
+/**
+ * 事件作用对象（主体）的种类，决定查询侧去哪张表还原对象名称；
+ * 无法确定时用 `unknown`，不要猜一个更具体的种类。
+ */
 export type AuditSubjectKind =
   | 'user'
   | 'group'
@@ -32,6 +43,11 @@ interface AuditDefinition {
   subject: AuditSubjectKind;
   failure?: boolean;
 }
+/**
+ * 审计动作的登记表：`label` 是界面文案，`category`/`subject` 决定筛选与对象还原，
+ * `failure` 为 true 表示该动作按「操作失败」统计（即使记录里写了 success 也以失败计入）。
+ * 未登记的动作不会失败，只是退回 `other` 分类与 `unknown` 主体，所以新增动作应在此登记。
+ */
 export const auditDefinitions: Record<string, AuditDefinition> = {
   'identity.bootstrap': { label: '初始化能力库', category: 'identity', subject: 'user' },
   'identity.login': { label: '登录账号', category: 'identity', subject: 'user' },
@@ -142,15 +158,24 @@ export const auditDefinitions: Record<string, AuditDefinition> = {
   'backup.completed': { label: '完成数据备份', category: 'operations', subject: 'instance' },
 };
 
+/**
+ * 操作者快照：`actor_id` 为 `anonymous`/`system`/`local-recovery` 等保留值时不会去用户表查，
+ * 解析不到用户则降级为 `unknown`，而不是让整条审计失败。
+ */
 export interface AuditActorSnapshot {
   kind: 'user' | 'anonymous' | 'system' | 'unknown';
   name: string;
   username?: string;
 }
+/**
+ * 审计对象快照（写入记录时冗余保存）：只保留展示字段与跳转用 id，
+ * 因此对象被删除或改名后，历史记录仍能如实呈现当时的样子，也不会泄露凭据或记录正文。
+ */
 export interface AuditSubjectSnapshot {
   kind: AuditSubjectKind;
   name: string;
   detail: string;
+  /** 资源类对象所属资产 id，用于生成「查看资产」链接；非资源类对象不填。 */
   asset_id?: string;
   version_id?: string;
   request_id?: string;
