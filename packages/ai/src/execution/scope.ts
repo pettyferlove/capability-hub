@@ -14,6 +14,11 @@ export interface RunScope {
   definition_digest: string;
   controller: AbortController;
 }
+/**
+ * 把单轮执行上下文（租约、所有者、`AbortController`）放进 `AsyncLocalStorage`，
+ * 让深层调用共享同一轮执行。`write` 会在同一事务里复查中止原因、租约与 deadline，
+ * 写库必须经它而非直接落记录，否则失去租约后可能覆盖新执行者的写入。
+ */
 export class ExecutionScope {
   private readonly context = new AsyncLocalStorage<RunScope>();
   constructor(

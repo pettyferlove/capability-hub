@@ -21,6 +21,11 @@ import { type OperationRegistry, type OperationDefinition } from '../operations/
 import { ScopedWorkflowsStorage } from '../storage/workflows.js';
 import { ScopedMemoryStorage } from '../storage/memory.js';
 
+/**
+ * AI 执行的核心编排：提交在一个事务里完成授权、输入校验、预算检查与记录落库，
+ * 之后由 `process(lease, signal)` 在租约下推进；`cancel`/`respond` 用 `revision` 拒绝过期指令。
+ * 本轮使用的定义摘要与模型摘要写进记录，恢复时摘要不符即判为 `AI_RECOVERY_UNCERTAIN`。
+ */
 export class AiRuntime {
   private expirationCursor: { id: string; position: number } | undefined;
   readonly scope: ExecutionScope;

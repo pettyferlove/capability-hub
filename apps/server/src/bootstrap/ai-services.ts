@@ -20,6 +20,11 @@ import { HubError } from '@capability-hub/domain/errors';
 import type { Principal } from '@capability-hub/domain/identity';
 import type { ServerConfig } from '../config/server-config.js';
 
+/**
+ * 服务端 AI 装配：用身份、作业队列、资产访问与证据服务构造 {@link AiRuntime}，
+ * 并在每次访问前重查账号状态与执行引用的业务资源——失去权限或资源不可访问即抛
+ * `AiError('AI_FORBIDDEN')`，因此停用账号的会话不会读到历史执行。
+ */
 export class HubAiServices {
   readonly runtime: AiRuntime;
   private readonly recheckResources: (

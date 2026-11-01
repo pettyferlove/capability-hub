@@ -1,6 +1,10 @@
 import type { z } from 'zod';
 import { boundedJson } from '@capability-hub/infrastructure/content';
 
+/**
+ * Hub 返回非 2xx 时抛出的错误：`status` 是 HTTP 状态码，`code` 是 Hub 错误码，
+ * 调用方应按 `code` 分支（例如 `invalid_grant` 提示重新授权），不要解析拼接后的 `message`。
+ */
 export class HubApiError extends Error {
   constructor(
     readonly status: number,

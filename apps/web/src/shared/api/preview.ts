@@ -1,5 +1,9 @@
 const previewLimit = 256 * 1024;
 const tooLarge = '文件超过 256 KiB，请下载完整文件查看';
+/**
+ * 预览超过 256 KiB 时抛出：调用方应引导用户改用下载链接，
+ * 而不是把它当作加载失败展示。
+ */
 export class PreviewUnavailable extends Error {}
 
 /** 预览超限后立即停止读取，完整内容通过下载链接交付。 */

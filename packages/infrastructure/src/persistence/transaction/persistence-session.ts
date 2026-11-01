@@ -9,6 +9,11 @@ interface Queries {
   records: RecordQueries;
   ai: AiQueries;
 }
+/**
+ * 由 `driver` 持有的会话对象，用 `AsyncLocalStorage` 传递当前事务作用域：已有事务时
+ * `tx`/`execute` 复用同一连接并串行执行语句，不会再开事务，嵌套调用请复用外层会话。
+ * 事务内失败会标记整个作用域，异常被吞掉也不会部分提交；事务内调用 `close` 直接抛错。
+ */
 export class PersistenceSession {
   private readonly context = new AsyncLocalStorage<{
     state: TransactionScope;

@@ -4,6 +4,11 @@ import { and, or, eq, gt, lt, asc, desc, inArray, sql } from 'drizzle-orm';
 import { aiSchema } from './ai-schema.js';
 import type { PostgresSession as Session } from './record-queries.js';
 
+/**
+ * PostgreSQL 上的 AI 表查询：记录体整块存进 `data` jsonb，`event_types` 过滤走 jsonb 路径取值。
+ * 分页游标是 `(position, id)` 复合比较，`limit` 上限 1000；`put` 要求行已存在，缺行直接抛错
+ * 而不是静默插入。事务与 `BEGIN IMMEDIATE` 等并发语义由传入的会话负责。
+ */
 export class PgAiQueries implements AiQueries {
   constructor(private readonly db: Session) {}
   private table(name: AiTable) {

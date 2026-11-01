@@ -22,6 +22,11 @@ export interface OperationDefinition {
   interactions: Record<string, z.ZodType>;
   create(context: OperationContext): AnyWorkflow;
 }
+/**
+ * 操作定义表：注册时校验 ID 形状与唯一性并先算一次摘要，校验失败不会留下半成品；
+ * `get` 对未知 ID 抛 `AI_NOT_FOUND`。`describe` 每次重新生成清单与摘要，是提交与恢复时
+ * 比对定义是否变化的唯一依据。
+ */
 export class OperationRegistry {
   private readonly definitions = new Map<string, OperationDefinition>();
   register(definition: OperationDefinition) {

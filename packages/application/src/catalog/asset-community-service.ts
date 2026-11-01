@@ -5,6 +5,10 @@ import { randomUUID } from 'node:crypto';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
 
+/**
+ * 资产推荐与提名摘要。写操作要求登录并具备版本可读权限（不可读抛 404），整体在
+ * `store.tx` 内先校验再增删并写审计；推荐是集合语义的幂等开关，因此不经幂等服务。
+ */
 export class AssetCommunityService {
   constructor(
     private readonly context: ApplicationContext,

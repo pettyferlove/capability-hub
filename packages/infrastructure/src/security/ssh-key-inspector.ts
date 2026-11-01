@@ -10,6 +10,11 @@ import { sshAskpass } from './ssh-askpass.js';
 
 const execute = promisify(execFile);
 
+/**
+ * 调用系统 `/usr/bin/ssh-keygen` 校验 SSH 私钥：私钥、口令、主机公钥写入一次性临时目录
+ * （0600，口令只经 `SSH_ASKPASS` 读取，不出现在命令行或环境变量里），`finally` 删除目录。
+ * 每次执行 5 秒超时，任何失败统一转为 422/`SSH_KEY_INVALID`，不区分私钥错与口令错。
+ */
 export class OpenSshKeyInspector implements SshKeyInspector {
   async inspect(input: { privateKey: string; passphrase: string; hostKey: string }) {
     const directory = await mkdtemp(join(tmpdir(), 'capability-key-check-'));

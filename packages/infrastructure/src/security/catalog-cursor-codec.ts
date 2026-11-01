@@ -1,6 +1,11 @@
 import type { CatalogCursor, CatalogCursorCodec } from '@capability-hub/application/ports';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
+/**
+ * 用 HMAC-SHA256 给目录分页游标签名；`secret` 由宿主注入，多实例之间必须一致，
+ * 轮换密钥会让已发出的游标全部失效。签名比对走 `timingSafeEqual`，`decode` 对超长（4096）、
+ * 格式错、签名不符或字段非法的游标统一返回 `undefined`，不区分原因以避免成为预言机。
+ */
 export class SignedCatalogCursorCodec implements CatalogCursorCodec {
   constructor(private readonly secret: string) {}
   private signature(encoded: string): Buffer {

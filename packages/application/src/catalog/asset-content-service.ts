@@ -4,6 +4,11 @@ import { safePath } from '@capability-hub/domain/paths';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
 
+/**
+ * 资产内容读取：每个方法先过 {@link AssetAccessService} 的可读性校验（不可读抛 404），
+ * 管理视图额外要求候选版本权限且未登录抛 401。字节直接读 blob 存储、不占用事务，
+ * 下载与未登录访问都会立即写审计。
+ */
 export class AssetContentService {
   constructor(
     private readonly context: ApplicationContext,

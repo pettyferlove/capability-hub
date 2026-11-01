@@ -9,6 +9,10 @@ import { type ExecutionScope } from '../execution/scope.js';
 import { type AiEventService } from '../execution/events.js';
 type EndpointModel = ReturnType<ReturnType<typeof createOpenAICompatible>>;
 
+/**
+ * 单次执行内的模型客户端：调用前在事务里预留 `ai_calls` 并扣减请求预算，用量在请求结束后
+ * 结算；首个传输失败会记住并中止本轮作用域，重试只由宿主队列决定，不交给 SDK 自行重试。
+ */
 export class ManagedProvider {
   private failure: AiError | undefined;
   constructor(

@@ -9,6 +9,11 @@ type Session = Pick<
   'select' | 'insert' | 'update' | 'delete'
 >;
 
+/**
+ * SQLite（drizzle proxy 远程驱动）上的 AI 表查询：与 PostgreSQL 版语义一致，差异在
+ * `event_types` 过滤改用 `json_extract`，且事务由调用方的会话串行执行器保证不并发。
+ * `limit` 上限 1000；`put` 要求行已存在，缺行直接抛错。
+ */
 export class SqliteAiQueries implements AiQueries {
   constructor(private readonly db: Session) {}
   private table(name: AiTable) {

@@ -2,6 +2,10 @@ import { contentScanRuleset } from '@capability-hub/domain/content';
 import type { RecordStore } from '@capability-hub/application/ports';
 import { statfsSync } from 'node:fs';
 const bounds = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, Infinity];
+/**
+ * 进程内请求指标累加器：只做自增、不加锁，依赖 Node 单线程保证一致，进程重启即归零；
+ * `snapshot` 返回拷贝，调用方改动不会影响计数器。
+ */
 export class RequestMetrics {
   startedAt = new Date().toISOString();
   active = 0;

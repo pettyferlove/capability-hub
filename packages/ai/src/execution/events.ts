@@ -9,6 +9,10 @@ function eventText(value: Json | undefined): string {
   return value;
 }
 
+/**
+ * 执行事件的唯一写入口：分配单调 `seq`、按块校验消息增量的偏移与长度，并把事件字节数
+ * 累加到执行上。`maxBytes` 用满后只允许写失败/取消/超时终态，额度耗尽仍能给 UI 一个结论。
+ */
 export class AiEventService {
   constructor(
     readonly store: AiStore,
@@ -81,6 +85,11 @@ export class AiEventService {
   }
 }
 
+/**
+ * 把模型 SDK 的流式事件翻译成 Hub 事件：文本增量按块 ID 累积，满 4096 字节或 50 毫秒刷一次，
+ * 写入走内部串行队列以保序。执行结束前必须 `flush`/`close`，否则残留增量会丢失；
+ * 刷写失败会中止当前执行作用域，由上层收敛为失败终态。
+ */
 export class AgentEventMapper {
   private readonly blocks = new Map<string, string>();
   private blockSequence = 0;

@@ -4,6 +4,11 @@ import type { RecordStore } from '@capability-hub/application/ports';
 import type { JobRecord } from '@capability-hub/domain/models';
 import { HubError } from '@capability-hub/domain/errors';
 
+/**
+ * 把 AI 执行挂到宿主作业队列上：`dispatch_id` 即作业 ID，每次写前用
+ * `lease_owner`/`lease_epoch` 校验租约，作业被抢占或取消时转成 `AI_LEASE_LOST`。
+ * `retry` 只把作业放回队列并设置 `run_after`，已产生的 AI 记录保持不变。
+ */
 export class HubAiQueue implements AiQueueBridge {
   constructor(
     private readonly store: RecordStore,

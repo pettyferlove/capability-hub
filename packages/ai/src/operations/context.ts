@@ -61,6 +61,11 @@ export interface RuntimeDependencies {
   telemetry?: AiTelemetry;
 }
 
+/**
+ * 单个操作的执行上下文：握有作用域、事件、记忆存储与运行期依赖。长步骤请用 `step` 包裹，
+ * 它会在前后各做一次授权并写 `step.started/completed/failed` 事件；授权失败抛
+ * `AI_FORBIDDEN`、租约或期限失效抛 `AI_LEASE_LOST`/`AI_DEADLINE_EXCEEDED`。
+ */
 export class OperationContext {
   failure: AiError | undefined;
   private readonly governedTools = new WeakSet<object>();

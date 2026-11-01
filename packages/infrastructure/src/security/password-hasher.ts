@@ -5,6 +5,11 @@ import { promisify } from 'node:util';
 
 const scrypt = promisify(scryptCallback);
 
+/**
+ * 用 scrypt 派生口令：16 字节随机盐、64 字节输出，返回 `salt:digest` 十六进制串，
+ * 明文不落库也不进日志；`hash` 对长度不在 12–256 的口令抛 422/`PASSWORD_LENGTH`。
+ * `verify` 先校验串格式再 `timingSafeEqual` 比较，格式不符直接返回 false。
+ */
 export class ScryptPasswordHasher implements PasswordHasher {
   async hash(password: string): Promise<string> {
     if (password.length < 12 || password.length > 256)
