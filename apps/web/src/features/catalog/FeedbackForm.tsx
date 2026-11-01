@@ -175,9 +175,25 @@ export function FeedbackForm({
                 <label key={name}>
                   {label}
                   {name === 'location' ? (
-                    <InputField icon="text" name={name} maxLength={max} />
+                    <InputField
+                      icon="text"
+                      name={name}
+                      maxLength={max}
+                      placeholder="例如：设置页 → 令牌管理"
+                    />
                   ) : (
-                    <textarea name={name} maxLength={max} rows={2} />
+                    <textarea
+                      name={name}
+                      maxLength={max}
+                      rows={2}
+                      placeholder={
+                        name === 'reproduction'
+                          ? '按步骤描述如何复现，必要时附链接'
+                          : name === 'evidence'
+                            ? '粘贴脱敏后的日志、截图说明或链接'
+                            : '写下你推断的原因或改进方向（可选）'
+                      }
+                    />
                   )}
                 </label>
               ))}

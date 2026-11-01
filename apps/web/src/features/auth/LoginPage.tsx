@@ -105,7 +105,12 @@ export default function LoginPage({
             aria-label={initialized ? '登录' : '初始化'}
           >
             {!initialized && setupRequired && (
-              <PasswordField name="setup_token" label="部署初始化密钥" minimum={1} />
+              <PasswordField
+                name="setup_token"
+                label="部署初始化密钥"
+                minimum={1}
+                placeholder="部署时设置的一次性密钥"
+              />
             )}
             {!initialized && (
               <label>
@@ -139,7 +144,9 @@ export default function LoginPage({
               autoComplete={initialized ? 'current-password' : 'new-password'}
               placeholder={initialized ? '请输入密码' : '至少 12 位'}
             />
-            {!initialized && <PasswordField label="确认密码" name="confirm_password" />}
+            {!initialized && (
+              <PasswordField label="确认密码" name="confirm_password" placeholder="再次输入密码" />
+            )}
             {!initialized && (
               <label>
                 维护团队

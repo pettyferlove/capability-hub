@@ -169,6 +169,7 @@ export function SourceEditor({
               onChange={(e) => setBranch(e.target.value)}
               required
               maxLength={255}
+              placeholder="main"
             />
           </label>
           <label>

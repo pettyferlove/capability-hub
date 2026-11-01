@@ -141,7 +141,13 @@ export function IdentityAdminForm({
           <>
             <label>
               显示名称
-              <InputField icon="user" name="display_name" required maxLength={80} />
+              <InputField
+                icon="user"
+                name="display_name"
+                required
+                maxLength={80}
+                placeholder="例如：张三"
+              />
             </label>
             <label>
               账号
@@ -153,18 +159,27 @@ export function IdentityAdminForm({
                 maxLength={64}
                 autoComplete="off"
                 pattern="[a-zA-Z0-9][a-zA-Z0-9_.@-]*"
+                placeholder="用于登录的唯一账号"
               />
             </label>
-            <PasswordField label="初始密码" name="password" />
-            <PasswordField label="确认初始密码" name="confirm_password" />
+            <PasswordField label="初始密码" name="password" placeholder="至少 12 位" />
+            <PasswordField
+              label="确认初始密码"
+              name="confirm_password"
+              placeholder="再次输入初始密码"
+            />
             {groupSelect}
             <Message>创建后请单独授予维护或审核角色。加入团队本身不授予管理权限。</Message>
           </>
         )}
         {kind === 'reset' && (
           <>
-            <PasswordField label="新密码" name="password" />
-            <PasswordField label="确认新密码" name="confirm_password" />
+            <PasswordField label="新密码" name="password" placeholder="至少 12 位" />
+            <PasswordField
+              label="确认新密码"
+              name="confirm_password"
+              placeholder="再次输入新密码"
+            />
             <Message>重置后该账号需重新登录网页，CLI/MCP 访问令牌保持有效。</Message>
           </>
         )}
@@ -177,13 +192,18 @@ export function IdentityAdminForm({
               defaultValue={kind === 'edit-role' ? user?.name : ''}
               required
               maxLength={80}
+              placeholder={kind === 'scenario' ? '例如：检索团队文档' : '例如：平台工程组'}
             />
           </label>
         )}
         {kind === 'scenario' && (
           <label>
             场景说明
-            <textarea name="description" maxLength={2000} />
+            <textarea
+              name="description"
+              maxLength={2000}
+              placeholder="描述该场景的适用团队与典型任务…"
+            />
           </label>
         )}
         {kind === 'membership' && (

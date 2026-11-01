@@ -197,6 +197,7 @@ export default function AssetSheet({ slug }: { slug: string }) {
                           onChange={(e) => setReason(e.target.value)}
                           maxLength={2000}
                           required
+                          placeholder="说明操作依据和影响范围…"
                         />
                       </label>
                       <Submit busy={busy} disabled={!reason.trim()} onClick={lifecycle}>

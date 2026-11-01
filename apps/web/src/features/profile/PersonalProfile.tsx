@@ -119,6 +119,7 @@ export function PersonalProfile() {
                   defaultValue={data.display_name}
                   required
                   maxLength={80}
+                  placeholder="你的姓名"
                 />
               </label>
               <label>

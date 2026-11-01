@@ -216,6 +216,7 @@ function FeedbackResolution({
             required={status === 'resolved' || status === 'declined'}
             value={resolution}
             onChange={(event) => setDraft(event.target.value)}
+            placeholder="说明处理结果；拒绝时写明原因…"
           />
         </label>
         {suggestion && (

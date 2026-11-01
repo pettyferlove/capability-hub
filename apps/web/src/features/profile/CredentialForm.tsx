@@ -187,6 +187,7 @@ export function CredentialForm({
                 type="password"
                 autoComplete="new-password"
                 maxLength={1024}
+                placeholder="私钥未加密可留空"
               />
             </label>
             <label>

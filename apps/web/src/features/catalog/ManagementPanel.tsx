@@ -522,6 +522,7 @@ function Controls({
                         maxLength={2000}
                         value={reason}
                         onChange={(e) => setReason(e.target.value)}
+                        placeholder="说明操作依据和影响范围…"
                       />
                     </label>
                     {error && <Message error>{error}</Message>}

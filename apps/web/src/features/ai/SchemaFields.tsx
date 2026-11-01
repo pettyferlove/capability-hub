@@ -181,7 +181,7 @@ export function SchemaFields({
                         ? '描述主题、目标和约束，让多个 Agent 一起完善方案…'
                         : key === 'comment'
                           ? '补充你的判断或修改建议（可选）'
-                          : undefined
+                          : `输入${label}…`
                   }
                   rows={key.endsWith('_ref') || key === 'mcp_endpoint' || key === 'comment' ? 2 : 4}
                   value={

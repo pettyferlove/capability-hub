@@ -120,9 +120,14 @@ export function PersonalSecurity() {
               name="current_password"
               minimum={1}
               autoComplete="current-password"
+              placeholder="请输入当前密码"
             />
-            <PasswordField label="新密码" name="new_password" />
-            <PasswordField label="确认新密码" name="confirm_password" />
+            <PasswordField label="新密码" name="new_password" placeholder="至少 12 位" />
+            <PasswordField
+              label="确认新密码"
+              name="confirm_password"
+              placeholder="再次输入新密码"
+            />
             <Submit busy={busy}>更新密码并重新登录</Submit>
           </form>
         </section>
