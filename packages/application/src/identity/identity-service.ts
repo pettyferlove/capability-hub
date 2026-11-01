@@ -3,7 +3,7 @@ import type { RecordStore } from '../ports/index.js';
 import { fail } from '@capability-hub/domain/errors';
 import type { UserRecord } from '@capability-hub/domain/models';
 import { filterAsync } from '@capability-hub/domain/async';
-import { has } from '@capability-hub/domain/rbac';
+import { bindingMatchesScope, has } from '@capability-hub/domain/rbac';
 
 /** 每次从存储读取有效身份及当前授权，不缓存账号和角色。 */
 export class IdentityService {
@@ -50,6 +50,33 @@ export class IdentityService {
           (await this.store.all('roles')).map((r) => [r.id, r.permissions]),
         ),
       };
+    });
+  }
+
+  /** 从匹配的用户与团队授权反查有效账号；使用所选身份前仍须按目标复查权限。 */
+  async userIdsWithPermission(permission: string, scope: Parameters<typeof has>[2] = {}) {
+    return this.store.tx(async () => {
+      const roles = new Set(
+        (await this.store.all('roles'))
+          .filter((role) => role.permissions.includes(permission))
+          .map((role) => role.id),
+      );
+      const grantees = new Set(
+        (await this.store.all('role_bindings'))
+          .filter((binding) => roles.has(binding.role_id) && bindingMatchesScope(binding, scope))
+          .map((binding) => binding.principal_id),
+      );
+      const groups = new Set(
+        (await this.store.all('groups'))
+          .filter((group) => group.active && grantees.has(group.id))
+          .map((group) => group.id),
+      );
+      for (const member of await this.store.all('memberships'))
+        if (groups.has(member.group_id)) grantees.add(member.user_id);
+      return (await this.store.all('users'))
+        .filter((user) => user.active && grantees.has(user.id))
+        .sort((a, b) => a.username.localeCompare(b.username, 'en'))
+        .map((user) => user.id);
     });
   }
 

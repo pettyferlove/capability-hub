@@ -7,6 +7,41 @@ import { createTestHub, publishSkill } from '../support/application.js';
 const code = (expected: string) => (error: unknown) =>
   error instanceof HubError && error.code === expected;
 
+test('无空格的中文需求命中可见发布，中英混排保留完整的技术名称', async (context) => {
+  const f = await createTestHub(context);
+  const visible = await publishSkill(f, { slug: 'node-audit' });
+  await publishSkill(f, { slug: 'node' });
+  await publishSkill(f, {
+    slug: 'private-audit',
+    distribution: { mode: 'approved_audience', audience: ['group:' + f.teamId] },
+  });
+  const chinese = await f.hub.catalog.search(null, { q: '想查找适合团队使用的工程规范' });
+  assert.deepEqual(chinese.items.map((item) => item.slug).sort(), ['node', 'node-audit']);
+  const mixed = await f.hub.catalog.search(null, { q: '使用（ＮＯＤＥ－ＡＵＤＩＴ）核查异常' });
+  assert.deepEqual(
+    mixed.items.map((item) => item.asset_id),
+    [visible.intake.asset_id],
+  );
+  assert.equal((await f.hub.catalog.search(null, { q: '量子纠缠' })).total, 0);
+});
+
+test('中文多词检索按有效词筛选并排序，风控不会拆成风险和控制的单字命中', async (context) => {
+  const f = await createTestHub(context);
+  for (const [slug, keywords] of [
+    ['refund-policy', ['退款', '风控', '规则']],
+    ['refund-controls', ['退款', '风控']],
+    ['general-rules', ['规则']],
+    ['other-controls', ['风险', '控制']],
+  ] as const) {
+    await publishSkill(f, { slug, appliesTo: { keywords: [...keywords] }, body: '退款风控规则' });
+  }
+  const search = async (q: string) =>
+    (await f.hub.catalog.search(null, { q })).items.map((item) => item.slug);
+  assert.deepEqual(await search('退款风控规则'), ['refund-policy', 'refund-controls']);
+  assert.deepEqual((await search('风控')).sort(), ['refund-controls', 'refund-policy']);
+  assert((await search('风')).includes('other-controls'));
+});
+
 test('目录游标绑定查询、身份和目录版本，权限收窄后旧游标与推荐均不能继续使用', async (context) => {
   const fixture = await createTestHub(context);
   const first = await publishSkill(fixture, { slug: 'first-skill' });

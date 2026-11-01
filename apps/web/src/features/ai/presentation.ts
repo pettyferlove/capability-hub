@@ -14,7 +14,7 @@ export type Json = AiExecutionResponse['input'];
 export const statusLabels: Record<AiExecutionResponse['status'], string> = {
   queued: '等待执行',
   running: '正在执行',
-  waiting_input: '待你确认',
+  waiting_input: '待确认',
   succeeded: '已完成',
   failed: '执行失败',
   cancelled: '已取消',

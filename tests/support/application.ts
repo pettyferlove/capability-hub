@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { archive } from '@capability-hub/infrastructure/content';
 import { createApp } from '@capability-hub/server';
 import { loadServerConfig, type ServerConfig } from '@capability-hub/server/config';
-import type { Policy } from '@capability-hub/contracts';
+import type { Applicability, Policy } from '@capability-hub/contracts';
 
 /**
  * 测试统一口令。必须满足生产口令策略（长度与字符种类），否则初始化会直接被拒；
@@ -147,6 +147,7 @@ export async function submitPublication(
   fixture: TestHub,
   intake: Awaited<ReturnType<typeof receiveSkill>>,
   distribution?: Policy['distribution'],
+  appliesTo: Applicability = { languages: ['TypeScript'] },
 ) {
   const asset = await fixture.hub.assetAccess.getAsset(intake.asset_id);
   return await fixture.hub.publications.submit(
@@ -156,7 +157,7 @@ export async function submitPublication(
       version_id: intake.version_id,
       category: 'uncategorized',
       scenario_ids: [],
-      applies_to: { languages: ['TypeScript'] },
+      applies_to: appliesTo,
       distribution: distribution ?? { mode: 'approved_audience', audience: ['public'] },
       purpose: '共享经过审查的项目工程实践',
       base_release_id: asset.current_release_id,
@@ -172,10 +173,13 @@ export async function submitPublication(
  */
 export async function publishSkill(
   fixture: TestHub,
-  options: Parameters<typeof receiveSkill>[1] & { distribution?: Policy['distribution'] } = {},
+  options: Parameters<typeof receiveSkill>[1] & {
+    distribution?: Policy['distribution'];
+    appliesTo?: Applicability;
+  } = {},
 ) {
   const intake = await receiveSkill(fixture, options);
-  const request = await submitPublication(fixture, intake, options.distribution);
+  const request = await submitPublication(fixture, intake, options.distribution, options.appliesTo);
   const decision = await fixture.hub.publications.decide(
     fixture.reviewer,
     request.id,

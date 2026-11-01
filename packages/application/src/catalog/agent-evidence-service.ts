@@ -1,8 +1,9 @@
 import type { Principal } from '@capability-hub/domain/identity';
+import type { StoredFile } from '@capability-hub/domain/models';
 import { fail, notFound } from '@capability-hub/domain/errors';
+import { safePath } from '@capability-hub/domain/paths';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
-import type { AssetContentService } from './asset-content-service.js';
 import type { AssetFeedbackService } from './asset-feedback-service.js';
 
 /**
@@ -16,7 +17,6 @@ export class AgentEvidenceService {
   constructor(
     private readonly context: ApplicationContext,
     private readonly access: AssetAccessService,
-    private readonly content: AssetContentService,
     private readonly feedback: AssetFeedbackService,
   ) {}
 
@@ -25,19 +25,19 @@ export class AgentEvidenceService {
    *
    * 版本不存在抛 404；资源封禁或版本撤销抛 409/`CONTENT_UNAVAILABLE`（区别于 404，
    * 表示“曾存在但当前不可用”）；既没有读权限也不是该版本候选的审查者时抛
-   * 403/`FORBIDDEN`（含 `content.management_read` 审计）。`ownerId` 在每次调用时
+   * 403/`FORBIDDEN`。仅复查授权时不记管理读取；取证按工具调用记审计。`ownerId` 在每次调用时
    * 重新解析为主体，因此主体权限变化即时生效，不会沿用旧结果。
    */
-  async version(ownerId: string, id: string) {
+  async version(ownerId: string, id: string, audit: Record<string, unknown> | false = {}) {
     const principal = await this.context.identity.principal(ownerId);
     const version = await this.context.store.get('versions', id);
     if (!version) notFound();
     const asset = await this.access.getAsset(version.asset_id);
     if (asset.lifecycle === 'blocked' || version.availability === 'revoked')
       fail(409, 'CONTENT_UNAVAILABLE', '资源已封禁或撤销');
-    if (!(await this.access.canRead(principal, asset, version)))
-      await this.access.requireCandidateAccess(principal, version);
-    return { principal, asset, version };
+    const management = !(await this.access.canRead(principal, asset, version));
+    if (management) await this.access.requireCandidateAccess(principal, version, audit);
+    return { principal, asset, version, management };
   }
 
   /**
@@ -45,10 +45,10 @@ export class AgentEvidenceService {
    * {@link AgentEvidenceService.version} 门禁：资源被封禁或版本被撤销后，
    * 该反馈即便还存在也不能继续被读取。错误与门禁一致（404/409/403）。
    */
-  async feedbackTarget(ownerId: string, id: string) {
+  async feedbackTarget(ownerId: string, id: string, audit = true) {
     const principal = await this.context.identity.principal(ownerId);
     const feedback = await this.feedback.get(principal, id);
-    await this.version(ownerId, feedback.version_id);
+    await this.version(ownerId, feedback.version_id, audit ? { tool: 'read_feedback' } : false);
     return feedback;
   }
 
@@ -107,9 +107,21 @@ export class AgentEvidenceService {
    * 无可读权限时改走管理态（候选审查）路径重新取字节的授权。
    */
   async read(ownerId: string, id: string, path: string, start: number, count: number) {
-    const { principal, version, asset } = await this.version(ownerId, id);
+    const { version, management } = await this.version(ownerId, id, false);
     const file = version.files.find((item) => item.path === path);
     if (!file) notFound();
+    if (management)
+      await this.context.store.audit(ownerId, 'content.management_read', id, '', {
+        tool: 'read_file',
+        path: file.path,
+        start_line: start,
+        lines: count,
+      });
+    return this.readLines(file, start, count);
+  }
+
+  private async readLines(file: StoredFile, start: number, count: number) {
+    const path = safePath(file.path);
     if (file.size > 512000)
       return {
         path,
@@ -120,15 +132,10 @@ export class AgentEvidenceService {
         text: '',
         truncated: true,
       };
-    const result = await this.content.getFile(
-      principal,
-      id,
-      path,
-      !(await this.access.canRead(principal, asset, version)),
-    );
+    const bytes = await this.context.blobs.read(file.blob_ref);
     let text: string;
     try {
-      text = new TextDecoder('utf-8', { fatal: true }).decode(result.bytes);
+      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     } catch {
       return {
         path,
@@ -189,13 +196,18 @@ export class AgentEvidenceService {
    * 只匹配行正文，不匹配 `read` 附加的行号前缀。
    */
   async search(ownerId: string, id: string, query: string, offset: number) {
-    const { version } = await this.version(ownerId, id);
+    const pageSize = 10;
+    const pageAudit = { tool: 'search_files', offset, limit: pageSize };
+    const { version, management } = await this.version(ownerId, id, pageAudit);
+    let audited = management;
     const needle = query.toLowerCase();
     const matches: { path: string; line: number; text: string }[] = [];
     const skipped: string[] = [];
-    // 分页扫描有限文件，避免一次工具调用隐式加载整个资源包。
-    for (const file of version.files.slice(offset, offset + 10)) {
-      const result = await this.read(ownerId, id, file.path, 1, 200);
+    // 一页共用一条审计，逐文件复查权限以响应扫描期间的撤权。
+    for (const file of version.files.slice(offset, offset + pageSize)) {
+      const access = await this.version(ownerId, id, audited ? false : pageAudit);
+      audited ||= access.management;
+      const result = await this.readLines(file, 1, 200);
       let partial = !!(result.truncated || result.unavailable);
       for (const line of result.text.split('\n')) {
         const separator = line.indexOf(': ');
@@ -214,7 +226,7 @@ export class AgentEvidenceService {
     return {
       matches,
       partial_files: skipped,
-      next_offset: offset + 10 < version.files.length ? offset + 10 : null,
+      next_offset: offset + pageSize < version.files.length ? offset + pageSize : null,
     };
   }
 

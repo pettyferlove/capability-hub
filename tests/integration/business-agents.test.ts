@@ -5,7 +5,11 @@ import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { AgentEvidenceService } from '@capability-hub/application';
 import { AiError } from '@capability-hub/ai';
-import { assetFeedbackRequestSchema } from '@capability-hub/contracts';
+import {
+  aiCatalogResponseSchema,
+  aiExecutionListResponseSchema,
+  assetFeedbackRequestSchema,
+} from '@capability-hub/contracts';
 import {
   createTestHub,
   publishSkill,
@@ -15,6 +19,7 @@ import {
 } from '../support/application.js';
 import { fixture } from '../support/ai-provider.js';
 import { frameworkConfig } from '../support/ai-framework.js';
+import { signIn } from '../support/http.js';
 import { archive } from '@capability-hub/infrastructure/content';
 import { skillDocument } from '../support/content.js';
 import {
@@ -74,6 +79,17 @@ async function run(f: TestHub) {
     new AbortController().signal,
   );
   return f.hub.ai.runtime.get(job.aggregate_id);
+}
+
+async function grantMaintainer(f: TestHub, principalId: string, teamId = f.teamId) {
+  const role = await f.store.find('roles', 'key', 'maintainer');
+  assert(role);
+  return f.hub.administration.grantRole(f.admin, {
+    principal_id: principalId,
+    role_id: role.id,
+    scope_type: 'team',
+    scope_id: teamId,
+  });
 }
 
 test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报告，发布申请保持待审', async (t) => {
@@ -170,7 +186,9 @@ test('反馈提交自动排队且幂等，采纳后仅写入处理中，效果�
     else process.env.AI_FIXTURE_KEY = previous;
   });
   const f = await createTestHub(t);
-  const { intake } = await publishSkill(f);
+  await grantMaintainer(f, f.reader.id);
+  const uploader = await f.hub.identity.principal(f.reader.id);
+  const { intake } = await publishSkill({ ...f, admin: uploader });
   Object.assign(f.hub.ai.runtime.config, frameworkConfig(provider.url));
   const input = assetFeedbackRequestSchema.parse({
     version_id: intake.version_id,
@@ -182,16 +200,18 @@ test('反馈提交自动排队且幂等，采纳后仅写入处理中，效果�
     expected: '提示',
     actual: '失败',
   });
-  const reported = await f.hub.feedback.report(f.admin, input);
-  assert.equal((await f.hub.feedback.report(f.admin, input)).id, reported.id);
+  const reported = await f.hub.feedback.report(f.reviewer, input);
+  assert.equal((await f.hub.feedback.report(f.reviewer, input)).id, reported.id);
+  assert.equal(reported.submitted_by, f.reviewer.id);
   assert.equal((await f.hub.ai.runtime.store.list('ai_executions', { limit: 100 })).length, 1);
   const waiting = await run(f);
+  assert.equal(waiting.owner_id, uploader.id);
   assert.equal(waiting.status, 'waiting_input', JSON.stringify(waiting.payload.error));
   const interaction = (await f.hub.ai.runtime.view(waiting.id)).interactions[0];
   await f.hub.ai.runtime.respond(
     waiting.id,
     interaction.id,
-    f.admin.id,
+    uploader.id,
     interaction.payload.revision,
     { approved: true, comment: '', apply_feedback: true },
   );
@@ -208,13 +228,218 @@ test('反馈提交自动排队且幂等，采纳后仅写入处理中，效果�
   );
 });
 
+test('原上传人失去维护权限时，反馈保留并只向当前合格的维护者派单', async (t) => {
+  const f = await createTestHub(t);
+  const { intake } = await publishSkill(f);
+  Object.assign(f.hub.ai.runtime.config, frameworkConfig());
+  const binding = (await f.store.where('role_bindings', 'principal_id', f.admin.id)).find(
+    (item) => item.scope_type === 'team',
+  );
+  assert(binding);
+  await f.hub.administration.removeGrant(f.admin, 'role_bindings', binding.id);
+  const report = () =>
+    f.hub.feedback.report(
+      f.reader,
+      assetFeedbackRequestSchema.parse({
+        version_id: intake.version_id,
+        idempotency_key: randomUUID(),
+        consent: true,
+        kind: 'defect',
+        title: '上传样例失败',
+        scenario: '上传',
+        expected: '通过',
+        actual: '失败',
+      }),
+    );
+  assert.equal((await report()).status, 'pending');
+  assert.equal((await f.hub.ai.runtime.store.list('ai_executions', { limit: 100 })).length, 0);
+  const rotation = await f.hub.administration.createGroup(f.admin, { name: '反馈值班组' });
+  await f.hub.administration.addMembership(f.admin, {
+    group_id: rotation.id,
+    user_id: f.reviewer.id,
+  });
+  await grantMaintainer(f, rotation.id);
+  const feedback = await report();
+  const runs = await f.hub.ai.runtime.store.list('ai_executions', { limit: 100 });
+  assert.deepEqual(
+    runs.map((row) => [row.owner_id, row.payload.input]),
+    [[f.reviewer.id, { version_id: intake.version_id, feedback_id: feedback.id }]],
+  );
+  await grantMaintainer(f, f.admin.id);
+  const version = await f.store.get('versions', intake.version_id);
+  assert(version);
+  await Promise.all([
+    f.hub.ai.autoTriage(version, feedback.id),
+    f.hub.ai.autoTriage(version, feedback.id),
+  ]);
+  const retried = await f.hub.ai.runtime.store.list('ai_executions', { limit: 100 });
+  assert.deepEqual(
+    retried.map((row) => row.id),
+    [runs[0].id],
+  );
+});
+
+test('反馈仅共享带自动分派标识的研判，协作者只读且两项授权都必须仍然有效', async (t) => {
+  const f = await createTestHub(t);
+  const { intake } = await publishSkill(f);
+  Object.assign(f.hub.ai.runtime.config, frameworkConfig());
+  const grant = await grantMaintainer(f, f.reviewer.id);
+  const feedback = await f.hub.feedback.report(
+    f.reader,
+    assetFeedbackRequestSchema.parse({
+      version_id: intake.version_id,
+      idempotency_key: randomUUID(),
+      consent: true,
+      kind: 'defect',
+      title: '上传失败',
+      scenario: '上传',
+      expected: '通过',
+      actual: '失败',
+    }),
+  );
+  const target = { version_id: intake.version_id, feedback_id: feedback.id };
+  const runtime = f.hub.ai.runtime;
+  const [automatic] = await runtime.store.list('ai_executions', { limit: 10 });
+  assert.equal(automatic.owner_id, f.admin.id);
+  const privateRun = await runtime.submit(f.admin.id, 'feedback-triage', target);
+  const ownRun = await runtime.submit(f.reviewer.id, 'feedback-triage', target);
+  const colleague = await signIn(f, f.reviewer.username);
+  const list = async (client: typeof colleague, query = {}) =>
+    aiExecutionListResponseSchema.parse(
+      (await client.get('/api/ai/executions').query(query).expect(200)).body,
+    );
+  const path = `/api/ai/executions/${automatic.id}`;
+  const personal = await list(colleague);
+  assert.deepEqual(
+    personal.items.map((item) => item.id),
+    [ownRun.id],
+  );
+  assert.equal(personal.automatic_triage, undefined);
+  const first = await list(colleague, { ...target, limit: 1 });
+  assert.deepEqual(
+    first.items.map((item) => item.id),
+    [ownRun.id],
+  );
+  assert.equal(first.automatic_triage?.id, automatic.id);
+  assert.equal(first.automatic_triage?.owner_display_name, f.admin.display_name);
+  assert(first.next_cursor);
+  assert.equal(
+    (await list(colleague, { ...target, limit: 1, cursor: first.next_cursor })).automatic_triage,
+    undefined,
+  );
+  assert.equal(
+    (await list(colleague, { ...target, version_id: randomUUID() })).automatic_triage,
+    undefined,
+  );
+  await colleague.get(path).expect(200);
+  await colleague.get(`/api/ai/executions/${privateRun.id}`).expect(404);
+  await colleague
+    .post(path + '/cancel')
+    .set('If-Match', `"${automatic.payload.revision}"`)
+    .set('Idempotency-Key', randomUUID())
+    .send({})
+    .expect(404);
+  await assert.rejects(runtime.respond(automatic.id, randomUUID(), f.reviewer.id, 1, {}), {
+    code: 'AI_FORBIDDEN',
+  });
+  await runtime.cancel(automatic.id, f.admin.id, automatic.payload.revision);
+  const events = await colleague.get(path + '/events').expect(200);
+  assert.match(events.text, /event: stream\.snapshot/);
+
+  const aiRole = await f.hub.administration.createRole(f.admin, {
+    name: '业务 AI',
+    permissions: ['ai:execute'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: aiRole.id,
+    scope_type: 'team',
+    scope_id: f.teamId,
+  });
+  const reporter = await signIn(f, f.reader.username);
+  assert.equal((await list(reporter, target)).automatic_triage, undefined);
+  await reporter.get(path).expect(404);
+
+  const maintainRole = await f.hub.administration.createRole(f.admin, {
+    name: '仅维护',
+    permissions: ['asset:maintain'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reviewer.id,
+    role_id: maintainRole.id,
+    scope_type: 'team',
+    scope_id: f.teamId,
+  });
+  const other = await f.hub.administration.createGroup(f.admin, { name: '其他团队' });
+  await grantMaintainer(f, f.reviewer.id, other.id);
+  await f.hub.administration.removeGrant(f.admin, 'role_bindings', grant.id);
+  assert.equal((await list(colleague, target)).automatic_triage, undefined);
+  await colleague.get(path).expect(404);
+  await colleague.get(path + '/events').expect(404);
+  await grantMaintainer(f, f.reviewer.id);
+  const asset = await f.hub.assetAccess.getAsset(intake.asset_id);
+  await f.store.put('assets', { ...asset, lifecycle: 'blocked' });
+  assert.equal((await list(colleague, target)).automatic_triage, undefined);
+  await colleague.get(path).expect(404);
+});
+
+test('团队维护者的上传自动排队，撤回目标团队授权后公开版本的任务也不可读', async (t) => {
+  const f = await createTestHub(t, { ai: frameworkConfig() });
+  const grant = await grantMaintainer(f, f.reader.id);
+  const uploader = await f.hub.identity.principal(f.reader.id);
+  const asUploader = { ...f, admin: uploader };
+  const intake = await receiveSkill(asUploader);
+  const client = await signIn(f, uploader.username);
+  assert.equal((await client.get('/api/me').expect(200)).body.capabilities.can_ai, true);
+  const catalog = aiCatalogResponseSchema.parse(
+    (await client.get('/api/ai/catalog').expect(200)).body,
+  );
+  assert.deepEqual(catalog.operations.map((item) => item.id).sort(), [
+    'feedback-triage',
+    'resource-audit',
+  ]);
+  const list = async () =>
+    aiExecutionListResponseSchema.parse(
+      (await client.get('/api/ai/executions').query({ version_id: intake.version_id }).expect(200))
+        .body,
+    ).items;
+  const [audit] = await list();
+  assert(audit && audit.operation_id === 'resource-audit' && audit.owner_id === uploader.id);
+  await client.get(`/api/ai/executions/${audit.id}`).expect(200);
+  await assert.rejects(f.hub.ai.runtime.submit(uploader.id, 'assistant', { prompt: 'test' }), {
+    code: 'AI_FORBIDDEN',
+  });
+  const request = await submitPublication(asUploader, intake);
+  await f.hub.publications.decide(
+    f.reviewer,
+    request.id,
+    {
+      decision: 'approve',
+      comment: '核对公开范围',
+      policy_digest: request.policy_digest,
+      accepted_warnings: [],
+    },
+    `"${request.revision}"`,
+    randomUUID(),
+  );
+  const other = await f.hub.administration.createGroup(f.admin, { name: '其他维护团队' });
+  await grantMaintainer(f, uploader.id, other.id);
+  await f.hub.administration.removeGrant(f.admin, 'role_bindings', grant.id);
+  await client.get(`/api/ai/executions/${audit.id}`).expect(403);
+  await client.get(`/api/ai/executions/${audit.id}/events`).expect(403);
+  assert.deepEqual(await list(), []);
+  await assert.rejects(
+    f.hub.ai.runtime.submit(uploader.id, 'resource-audit', { version_id: intake.version_id }),
+    { code: 'AI_FORBIDDEN' },
+  );
+});
+
 test('业务目标在提交、读取时复核权限；工具不能绕过固定版本与文件边界', async (t) => {
   const f = await createTestHub(t, { ai: frameworkConfig() });
   const intake = await receiveSkill(f);
   const evidence = new AgentEvidenceService(
     { store: f.store, blobs: f.hub.blobs, identity: f.hub.identity },
     f.hub.assetAccess,
-    f.hub.content,
     f.hub.feedback,
   );
   await assert.rejects(() => evidence.read(f.reader.id, intake.version_id, 'SKILL.md', 1, 10));
@@ -238,7 +463,6 @@ function evidenceFor(f: TestHub) {
   return new AgentEvidenceService(
     { store: f.store, blobs: f.hub.blobs, identity: f.hub.identity },
     f.hub.assetAccess,
-    f.hub.content,
     f.hub.feedback,
   );
 }
@@ -248,6 +472,90 @@ test('文本搜索不把行号前缀当作正文命中', async (t) => {
   const intake = await receiveSkill(f);
   const result = await evidenceFor(f).search(f.admin.id, intake.version_id, '7:', 0);
   assert.deepEqual(result.matches, []);
+});
+
+test('候选版本的文本读取按单文件或搜索页记审计，纯权限复查没有读取记录', async (t) => {
+  const f = await createTestHub(t);
+  const slug = 'audit-page';
+  const bytes = await archive([
+    { path: 'SKILL.md', bytes: skillDocument(slug), executable: false },
+    ...Array.from({ length: 10 }, (_, index) => ({
+      path: `references/${index}.md`,
+      bytes: Buffer.from('可检索内容'),
+      executable: false,
+    })),
+  ]);
+  const receipt = await f.hub.intakes.receive(
+    f.admin,
+    bytes,
+    'skill.zip',
+    {
+      target: 'new',
+      kind: 'skill',
+      slug,
+      owner_group_id: f.teamId,
+      version_label: '1.0.0',
+    },
+    randomUUID(),
+  );
+  await f.worker.tick();
+  const intake = await f.hub.intakeQueries.getDetail(f.admin, receipt.intake_id);
+  assert(intake.version_id);
+  const evidence = evidenceFor(f);
+  Object.assign(f.hub.ai.runtime.config, frameworkConfig());
+  const task = await f.hub.ai.runtime.submit(f.admin.id, 'resource-audit', {
+    version_id: intake.version_id,
+  });
+  await f.hub.ai.principal(f.admin, task, true);
+  await assert.rejects(evidence.search(f.reader.id, intake.version_id, '可检索内容', 0), {
+    code: 'FORBIDDEN',
+  });
+  const read = await evidence.read(f.admin.id, intake.version_id, 'SKILL.md', 1, 3);
+  assert(read.text);
+  const first = await evidence.search(f.admin.id, intake.version_id, '可检索内容', 0);
+  assert.equal(first.next_offset, 10);
+  const next = await evidence.search(
+    f.admin.id,
+    intake.version_id,
+    '可检索内容',
+    first.next_offset,
+  );
+  assert.equal(next.next_offset, null);
+  assert.equal(first.matches.length + next.matches.length, 10);
+  const records = (await f.store.where('audit', 'entity_id', intake.version_id)).filter(
+    (row) => row.action === 'content.management_read',
+  );
+  assert(records.every((row) => row.actor_id === f.admin.id));
+  const details = records.map((row) => row.metadata);
+  assert.deepEqual(
+    details.filter((item) => item.tool === 'read_file'),
+    [{ tool: 'read_file', path: 'SKILL.md', start_line: 1, lines: 3 }],
+  );
+  assert.deepEqual(
+    details
+      .filter((item) => item.tool === 'search_files')
+      .sort((a, b) => Number(a.offset) - Number(b.offset)),
+    [
+      { tool: 'search_files', offset: 0, limit: 10 },
+      { tool: 'search_files', offset: 10, limit: 10 },
+    ],
+  );
+  assert.equal(records.length, 3);
+  const grant = await grantMaintainer(f, f.reader.id);
+  const readBlob = f.blobs.read.bind(f.blobs);
+  t.mock.method(
+    f.blobs,
+    'read',
+    async (ref: string) => {
+      const bytes = await readBlob(ref);
+      await f.hub.administration.removeGrant(f.admin, 'role_bindings', grant.id);
+      return bytes;
+    },
+    { times: 1 },
+  );
+  await assert.rejects(evidence.search(f.reader.id, intake.version_id, '可检索内容', 0), {
+    code: 'FORBIDDEN',
+  });
 });
 
 test('搜索命中超出单页上限时，被截断的文件标为未完整检查', async (t) => {
@@ -582,12 +890,14 @@ test('自动审计无模型或权限时跳过，并发及失败后的自动触�
   await f.hub.ai.runtime.store.put('ai_executions', { ...tasks[0], status: 'failed' });
   await f.hub.ai.autoSubmit(f.admin, 'resource-audit', intake.version_id);
   assert.equal((await f.hub.ai.runtime.store.list('ai_executions', { limit: 100 })).length, 1);
-  const role = await f.store.find('roles', 'key', 'admin');
-  assert(role);
-  await f.store.put('roles', {
-    ...role,
-    permissions: role.permissions.filter((permission) => !permission.startsWith('ai:')),
-  });
+  for (const key of ['admin', 'maintainer']) {
+    const role = await f.store.find('roles', 'key', key);
+    assert(role);
+    await f.store.put('roles', {
+      ...role,
+      permissions: role.permissions.filter((permission) => !permission.startsWith('ai:')),
+    });
+  }
   f.admin = await f.hub.identity.principal(f.admin.id);
   await receiveSkill(f, { slug: 'without-ai-permission' });
   assert.equal((await f.hub.ai.runtime.store.list('ai_executions', { limit: 100 })).length, 1);

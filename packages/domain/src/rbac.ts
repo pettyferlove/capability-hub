@@ -1,4 +1,6 @@
-import type { Principal } from './identity.js';
+import type { Principal, ScopeType } from './identity.js';
+
+type PermissionScope = Partial<Record<Exclude<ScopeType, 'platform'>, string>>;
 
 /**
  * 权限标识的唯一清单，形如 `域:动作`；判定按字面量精确匹配（见 {@link has}），
@@ -20,6 +22,14 @@ export const PERMISSIONS = [
   'asset:migrate',
 ] as const;
 
+/** 平台绑定对所有目标生效，其余绑定必须匹配目标的同类作用域。 */
+export function bindingMatchesScope(
+  binding: Principal['bindings'][number],
+  scope: PermissionScope,
+) {
+  return binding.scope_type === 'platform' || scope[binding.scope_type] === binding.scope_id;
+}
+
 /**
  * 按角色绑定的作用域判定权限：`platform` 绑定全局生效，其余绑定只有在调用方传入同名作用域 id 且相等时才生效；
  * 调用方没传的作用域一律按不匹配处理，因此漏传上下文得到的是拒绝而不是放行。
@@ -29,19 +39,19 @@ export const PERMISSIONS = [
  * @param permission - 须取自 {@link PERMISSIONS}；未知标识不会命中任何角色
  * @param context - 当前请求所处的作用域 id，未提供的作用域视作不匹配
  */
-export function has(
-  p: Principal,
-  permission: string,
-  context: { team?: string; source?: string; asset?: string; scenario?: string } = {},
-) {
+export function has(p: Principal, permission: string, context: PermissionScope = {}) {
   return (
     p.active &&
     p.bindings.some(
       (b) =>
-        (p.permissions[b.role_id] ?? []).includes(permission) &&
-        (b.scope_type === 'platform' || context[b.scope_type] === b.scope_id),
+        (p.permissions[b.role_id] ?? []).includes(permission) && bindingMatchesScope(b, context),
     )
   );
+}
+
+/** 未指定作用域时只检查是否持有权限，执行具体操作须用目标作用域调用 {@link has}。 */
+export function hasInAnyScope(p: Principal, permission: string) {
+  return p.active && p.bindings.some((b) => (p.permissions[b.role_id] ?? []).includes(permission));
 }
 
 /**
@@ -70,6 +80,7 @@ export const builtinRoles = [
     name: '资产维护者',
     key: 'maintainer',
     permissions: [
+      'ai:execute',
       'source:create',
       'source:manage',
       'source:share',

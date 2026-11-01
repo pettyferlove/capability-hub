@@ -158,6 +158,7 @@ export function AgentBrief({
   view,
   status,
   title,
+  readOnly,
   emptyLabel,
   error,
   open,
@@ -175,6 +176,7 @@ export function AgentBrief({
   view?: AiExecutionViewResponse;
   status?: Status;
   title: string;
+  readOnly: boolean;
   /** `status` 缺失时替代状态文案，用于区分「尚未发起」与「正在连接」。 */
   emptyLabel: string;
   error: string;
@@ -208,12 +210,15 @@ export function AgentBrief({
   const stateLabel = error
     ? '需要处理'
     : status === 'waiting_input'
-      ? '等待你的确认'
+      ? readOnly
+        ? '等待负责人确认'
+        : '等待你的确认'
       : status
         ? statusLabels[status]
         : emptyLabel;
   const action = !error && status === 'running' && view ? liveAction(view) : undefined;
   const line = error || briefLine(view, status, risk) || stateLabel;
+  const decisionLabel = readOnly ? '等待负责人决定' : '等待你的决定';
   const started =
     view?.activity.find((event) => event.type === 'execution.started')?.occurred_at ??
     view?.execution.created_at;
@@ -341,12 +346,12 @@ export function AgentBrief({
           {view && !error && <PhaseTrack view={view} labeled className="px-4 pt-1 pb-4" />}
           {question && typeof question === 'string' && (
             <section
-              aria-label="等待你的决定"
+              aria-label={decisionLabel}
               className="mx-4 mb-3 rounded-2xl border border-warning/25 bg-warning-soft/60 p-3 text-caption"
             >
               <p className="flex items-center gap-1.5 font-semibold text-warning">
                 <CirclePause size={13} />
-                等待你的决定
+                {decisionLabel}
               </p>
               <p className="mt-1 leading-5 text-ink">{question}</p>
             </section>

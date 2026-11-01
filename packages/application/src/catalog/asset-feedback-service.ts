@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { canonical, digest } from '@capability-hub/domain/canonical';
 import { fail, notFound } from '@capability-hub/domain/errors';
 import type { Principal } from '@capability-hub/domain/identity';
-import type { AssetFeedbackRecord } from '@capability-hub/domain/models';
+import type { AssetFeedbackRecord, VersionRecord } from '@capability-hub/domain/models';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
 import type { AssetFeedbackCommand, AssetFeedbackUpdateCommand } from './commands.js';
@@ -13,11 +13,7 @@ export class AssetFeedbackService {
   constructor(
     private readonly context: ApplicationContext,
     private readonly access: AssetAccessService,
-    private readonly onReported?: (
-      principal: Principal,
-      versionId: string,
-      feedbackId: string,
-    ) => Promise<void>,
+    private readonly onReported?: (version: VersionRecord, feedbackId: string) => Promise<void>,
   ) {}
 
   private async present(record: AssetFeedbackRecord, principal: Principal) {
@@ -83,7 +79,7 @@ export class AssetFeedbackService {
         revision: 1,
       });
       await this.context.store.audit(current.id, 'asset.feedback_submitted', version.id);
-      await this.onReported?.(current, version.id, record.id);
+      await this.onReported?.(version, record.id);
       return this.present(record, current);
     });
   }

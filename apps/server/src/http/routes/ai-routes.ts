@@ -43,10 +43,7 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
   });
   app.get(
     '/api/ai/catalog',
-    jsonRoute(async (_req, res) => {
-      await hub.ai.principal(res.locals.principal);
-      return runtime.catalog();
-    }),
+    jsonRoute((_req, res) => hub.ai.catalog(res.locals.principal)),
   );
   app.post(
     '/api/ai/executions',
@@ -114,8 +111,20 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
             throw error;
         }
       }
+      const shared =
+        !after &&
+        query.feedback_id &&
+        (!query.operation_id || query.operation_id === 'feedback-triage')
+          ? await hub.ai.sharedTriage(principal, query.feedback_id, query.version_id)
+          : undefined;
       return {
         items: visible,
+        ...(shared && {
+          automatic_triage: {
+            ...executionResponse(shared.execution),
+            owner_display_name: shared.ownerName,
+          },
+        }),
         next_cursor:
           rows.length === query.limit && last
             ? Buffer.from(JSON.stringify({ position: last.position, id: last.id })).toString(

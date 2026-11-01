@@ -101,11 +101,8 @@ export class HubServices {
     this.git = new GitRepositoryAdapter(config, this.credentials);
     this.assetAccess = new AssetAccessService(store, this.identity);
     this.assetManagement = new AssetManagementQueryService(context, this.assetAccess);
-    this.feedback = new AssetFeedbackService(
-      context,
-      this.assetAccess,
-      (principal, versionId, feedbackId) =>
-        this.ai.autoSubmit(principal, 'feedback-triage', versionId, feedbackId),
+    this.feedback = new AssetFeedbackService(context, this.assetAccess, (version, feedbackId) =>
+      this.ai.autoTriage(version, feedbackId),
     );
     this.community = new AssetCommunityService(context, this.assetAccess);
     this.catalog = new CatalogService(
@@ -123,7 +120,9 @@ export class HubServices {
       this.assetAccess,
       this.jobs,
       scanIsolated,
-      (requestedBy, versionId) => this.ai.autoSubmit(requestedBy, 'resource-audit', versionId),
+      async (requestedBy, versionId) => {
+        await this.ai.autoSubmit(requestedBy, 'resource-audit', versionId);
+      },
     );
     this.intakes = new IntakeService(
       context,
@@ -137,7 +136,9 @@ export class HubServices {
       context,
       this.assetAccess,
       this.idempotency,
-      (principal, versionId) => this.ai.autoSubmit(principal, 'resource-audit', versionId),
+      async (principal, versionId) => {
+        await this.ai.autoSubmit(principal, 'resource-audit', versionId);
+      },
     );
     this.lifecycle = new AssetLifecycleService(context, this.assetAccess, this.publications);
     this.audit = new AuditService(context, this.assetAccess);
@@ -165,7 +166,7 @@ export class HubServices {
       this.assetAccess,
       this.content,
       config,
-      new AgentEvidenceService(context, this.assetAccess, this.content, this.feedback),
+      new AgentEvidenceService(context, this.assetAccess, this.feedback),
     );
   }
 }

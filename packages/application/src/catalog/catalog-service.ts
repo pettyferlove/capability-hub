@@ -10,6 +10,37 @@ import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
 import type { AssetCommunityService } from './asset-community-service.js';
 
+const chineseWords = new Intl.Segmenter('zh', { granularity: 'word' });
+const han = /\p{Script=Han}/u;
+const singleHan = /^\p{Script=Han}$/u;
+const queryFillers = new Set(
+  '我 我想 想 想要 请 帮 帮我 找 查找 寻找 搜索 需要 适合 使用 可以 一个 相关 有关 的 了 与 和 或 及 是 在 用 给'.split(
+    ' ',
+  ),
+);
+
+function searchTerms(query: string) {
+  if (!han.test(query)) return query.split(/\s+/).filter(Boolean);
+  const words = new Set<string>();
+  for (const part of query.split(/(\p{Script=Han}+)/u)) {
+    if (han.test(part)) {
+      const terms = Array.from(chineseWords.segment(part), ({ segment }) => segment);
+      for (const [index, term] of terms.entries()) {
+        if (queryFillers.has(term)) continue;
+        if (!singleHan.test(term)) words.add(term);
+        else {
+          // 分词器未识别的复合词按相邻双字匹配，避免“风控”退化为“风险”或“控制”。
+          const next = terms[index + 1];
+          if (next && singleHan.test(next) && !queryFillers.has(next)) words.add(term + next);
+        }
+      }
+    } else {
+      for (const term of part.match(/[\p{L}\p{M}\p{N}.#+@/_-]+/gu) ?? []) words.add(term);
+    }
+  }
+  return words.size ? [...words] : [query.trim()];
+}
+
 /**
  * 只检索当前可分发的发布；缓存不保存用户身份或授权结果。
  *
@@ -290,22 +321,28 @@ export class CatalogService {
    * 检索实现细节，必须在 {@link CatalogService.search} 的事务内调用。
    *
    * 打分：slug 精确 100 / 前缀 40 / 包含 25，标签命中 20，描述命中 10，语言与框架
-   * 提示词每个 +2；有词时 score 为 0 的条目被丢弃，无词时按发布顺序全量返回。
+   * 提示词每个 +2。中文多词查询须覆盖至少两词且不少于半数，完整 slug 命中可直接入选。
    * `limit` 缺省 20；`counts` 在 `category` 过滤之前统计，`total` 是过滤之后的总数，
    * 两者不能互推。游标过期或与当前参数不匹配时报 400/`CURSOR_EXPIRED`。
    */
   private async searchSnapshot(p: Principal | null, input: CatalogSearchQuery) {
     const q = { ...input, q: input.q ?? '', limit: input.limit ?? 20 };
     const query = q.q.normalize('NFKC').toLowerCase();
-    const words = query.split(/\s+/).filter(Boolean);
+    const words = searchTerms(query);
+    const minimumMatches = Math.min(
+      words.length,
+      han.test(query) ? Math.max(2, Math.ceil(words.length / 2)) : 1,
+    );
     let results: CatalogMatch[] = [];
     for (const row of await this.visibleCatalog(p)) {
       const { asset: a, version: v, release: r, tags, normalizedTags, description: desc } = row;
       if (q.kind && a.kind !== q.kind) continue;
       if (q.scenario_id && !r.scenario_ids.includes(q.scenario_id)) continue;
       let score = 0;
+      let matched = 0;
       const reasons: string[] = [];
       for (const w of words) {
+        const previousScore = score;
         if (a.slug === w) {
           score += 100;
           reasons.push('名称精确匹配');
@@ -324,8 +361,9 @@ export class CatalogService {
           score += 10;
           reasons.push('描述匹配');
         }
+        if (score > previousScore) matched++;
       }
-      if (words.length && !score) continue;
+      if (matched < minimumMatches && !words.includes(a.slug)) continue;
       for (const hint of [...(q.languages ?? []), ...(q.frameworks ?? [])])
         if (tags.some((t: string) => t.toLowerCase().includes(hint.toLowerCase()))) score += 2;
       results.push({

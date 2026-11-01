@@ -1,7 +1,7 @@
 import { auditDefinitions } from '@capability-hub/domain/audit';
 import type { Principal } from '@capability-hub/domain/identity';
 import type { RecordStore } from '../ports/index.js';
-import { has } from '@capability-hub/domain/rbac';
+import { has, hasInAnyScope } from '@capability-hub/domain/rbac';
 import { z } from 'zod';
 import type { GitCredentialService } from '../credentials/git-credential-service.js';
 import type { IdentityService } from '../identity/identity-service.js';
@@ -47,7 +47,7 @@ export class ProfileService {
         .filter((group) => principal.groups.includes(group.id))
         .map(({ id, name }) => ({ id, name })),
       capabilities: {
-        can_ai: has(principal, 'ai:execute'),
+        can_ai: hasInAnyScope(principal, 'ai:execute'),
         can_admin: has(principal, 'identity:manage'),
         can_audit: has(principal, 'audit:read'),
         can_manage_assets: has(principal, 'asset:lifecycle'),

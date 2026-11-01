@@ -71,9 +71,13 @@ export class AssetAccessService {
   }
   /**
    * 候选内容只对维护者或该版本待审请求的审查者可见，否则抛 403/`FORBIDDEN`；
-   * 通过后每次调用都会写 `content.management_read` 审计，故不能当作无副作用的探测接口。
+   * 成功读取记 `content.management_read`；仅复查权限时显式传入 `false`。
    */
-  async requireCandidateAccess(principal: Principal, version: VersionRecord) {
+  async requireCandidateAccess(
+    principal: Principal,
+    version: VersionRecord,
+    audit: Record<string, unknown> | false = {},
+  ) {
     const a = await this.getAsset(version.asset_id);
     if (
       !this.canMaintain(principal, a) &&
@@ -86,7 +90,8 @@ export class AssetAccessService {
       ))
     )
       fail(403, 'FORBIDDEN', '无候选内容审查权限');
-    await this.store.audit(principal.id, 'content.management_read', version.id);
+    if (audit)
+      await this.store.audit(principal.id, 'content.management_read', version.id, '', audit);
   }
   /**
    * 仅 `approved_audience` 模式需要匹配；来源被屏蔽或分发已被撤销时一律不匹配，

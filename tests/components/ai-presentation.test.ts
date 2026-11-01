@@ -21,6 +21,39 @@ import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
 
 afterEach(cleanup);
 
+function renderBusinessPanel(props: Parameters<typeof BusinessAgentPanel>[0]) {
+  return render(
+    createElement(
+      HubCtx.Provider,
+      {
+        value: {
+          me: {
+            id: 'owner',
+            username: 'owner',
+            display_name: '维护者',
+            csrf_token: '',
+            groups: [],
+            features: { git_hosts: [] },
+            capabilities: {
+              can_ai: true,
+              can_admin: false,
+              can_audit: false,
+              can_publish: true,
+              can_review: false,
+            },
+          },
+          reviewCount: 0,
+          refresh: 0,
+          reload() {},
+          openPalette() {},
+          logout: async () => {},
+        },
+      },
+      createElement(BusinessAgentPanel, props),
+    ),
+  );
+}
+
 test('失败时间线显示具体原因及错误代码，避免只显示执行失败', () => {
   const error = {
     code: 'AI_OUTPUT_INVALID',
@@ -109,36 +142,7 @@ test('状态条接收实时活动，快速采纳复用人工意见，失败可�
     assert.equal(path, '/api/ai/executions/execution');
     return Response.json(view);
   });
-  render(
-    createElement(
-      HubCtx.Provider,
-      {
-        value: {
-          me: {
-            id: 'owner',
-            username: 'owner',
-            display_name: '维护者',
-            csrf_token: '',
-            groups: [],
-            features: { git_hosts: [] },
-            capabilities: {
-              can_ai: true,
-              can_admin: false,
-              can_audit: false,
-              can_publish: true,
-              can_review: false,
-            },
-          },
-          reviewCount: 0,
-          refresh: 0,
-          reload() {},
-          openPalette() {},
-          logout: async () => {},
-        },
-      },
-      createElement(BusinessAgentPanel, { versionId: 'version', title: '测试资源' }),
-    ),
-  );
+  renderBusinessPanel({ versionId: 'version', title: '测试资源' });
   await act(async () => {
     stream.enqueue(
       encoder.encode(
@@ -300,6 +304,64 @@ test('业务成果展示发现、行号证据、真实检查范围和人工采�
   assert(screen.getByText('SKILL.md:1–20'));
   assert(screen.getByText('未执行脚本'));
   assert(screen.getByText('人工已采纳'));
+});
+
+test('维护者从反馈详情打开同事的自动研判能看负责人和报告且没有确认或取消入口', async (t) => {
+  const view = executionView({
+    owner_id: 'colleague',
+    operation_id: 'feedback-triage',
+    status: 'waiting_input',
+    input: { version_id: 'version', feedback_id: 'feedback' },
+  });
+  view.artifacts = [
+    {
+      id: 'report',
+      name: 'assessment',
+      media_type: 'application/json',
+      digest: 'report',
+      content: businessReport,
+    },
+  ];
+  view.interactions = [
+    {
+      id: 'review',
+      status: 'pending',
+      revision: 1,
+      response: null,
+      expires_at: Date.now() + 60000,
+      request: { question: '是否采纳反馈研判？' },
+      response_schema: {},
+    },
+  ];
+  t.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    assert.equal(options.method ?? 'GET', 'GET');
+    if (path === '/api/ai/catalog')
+      return Response.json({ default_profile: '', profiles: [], operations: [] });
+    if (path.startsWith('/api/ai/executions?'))
+      return Response.json({
+        items: [],
+        next_cursor: null,
+        automatic_triage: { ...view.execution, owner_display_name: '林工' },
+      });
+    if (path.endsWith('/events'))
+      return new Response('', { headers: { 'Content-Type': 'text/event-stream' } });
+    assert.equal(path, '/api/ai/executions/execution');
+    return Response.json(view);
+  });
+  renderBusinessPanel({ versionId: 'version', feedbackId: 'feedback', title: '反馈测试' });
+  const toggle = await screen.findByRole('button', { name: '展开 Agent 实时状态' });
+  await waitFor(() => assert.match(toggle.textContent ?? '', /等待负责人确认/));
+  fireEvent.click(toggle);
+  assert(await screen.findByText(/负责人 林工/));
+  assert.equal(screen.queryByRole('button', { name: '取消任务' }), null);
+  assert.equal(screen.queryByRole('button', { name: '前往确认' }), null);
+  assert.equal(screen.queryByRole('radio', { name: '采纳研判' }), null);
+  fireEvent.click(screen.getByRole('tab', { name: /成果/ }));
+  assert(
+    await within(screen.getByRole('tabpanel', { name: /成果/ })).findByText(
+      businessReport.assessment.summary,
+    ),
+  );
 });
 
 test('反馈写回必须明确采纳；改为不采纳会清除写回选择', () => {

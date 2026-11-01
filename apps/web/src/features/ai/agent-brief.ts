@@ -184,7 +184,7 @@ export function recentTrail(view: AiExecutionViewResponse, limit = 5): TrailItem
         id: item.id,
         label: '人工确认',
         detail: pending
-          ? '等待你的决定'
+          ? '等待人工决定'
           : response.approved === true
             ? '已采纳'
             : response.approved === false

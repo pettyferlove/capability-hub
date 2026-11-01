@@ -4,7 +4,7 @@
 
 | 方法与路径                                                        | 输入/结果                                                                                  |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| GET `/api/ai/catalog`                                             | 操作及输入/输出/人工回答 JSON Schema，模型 ID/标签/协议/model；不含 URL 和凭据             |
+| GET `/api/ai/catalog`                                             | 可用操作的输入/输出/人工回答 Schema，模型 ID/标签/协议/model，省略 URL 和凭据              |
 | POST `/api/ai/executions`                                         | `{operation_id, model_profile?, input}` → 201 执行 DTO、ETag                               |
 | GET `/api/ai/executions?limit=30&cursor=…`                        | 当前用户的可读执行，按创建时间和 ID 倒序，`items` / `next_cursor`                          |
 | GET `/api/ai/executions/:id`                                      | `{execution, interactions, artifacts, activity, activity_truncated, watermark}`、执行 ETag |
@@ -18,7 +18,7 @@
 
 ## 业务任务
 
-首批操作 `resource-audit` 输入 `{version_id}`，`feedback-triage` 输入 `{version_id, feedback_id}`。完整业务规则见 [反馈研判与资源审计](../design/business-agents.md)。列表可附加 `operation_id`、`version_id`、`feedback_id`，过滤仍遵循当前用户和资源权限；游标推进扫描页，空结果但有 `next_cursor` 时仍可继续。
+`resource-audit` 输入 `{version_id}`，`feedback-triage` 输入 `{version_id, feedback_id}`。列表可按操作、版本和反馈过滤。`items` 和游标仅分页本人任务，空页仍可有 `next_cursor`。按 `feedback_id` 查询的首页另附当前维护者可读的 `automatic_triage`（执行 DTO 加 `owner_display_name`），该字段不占分页名额。业务权限见 [反馈研判与资源审计](../design/business-agents.md)。
 
 人工回答为 `{approved, comment?, apply_feedback?}`；写回反馈需要明确采纳与维护权限。交互 revision 只保护回答，业务写回另校验反馈 revision。
 

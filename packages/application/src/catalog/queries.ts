@@ -13,11 +13,11 @@ export interface KeywordOptionsQuery {
 }
 
 /**
- * 目录检索输入，来自 HTTP 的 `GET /api/catalog` query（`catalogSearchQuerySchema` 解析）；
+ * 目录检索输入，来自 HTTP 的 `GET /api/assets` query（`catalogSearchQuerySchema` 解析）；
  * 可见性由服务端按受众与授权重新判定，客户端传入的过滤条件只做收窄。
  */
 export interface CatalogSearchQuery {
-  /** 空白切分后按词命中名称/标签/描述，上限 500 字符；空串表示按发布时间倒序浏览。 */
+  /** 中文按词、其他文本按空白匹配名称/标签/描述，上限 500 字符；空串按发布时间倒序浏览。 */
   q?: string;
   kind?: AssetKind;
   category?: Policy['category'];

@@ -19,6 +19,7 @@ import {
   aiExecutionListResponseSchema,
   aiExecutionResponseSchema,
   type AiCatalogResponse,
+  type AiExecutionListResponse,
   type AiExecutionResponse,
 } from '@capability-hub/contracts';
 import { api } from '../../shared/api/client.js';
@@ -102,6 +103,7 @@ function BusinessWorkspace({
   const [catalog, setCatalog] = useState<AiCatalogResponse>();
   const [profile, setProfile] = useState('');
   const [history, setHistory] = useState<AiExecutionResponse[]>([]);
+  const [automaticOwner, setAutomaticOwner] = useState('');
   const [historyReady, setHistoryReady] = useState(false);
   const [selected, setSelected] = useState('');
   const [refresh, setRefresh] = useState(0);
@@ -128,12 +130,14 @@ function BusinessWorkspace({
           ...(feedbackId ? { feedback_id: feedbackId } : {}),
         });
         const items: AiExecutionResponse[] = [];
+        let automatic: AiExecutionListResponse['automatic_triage'];
         let cursor: string | null = null;
         do {
           if (cursor) params.set('cursor', cursor);
           const page = aiExecutionListResponseSchema.parse(
             await api('/api/ai/executions?' + params.toString(), { signal: controller.signal }),
           );
+          automatic ??= page.automatic_triage;
           items.push(...page.items);
           cursor = page.next_cursor;
         } while (
@@ -142,9 +146,15 @@ function BusinessWorkspace({
             (onSuggestion && !items.some((item) => item.status === 'succeeded')))
         );
         if (!controller.signal.aborted) {
-          setHistory(items);
+          const tasks = automatic
+            ? [automatic, ...items.filter((item) => item.id !== automatic.id)]
+            : items;
+          setAutomaticOwner(automatic?.owner_display_name ?? '');
+          setHistory(tasks);
           setHistoryReady(true);
-          setSelected((value) => value || items[0]?.id || '');
+          setSelected((value) =>
+            tasks.some((item) => item.id === value) ? value : tasks[0]?.id || '',
+          );
         }
       } catch (failure) {
         if (!controller.signal.aborted)
@@ -156,10 +166,11 @@ function BusinessWorkspace({
   useEffect(() => {
     const latest = execution.view?.execution;
     if (latest) setHistory((items) => items.map((item) => (item.id === latest.id ? latest : item)));
-    if (latest?.status === 'succeeded') completed.current?.(latest);
-  }, [execution.view?.execution.id, execution.view?.execution.status]);
+    if (latest?.status === 'succeeded' && latest.owner_id === me?.id) completed.current?.(latest);
+  }, [execution.view?.execution.id, execution.view?.execution.status, me?.id]);
   const view = execution.view?.execution.id === selected ? execution.view : undefined;
   const selectedRecord = view?.execution ?? history.find((item) => item.id === selected);
+  const shared = !!selectedRecord && selectedRecord.owner_id !== me?.id;
   const active = history.some((item) =>
     ['queued', 'running', 'waiting_input'].includes(
       item.id === selected ? (selectedRecord?.status ?? item.status) : item.status,
@@ -243,7 +254,8 @@ function BusinessWorkspace({
             toggle.current?.focus({ preventScroll: true });
             void start();
           }}
-          title={feedbackId ? '反馈研判' : '资源审计'}
+          title={shared ? '共享自动研判（只读）' : feedbackId ? '反馈研判' : '资源审计'}
+          readOnly={shared}
           emptyLabel={!catalog ? '正在连接' : !profile ? '尚未配置模型' : '尚未发起'}
           error={error || execution.error}
           open={open}
@@ -272,6 +284,7 @@ function BusinessWorkspace({
             <div className="min-w-0 flex-1">
               <p className="truncate font-semibold">{title}</p>
               <p className="mt-1 text-caption text-muted-ink">
+                {shared && `共享自动研判 · 负责人 ${automaticOwner} · 只读 · `}
                 {tools.length ? `已调用 ${tools.length} 次工具 · ` : ''}
                 {execution.connection || '任务记录自动保存'}
               </p>
@@ -310,6 +323,7 @@ function BusinessWorkspace({
                   >
                     {history.map((item) => (
                       <option key={item.id} value={item.id}>
+                        {item.owner_id !== me?.id && '共享自动研判 · '}
                         {new Date(item.created_at).toLocaleString()} ·{' '}
                         {
                           statusLabels[

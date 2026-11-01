@@ -151,7 +151,7 @@ export function useAiExecution(id: string, refresh: number) {
           cursor = `${id}:operator:${latest.watermark}`;
           if (!['queued', 'running'].includes(latest.execution.status)) {
             setConnection(
-              latest.execution.status === 'waiting_input' ? '等待你的回答' : '执行已结束',
+              latest.execution.status === 'waiting_input' ? '等待人工回答' : '执行已结束',
             );
             return;
           }

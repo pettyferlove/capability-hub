@@ -142,9 +142,15 @@ export const aiCatalogResponseSchema = z
   })
   .strict();
 
-/** 执行列表：`next_cursor` 为 `null` 表示没有后续页。 */
+/** `items` 分页列出本人任务；按反馈查询时，首页另附当前维护者可读的自动研判。 */
 export const aiExecutionListResponseSchema = z
-  .object({ items: z.array(aiExecutionResponseSchema), next_cursor: z.string().nullable() })
+  .object({
+    items: z.array(aiExecutionResponseSchema),
+    next_cursor: z.string().nullable(),
+    automatic_triage: aiExecutionResponseSchema
+      .extend({ owner_display_name: z.string() })
+      .optional(),
+  })
   .strict();
 
 /** 事件类型全集，`execution.*` 为状态迁移、`step.*`/`tool.*` 为过程记录、`message.*` 为流式文本。 */
