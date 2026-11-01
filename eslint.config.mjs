@@ -12,12 +12,13 @@ export default defineConfig(
     rules: {
       'tsdoc/syntax': 'warn',
       'jsdoc/no-types': 'error',
-      // publicOnly 只覆盖导出函数与类，选择器补上导出的接口、类型别名和常量。
+      // publicOnly 只覆盖导出函数，选择器补上导出的类、接口、类型别名和常量。
       'jsdoc/require-jsdoc': [
         'warn',
         {
           publicOnly: true,
           contexts: [
+            'ExportNamedDeclaration > ClassDeclaration',
             'ExportNamedDeclaration > TSInterfaceDeclaration',
             'ExportNamedDeclaration > TSTypeAliasDeclaration',
             'ExportNamedDeclaration > VariableDeclaration',
@@ -30,7 +31,7 @@ export default defineConfig(
     // Tailwind 类串与图标名常量由取值本身说明用途，逐条 TSDoc 只会复述标识符。
     files: [
       'apps/web/src/**/styles.ts',
-      'apps/web/src/shared/styles/*.ts',
+      'apps/web/src/shared/styles/recipes.ts',
       'apps/web/src/shared/icons/*.ts',
       'apps/web/src/shared/components/*-icons.ts',
     ],
