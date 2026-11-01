@@ -1,11 +1,19 @@
 /**
- * 业务页右侧的 Agent 停靠面板：`feedbackId` 存在时跑 `feedback-triage`，否则跑 `resource-audit`，
+ * 业务页的 Agent 停靠面板（默认在右下角；位于抽屉内且抽屉左侧放得下时，停靠在抽屉左上角外侧）：`feedbackId` 存在时跑 `feedback-triage`，否则跑 `resource-audit`，
  * 通过 `/api/ai/executions` 拉取该版本/反馈的历史执行（最多回溯到 30 条或出现成功记录为止），
  * 并把研判结论以 `AuditSuggestion` 回传给父级用于预填发布表单。
  *
  * 工作区进度复用 {@link useAiExecution} 的事件流，写操作统一走 {@link useAiCommand}（带幂等键）。
  */
-import { useEffect, useLayoutEffect, useMemo, useId, useRef, useState } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useId,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import {
   aiCatalogResponseSchema,
   aiExecutionListResponseSchema,
@@ -32,6 +40,7 @@ import { useAiCommand } from './use-ai-command.js';
 import { activityItems } from './activity.js';
 import { QuickReview, type ReviewOrigin } from './quick-review.js';
 import { AgentBrief } from './AgentBrief.js';
+import { PhaseTrack } from './PhaseTrack.js';
 import {
   acceptedSuggestion,
   pendingSuggestion,
@@ -190,8 +199,36 @@ function BusinessWorkspace({
   const collapse = () => {
     setOpen(false);
   };
+  const dock = useRef<HTMLElement>(null);
+  const [beside, setBeside] = useState<CSSProperties>();
+  useLayoutEffect(() => {
+    // 408 = 状态卡 372 + 与抽屉间距 20 + 窗口边距 16。用 offset 系列而非 getBoundingClientRect，
+    // 抽屉进出场的位移动画不应影响停靠判断。
+    const sheet = dock.current?.closest<HTMLElement>('[role="dialog"]');
+    const viewport = sheet?.offsetParent;
+    if (!sheet || !viewport) return;
+    const place = () =>
+      setBeside(
+        sheet.offsetLeft >= 408
+          ? {
+              position: 'fixed',
+              top: sheet.offsetTop + 20,
+              right: viewport.clientWidth - sheet.offsetLeft + 20,
+              bottom: 'auto',
+              maxWidth: sheet.offsetLeft - 36,
+            }
+          : undefined,
+      );
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(sheet);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
   return (
     <aside
+      ref={dock}
+      style={beside}
       className={cn(agentDockStyles, className)}
       aria-label={feedbackId ? 'AI 反馈研判' : 'AI 资源审计'}
     >
@@ -230,13 +267,14 @@ function BusinessWorkspace({
             !open && 'hidden',
           )}
         >
-          <header className="flex shrink-0 items-center gap-3 border-b border-[color:var(--line)] px-4 py-3">
+          <header className="flex shrink-0 items-start gap-3 border-b border-[color:var(--line)] px-4 py-3">
             <div className="min-w-0 flex-1">
               <p className="truncate font-semibold">{title}</p>
               <p className="mt-1 text-caption text-muted-ink">
                 {tools.length ? `已调用 ${tools.length} 次工具 · ` : ''}
                 {execution.connection || '任务记录自动保存'}
               </p>
+              {view && <PhaseTrack view={view} labeled className="mt-3" />}
             </div>
             <button
               type="button"

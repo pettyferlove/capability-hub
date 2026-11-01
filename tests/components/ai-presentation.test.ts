@@ -12,7 +12,7 @@ import { ExecutionPanel } from '../../apps/web/src/features/ai/ExecutionPanel.js
 import { ExecutionDetails } from '../../apps/web/src/features/ai/ExecutionDetails.js';
 import { ExecutionResult } from '../../apps/web/src/features/ai/ExecutionResult.js';
 import { ActivityFeed } from '../../apps/web/src/features/ai/ActivityFeed.js';
-import { activityItems } from '../../apps/web/src/features/ai/activity.js';
+import { activityItems, businessPhase } from '../../apps/web/src/features/ai/activity.js';
 import { advanceStreamCursor } from '../../apps/web/src/features/ai/stream-text.js';
 import { InteractionForm } from '../../apps/web/src/features/ai/InteractionForm.js';
 import { BusinessAgentPanel } from '../../apps/web/src/features/ai/BusinessAgentPanel.js';
@@ -606,6 +606,57 @@ test('工具按调用编号归并，穿插于 Agent 输出之间，失败和中�
   view.execution.status = 'cancelled';
   const stopped = activityItems(view).find((item) => item.id === 'tool-three');
   assert.equal(stopped?.kind === 'tool' && stopped.state, 'interrupted');
+});
+
+test('研判阶段由步骤与人工交互推断，只进不退，中断时停在原阶段', () => {
+  const step = (seq: number, type: string, stepId: string) =>
+    activityEvent(seq, type, {
+      step_id: stepId,
+      ...(type === 'step.completed' ? { duration_ms: 1 } : {}),
+    });
+  const interaction = (status: 'pending' | 'answered') => ({
+    id: 'review',
+    status,
+    revision: 1,
+    request: {},
+    response_schema: {},
+    response: null,
+    expires_at: Date.now(),
+  });
+  const cases: [string, Partial<AiExecutionResponse>, unknown[], unknown[], number, boolean][] = [
+    ['排队', { status: 'queued' }, [], [], -1, false],
+    ['开始运行', { status: 'running' }, [], [], 0, false],
+    [
+      '整理报告后调查步骤收尾',
+      { status: 'running' },
+      [
+        step(1, 'step.started', 'investigate'),
+        step(2, 'step.started', 'assessment'),
+        step(3, 'step.completed', 'assessment'),
+        step(4, 'step.completed', 'investigate'),
+      ],
+      [],
+      1,
+      false,
+    ],
+    ['等待人工', { status: 'waiting_input' }, [], [interaction('pending')], 2, false],
+    ['人工已答复', { status: 'running' }, [], [interaction('answered')], 3, false],
+    [
+      '记录失败',
+      { status: 'failed' },
+      [step(1, 'step.started', 'record-assessment')],
+      [interaction('answered')],
+      3,
+      true,
+    ],
+    ['完成', { status: 'succeeded' }, [], [], 4, false],
+  ];
+  for (const [name, execution, activity, interactions, index, halted] of cases) {
+    const view = executionView({ operation_id: 'resource-audit', ...execution });
+    view.activity = activity as typeof view.activity;
+    view.interactions = interactions as typeof view.interactions;
+    assert.deepEqual(businessPhase(view), { index, halted }, name);
+  }
 });
 
 test('人工回答后在协作过程留下决策记录，不再提供确认表单', () => {

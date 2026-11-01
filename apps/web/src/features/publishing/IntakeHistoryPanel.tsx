@@ -214,7 +214,7 @@ export function IntakeHistoryPanel({
             <X size={20} />
           </button>
         </div>
-        <div className="relative flex min-h-0 flex-1 flex-col lg:static">
+        <div className="relative flex min-h-0 flex-1 flex-col">
           <div
             data-intake-scroll
             className={cn(
@@ -242,7 +242,7 @@ export function IntakeHistoryPanel({
           </div>
           {detail?.version_id && (
             <BusinessAgentPanel
-              className="absolute lg:top-5 lg:bottom-auto lg:right-[calc(100%_+_20px)] lg:max-w-[calc(100vw_-_100%_-_40px)]"
+              className="absolute"
               key={detail.version_id}
               versionId={detail.version_id}
               onAdopt={setOrigin}

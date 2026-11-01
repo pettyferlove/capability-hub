@@ -129,3 +129,37 @@
     opacity: 1;
   }
 }
+@keyframes agent-dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+@keyframes agent-halo {
+  from {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.32);
+  }
+}
+@keyframes agent-blip {
+  from {
+    opacity: 0.28;
+    transform: scale(0.82);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.18);
+  }
+}
+@keyframes agent-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(200%);
+  }
+}

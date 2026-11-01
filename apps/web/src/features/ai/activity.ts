@@ -96,6 +96,36 @@ export function activityItems(view: AiExecutionViewResponse): ActivityItem[] {
   ].sort((left, right) => left.seq - right.seq);
 }
 
+/** 业务研判固定的四个阶段，与服务端「调查 → 报告 → 人工确认 → 记录」流程一一对应。 */
+export const businessPhases = ['查阅证据', '整理报告', '人工确认', '记录结论'] as const;
+
+/**
+ * 业务研判（资源审计、反馈研判）当前所处阶段，对应 `businessPhases` 的下标：-1 为尚未开始，
+ * 4 为全部完成。人工确认阶段没有步骤事件，只能由交互状态推断；活动窗口被截断时按仍可见的最晚
+ * 证据定位，因此阶段只进不退。`halted` 表示执行停在失败、取消或超时，阶段保留在中断处。
+ */
+export function businessPhase(view: AiExecutionViewResponse): { index: number; halted: boolean } {
+  const { status } = view.execution;
+  if (status === 'succeeded') return { index: 4, halted: false };
+  const steps: Record<string, number> = {
+    investigate: 0,
+    assessment: 1,
+    'repair-output': 1,
+    'record-assessment': 3,
+  };
+  let index = -1;
+  for (const event of view.activity)
+    if (event.type.startsWith('step.') && typeof event.data.step_id === 'string')
+      index = Math.max(index, steps[event.data.step_id] ?? -1);
+  if (view.execution.message_blocks.some((block) => block.message_id.startsWith('assessment:')))
+    index = Math.max(index, 1);
+  if (view.interactions.some((item) => item.status === 'answered' || item.status === 'applied'))
+    index = Math.max(index, 3);
+  else if (status === 'waiting_input' || view.interactions.length) index = Math.max(index, 2);
+  if (status === 'running') index = Math.max(index, 0);
+  return { index, halted: ['failed', 'cancelled', 'timed_out'].includes(status) };
+}
+
 /**
  * 角色在协作面板上的进度文案，按「步骤事件 → 已输出消息块 → 执行状态」逐级回退。
  *
