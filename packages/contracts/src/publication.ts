@@ -28,7 +28,8 @@ export const submitPublicationRequestSchema = z
 /**
  * 审核决策：`policy_digest` 由客户端原样回传读取申请时拿到的值，不一致说明策略已变（409）；
  * 并发保护另由 `If-Match` 修订号承担（缺失 428、不符 412），并用幂等键防重复发版。
- * `accepted_warnings` 最多 100 条，须与本次扫描的 warning 一一对应且各附理由，否则 422。
+ * `accepted_warnings` 须与本次扫描的 warning 一一对应且各附理由，否则 422；条数上限须不小于
+ * 扫描可能产生的 warning 数（1000 条提示加一条 `SCAN_TRUNCATED`）。
  */
 export const publicationDecisionRequestSchema = z
   .object({
@@ -39,7 +40,7 @@ export const publicationDecisionRequestSchema = z
       .array(
         z.object({ finding_id: z.string(), reason: z.string().trim().min(1).max(2000) }).strict(),
       )
-      .max(100)
+      .max(1001)
       .default([]),
   })
   .strict();

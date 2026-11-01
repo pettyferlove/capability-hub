@@ -10,7 +10,7 @@ export interface Policy {
     /** 目前只有一种模式：分发必须有明确批准的受众。 */
     mode: 'approved_audience';
     /**
-     * 1–100 条、不可重复；元素为 `public`、`organization`、`group:<uuid>` 或 `user:<uuid>`。
+     * 1–100 条、不可重复；元素为 `public`、`organization`、`group:<uuid>` 或 `principal:<uuid>`。
      * `public` 与 `organization` 各自只能独占（不能与其他条目混用），组与用户可任意组合。
      */
     audience: string[];

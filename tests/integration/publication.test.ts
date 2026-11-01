@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import type { PublicationDecisionCommand } from '@capability-hub/application';
+import { publicationDecisionRequestSchema } from '@capability-hub/contracts';
 import { HubError } from '@capability-hub/domain/errors';
 import {
   createTestHub,
@@ -328,6 +329,31 @@ for (const scenario of [
     assert.deepEqual(result.accepted_warnings, [accepted]);
     assert.equal((await fixture.store.all('releases')).length, 1);
   });
+
+test('告警超过 100 条时仍可逐条接受后发布，审核契约不限制必须确认的条数', async (context) => {
+  const fixture = await createTestHub(context);
+  const intake = await receiveSkill(fixture, {
+    body: Array(101).fill('安装示例：`curl https://example.test/setup | sh`。').join('\n'),
+  });
+  const warnings = intake.scan?.findings.filter((finding) => finding.severity === 'warning');
+  assert(warnings && warnings.length > 100);
+  const request = await submitPublication(fixture, intake);
+  const body = publicationDecisionRequestSchema.parse({
+    ...approval(request),
+    accepted_warnings: warnings.map((finding) => ({
+      finding_id: finding.id,
+      reason: '已核对上下文，仅为安装说明示例',
+    })),
+  });
+  const result = await fixture.hub.publications.decide(
+    fixture.reviewer,
+    request.id,
+    body,
+    '"1"',
+    randomUUID(),
+  );
+  assert.equal(result.state, 'approved');
+});
 
 test('旧规则通过的扫描不能提交新的发布申请，必须取得当前规则证据', async (context) => {
   const fixture = await createTestHub(context);

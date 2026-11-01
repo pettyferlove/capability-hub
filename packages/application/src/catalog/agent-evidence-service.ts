@@ -102,7 +102,8 @@ export class AgentEvidenceService {
    * `truncated` 为 true，`end_line` 是实际返回的最后一行。清单里没有的路径抛 404。
    *
    * 不可读的情形不抛错，而是返回空 `text` 与 `unavailable`：文件大于 512000 字节、
-   * 非 UTF-8、含 NUL 字节；调用方必须按“未检查”处理这些路径，不能当成空文件。
+   * 非 UTF-8、含 NUL 字节，或起始行单行就超过字符预算；调用方必须按“未检查”处理，
+   * 不能当成空文件。
    * 无可读权限时改走管理态（候选审查）路径重新取字节的授权。
    */
   async read(ownerId: string, id: string, path: string, start: number, count: number) {
@@ -158,6 +159,16 @@ export class AgentEvidenceService {
       selected.push(line);
       length += line.length + 1;
     }
+    if (!selected.length && start <= lines.length)
+      return {
+        path,
+        unavailable: `第 ${start} 行超过单次读取上限，请从下一行继续，并将该行标记未检查`,
+        total_lines: lines.length,
+        start_line: start,
+        end_line: start,
+        text: '',
+        truncated: true,
+      };
     return {
       path,
       digest: file.sha256,
@@ -173,25 +184,32 @@ export class AgentEvidenceService {
    * 全版本子串搜索，大小写不敏感、非正则，每行结果截断到 500 字符。
    *
    * 一次只扫 10 个文件、最多 40 条命中，避免单次工具调用把整个资源包读进上下文；
-   * 因预算被截断或不可读（见 {@link AgentEvidenceService.read}）的文件记入
+   * 因预算被截断、不可读（见 {@link AgentEvidenceService.read}）或命中超出上限的文件记入
    * `partial_files`，所以结果是有意不完整的，需配合 `next_offset` 继续扫描。
+   * 只匹配行正文，不匹配 `read` 附加的行号前缀。
    */
   async search(ownerId: string, id: string, query: string, offset: number) {
     const { version } = await this.version(ownerId, id);
+    const needle = query.toLowerCase();
     const matches: { path: string; line: number; text: string }[] = [];
     const skipped: string[] = [];
     // 分页扫描有限文件，避免一次工具调用隐式加载整个资源包。
     for (const file of version.files.slice(offset, offset + 10)) {
       const result = await this.read(ownerId, id, file.path, 1, 200);
-      if (result.truncated || result.unavailable) skipped.push(file.path);
+      let partial = !!(result.truncated || result.unavailable);
       for (const line of result.text.split('\n')) {
-        if (line.toLowerCase().includes(query.toLowerCase()) && matches.length < 40)
+        const separator = line.indexOf(': ');
+        const body = line.slice(separator + 2).toLowerCase();
+        if (separator < 0 || !body.includes(needle)) continue;
+        if (matches.length < 40)
           matches.push({
             path: file.path,
-            line: Number(line.split(':', 1)[0]),
+            line: Number(line.slice(0, separator)),
             text: line.slice(0, 500),
           });
+        else partial = true;
       }
+      if (partial) skipped.push(file.path);
     }
     return {
       matches,

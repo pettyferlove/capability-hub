@@ -33,7 +33,7 @@ export interface PublicationDecisionCommand {
   /** 申请冻结时算出的摘要原值，不符即 409/`POLICY_MISMATCH`，防止按过期证据决策。 */
   policy_digest: string;
   /**
-   * 逐条接受本次扫描的 warning 级 finding，上限 100 条：
+   * 逐条接受本次扫描的 warning 级 finding，上限 1001 条：
    * `finding_id` 必须来自当前扫描、不可重复，`reason` 不得为空（1–2000 字符），
    * 否则 422/`INVALID_WARNING_ACCEPTANCE`；漏接受任一告警则 422/`WARNING_ACCEPTANCE_REQUIRED`。
    */

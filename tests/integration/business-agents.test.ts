@@ -234,6 +234,38 @@ test('业务目标在提交、读取时复核权限；工具不能绕过固定�
   );
 });
 
+function evidenceFor(f: TestHub) {
+  return new AgentEvidenceService(
+    { store: f.store, blobs: f.hub.blobs, identity: f.hub.identity },
+    f.hub.assetAccess,
+    f.hub.content,
+    f.hub.feedback,
+  );
+}
+
+test('文本搜索不把行号前缀当作正文命中', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f);
+  const result = await evidenceFor(f).search(f.admin.id, intake.version_id, '7:', 0);
+  assert.deepEqual(result.matches, []);
+});
+
+test('搜索命中超出单页上限时，被截断的文件标为未完整检查', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f, { body: Array(45).fill('标记').join('\n') });
+  const result = await evidenceFor(f).search(f.admin.id, intake.version_id, '标记', 0);
+  assert.equal(result.matches.length, 40);
+  assert.deepEqual(result.partial_files, ['SKILL.md']);
+});
+
+test('单行超过读取上限时明确返回不可读，不让调查停在同一行', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f, { body: 'a'.repeat(25000) });
+  const result = await evidenceFor(f).read(f.admin.id, intake.version_id, 'SKILL.md', 8, 10);
+  assert.equal(result.text, '');
+  assert(result.unavailable);
+});
+
 test('模型伪造未读取文件的引用时任务失败，不生成可采纳报告', async (t) => {
   const provider = await fixture('openai', 'tools', false, {
     ...script,

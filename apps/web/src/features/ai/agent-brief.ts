@@ -19,6 +19,7 @@ import { activityItems } from './activity.js';
 import { eventLabel, jsonObject, toolLabels } from './presentation.js';
 
 type Status = AiExecutionResponse['status'];
+
 /** 点阵在运行中可切换的图形，与当前动作类型对应。 */
 export type Glyph = 'work' | 'read' | 'search' | 'browse' | 'think' | 'report';
 
