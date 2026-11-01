@@ -5,3 +5,8 @@ output/
 packages/contracts/schemas/
 # Drizzle 的迁移文件和快照属于版本历史，不由格式化命令改写。
 **/persistence/*/migrations/
+# pnpm 自己维护锁文件格式；本地草稿与 IDE 目录不属于仓库内容。
+pnpm-lock.yaml
+.agents/local/
+.idea/
+.pnpm-store/

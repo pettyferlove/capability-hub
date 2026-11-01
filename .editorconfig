@@ -1,0 +1,14 @@
+# 编辑器设置与 Prettier 输出保持一致，避免保存时改写格式。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = true
+
+# Markdown 行尾双空格是硬换行，删除会改变渲染结果。
+[*.md]
+trim_trailing_whitespace = false
