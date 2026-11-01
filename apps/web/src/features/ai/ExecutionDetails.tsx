@@ -1,5 +1,15 @@
 import type { AiEventResponse, AiExecutionViewResponse } from '@capability-hub/contracts';
-import { Activity, Braces, ChevronDown, Clock3, MessageSquare } from '../../shared/icons/lucide.js';
+import {
+  Activity,
+  Braces,
+  ChevronDown,
+  Clock3,
+  FileText,
+  MessageSquare,
+  Pencil,
+  Sparkles,
+  Wrench,
+} from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import { eventLabel, jsonObject, statusLabels } from './presentation.js';
 import {
@@ -9,6 +19,14 @@ import {
   metricStyles,
   readingWidthStyles,
 } from './styles.js';
+
+function eventTone(type: AiEventResponse['type']) {
+  if (type.endsWith('failed') || type === 'execution.timed_out') return 'bg-danger';
+  if (type === 'execution.waiting_input' || type.startsWith('interaction.')) return 'bg-warning';
+  if (type === 'execution.completed') return 'bg-success';
+  if (type.startsWith('tool.') || type.startsWith('message.')) return 'bg-muted-ink/35';
+  return 'bg-brand';
+}
 
 /**
  * 「运行详情」页签：用量概览、任务元信息、已作答的人工决定与事件时间线，末尾附原始输入/结果/成果件。
@@ -30,19 +48,22 @@ export function ExecutionDetails({
     return label ? [{ ...event, label }] : [];
   });
   const metrics = [
-    ['模型请求', execution.usage.requests, '次'],
-    ['工具调用', execution.usage.tools, '次'],
-    ['输入用量', execution.usage.input_tokens, 'token'],
-    ['输出用量', execution.usage.output_tokens, 'token'],
+    ['模型请求', execution.usage.requests, '次', Sparkles],
+    ['工具调用', execution.usage.tools, '次', Wrench],
+    ['输入用量', execution.usage.input_tokens, 'token', FileText],
+    ['输出用量', execution.usage.output_tokens, 'token', Pencil],
   ] as const;
   return (
     <div className={cn(readingWidthStyles, 'space-y-6')}>
       <section aria-label="运行用量">
         <h2 className="mb-3 text-section">运行概览</h2>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {metrics.map(([label, number, unit]) => (
+          {metrics.map(([label, number, unit, Icon]) => (
             <div key={label} className={metricStyles}>
-              <span className="text-caption text-muted-ink">{label}</span>
+              <span className="flex items-center gap-1.5 text-caption text-muted-ink">
+                <Icon size={13} className="text-brand" />
+                {label}
+              </span>
               <span className="text-xl font-semibold tabular-nums">
                 {number.toLocaleString()}
                 <span className="ml-1.5 text-caption font-normal text-muted-ink">{unit}</span>
@@ -113,26 +134,41 @@ export function ExecutionDetails({
         </h2>
         <p className="mt-1 mb-4 text-caption text-muted-ink">展示已保存的活动记录与当前进展。</p>
         {timeline.length ? (
-          <ol className="ml-2 border-l border-[color:var(--line)] pl-5">
+          <ol>
             {timeline.map((event) => (
-              <li key={event.seq} className="relative pb-4 last:pb-0">
-                <span
-                  className="absolute -left-6.5 top-1.5 size-2.5 rounded-full border-2 border-paper bg-brand/60"
-                  aria-hidden="true"
-                />
-                <p className="text-body">{event.label}</p>
-                {event.type === 'execution.failed' && execution.error && (
-                  <div className="my-2 rounded-lg bg-danger-soft px-3 py-2 text-danger">
-                    <p>{execution.error.message}</p>
-                    <p className="mt-1 text-caption">{execution.error.code}</p>
-                  </div>
-                )}
+              <li key={event.seq} className="group grid grid-cols-[4.5rem_0.75rem_1fr] gap-x-3">
                 <time
-                  className="text-caption tabular-nums text-muted-ink"
+                  className="pt-0.5 text-right text-caption tabular-nums text-muted-ink"
                   dateTime={event.occurred_at}
                 >
                   {new Date(event.occurred_at).toLocaleTimeString()}
                 </time>
+                <span className="relative flex justify-center" aria-hidden="true">
+                  <span className="absolute inset-y-0 w-px bg-line group-first:top-2.5 group-last:bottom-auto group-last:h-2.5" />
+                  <span
+                    className={cn(
+                      'relative mt-1.5 size-2.5 rounded-full ring-4 ring-paper',
+                      eventTone(event.type),
+                    )}
+                  />
+                </span>
+                <div className="min-w-0 pb-4 group-last:pb-0">
+                  <p
+                    className={cn(
+                      'text-body',
+                      (event.type.startsWith('tool.') || event.type.startsWith('message.')) &&
+                        'text-muted-ink',
+                    )}
+                  >
+                    {event.label}
+                  </p>
+                  {event.type === 'execution.failed' && execution.error && (
+                    <div className="mt-2 rounded-lg bg-danger-soft px-3 py-2 text-danger">
+                      <p>{execution.error.message}</p>
+                      <p className="mt-1 font-mono text-caption">{execution.error.code}</p>
+                    </div>
+                  )}
+                </div>
               </li>
             ))}
           </ol>

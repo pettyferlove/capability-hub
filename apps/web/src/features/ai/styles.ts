@@ -7,46 +7,46 @@ export const fillStyles = 'flex min-h-0 min-w-0 flex-1 flex-col';
 export const scrollStyles =
   'min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin] [scrollbar-gutter:stable]';
 export const workspaceStyles = cn(
-  'relative flex h-[clamp(480px,calc(100dvh_-_280px),960px)] min-h-0 shrink-0 overflow-hidden rounded-2xl border border-[color:var(--line)] bg-paper',
-  '[box-shadow:0_8px_40px_color-mix(in_srgb,_var(--shadow-ink)_5%,_transparent)]',
+  'relative flex h-[clamp(520px,calc(100dvh_-_240px),980px)] min-h-0 shrink-0 overflow-hidden rounded-[22px] border border-[color:var(--line)] bg-paper',
+  '[box-shadow:0_1px_0_var(--highlight)_inset,0_12px_48px_color-mix(in_srgb,_var(--shadow-ink)_6%,_transparent)]',
 );
 export const sidebarStyles =
-  'min-h-0 w-full shrink-0 flex-col border-[color:var(--line)] bg-page/60 md:w-60 md:border-r';
+  'min-h-0 w-full shrink-0 flex-col border-[color:var(--line)] bg-page/55 md:w-68 md:border-r';
+export const historyGroupStyles =
+  'sticky top-0 z-[1] bg-page/90 px-2.5 pt-3 pb-1.5 text-caption font-medium text-muted-ink backdrop-blur-sm';
 export const historyStyles = cn(
-  'group/history relative flex w-full min-w-0 flex-col gap-1.5 rounded-xl border border-transparent p-3 text-left',
-  'transition-colors hover:bg-paper aria-[current=true]:border-[color:var(--line)] aria-[current=true]:bg-paper',
-  'aria-[current=true]:[box-shadow:0_2px_8px_color-mix(in_srgb,_var(--shadow-ink)_4%,_transparent)]',
+  'group/history relative flex w-full min-w-0 items-start gap-2.5 rounded-xl px-2.5 py-2.5 text-left',
+  'transition-colors hover:bg-paper/80 aria-[current=true]:bg-paper',
+  'aria-[current=true]:[box-shadow:0_1px_2px_color-mix(in_srgb,_var(--shadow-ink)_6%,_transparent),0_0_0_1px_var(--line)]',
+  'before:absolute before:inset-y-3 before:-left-2 before:w-[3px] before:rounded-full before:bg-brand before:opacity-0 before:transition-opacity aria-[current=true]:before:opacity-100',
 );
 export const eyebrowStyles = 'text-caption font-semibold tracking-[0.16em] text-brand uppercase';
 export const iconTileStyles =
   'inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-brand/15 bg-brand-soft text-brand';
 export const taskColumnStyles = 'mx-auto w-full max-w-200 px-5 sm:px-8';
-export const heroStyles = cn(
-  taskColumnStyles,
-  'relative isolate pt-6 pb-5 sm:pt-8',
-  'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:-z-10 before:h-64',
-  'before:[background:radial-gradient(ellipse_at_50%_0%,_var(--brand-soft),_transparent_72%)]',
+export const dotFieldStyles = cn(
+  'pointer-events-none absolute inset-x-0 top-0 -z-10 h-56',
+  '[background-image:radial-gradient(var(--line)_1px,_transparent_1.5px)] [background-size:14px_14px]',
+  '[mask-image:radial-gradient(ellipse_70%_100%_at_85%_0%,_var(--mask-solid),_transparent_75%)]',
 );
 export const operationStyles = cn(
-  'group/operation flex min-w-0 flex-1 items-start gap-3 rounded-2xl border border-[color:var(--line)] bg-paper p-4 text-left',
-  'transition-[background-color,border-color,box-shadow] hover:border-brand/40 hover:bg-brand-soft/30',
-  'aria-pressed:border-brand/70 aria-pressed:bg-brand-soft/60',
-  'aria-pressed:[box-shadow:0_3px_12px_color-mix(in_srgb,_var(--brand)_8%,_transparent)]',
+  'group/operation relative flex min-w-0 flex-1 items-start gap-3 rounded-2xl border border-[color:var(--line)] bg-paper p-3.5 text-left',
+  'transition-[background-color,border-color,box-shadow] hover:border-brand/35 hover:bg-brand-soft/25 disabled:opacity-60',
+  'aria-pressed:border-brand/60 aria-pressed:bg-brand-soft/45',
+  'aria-pressed:[box-shadow:0_0_0_3px_color-mix(in_srgb,_var(--brand)_10%,_transparent)]',
 );
 export const composerStyles = cn(
-  'rounded-2xl border border-[color:var(--line)] bg-paper p-4 transition-[border-color,box-shadow] sm:p-5',
-  'focus-within:border-brand/60 focus-within:[box-shadow:0_0_0_3px_var(--brand-soft)]',
+  'overflow-hidden rounded-2xl border border-[color:var(--line)] bg-paper transition-[border-color,box-shadow]',
+  '[box-shadow:0_2px_12px_color-mix(in_srgb,_var(--shadow-ink)_4%,_transparent)]',
+  'focus-within:border-brand/50 focus-within:[box-shadow:0_0_0_4px_var(--brand-soft)]',
   '[&_textarea]:border-0 [&_textarea]:bg-transparent [&_textarea]:p-0 [&_textarea]:font-normal [&_textarea]:leading-relaxed [&_textarea:focus-visible]:outline-none',
 );
-export const taskFooterStyles = cn(
-  'shrink-0 overflow-y-auto border-t border-[color:var(--line)] bg-page/40',
-  '[scrollbar-width:thin] [scrollbar-gutter:stable]',
-);
-export const taskActionsStyles =
-  'grid grid-cols-1 items-end gap-3 min-[480px]:grid-cols-[minmax(0,1fr)_auto]';
+export const composerToolbarStyles =
+  'flex flex-wrap items-center gap-x-3 gap-y-2.5 border-t border-[color:var(--line)] bg-page/50 px-3 py-2.5 sm:px-4';
 export const modelSelectStyles =
-  '[&>button]:h-[var(--control-height)] [&>button]:py-0 [&>button]:leading-[1.5]';
-export const taskSubmitStyles = 'h-[var(--control-height)] min-h-[var(--control-height)] px-5 py-0';
+  'w-full min-w-0 [&>button]:h-9 [&>button]:min-h-9 [&>button]:py-0 [&>button]:leading-[1.5] sm:w-60';
+export const chipStyles =
+  'inline-flex items-center gap-1.5 rounded-full border border-[color:var(--line)] bg-paper px-3 py-1.5 text-caption text-muted-ink transition-colors hover:border-brand/40 hover:bg-brand-soft hover:text-brand disabled:opacity-60';
 export const fieldStyles = 'flex min-w-0 flex-col gap-2 text-body font-medium';
 export const controlStyles = cn(
   'w-full min-w-0 rounded-xl border border-[color:var(--line)] bg-paper px-3 py-2.5 text-ink',
@@ -77,13 +77,22 @@ export const readingWidthStyles =
 export const statusStyles =
   'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium';
 export const statusToneStyles = {
-  queued: 'bg-page text-muted-ink',
+  queued: 'bg-page text-muted-ink ring-1 ring-inset ring-[color:var(--line)]',
   running: 'bg-brand-soft text-brand',
   waiting_input: 'bg-warning-soft text-warning',
   succeeded: 'bg-success-soft text-success',
   failed: 'bg-danger-soft text-danger',
-  cancelled: 'bg-page text-muted-ink',
+  cancelled: 'bg-page text-muted-ink ring-1 ring-inset ring-[color:var(--line)]',
   timed_out: 'bg-danger-soft text-danger',
+};
+export const statusDotStyles = {
+  queued: 'bg-muted-ink/50',
+  running: 'bg-brand',
+  waiting_input: 'bg-warning',
+  succeeded: 'bg-success',
+  failed: 'bg-danger',
+  cancelled: 'bg-muted-ink/40',
+  timed_out: 'bg-danger',
 };
 export const resultCardStyles =
   'overflow-hidden rounded-2xl border border-[color:var(--line)] bg-paper';
@@ -120,7 +129,13 @@ export const agentToneStyles = {
     rail: 'bg-warning',
   },
 };
-export const toolCardStyles =
-  'relative bg-page/70 [&>summary]:gap-3 [&>summary]:py-3 [&>summary]:text-ink';
+export const toolGroupStyles =
+  'overflow-hidden rounded-2xl border border-[color:var(--line)] bg-paper [box-shadow:0_1px_3px_color-mix(in_srgb,_var(--shadow-ink)_3%,_transparent)]';
+export const toolCardStyles = cn(
+  'group/disclosure',
+  '[&>summary]:flex [&>summary]:cursor-pointer [&>summary]:list-none [&>summary]:items-center [&>summary]:gap-3 [&>summary]:px-4 [&>summary]:py-2.5',
+  '[&>summary::-webkit-details-marker]:hidden [&>summary:hover]:bg-page/60 [&>summary]:transition-colors',
+  '[&[open]>summary]:bg-page/40',
+);
 export const interactionCardStyles =
   'relative overflow-hidden rounded-2xl border border-warning/40 bg-paper [box-shadow:0_0_0_3px_var(--warning-soft)]';

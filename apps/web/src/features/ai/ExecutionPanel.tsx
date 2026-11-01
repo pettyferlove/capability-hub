@@ -14,10 +14,11 @@ import { PageTabs } from '../../shared/components/PageTabs.js';
 import {
   Activity,
   ArrowRight,
+  Bot,
   CirclePause,
   FileText,
+  Sparkles,
   Workflow,
-  SquareTerminal,
   X,
 } from '../../shared/icons/lucide.js';
 import { btnStyles } from '../../shared/styles/recipes.js';
@@ -26,8 +27,9 @@ import { ExecutionDetails } from './ExecutionDetails.js';
 import { ExecutionResult } from './ExecutionResult.js';
 import { ExecutionStatus } from './ExecutionStatus.js';
 import { ActivityFeed } from './ActivityFeed.js';
-import { executionTitle, jsonObject, operationLabels } from './presentation.js';
-import { fillStyles, scrollStyles } from './styles.js';
+import { PhaseTrack } from './PhaseTrack.js';
+import { executionTitle, jsonObject, operationLabels, operationMeta } from './presentation.js';
+import { fillStyles, iconTileStyles, scrollStyles } from './styles.js';
 
 type Tab = 'activity' | 'result' | 'details';
 
@@ -85,6 +87,10 @@ export function ExecutionPanel({
   const [busy, setBusy] = useState(false);
   const command = useAiCommand();
   const active = ['queued', 'running', 'waiting_input'].includes(execution.status);
+  const business = ['resource-audit', 'feedback-triage'].includes(execution.operation_id);
+  const OperationIcon = operationMeta[execution.operation_id]?.Icon ?? Bot;
+  const { usage } = execution;
+  const tokens = usage.input_tokens + usage.output_tokens;
   const items: { id: Tab; label: ReactNode }[] = [
     {
       id: 'activity',
@@ -139,13 +145,31 @@ export function ExecutionPanel({
     <div className={cn(fillStyles, '@container/execution')}>
       <header className="shrink-0 border-b border-[color:var(--line)] bg-paper px-5 pt-5 sm:px-7">
         <div className="flex items-start justify-between gap-4">
+          {!compact && (
+            <span className={cn(iconTileStyles, 'max-sm:hidden')}>
+              <OperationIcon size={18} />
+            </span>
+          )}
           <div className="min-w-0 flex-1">
             {!compact && (
-              <p className="mb-2 flex items-center gap-2 text-caption text-muted-ink">
-                <SquareTerminal size={14} />
-                {operationLabels[execution.operation_id] ?? execution.operation_id}
-                <span aria-hidden="true">/</span>
-                {new Date(execution.created_at).toLocaleDateString()}
+              <p className="mb-1 flex min-w-0 flex-wrap items-center gap-x-2 text-caption text-muted-ink">
+                <span className="font-medium text-ink/80">
+                  {operationLabels[execution.operation_id] ?? execution.operation_id}
+                </span>
+                <span aria-hidden="true">·</span>
+                <time dateTime={execution.created_at}>
+                  {new Date(execution.created_at).toLocaleString(undefined, {
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </time>
+                <span aria-hidden="true">·</span>
+                <span className="inline-flex items-center gap-1 font-mono">
+                  <Sparkles size={12} />
+                  {execution.model_profile}
+                </span>
               </p>
             )}
             <h2
@@ -157,6 +181,13 @@ export function ExecutionPanel({
             >
               {executionTitle(execution)}
             </h2>
+            {!compact && usage.requests > 0 && (
+              <p className="mt-1.5 flex flex-wrap gap-x-3 text-caption tabular-nums text-muted-ink">
+                <span>{usage.requests} 次模型请求</span>
+                {usage.tools > 0 && <span>{usage.tools} 次工具调用</span>}
+                {tokens > 0 && <span>{tokens.toLocaleString()} tokens</span>}
+              </p>
+            )}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
             <ExecutionStatus status={execution.status} />
@@ -175,6 +206,7 @@ export function ExecutionPanel({
             )}
           </div>
         </div>
+        {!compact && business && <PhaseTrack view={view} labeled className="mt-4" />}
         <div className="mt-3 [&>nav]:mb-0 [&>nav]:border-b-0">
           <PageTabs
             items={items}

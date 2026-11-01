@@ -16,23 +16,53 @@ import {
 import { api } from '../../shared/api/client.js';
 import { PageHead } from '../../shared/components/PageHead.js';
 import { useHub } from '../../shared/context/HubContext.js';
-import { History, LoaderCircle, Plus, Search, Workflow } from '../../shared/icons/lucide.js';
+import { Bot, History, Plus, Search, Workflow } from '../../shared/icons/lucide.js';
 import { navigate } from '../../shared/navigation/history-navigation.js';
 import { btnStyles, btnPrimaryStyles } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
+import { AgentSignal } from './AgentSignal.js';
 import { ExecutionPanel } from './ExecutionPanel.js';
 import { ExecutionStatus } from './ExecutionStatus.js';
 import { NewExecution } from './NewExecution.js';
-import { executionTitle, operationLabels } from './presentation.js';
+import { executionTitle, operationLabels, operationMeta } from './presentation.js';
 import { useAiExecution } from './use-ai-execution.js';
 import {
   controlStyles,
   fillStyles,
+  historyGroupStyles,
   historyStyles,
   scrollStyles,
   sidebarStyles,
   workspaceStyles,
 } from './styles.js';
+
+function dayDistance(iso: string) {
+  const start = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return Math.round((start(new Date()).getTime() - start(new Date(iso)).getTime()) / 86400000);
+}
+
+/** 历史列表按本地日期分组；列表本身按创建时间倒序，因此相邻同组即可合并。 */
+function dayGroup(iso: string) {
+  const days = dayDistance(iso);
+  return days <= 0 ? '今天' : days === 1 ? '昨天' : days < 7 ? '近 7 天' : '更早';
+}
+
+function timeLabel(iso: string) {
+  const date = new Date(iso);
+  return dayDistance(iso) <= 1
+    ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    : date.toLocaleDateString(undefined, { month: '2-digit', day: '2-digit' });
+}
+
+const historyTones: Record<AiExecutionResponse['status'], string> = {
+  queued: 'bg-brand-soft text-brand',
+  running: 'bg-brand-soft text-brand',
+  waiting_input: 'bg-warning-soft text-warning',
+  succeeded: 'bg-paper text-muted-ink ring-1 ring-inset ring-[color:var(--line)]',
+  failed: 'bg-danger-soft text-danger',
+  cancelled: 'bg-paper text-muted-ink ring-1 ring-inset ring-[color:var(--line)]',
+  timed_out: 'bg-danger-soft text-danger',
+};
 
 /**
  * 实验台外壳：`query` 为当前 location 的查询串，仅读取其中的 `execution` 参数；
@@ -107,11 +137,23 @@ export default function AiLabPage({ query }: { query: string }) {
     setHistoryOpen(false);
     navigate('/ai');
   };
+  const statusOf = (row: AiExecutionResponse) =>
+    row.id === selected && currentView ? currentView.execution.status : row.status;
   const visible = history.filter((row) =>
     `${executionTitle(row)} ${operationLabels[row.operation_id] ?? row.operation_id}`
       .toLocaleLowerCase()
       .includes(filter.trim().toLocaleLowerCase()),
   );
+  const groups = visible.reduce<{ label: string; rows: AiExecutionResponse[] }[]>((result, row) => {
+    const label = dayGroup(row.created_at);
+    const last = result.at(-1);
+    if (last?.label === label) last.rows.push(row);
+    else result.push({ label, rows: [row] });
+    return result;
+  }, []);
+  const activeCount = history.filter((row) =>
+    ['queued', 'running', 'waiting_input'].includes(statusOf(row)),
+  ).length;
   return (
     <div className={fillStyles}>
       <PageHead
@@ -142,13 +184,13 @@ export default function AiLabPage({ query }: { query: string }) {
           className={cn(sidebarStyles, historyOpen ? 'flex' : 'hidden md:flex')}
           aria-label="任务记录"
         >
-          <div className="shrink-0 space-y-4 px-4 pt-5 pb-3">
+          <div className="shrink-0 space-y-3 px-4 pt-5 pb-3">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 font-semibold">
                 <History size={15} className="text-muted-ink" />
                 任务记录
               </span>
-              <span className="text-caption tabular-nums text-muted-ink">
+              <span className="rounded-full bg-paper px-2 py-0.5 text-caption tabular-nums text-muted-ink ring-1 ring-inset ring-[color:var(--line)]">
                 {history.length}
                 {cursor ? '+' : ''}
               </span>
@@ -180,56 +222,95 @@ export default function AiLabPage({ query }: { query: string }) {
           </div>
           <div className={cn(scrollStyles, 'px-2 pb-3')}>
             {historyLoading ? (
-              <p role="status" className="p-4 text-muted-ink">
-                正在加载记录…
-              </p>
-            ) : visible.length ? (
-              <ol className="space-y-1">
-                {visible.map((row) => (
-                  <li key={row.id}>
-                    <button
-                      type="button"
-                      className={historyStyles}
-                      aria-current={row.id === selected ? 'true' : undefined}
-                      onClick={() => openExecution(row.id)}
-                    >
-                      <span className="line-clamp-2 text-body font-medium leading-relaxed text-ink">
-                        {executionTitle(row)}
-                      </span>
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="truncate text-caption text-muted-ink">
-                          {operationLabels[row.operation_id] ??
-                            catalog?.operations.find((item) => item.id === row.operation_id)
-                              ?.title ??
-                            row.operation_id}
-                        </span>
-                        <time
-                          className="shrink-0 text-caption tabular-nums text-muted-ink"
-                          dateTime={row.created_at}
-                        >
-                          {new Date(row.created_at).toLocaleDateString(undefined, {
-                            month: '2-digit',
-                            day: '2-digit',
-                          })}
-                        </time>
-                      </span>
-                      <span className="flex">
-                        <ExecutionStatus
-                          status={
-                            row.id === selected && currentView
-                              ? currentView.execution.status
-                              : row.status
-                          }
-                        />
-                      </span>
-                    </button>
-                  </li>
+              <div role="status" className="space-y-2 px-2.5 pt-3">
+                <span className="sr-only">正在加载记录…</span>
+                {[0, 1, 2].map((item) => (
+                  <span
+                    key={item}
+                    aria-hidden="true"
+                    className="flex gap-2.5 py-2 motion-safe:animate-[skeleton-pulse_1.6s_ease-in-out_infinite]"
+                  >
+                    <span className="size-8 shrink-0 rounded-lg bg-line/60" />
+                    <span className="flex-1 space-y-2 pt-1">
+                      <span className="block h-2.5 w-4/5 rounded-full bg-line/70" />
+                      <span className="block h-2 w-1/2 rounded-full bg-line/50" />
+                    </span>
+                  </span>
                 ))}
-              </ol>
+              </div>
+            ) : visible.length ? (
+              groups.map((group) => (
+                <section key={group.label} aria-label={group.label}>
+                  <h3 className={historyGroupStyles}>{group.label}</h3>
+                  <ol className="space-y-0.5">
+                    {group.rows.map((row) => {
+                      const status = statusOf(row);
+                      const title = executionTitle(row);
+                      const label =
+                        operationLabels[row.operation_id] ??
+                        catalog?.operations.find((item) => item.id === row.operation_id)?.title ??
+                        row.operation_id;
+                      const Icon = operationMeta[row.operation_id]?.Icon ?? Bot;
+                      return (
+                        <li key={row.id}>
+                          <button
+                            type="button"
+                            className={historyStyles}
+                            aria-current={row.id === selected ? 'true' : undefined}
+                            onClick={() => openExecution(row.id)}
+                          >
+                            <span
+                              className={cn(
+                                'relative mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg',
+                                historyTones[status],
+                              )}
+                            >
+                              <Icon size={15} />
+                              {(status === 'running' || status === 'waiting_input') && (
+                                <span
+                                  aria-hidden="true"
+                                  className={cn(
+                                    'absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2 ring-page motion-safe:animate-pulse',
+                                    status === 'running' ? 'bg-brand' : 'bg-warning',
+                                  )}
+                                />
+                              )}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="line-clamp-2 text-body font-medium leading-snug text-ink">
+                                {title}
+                              </span>
+                              <span className="mt-1 flex min-w-0 items-center gap-1.5 text-caption text-muted-ink">
+                                <ExecutionStatus compact status={status} />
+                                {label !== title && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span className="truncate">{label}</span>
+                                  </>
+                                )}
+                                <time
+                                  className="ml-auto shrink-0 tabular-nums"
+                                  dateTime={row.created_at}
+                                >
+                                  {timeLabel(row.created_at)}
+                                </time>
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </section>
+              ))
             ) : (
-              <div className="px-4 py-8 text-center text-muted-ink">
-                <Workflow size={24} className="mx-auto mb-3 opacity-60" />
-                <p>{filter ? '没有匹配的任务' : '从第一个任务开始'}</p>
+              <div className="px-4 py-10 text-center text-muted-ink">
+                <span className="mx-auto mb-3 grid size-11 place-items-center rounded-2xl bg-paper ring-1 ring-inset ring-[color:var(--line)]">
+                  <Workflow size={20} className="opacity-70" />
+                </span>
+                <p className="font-medium text-ink">
+                  {filter ? '没有匹配的任务' : '从第一个任务开始'}
+                </p>
                 <p className="mt-1 text-caption">
                   {filter
                     ? '试试其他关键词，或加载更早记录。'
@@ -250,8 +331,18 @@ export default function AiLabPage({ query }: { query: string }) {
               </button>
             )}
           </div>
-          <div className="shrink-0 border-t border-[color:var(--line)] px-4 py-3 text-caption text-muted-ink">
-            任务独立运行，历史自动保存
+          <div className="flex shrink-0 items-center gap-2 border-t border-[color:var(--line)] px-4 py-3 text-caption text-muted-ink">
+            {activeCount ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 rounded-full bg-brand motion-safe:animate-pulse"
+                />
+                {activeCount} 个任务进行中
+              </>
+            ) : (
+              '任务独立运行，历史自动保存'
+            )}
           </div>
         </aside>
         <div className={cn(fillStyles, historyOpen && 'max-md:hidden')}>
@@ -275,9 +366,11 @@ export default function AiLabPage({ query }: { query: string }) {
             (selected && !currentView && !execution.error)) && (
             <div
               role="status"
-              className="flex flex-1 items-center justify-center gap-3 text-muted-ink"
+              className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-ink"
             >
-              <LoaderCircle size={20} className="text-brand motion-safe:animate-spin" />
+              <span className="text-brand">
+                <AgentSignal signal="working" glyph="work" />
+              </span>
               正在加载工作区…
             </div>
           )}

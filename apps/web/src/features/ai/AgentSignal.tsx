@@ -31,7 +31,7 @@ export function AgentSignal({
 }: {
   signal: BriefSignal;
   glyph?: Glyph;
-  risk: string;
+  risk?: string;
   /** 最近一条活动事件的序号，变化即触发一次闪动。 */
   pulse?: number;
   large?: boolean;

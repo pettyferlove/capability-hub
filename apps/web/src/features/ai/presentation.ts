@@ -1,4 +1,11 @@
 import type { AiEventResponse, AiExecutionResponse } from '@capability-hub/contracts';
+import {
+  Bot,
+  MessageSquare,
+  ShieldCheck,
+  Workflow,
+  type IconComponent,
+} from '../../shared/icons/lucide.js';
 
 /** 契约中的 JSON 值类型，复用任务输入的形状；嵌套对象统一用 `Record` 访问。 */
 export type Json = AiExecutionResponse['input'];
@@ -20,6 +27,23 @@ export const operationLabels: Record<string, string> = {
   'resource-audit': '资源审计',
   'feedback-triage': '反馈研判',
   'agent-lab': '多 Agent 协作',
+};
+
+/** 工作台里操作类型的图标与一句话说明；未登记的操作由调用方回退到通用图标与目录描述。 */
+export const operationMeta: Record<string, { Icon: IconComponent; description: string }> = {
+  assistant: { Icon: Bot, description: '一个问题，实时回答。按需调用工具，辅助理解与整理。' },
+  'agent-lab': {
+    Icon: Workflow,
+    description: '生成草案、并行审查，再由你确认。体验完整协作流程。',
+  },
+  'resource-audit': {
+    Icon: ShieldCheck,
+    description: '查阅固定版本的文件与扫描结果，形成可追溯的审计建议。',
+  },
+  'feedback-triage': {
+    Icon: MessageSquare,
+    description: '复核一条反馈，定位证据并给出处理建议。',
+  },
 };
 
 /**

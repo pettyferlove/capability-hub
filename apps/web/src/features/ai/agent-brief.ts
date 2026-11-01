@@ -77,6 +77,11 @@ const tools: Record<string, { Icon: IconComponent; glyph: Glyph }> = {
   'read-feedback': { Icon: MessageSquare, glyph: 'read' },
 };
 
+/** 工具调用对应的图标，未登记的工具统一用扳手。 */
+export function toolIcon(name: string): IconComponent {
+  return tools[name]?.Icon ?? Wrench;
+}
+
 /** 流式文本里最新的一句：去掉 Markdown 标记，使状态卡跟随 Agent 当前的思路而不是截断的段尾。 */
 export function latestThought(text: string) {
   const sentence = text

@@ -1,72 +1,80 @@
 import { toolLabels } from './presentation.js';
-import {
-  Check,
-  ChevronDown,
-  CirclePause,
-  Clock3,
-  LoaderCircle,
-  Wrench,
-  X,
-} from '../../shared/icons/lucide.js';
+import { Check, ChevronDown, CirclePause, LoaderCircle, X } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import type { ToolActivity } from './activity.js';
-import { disclosureChevronStyles, disclosureStyles, toolCardStyles } from './styles.js';
+import { toolIcon } from './agent-brief.js';
+import { disclosureChevronStyles, toolCardStyles } from './styles.js';
 
 const states = {
-  running: { label: '调用中', Icon: LoaderCircle, tone: 'text-brand' },
-  completed: { label: '已完成', Icon: Check, tone: 'text-success' },
-  failed: { label: '调用失败', Icon: X, tone: 'text-danger' },
-  interrupted: { label: '已中断 · 结果未确认', Icon: CirclePause, tone: 'text-muted-ink' },
+  running: {
+    label: '调用中',
+    Icon: LoaderCircle,
+    tone: 'text-brand',
+    tile: 'bg-brand-soft text-brand',
+  },
+  completed: {
+    label: '已完成',
+    Icon: Check,
+    tone: 'text-success',
+    tile: 'bg-paper text-muted-ink',
+  },
+  failed: { label: '调用失败', Icon: X, tone: 'text-danger', tile: 'bg-danger-soft text-danger' },
+  interrupted: {
+    label: '已中断 · 结果未确认',
+    Icon: CirclePause,
+    tone: 'text-muted-ink',
+    tile: 'bg-paper text-muted-ink',
+  },
 };
 
 /**
- * 单次工具调用的折叠卡片，展开后是标识、起止时间与错误码。耗时按 `startedAt`／`endedAt` 计算并
+ * 单次工具调用的折叠行，展开后是标识、起止时间与错误码。耗时按 `startedAt`／`endedAt` 计算并
  * 在时钟回拨时钳到 0；`interrupted` 明确提示结果未确认，调用方不应据此认为工具失败。
  */
 export function ToolActivityCard({ tool }: { tool: ToolActivity }) {
   const state = states[tool.state];
   const known = ['inspect-text', 'inspect_text'].includes(tool.name);
+  const Icon = toolIcon(tool.name);
   const duration =
     tool.startedAt && tool.endedAt
       ? Date.parse(tool.endedAt) - Date.parse(tool.startedAt)
       : undefined;
   return (
-    <details className={cn(disclosureStyles, toolCardStyles)}>
+    <details className={toolCardStyles}>
       <summary>
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[color:var(--line)] bg-paper text-brand">
-          <Wrench size={16} />
+        <span
+          className={cn(
+            'grid size-7 shrink-0 place-items-center rounded-lg ring-1 ring-inset ring-[color:var(--line)]',
+            state.tile,
+          )}
+        >
+          <Icon size={14} />
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-2">
-            <strong className="break-all text-body text-ink">
-              {known ? '文本统计' : (toolLabels[tool.name] ?? tool.name)}
-            </strong>
-            <span className="rounded bg-paper px-1.5 py-0.5 text-caption text-muted-ink">
-              工具调用
-            </span>
-          </span>
-          <span className="mt-0.5 block text-caption text-muted-ink">
+        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <strong className="shrink-0 break-all text-body font-medium text-ink">
+            {known ? '文本统计' : (toolLabels[tool.name] ?? tool.name)}
+          </strong>
+          <span className="min-w-0 truncate text-caption text-muted-ink">
             {tool.display ?? (known ? '统计文本字符数与行数' : '执行任务所需的工具操作')}
           </span>
-          <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className={cn('flex items-center gap-1.5 text-caption', state.tone)}>
-              <state.Icon
-                size={13}
-                className={tool.state === 'running' ? 'motion-safe:animate-spin' : undefined}
-              />
-              {state.label}
+        </span>
+        <span className="flex shrink-0 items-center gap-2 text-caption">
+          {duration !== undefined && (
+            <span className="tabular-nums text-muted-ink max-sm:hidden">
+              {Math.max(0, duration / 1000).toFixed(1)}s
             </span>
-            {duration !== undefined && (
-              <span className="flex items-center gap-1 text-caption tabular-nums text-muted-ink">
-                <Clock3 size={11} />
-                {Math.max(0, duration / 1000).toFixed(1)}s
-              </span>
-            )}
+          )}
+          <span className={cn('flex items-center gap-1', state.tone)}>
+            <state.Icon
+              size={13}
+              className={tool.state === 'running' ? 'motion-safe:animate-spin' : undefined}
+            />
+            {state.label}
           </span>
         </span>
-        <ChevronDown size={13} className={disclosureChevronStyles} />
+        <ChevronDown size={13} className={cn(disclosureChevronStyles, 'ml-0 text-muted-ink')} />
       </summary>
-      <dl className="grid gap-3 px-4 py-3 text-caption sm:grid-cols-2">
+      <dl className="grid gap-3 bg-page/50 px-4 py-3 text-caption sm:grid-cols-2">
         {[
           ['工具标识', tool.name],
           ['调用编号', tool.id],
@@ -81,7 +89,7 @@ export function ToolActivityCard({ tool }: { tool: ToolActivity }) {
         ].map(([label, value]) => (
           <div key={label} className="min-w-0">
             <dt className="text-muted-ink">{label}</dt>
-            <dd className="mt-0.5 break-all text-ink">{value}</dd>
+            <dd className="mt-0.5 break-all font-mono text-ink">{value}</dd>
           </div>
         ))}
       </dl>

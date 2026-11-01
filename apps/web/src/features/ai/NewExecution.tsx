@@ -2,9 +2,10 @@
  * 新建执行表单：从 `/api/ai/catalog` 得到的操作目录里选 `operation_id` 与模型档案，
  * 按该操作的 `input_schema` 收集输入，经 {@link useAiCommand} 向 `/api/ai/executions` 发起创建。
  *
- * 输入字段按 schema 属性推导：`prompt`/`topic` 之一作为主输入置于正文，
- * `require_approval` 单独成行，
- * 其余字段收进「参考资源与工具」折叠区；示例提示词按 `operation_id` 提供，仅当存在主输入时可用。
+ * 输入字段按 schema 属性推导：`prompt`/`topic` 之一作为主输入置于输入框正文，
+ * `require_approval` 与模型、提交按钮同在输入框底部工具条，
+ * 其余字段收进「参考资源与工具」折叠区；没有主输入的操作（如资源审计）把全部字段放进输入框。
+ * 示例提示词按 `operation_id` 提供，仅当存在主输入时可用。
  */
 import { useId, useRef, useState } from 'react';
 import { aiExecutionResponseSchema, type AiCatalogResponse } from '@capability-hub/contracts';
@@ -15,30 +16,28 @@ import {
   Bot,
   Check,
   ChevronDown,
+  LoaderCircle,
   Send,
   Settings2,
-  Sparkles,
-  Workflow,
+  ShieldCheck,
 } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import { btnStyles, btnPrimaryStyles } from '../../shared/styles/recipes.js';
 import { SchemaFields, initialValues } from './SchemaFields.js';
-import { jsonObject, operationLabels } from './presentation.js';
+import { jsonObject, operationLabels, operationMeta } from './presentation.js';
 import {
+  chipStyles,
   composerStyles,
+  composerToolbarStyles,
   disclosureChevronStyles,
   disclosureStyles,
+  dotFieldStyles,
   eyebrowStyles,
   fillStyles,
-  heroStyles,
-  iconTileStyles,
   modelSelectStyles,
   operationStyles,
   scrollStyles,
-  taskActionsStyles,
   taskColumnStyles,
-  taskFooterStyles,
-  taskSubmitStyles,
 } from './styles.js';
 
 const examples: Record<string, { title: string; prompt: string }[]> = {
@@ -68,14 +67,11 @@ const examples: Record<string, { title: string; prompt: string }[]> = {
     },
   ],
 };
-const descriptions: Record<string, string> = {
-  assistant: '一个问题，实时回答。按需调用工具，辅助理解与整理。',
-  'agent-lab': '生成草案、并行审查，再由你确认。体验完整协作流程。',
-};
 
 /**
  * 新建表单：切换任务类型会重置输入为对应 schema 的初始值；无可用模型档案或无 `canExecute` 时
  * 提交按钮禁用，创建成功后把新执行 id 交给 `onCreated`，由页面跳转到详情。
+ * 在输入框内按 ⌘/Ctrl + Enter 等同提交，仍经过表单原生校验。
  */
 export function NewExecution({
   catalog,
@@ -106,6 +102,7 @@ export function NewExecution({
       ? 'topic'
       : undefined;
   const advanced = fields.filter((key) => key !== primary && key !== 'require_approval');
+  const ready = !!profile && !!definition && canExecute;
   const submit = async () => {
     if (busy) return;
     setBusy(true);
@@ -133,98 +130,164 @@ export function NewExecution({
         event.preventDefault();
         void submit();
       }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && ready && !busy) {
+          event.preventDefault();
+          form.current?.requestSubmit();
+        }
+      }}
     >
       <div className={scrollStyles}>
-        <div className={heroStyles}>
-          <div className="mb-4 flex items-center gap-3">
-            <span className={cn(iconTileStyles, 'size-10 rounded-xl bg-brand text-on-brand')}>
-              <Sparkles size={20} />
-            </span>
-            <div>
-              <p className={eyebrowStyles}>Explore possibilities</p>
-              <p className="mt-1 text-caption text-muted-ink">从提问开始，让协作发生</p>
-            </div>
-          </div>
-          <h2 className="text-title leading-snug tracking-tight">
+        <div className={cn(taskColumnStyles, 'relative isolate py-6 sm:py-8')}>
+          <span aria-hidden="true" className={dotFieldStyles} />
+          <p className={eyebrowStyles}>New task</p>
+          <h2 className="mt-2 text-2xl font-semibold leading-snug tracking-tight">
             一个想法，<span className="text-brand">多一种可能。</span>
           </h2>
-          <p className="mt-3 text-muted-ink">体验 Agent 的实时回答、工具调用与协作决策。</p>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2" role="group" aria-label="选择任务类型">
+          <p className="mt-2 max-w-140 leading-relaxed text-muted-ink">
+            选择一位 Agent 并描述目标，过程中的思考、工具调用与需要你决定的节点都会实时呈现。
+          </p>
+          <div className="mt-6 grid gap-2.5 sm:grid-cols-2" role="group" aria-label="选择任务类型">
             {catalog.operations.map((item) => {
-              const Icon = item.id === 'agent-lab' ? Workflow : Bot;
+              const meta = operationMeta[item.id];
+              const Icon = meta?.Icon ?? Bot;
+              const pressed = operation === item.id;
               return (
                 <button
                   key={item.id}
                   type="button"
                   className={operationStyles}
-                  aria-pressed={operation === item.id}
+                  aria-pressed={pressed}
                   disabled={busy}
                   onClick={() => {
                     setOperation(item.id);
                     setInput(initialValues(item.input_schema));
                   }}
                 >
-                  <Icon size={20} className="mt-0.5 shrink-0 text-brand" />
+                  <span
+                    className={cn(
+                      'grid size-9 shrink-0 place-items-center rounded-xl transition-colors',
+                      pressed ? 'bg-brand text-on-brand' : 'bg-brand-soft text-brand',
+                    )}
+                  >
+                    <Icon size={18} />
+                  </span>
                   <span className="min-w-0 flex-1">
                     <strong className="flex items-center justify-between gap-2 text-body">
                       {operationLabels[item.id] ?? item.title}
-                      {operation === item.id && (
-                        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand text-on-brand">
-                          <Check size={12} />
-                        </span>
-                      )}
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'grid size-4.5 shrink-0 place-items-center rounded-full border transition-colors',
+                          pressed
+                            ? 'border-brand bg-brand text-on-brand'
+                            : 'border-[color:var(--line)] text-transparent',
+                        )}
+                      >
+                        <Check size={11} />
+                      </span>
                     </strong>
-                    <span className="mt-1.5 block text-caption leading-relaxed text-muted-ink">
-                      {descriptions[item.id] ?? item.description}
+                    <span className="mt-1 block text-caption leading-relaxed text-muted-ink">
+                      {meta?.description ?? item.description}
                     </span>
                   </span>
                 </button>
               );
             })}
           </div>
-          {primary && examples[operation] && (
-            <div className="mt-5 mb-3 flex flex-wrap gap-2" aria-label="任务示例">
-              {examples[operation].map((example) => (
-                <button
-                  key={example.title}
-                  type="button"
-                  disabled={busy}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--line)] px-3 py-1.5 text-caption text-muted-ink transition-colors hover:border-brand/40 hover:bg-brand-soft hover:text-brand"
-                  onClick={() => {
-                    setInput({ ...input, [primary]: example.prompt });
-                    form.current
-                      ?.querySelector<HTMLTextAreaElement>(`textarea[name="${primary}"]`)
-                      ?.focus();
-                  }}
-                >
-                  {example.title}
-                  <ArrowRight size={12} />
-                </button>
-              ))}
-            </div>
-          )}
           {definition && (
-            <div className="mt-3 flex flex-col gap-4">
+            <div className="mt-5 flex flex-col gap-3">
               <div className={composerStyles}>
-                <SchemaFields
-                  schema={definition.input_schema}
-                  names={primary ? [primary] : undefined}
-                  value={input}
-                  onChange={setInput}
-                  disabled={busy}
-                />
-                {primary && fields.includes('require_approval') && (
-                  <div className="mt-4 border-t border-[color:var(--line)] pt-4">
-                    <SchemaFields
-                      schema={definition.input_schema}
-                      names={['require_approval']}
-                      value={input}
-                      onChange={setInput}
-                      disabled={busy}
-                    />
+                <div className="px-4 pt-4 pb-3 sm:px-5">
+                  <SchemaFields
+                    schema={definition.input_schema}
+                    names={primary ? [primary] : advanced}
+                    value={input}
+                    onChange={setInput}
+                    disabled={busy}
+                  />
+                  {primary && examples[operation] && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2" aria-label="任务示例">
+                      <span className="text-caption text-muted-ink">试试</span>
+                      {examples[operation].map((example) => (
+                        <button
+                          key={example.title}
+                          type="button"
+                          disabled={busy}
+                          className={chipStyles}
+                          onClick={() => {
+                            setInput({ ...input, [primary]: example.prompt });
+                            form.current
+                              ?.querySelector<HTMLTextAreaElement>(`textarea[name="${primary}"]`)
+                              ?.focus();
+                          }}
+                        >
+                          {example.title}
+                          <ArrowRight size={12} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className={composerToolbarStyles}>
+                  {fields.includes('require_approval') && (
+                    <div className="mr-auto [&_label]:text-caption [&_label]:text-muted-ink">
+                      <SchemaFields
+                        schema={definition.input_schema}
+                        names={['require_approval']}
+                        value={input}
+                        onChange={setInput}
+                        disabled={busy}
+                      />
+                    </div>
+                  )}
+                  <div className="ml-auto flex w-full min-w-0 items-center gap-2 sm:w-auto">
+                    <span id={modelLabelId} className="sr-only">
+                      运行模型
+                    </span>
+                    <SelectField
+                      name="model_profile"
+                      aria-labelledby={modelLabelId}
+                      className={modelSelectStyles}
+                      value={profile}
+                      disabled={busy || !catalog.profiles.length}
+                      onValueChange={setProfile}
+                      optionIcons={Object.fromEntries(
+                        catalog.profiles.map((item) => [item.id, Bot]),
+                      )}
+                    >
+                      {catalog.profiles.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label} · {item.model}
+                        </option>
+                      ))}
+                    </SelectField>
+                    <button
+                      type="submit"
+                      className={cn(btnStyles, btnPrimaryStyles, 'h-9 min-h-9 shrink-0 px-4 py-0')}
+                      disabled={busy || !ready}
+                      title="⌘/Ctrl + Enter"
+                    >
+                      {busy ? (
+                        <LoaderCircle size={15} className="motion-safe:animate-spin" />
+                      ) : (
+                        <Send size={15} />
+                      )}
+                      {busy ? '正在创建…' : '开始任务'}
+                    </button>
                   </div>
-                )}
+                </div>
               </div>
+              {error && (
+                <p role="alert" className="rounded-xl bg-danger-soft px-4 py-3 text-danger">
+                  {error}
+                </p>
+              )}
+              {!catalog.profiles.length && (
+                <p role="status" className="rounded-xl bg-warning-soft px-4 py-3 text-warning">
+                  尚未配置模型，请联系管理员启用。
+                </p>
+              )}
               {primary && advanced.length > 0 && (
                 <details className={disclosureStyles}>
                   <summary>
@@ -245,54 +308,10 @@ export function NewExecution({
               )}
             </div>
           )}
-          <p className="mt-5 flex items-center gap-2 text-caption leading-relaxed text-muted-ink">
-            <Workflow size={14} className="shrink-0" />
+          <p className="mt-6 flex items-center gap-2 text-caption leading-relaxed text-muted-ink">
+            <ShieldCheck size={14} className="shrink-0" />
             能力演示空间 · 每次任务独立执行，记录自动保存。
           </p>
-        </div>
-      </div>
-      <div className={taskFooterStyles}>
-        <div className={cn(taskColumnStyles, 'py-4')}>
-          {error && (
-            <p role="alert" className="mb-3 text-danger">
-              {error}
-            </p>
-          )}
-          {!catalog.profiles.length && (
-            <p role="status" className="mb-3 text-warning">
-              尚未配置模型，请联系管理员启用。
-            </p>
-          )}
-          <div className={taskActionsStyles}>
-            <div className="min-w-0">
-              <p id={modelLabelId} className="mb-2 text-caption font-medium text-muted-ink">
-                运行模型
-              </p>
-              <SelectField
-                name="model_profile"
-                aria-labelledby={modelLabelId}
-                className={modelSelectStyles}
-                value={profile}
-                disabled={busy || !catalog.profiles.length}
-                onValueChange={setProfile}
-                optionIcons={Object.fromEntries(catalog.profiles.map((item) => [item.id, Bot]))}
-              >
-                {catalog.profiles.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label} · {item.model}
-                  </option>
-                ))}
-              </SelectField>
-            </div>
-            <button
-              type="submit"
-              className={cn(btnStyles, btnPrimaryStyles, taskSubmitStyles)}
-              disabled={busy || !profile || !definition || !canExecute}
-            >
-              <Send size={15} />
-              {busy ? '正在创建…' : '开始任务'}
-            </button>
-          </div>
         </div>
       </div>
     </form>

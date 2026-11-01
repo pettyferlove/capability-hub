@@ -14,17 +14,19 @@ import {
   Check,
   ChevronDown,
   CirclePause,
-  LoaderCircle,
   UserRound,
+  Wrench,
 } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import { btnStyles } from '../../shared/styles/recipes.js';
 import { AiText } from './AiText.js';
 import { AgentMessageCard, AgentRoster } from './AgentActivity.js';
+import { AgentSignal } from './AgentSignal.js';
 import { InteractionForm } from './InteractionForm.js';
 import { ToolActivityCard } from './ToolActivityCard.js';
-import { activityItems } from './activity.js';
-import { jsonObject, taskPrompt } from './presentation.js';
+import { activityItems, type ActivityItem, type ToolActivity } from './activity.js';
+import { liveAction } from './agent-brief.js';
+import { jsonObject, taskPrompt, toolLabels } from './presentation.js';
 import {
   activityTrackStyles,
   disclosureChevronStyles,
@@ -32,7 +34,13 @@ import {
   fillStyles,
   readingWidthStyles,
   scrollStyles,
+  toolGroupStyles,
 } from './styles.js';
+
+/** 连续的工具调用合并为一组展示，其余活动项原样保留。 */
+type FeedEntry =
+  | Exclude<ActivityItem, ToolActivity>
+  | { kind: 'tools'; id: string; seq: number; tools: ToolActivity[] };
 
 function InteractionDecision({ interaction }: { interaction: AiInteractionResponse }) {
   const response = jsonObject(interaction.response);
@@ -123,6 +131,18 @@ export function ActivityFeed({
     0,
   );
   const fallback = jsonObject(execution.result).text;
+  const entries = items.reduce<FeedEntry[]>((result, item) => {
+    const last = result.at(-1);
+    if (item.kind !== 'tool') result.push(item);
+    else if (last?.kind === 'tools') last.tools.push(item);
+    else result.push({ kind: 'tools', id: item.id, seq: item.seq, tools: [item] });
+    return result;
+  }, []);
+  const enter = (seq: number) =>
+    active && !reducedMotion && seq > initialWatermark.current ? { opacity: 0, y: 6 } : false;
+  const live = liveAction(view);
+  const last = items.at(-1);
+  const toolRunning = last?.kind === 'tool' && last.state === 'running';
   useLayoutEffect(() => {
     const node = viewport.current;
     if (active && follow.current && node) node.scrollTop = node.scrollHeight;
@@ -167,30 +187,29 @@ export function ActivityFeed({
       >
         <div ref={content} className={readingWidthStyles}>
           {prompt && (
-            <section
-              aria-label="任务目标"
-              className="mb-6 rounded-xl border border-[color:var(--line)] bg-page/60 px-4 py-3.5"
-            >
-              <p className="mb-2 flex items-center gap-2 text-caption font-medium text-muted-ink">
-                <UserRound size={14} />
-                任务目标
-              </p>
-              {prompt.length > 260 ? (
-                <details
-                  className={cn(
-                    disclosureStyles,
-                    'border-0 bg-transparent [&>summary]:px-0 [&>summary]:py-0',
-                  )}
-                >
-                  <summary>
-                    <span className="line-clamp-2 flex-1">{prompt.slice(0, 140)}…</span>
-                    <ChevronDown size={14} className={disclosureChevronStyles} />
-                  </summary>
-                  <p className="mt-3 whitespace-pre-wrap break-words">{prompt}</p>
-                </details>
-              ) : (
-                <p className="whitespace-pre-wrap break-words leading-relaxed">{prompt}</p>
-              )}
+            <section aria-label="任务目标" className="mb-6 flex justify-end gap-3">
+              <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tr-md bg-brand-soft/55 px-4 py-3 ring-1 ring-inset ring-brand/10">
+                <p className="mb-1 text-caption font-medium text-brand">任务目标</p>
+                {prompt.length > 260 ? (
+                  <details
+                    className={cn(
+                      disclosureStyles,
+                      'border-0 bg-transparent [&>summary]:px-0 [&>summary]:py-0 [&[open]>summary]:border-b-0',
+                    )}
+                  >
+                    <summary>
+                      <span className="line-clamp-2 flex-1 text-ink">{prompt.slice(0, 140)}…</span>
+                      <ChevronDown size={14} className={disclosureChevronStyles} />
+                    </summary>
+                    <p className="mt-3 whitespace-pre-wrap break-words">{prompt}</p>
+                  </details>
+                ) : (
+                  <p className="whitespace-pre-wrap break-words leading-relaxed">{prompt}</p>
+                )}
+              </div>
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-paper text-muted-ink ring-1 ring-inset ring-[color:var(--line)] max-sm:hidden">
+                <UserRound size={15} />
+              </span>
             </section>
           )}
           <AgentRoster view={view} />
@@ -200,7 +219,7 @@ export function ActivityFeed({
             </p>
           )}
           <div className={activityTrackStyles}>
-            {items.map((item) => {
+            {entries.map((item) => {
               const pending =
                 item.kind === 'interaction' &&
                 item.interaction.status === 'pending' &&
@@ -210,11 +229,7 @@ export function ActivityFeed({
                   key={`${item.kind}:${item.id}`}
                   ref={pending ? confirmation : undefined}
                   tabIndex={pending ? -1 : undefined}
-                  initial={
-                    active && !reducedMotion && item.seq > initialWatermark.current
-                      ? { opacity: 0, y: 6 }
-                      : false
-                  }
+                  initial={enter(item.seq)}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: reducedMotion ? 0 : 0.18 }}
                 >
@@ -225,8 +240,26 @@ export function ActivityFeed({
                       running={execution.status === 'running'}
                       active={active}
                     />
-                  ) : item.kind === 'tool' ? (
-                    <ToolActivityCard tool={item} />
+                  ) : item.kind === 'tools' ? (
+                    <section
+                      aria-label="工具调用"
+                      className={cn(toolGroupStyles, 'divide-y divide-[color:var(--line)]')}
+                    >
+                      <p className="flex items-center gap-2 px-4 py-2 text-caption text-muted-ink">
+                        <Wrench size={13} />
+                        调用工具 · {item.tools.length} 次
+                      </p>
+                      {item.tools.map((tool) => (
+                        <motion.div
+                          key={tool.id}
+                          initial={tool.seq > item.seq ? enter(tool.seq) : false}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: reducedMotion ? 0 : 0.18 }}
+                        >
+                          <ToolActivityCard tool={tool} />
+                        </motion.div>
+                      ))}
+                    </section>
                   ) : pending && canManage ? (
                     <InteractionForm
                       executionId={execution.id}
@@ -247,15 +280,17 @@ export function ActivityFeed({
           )}
           {!items.length && typeof fallback !== 'string' && (
             <div
-              className="mt-5 flex items-center gap-3 rounded-xl border border-dashed border-[color:var(--line)] p-5 text-muted-ink"
+              className="mt-5 flex items-center gap-4 rounded-2xl border border-dashed border-[color:var(--line)] p-5 text-muted-ink"
               role="status"
             >
               {['queued', 'running'].includes(execution.status) ? (
                 <>
-                  <LoaderCircle
-                    size={18}
-                    className="shrink-0 text-brand motion-safe:animate-spin"
-                  />
+                  <span className="text-brand">
+                    <AgentSignal
+                      signal={execution.status === 'queued' ? 'idle' : 'working'}
+                      glyph={live.glyph}
+                    />
+                  </span>
                   <span>
                     {execution.status === 'queued'
                       ? '任务已排队，准备开始…'
@@ -273,10 +308,25 @@ export function ActivityFeed({
           {execution.status === 'running' &&
             items.length > 0 &&
             execution.message_blocks.every((block) => block.complete) && (
-              <p role="status" className="mt-5 flex items-center gap-2 text-muted-ink">
-                <LoaderCircle size={13} className="motion-safe:animate-spin" />
-                正在推进后续步骤…
-              </p>
+              <div role="status" className="mt-5 flex items-center gap-3 text-muted-ink">
+                <span className="text-brand">
+                  <AgentSignal
+                    signal="working"
+                    glyph={live.glyph}
+                    pulse={view.activity.at(-1)?.seq}
+                  />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-ink">
+                    {toolRunning
+                      ? `正在${toolLabels[last.name] ?? '调用工具'}…`
+                      : '正在推进后续步骤…'}
+                  </span>
+                  {toolRunning && live.detail && (
+                    <span className="block truncate text-caption">{live.detail}</span>
+                  )}
+                </span>
+              </div>
             )}
         </div>
       </div>
