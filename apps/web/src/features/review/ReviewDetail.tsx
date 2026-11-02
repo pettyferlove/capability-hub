@@ -550,27 +550,50 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
         r.can_decide ? (
           <>
             <div className={reviewDecisionDockStyles}>
-              <div>
-                <ShieldCheck size={18} />
-                <span>
-                  <strong>完成本次审查后，记录决定</strong>
-                  <small>
-                    {important.filter((f) => f.severity === 'warning').length
-                      ? '有风险提示需要说明接受理由'
-                      : '核对内容与分发受众后即可处理'}
-                  </small>
-                </span>
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                {reviewAssistant}
+              {reviewAssistant || (
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <ShieldCheck size={18} className="shrink-0 text-brand" />
+                  <span>
+                    <strong className="block text-label font-medium">
+                      完成本次审查后，记录决定
+                    </strong>
+                    <small className="text-caption text-muted-ink">
+                      {important.some((f) => f.severity === 'warning')
+                        ? '有风险提示需要说明接受理由'
+                        : '核对内容与分发受众后即可处理'}
+                    </small>
+                  </span>
+                </div>
+              )}
+              <span
+                className={cn(
+                  'flex shrink-0 items-center',
+                  r.can_use_review_agent && 'border-l border-separator pl-2.5',
+                )}
+              >
                 <button
-                  className={cn(btnStyles, btnPrimaryStyles)}
+                  type="button"
+                  aria-label="审核决定"
+                  aria-describedby={
+                    r.can_use_review_agent && warningMissing ? 'review-dock-warning' : undefined
+                  }
+                  className={cn(btnStyles, btnPrimaryStyles, 'items-center whitespace-nowrap')}
                   onClick={() => setDecisionOpen(true)}
                 >
                   <CheckCheck size={15} />
-                  审核决定
+                  <span className="flex flex-col items-start justify-center gap-0.5 leading-4">
+                    审核决定
+                    {r.can_use_review_agent && warningMissing && (
+                      <small
+                        id="review-dock-warning"
+                        className="text-caption font-normal leading-none"
+                      >
+                        告警待说明
+                      </small>
+                    )}
+                  </span>
                 </button>
-              </div>
+              </span>
             </div>
             <Overlay
               open={decisionOpen}

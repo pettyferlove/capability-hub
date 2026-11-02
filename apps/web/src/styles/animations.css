@@ -163,3 +163,22 @@
     transform: translateX(200%);
   }
 }
+
+@keyframes review-scan {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(16px);
+  }
+}
+
+@keyframes review-compose {
+  0%,
+  100% {
+    transform: scaleX(0.35);
+  }
+  50% {
+    transform: scaleX(1);
+  }
+}

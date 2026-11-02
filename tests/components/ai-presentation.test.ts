@@ -877,10 +877,21 @@ test('流式游标按字素边界推进，不拆开 emoji 和组合字符', () =
   assert.equal(cursor, text.length);
 });
 
-test('审核页手动生成本申请的简报，证据可定位，已处理的申请只可回看', async (t) => {
+test('审核底栏只给出一项可定位的核对建议，基线变化和历史记录不沿用当前建议', async (t) => {
   const input = { publication_request_id: 'review-A' };
   const report = {
     ...businessReport,
+    assessment: {
+      ...businessReport.assessment,
+      findings: [
+        { ...businessReport.assessment.findings[0], recommendation: '这是次要建议' },
+        {
+          ...businessReport.assessment.findings[0],
+          severity: 'critical',
+          recommendation: '1. 明确错误反馈；2. 再检查后续配置。',
+        },
+      ],
+    },
     snapshot: {
       ...input,
       request_revision: 1,
@@ -929,12 +940,12 @@ test('审核页手动生成本申请的简报，证据可定位，已处理的�
     return Response.json(view);
   });
   const openEvidence = t.mock.fn();
-  const panel = (canDecide: boolean) =>
+  const panel = (canDecide: boolean, revision = 1) =>
     withHub(
       createElement(PublicationReviewAssistant, {
         request: {
           id: 'review-A',
-          revision: canDecide ? 1 : 2,
+          revision,
           can_decide: canDecide,
           policy_digest: 'policy-A',
         },
@@ -946,21 +957,121 @@ test('审核页手动生成本申请的简报，证据可定位，已处理的�
   await waitFor(() => assert(!start.disabled));
   assert.equal(started, false);
   fireEvent.click(start);
-  const inspect = await screen.findByRole('button', { name: '查看审核简报' });
-  assert.equal(screen.queryByRole('dialog', { name: '审核简报' }), null);
-  fireEvent.click(inspect);
-  const brief = within(await screen.findByRole('dialog', { name: '审核简报' }));
-  assert(brief.getByRole('heading', { name: /本次审核摘要/ }));
-  fireEvent.click(brief.getByText('展开分发对照、告警与文件依据'));
-  const citation = await screen.findByRole('button', { name: 'SKILL.md:5–8' });
-  fireEvent.click(citation);
+  assert(await screen.findByText('需要关注'));
+  assert(screen.getByText('明确错误反馈'));
+  assert.equal(screen.queryByText('这是次要建议'), null);
+  assert.equal(screen.queryByText(businessReport.assessment.summary), null);
+  assert.equal(screen.queryByRole('button', { name: '查看审核简报' }), null);
+  assert.equal(screen.queryByRole('dialog'), null);
+  fireEvent.click(screen.getByRole('button', { name: '核对依据' }));
   assert.deepEqual(openEvidence.mock.calls[0].arguments, ['SKILL.md', 5, 8]);
-  page.rerender(panel(false));
-  await waitFor(() => assert(!screen.queryByRole('dialog', { name: '审核简报' })));
-  fireEvent.click(screen.getByRole('button', { name: '查看审核简报' }));
-  assert(screen.getByText('历史简报仅供回看。'));
+  page.rerender(panel(true, 2));
+  assert(screen.getByText('基线已变'));
+  assert.equal(screen.queryByText('明确错误反馈'), null);
+  assert.equal(screen.queryByRole('button', { name: '核对依据' }), null);
+  page.rerender(panel(false, 2));
+  assert(screen.getByText('历史研判'));
   assert.equal(screen.queryByRole('button', { name: '生成审核简报' }), null);
-  assert.equal(screen.queryByRole('button', { name: '重新生成' }), null);
+  assert.equal(screen.queryByRole('button', { name: '重新研判' }), null);
+});
+
+test('审核底栏跟随取证和整理阶段，可直接取消并重新研判', async (t) => {
+  const request = { id: 'review-A', revision: 1, policy_digest: 'policy-A', can_decide: true };
+  const input = { publication_request_id: request.id };
+  let view = executionView({ operation_id: 'publication-review', input, status: 'queued' });
+  let stream: ReadableStreamDefaultController<Uint8Array>;
+  const events = new ReadableStream<Uint8Array>({
+    start(controller) {
+      stream = controller;
+    },
+  });
+  const citation = t.mock.fn();
+  t.mock.method(globalThis, 'fetch', async (path: string, init?: RequestInit) => {
+    if (path === '/api/ai/model-options')
+      return Response.json({
+        default_profile: 'primary',
+        profiles: [{ id: 'primary', label: '演示' }],
+      });
+    if (path.startsWith('/api/ai/executions?'))
+      return Response.json(
+        new URL(path, 'http://localhost').searchParams.has('cursor')
+          ? { items: [view.execution], next_cursor: null }
+          : { items: [], next_cursor: 'next-page' },
+      );
+    if (path.endsWith('/events'))
+      return new Response(events, { headers: { 'Content-Type': 'text/event-stream' } });
+    if (path === '/api/ai/executions/execution') return Response.json(view);
+    if (path.endsWith('/cancel')) {
+      assert.equal(new Headers(init?.headers).get('If-Match'), '"4"');
+      view = executionView({ ...view.execution, status: 'cancelled', revision: 5 });
+      return Response.json(view.execution);
+    }
+    assert.equal(path, '/api/ai/executions');
+    assert.equal(init?.method, 'POST');
+    assert.deepEqual(JSON.parse(String(init?.body)), { operation_id: 'publication-review', input });
+    view = executionView({
+      id: 'retry',
+      input,
+      operation_id: 'publication-review',
+      result: {
+        snapshot: { ...input, request_revision: 1, policy_digest: 'policy-A' },
+        warnings: [{ finding_id: 'scan-1', file: 'entry.js', line: 12 }],
+        assessment: {
+          ...businessReport.assessment,
+          warning_questions: [{ finding_id: 'scan-1', question: '这个外部调用是否获得授权？' }],
+        },
+      },
+    });
+    return Response.json(view.execution);
+  });
+  const rendered = render(
+    withHub(createElement(PublicationReviewAssistant, { request, onEvidence: citation })),
+  );
+  t.after(() => {
+    rendered.unmount();
+    stream.close();
+  });
+  await screen.findByText('已排队');
+  view = executionView({ ...view.execution, status: 'running', revision: 4 });
+  const encoder = new TextEncoder();
+  await act(async () => {
+    stream.enqueue(
+      encoder.encode(
+        'event: stream.snapshot\ndata: ' + JSON.stringify({ schema_version: 1, ...view }) + '\n\n',
+      ),
+    );
+  });
+  await screen.findByText('查阅依据');
+  const activity = aiEventResponseSchema.parse({
+    schema_version: 1,
+    execution_id: view.execution.id,
+    audience: 'operator',
+    seq: 1,
+    attempt: 1,
+    continuation: 0,
+    occurred_at: new Date().toISOString(),
+    type: 'tool.started',
+    data: { tool_id: 'review-warnings', invocation_id: 'warnings-1' },
+  });
+  await act(async () => {
+    stream.enqueue(
+      encoder.encode('event: tool.started\ndata: ' + JSON.stringify(activity) + '\n\n'),
+    );
+  });
+  await screen.findByText('正在核对申请告警。');
+  const step = { ...activity, seq: 2, type: 'step.started', data: { step_id: 'assessment' } };
+  await act(async () => {
+    stream.enqueue(encoder.encode('event: step.started\ndata: ' + JSON.stringify(step) + '\n\n'));
+  });
+  await screen.findByText('整理结论');
+  assert.equal(screen.queryByRole('button', { name: '生成审核简报' }), null);
+  assert.equal(screen.queryByRole('dialog'), null);
+  fireEvent.click(screen.getByRole('button', { name: '取消研判' }));
+  await screen.findByText('已取消');
+  fireEvent.click(screen.getByRole('button', { name: '重试研判' }));
+  await screen.findByText('这个外部调用是否获得授权？');
+  fireEvent.click(screen.getByRole('button', { name: '核对依据' }));
+  assert.deepEqual(citation.mock.calls[0].arguments, ['entry.js', 12, 12]);
 });
 
 test('待审页按身份展示工具，版本审计只出现在独立审核员的决定抽屉中', async (t) => {

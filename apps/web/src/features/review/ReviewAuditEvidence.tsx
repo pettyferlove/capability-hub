@@ -9,6 +9,8 @@ import type { ReviewResponse } from '@capability-hub/contracts/http';
 import { api } from '../../shared/api/client.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { useHub } from '../../shared/context/HubContext.js';
+import { LoaderCircle, RefreshCw } from '../../shared/icons/lucide.js';
+import { cn } from '../../shared/styles/cn.js';
 import { btnStyles, textBtnStyles } from '../../shared/styles/recipes.js';
 import { BusinessAssessment } from '../ai/BusinessAssessment.js';
 import { riskLabels } from '../ai/agent-brief.js';
@@ -190,25 +192,58 @@ export function ReviewAuditEvidence({
       aria-label="版本资源审计"
       className="mb-3 min-w-0 rounded-xl border border-separator bg-page px-4 py-3"
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <h4 className="mr-auto font-semibold">版本资源审计</h4>
-        <span className="text-caption text-muted-ink">
-          {stateLabel}
-          {typeof assessment.risk === 'string' &&
-            ' · ' + (riskLabels[assessment.risk] ?? '证据有限')}
-        </span>
-        {!active && (
-          <button
-            type="button"
-            className={textBtnStyles}
-            disabled={busy || record === undefined || !models.data?.profiles.length}
-            onClick={() => {
-              void start();
-            }}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <h4 className="inline-flex min-h-7 items-center text-label font-semibold leading-none">
+          版本资源审计
+        </h4>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+          <span
+            role="status"
+            className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap text-label leading-none text-muted-ink"
           >
-            {task ? '重新审计' : '发起审计'}
-          </button>
-        )}
+            {active && task?.status !== 'waiting_input' ? (
+              <LoaderCircle
+                aria-hidden="true"
+                size={12}
+                className="text-brand motion-safe:animate-spin"
+              />
+            ) : (
+              <i
+                aria-hidden="true"
+                className={cn(
+                  'size-1.5 rounded-full',
+                  adopted === true ? 'bg-success' : pending ? 'bg-warning' : 'bg-muted-ink/55',
+                )}
+              />
+            )}
+            <span key={stateLabel} className="motion-safe:animate-[popover-in_220ms_ease-out_both]">
+              {stateLabel}
+              {typeof assessment.risk === 'string' &&
+                ' · ' + (riskLabels[assessment.risk] ?? '证据有限')}
+            </span>
+          </span>
+          {!active && (
+            <button
+              type="button"
+              className="group/audit-retry inline-flex h-7 items-center justify-center gap-1 rounded-md border border-separator bg-paper px-2 text-label font-medium leading-none whitespace-nowrap text-brand hover:border-brand/40 hover:bg-brand-soft disabled:opacity-50"
+              disabled={busy || record === undefined || !models.data?.profiles.length}
+              onClick={() => {
+                void start();
+              }}
+            >
+              <RefreshCw
+                aria-hidden="true"
+                size={12}
+                className={
+                  busy
+                    ? 'motion-safe:animate-spin'
+                    : 'motion-safe:transition-transform motion-safe:group-hover/audit-retry:rotate-45'
+                }
+              />
+              {task ? '重新审计' : '发起审计'}
+            </button>
+          )}
+        </div>
       </div>
       {!task && (
         <p className="mt-2 text-caption text-muted-ink">
