@@ -1,5 +1,5 @@
 name: capability-hub
-x-minio-image: &minio-image ${CAPABILITY_HUB_MINIO_IMAGE:?Set an approved storage image}
+x-minio-image: &minio-image ${CAPABILITY_HUB_MINIO_IMAGE:-}
 x-runtime: &runtime
   restart: unless-stopped
   init: true
@@ -20,23 +20,27 @@ services:
     image: ${CAPABILITY_HUB_IMAGE:?Set a versioned application image}
     environment:
       NODE_ENV: production
-      CAPABILITY_HUB_HOST: 0.0.0.0
-      PORT: 4100
+      PORT: ${PORT:-4100}
       CAPABILITY_HUB_PUBLIC_URL: ${CAPABILITY_HUB_PUBLIC_URL:?Set the public HTTP or HTTPS URL}
       CAPABILITY_HUB_INSTANCE_SECRET: ${CAPABILITY_HUB_INSTANCE_SECRET:?Set a 64-character hex secret}
       CAPABILITY_HUB_SETUP_TOKEN: ${CAPABILITY_HUB_SETUP_TOKEN:?Set a unique setup token}
-      CAPABILITY_HUB_DATA_DIR: /app/data
+      CAPABILITY_HUB_WEB_DIR: ${CAPABILITY_HUB_WEB_DIR:-/app/web}
+      CAPABILITY_HUB_WORKER: ${CAPABILITY_HUB_WORKER-true}
       CAPABILITY_HUB_WORKER_CONCURRENCY: ${CAPABILITY_HUB_WORKER_CONCURRENCY:-5}
-      CAPABILITY_HUB_DATABASE_DRIVER: postgresql
-      CAPABILITY_HUB_DATABASE_URL: postgresql://capability_hub:${CAPABILITY_HUB_POSTGRES_PASSWORD:?Set a URL-safe database password}@postgres:5432/capability_hub
+      CAPABILITY_HUB_DATABASE_DRIVER: ${CAPABILITY_HUB_DATABASE_DRIVER-sqlite}
+      CAPABILITY_HUB_DATABASE_URL: ${CAPABILITY_HUB_DATABASE_URL:-${CAPABILITY_HUB_POSTGRES_PASSWORD:+postgresql://capability_hub:${CAPABILITY_HUB_POSTGRES_PASSWORD}@postgres:5432/capability_hub}}
       CAPABILITY_HUB_DATABASE_POOL_SIZE: ${CAPABILITY_HUB_DATABASE_POOL_SIZE:-10}
-      CAPABILITY_HUB_OBJECT_STORAGE_DRIVER: minio
-      CAPABILITY_HUB_MINIO_ENDPOINT: http://minio:9000
-      CAPABILITY_HUB_MINIO_ACCESS_KEY: ${CAPABILITY_HUB_MINIO_ACCESS_KEY:?Set a dedicated application access key}
-      CAPABILITY_HUB_MINIO_SECRET_KEY: ${CAPABILITY_HUB_MINIO_SECRET_KEY:?Set a dedicated application secret key}
+      CAPABILITY_HUB_OBJECT_STORAGE_DRIVER: ${CAPABILITY_HUB_OBJECT_STORAGE_DRIVER-filesystem}
+      CAPABILITY_HUB_MINIO_ENDPOINT: ${CAPABILITY_HUB_MINIO_ENDPOINT:-http://minio:9000}
+      CAPABILITY_HUB_MINIO_ACCESS_KEY: ${CAPABILITY_HUB_MINIO_ACCESS_KEY:-}
+      CAPABILITY_HUB_MINIO_SECRET_KEY: ${CAPABILITY_HUB_MINIO_SECRET_KEY:-}
       CAPABILITY_HUB_MINIO_BUCKET: ${CAPABILITY_HUB_MINIO_BUCKET:-capability-hub}
-      CAPABILITY_HUB_MINIO_REGION: us-east-1
+      CAPABILITY_HUB_MINIO_REGION: ${CAPABILITY_HUB_MINIO_REGION:-us-east-1}
+      CAPABILITY_HUB_MINIO_PREFIX: ${CAPABILITY_HUB_MINIO_PREFIX-blobs/}
       CAPABILITY_HUB_LOG_LEVEL: ${CAPABILITY_HUB_LOG_LEVEL:-info}
+      CAPABILITY_HUB_REQUEST_LOGS: ${CAPABILITY_HUB_REQUEST_LOGS-true}
+      CAPABILITY_HUB_AI_CONFIG: ${CAPABILITY_HUB_AI_CONFIG:-}
+      HUB_AI_PRIMARY_KEY: ${HUB_AI_PRIMARY_KEY:-}
       CAPABILITY_HUB_GIT_HOSTS: ${CAPABILITY_HUB_GIT_HOSTS:-github.com,gitlab.com}
       CAPABILITY_HUB_PRIVATE_GIT_HOSTS: ${CAPABILITY_HUB_PRIVATE_GIT_HOSTS:-}
       CAPABILITY_HUB_LDAP_URL: ${CAPABILITY_HUB_LDAP_URL:-}
@@ -45,14 +49,16 @@ services:
       CAPABILITY_HUB_LDAP_BIND_PASSWORD: ${CAPABILITY_HUB_LDAP_BIND_PASSWORD:-}
       CAPABILITY_HUB_LDAP_DEFAULT_ROLES: ${CAPABILITY_HUB_LDAP_DEFAULT_ROLES:-maintainer,reader}
     ports:
-      - '${CAPABILITY_HUB_BIND_HOST:-127.0.0.1}:${CAPABILITY_HUB_PORT:-4100}:4100'
+      - '${CAPABILITY_HUB_BIND_HOST:-${CAPABILITY_HUB_HOST:-127.0.0.1}}:${CAPABILITY_HUB_PORT:-${PORT:-4100}}:${PORT:-4100}'
     volumes:
-      - server-data:/app/data
+      - '${CAPABILITY_HUB_DATA_DIR:-server-data}:/app/data'
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
       minio:
         condition: service_healthy
+        required: false
     healthcheck:
       test: ['CMD', 'node', 'scripts/healthcheck.mjs']
       interval: 15s
@@ -61,6 +67,7 @@ services:
       start_period: 30s
   postgres:
     <<: *runtime
+    profiles: [postgres]
     image: ${CAPABILITY_HUB_POSTGRES_IMAGE:-postgres:17.11-trixie}
     # 上游入口负责创建并切换数据库用户。
     read_only: false
@@ -68,7 +75,7 @@ services:
     environment:
       POSTGRES_DB: capability_hub
       POSTGRES_USER: capability_hub
-      POSTGRES_PASSWORD: ${CAPABILITY_HUB_POSTGRES_PASSWORD:?Set a URL-safe database password}
+      POSTGRES_PASSWORD: ${CAPABILITY_HUB_POSTGRES_PASSWORD:-}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -77,6 +84,7 @@ services:
       timeout: 3s
       retries: 15
   minio-volume-init:
+    profiles: [minio, bootstrap]
     image: busybox:1.37.0
     network_mode: none
     user: '0:0'
@@ -85,11 +93,20 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN]
     security_opt: [no-new-privileges:true]
-    entrypoint: ['chown', '1000:1000', '/data']
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        if [ -z "${CAPABILITY_HUB_MINIO_ROOT_USER:+set}" ] || [ -z "${CAPABILITY_HUB_MINIO_ROOT_PASSWORD:+set}" ]; then
+          echo 'Set CAPABILITY_HUB_MINIO_ROOT_USER and CAPABILITY_HUB_MINIO_ROOT_PASSWORD' >&2
+          exit 1
+        fi
+        exec chown 1000:1000 /data
     volumes:
       - minio-data:/data
   minio:
     <<: *runtime
+    profiles: [minio, bootstrap]
     image: *minio-image
     command: ['server', '/data', '--console-address', ':9001']
     user: '1000:1000'
@@ -98,8 +115,8 @@ services:
         condition: service_completed_successfully
     environment:
       MC_CONFIG_DIR: /tmp/mc
-      MINIO_ROOT_USER: ${CAPABILITY_HUB_MINIO_ROOT_USER:?Set the storage administrator user}
-      MINIO_ROOT_PASSWORD: ${CAPABILITY_HUB_MINIO_ROOT_PASSWORD:?Set the storage administrator password}
+      MINIO_ROOT_USER: ${CAPABILITY_HUB_MINIO_ROOT_USER:-}
+      MINIO_ROOT_PASSWORD: ${CAPABILITY_HUB_MINIO_ROOT_PASSWORD:-}
     volumes:
       - minio-data:/data
     healthcheck:
@@ -119,11 +136,12 @@ services:
     entrypoint: ['/bin/sh', '/bootstrap/minio-bootstrap.sh']
     environment:
       MC_CONFIG_DIR: /tmp/mc
-      MINIO_ROOT_USER: ${CAPABILITY_HUB_MINIO_ROOT_USER:?Set the storage administrator user}
-      MINIO_ROOT_PASSWORD: ${CAPABILITY_HUB_MINIO_ROOT_PASSWORD:?Set the storage administrator password}
-      CAPABILITY_HUB_MINIO_ACCESS_KEY: ${CAPABILITY_HUB_MINIO_ACCESS_KEY:?Set a dedicated application access key}
-      CAPABILITY_HUB_MINIO_SECRET_KEY: ${CAPABILITY_HUB_MINIO_SECRET_KEY:?Set a dedicated application secret key}
+      MINIO_ROOT_USER: ${CAPABILITY_HUB_MINIO_ROOT_USER:-}
+      MINIO_ROOT_PASSWORD: ${CAPABILITY_HUB_MINIO_ROOT_PASSWORD:-}
+      CAPABILITY_HUB_MINIO_ACCESS_KEY: ${CAPABILITY_HUB_MINIO_ACCESS_KEY:-}
+      CAPABILITY_HUB_MINIO_SECRET_KEY: ${CAPABILITY_HUB_MINIO_SECRET_KEY:-}
       CAPABILITY_HUB_MINIO_BUCKET: ${CAPABILITY_HUB_MINIO_BUCKET:-capability-hub}
+      CAPABILITY_HUB_MINIO_PREFIX: ${CAPABILITY_HUB_MINIO_PREFIX-blobs/}
     volumes:
       - ./deploy/scripts/minio-bootstrap.sh:/bootstrap/minio-bootstrap.sh:ro
     depends_on:

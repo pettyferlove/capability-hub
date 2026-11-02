@@ -1,7 +1,15 @@
 #!/bin/sh
 set -eu
+: "${CAPABILITY_HUB_MINIO_ACCESS_KEY:?Set a dedicated application access key}"
+: "${CAPABILITY_HUB_MINIO_SECRET_KEY:?Set a dedicated application secret key}"
 bucket="${CAPABILITY_HUB_MINIO_BUCKET}"
 case "$bucket" in ''|*[!a-z0-9.-]*) echo 'Invalid bucket name' >&2; exit 1;; esac
+prefix=${CAPABILITY_HUB_MINIO_PREFIX-blobs/}
+case "$prefix" in
+  *[!a-zA-Z0-9/_-]*) echo 'Invalid object prefix' >&2; exit 1;;
+  ''|?*/) ;;
+  *) echo 'Invalid object prefix' >&2; exit 1;;
+esac
 if [ "$CAPABILITY_HUB_MINIO_ACCESS_KEY" = "$MINIO_ROOT_USER" ]; then
   echo 'Application and administrator accounts must differ' >&2
   exit 1
@@ -25,7 +33,7 @@ fi
 mc mb --ignore-existing "storage/$bucket" >/dev/null
 mc anonymous set private "storage/$bucket" >/dev/null
 cat > /tmp/policy.json <<POLICY
-{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetBucketLocation","s3:ListBucket"],"Resource":["arn:aws:s3:::$bucket"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject"],"Resource":["arn:aws:s3:::$bucket/blobs/*"]}]}
+{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetBucketLocation","s3:ListBucket"],"Resource":["arn:aws:s3:::$bucket"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject"],"Resource":["arn:aws:s3:::$bucket/${prefix}*"]}]}
 POLICY
 mc admin user add storage "$CAPABILITY_HUB_MINIO_ACCESS_KEY" "$CAPABILITY_HUB_MINIO_SECRET_KEY" >/dev/null
 mc admin policy create storage "$policy" /tmp/policy.json >/dev/null

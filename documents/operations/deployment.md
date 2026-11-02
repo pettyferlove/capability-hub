@@ -13,15 +13,17 @@ pnpm test:image YOUR_REGISTRY/capability-hub:VERSION
 
 ## Compose
 
-参考 compose.yaml 和 .env.example，明确设置应用及依赖镜像、数据库密码、MinIO 管理账号与独立应用账号。生产镜像应选部署方审核过的版本或摘要。Compose 不自动创建应用桶和权限。
+在部署用的 `.env` 中填写应用镜像、公开地址、实例密钥和初始化令牌。默认使用 SQLite 和文件存储，只启动 Hub。
 
 ```sh
-docker compose up -d postgres minio
-docker compose --profile bootstrap run --rm minio-bootstrap
-docker compose up -d server
+docker compose --env-file .env up -d server
 ```
 
-bootstrap 是一次性配置：创建私有桶、独立应用账号及 blobs/* 读取/写入策略，遇到已有账号或策略会拒绝覆盖。日常运维不重复运行它。正常 API 无删除对象权限；离线回收需要单独授权的维护账号。
+`CAPABILITY_HUB_DATA_DIR` 选择宿主机目录。例如设为 `/srv/capability-hub/data`，启动前执行 `install -d -m 0700 -o 1000 -g 1000 /srv/capability-hub/data`。它挂载到容器的 `/app/data`，保存 SQLite 的 `hub.sqlite` 和文件存储的 `blobs/`。PostgreSQL 和 MinIO 将数据写到各自的存储。留空时复用 `server-data` 命名卷；已有实例应保留原驱动，若之前用的是该卷，应去掉旧模板中未生效的 `CAPABILITY_HUB_DATA_DIR=.data`。改变路径或驱动不会迁移数据。
+
+数据库和对象存储独立选择。使用已有 PostgreSQL 时设 `CAPABILITY_HUB_DATABASE_DRIVER=postgresql` 和 `CAPABILITY_HUB_DATABASE_URL`。使用已有 MinIO 时设 `CAPABILITY_HUB_OBJECT_STORAGE_DRIVER=minio`、容器可达的 `CAPABILITY_HUB_MINIO_ENDPOINT`、私有桶及应用凭据。
+
+需要 Compose 托管依赖时，另设 `COMPOSE_PROFILES=postgres`、`minio` 或 `postgres,minio`，并选择相应驱动。内置 PostgreSQL 使用 `CAPABILITY_HUB_POSTGRES_PASSWORD`，内置 MinIO 使用指定镜像和独立管理账号。首次使用内置 MinIO 时先运行 `docker compose --env-file .env --profile bootstrap run --rm minio-bootstrap` 创建私有桶及应用权限，再启动 Hub。已有账号或策略不会被覆盖。
 
 server 默认发布到回环地址。内网 HTTP 直连可设 `CAPABILITY_HUB_BIND_HOST=192.168.1.20`、`CAPABILITY_HUB_PORT=4100` 和 `CAPABILITY_HUB_PUBLIC_URL=http://192.168.1.20:4100`，将示例 IP 换成服务器内网地址。选择 HTTPS 时由反向代理终止 TLS，并转发公开地址的 Host。容器根文件系统只读，Git 和扫描作业所需的 /tmp 容量按实际负载配置。
 
