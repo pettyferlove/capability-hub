@@ -387,7 +387,7 @@ test('AI 权限在读取和执行时重新校验，队列中的执行撤权后�
   assert.equal(provider.requests.length, 0);
 });
 
-test('平台维护者不能发起控制台任务，平台检查授权只开放读取', async (t) => {
+test('平台维护者不能发起平台级 Agent 任务，平台检查授权只开放读取', async (t) => {
   const hub = await createTestHub(t, { ai: config() });
   const maintainerRole = await hub.store.find('roles', 'key', 'maintainer');
   assert(maintainerRole);

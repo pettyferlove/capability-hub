@@ -18,10 +18,9 @@ import { registerExecutionDiagnosticsRoute } from './execution-diagnostics.js';
 /** 运营汇总需要平台审计权限；跨用户执行检查独立校验平台检查权与任务资源。 */
 export function registerOperationsRoutes(
   app: Express,
-  { hub, metrics, worker, security }: HttpContext,
+  { hub, metrics, worker }: HttpContext,
 ): void {
   const { identity } = hub;
-  app.use(operationsAgentApi.root, security.requireWebSession);
   app.get(
     operationsAgentApi.catalog,
     send((_req, res) => {

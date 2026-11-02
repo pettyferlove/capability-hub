@@ -16,7 +16,7 @@ import { assertResourceActivity } from '../support/resource-activity.js';
 
 const operationsPath = '/api/admin/operations';
 
-test('只为有效页面提供 HTML，运营子页可直接刷新，废弃路径和账号页签返回 404', async (context) => {
+test('只为有效页面提供 HTML，未知页面和非法页签返回 404', async (context) => {
   const directory = await mkdtemp(join(tmpdir(), 'hub-operations-web-'));
   context.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(join(directory, 'index.html'), '<!doctype html><title>Hub</title>');
@@ -36,13 +36,6 @@ test('只为有效页面提供 HTML，运营子页可直接刷新，废弃路径
       .set('Accept', 'text/html')
       .expect(200, /<title>Hub<\/title>/);
   for (const path of [
-    '/ai',
-    '/ai/',
-    '/ai?execution=run',
-    '/ai?new=1',
-    '/account?tab=operations',
-    '/account/?tab=audit',
-    '/account?tab=usage',
     '/account?tab=unknown',
     '/account?tab=profile&tab=roles',
     '/operations?tab=unknown',

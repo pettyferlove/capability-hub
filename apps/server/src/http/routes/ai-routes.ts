@@ -23,7 +23,7 @@ function revision(request: Pick<Request, 'get'>) {
 }
 
 /**
- * 业务任务与共用执行接口。整组先由 `/api/ai` 前置中间件要求登录会话（无会话 401 `UNAUTHENTICATED`），
+ * 业务任务与共用执行接口。这些路由位于全站登录校验之后，无会话为 401 `UNAUTHENTICATED`，
  * 每条路由再用 `hub.ai.principal` 结合执行记录复核归属，越权按 `AI_FORBIDDEN`/`AI_NOT_FOUND` 处理，
  * 因此列表只输出调用者可见的执行。提交、取消、应答都走 `hub.idempotency.execute`：
  * 键来自 `Idempotency-Key`，请求体摘要参与去重，避免重试产生重复执行。
@@ -31,9 +31,8 @@ function revision(request: Pick<Request, 'get'>) {
  * `events` 是 SSE，连接上限与存活期见 {@link streamAiEvents}。
  */
 export function registerAiRoutes(app: Express, context: HttpContext) {
-  const { hub, security } = context;
+  const { hub } = context;
   const runtime = hub.ai.runtime;
-  app.use('/api/ai', security.requireWebSession);
   app.get(
     '/api/ai/model-options',
     jsonRoute((_req, res) => hub.ai.modelOptions(res.locals.principal)),

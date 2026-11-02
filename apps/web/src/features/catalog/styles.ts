@@ -104,11 +104,6 @@ export const communityHeadingStyles = cn(
   '[&_p]:[overflow-wrap:anywhere]',
 );
 
-export const feedbackListStyles = cn(
-  '[list-style:none] pt-0 pr-0 pb-0 pl-0 grid gap-[var(--space-3)]',
-  '[&_button]:[overflow-wrap:anywhere]',
-);
-
 export const detailIdentityStyles = cn(
   'flex items-center gap-[15px] [&_h2]:font-mono [&_h2]:text-[length:21px]',
   '[&_h2]:[overflow-wrap:anywhere] [&_h2]:mt-1 [&_h2]:mr-0 [&_h2]:mb-1 [&_h2]:ml-0',
