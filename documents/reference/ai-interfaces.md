@@ -4,10 +4,10 @@
 
 | 方法与路径                                                        | 输入/结果                                                                                  |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| GET `/api/ai/catalog`                                             | 控制台目录，需平台级 `ai:inspect`。返回操作 Schema 和模型 ID、标签、协议、model            |
+| GET `/api/ai/catalog`                                             | Agent 操作目录，需平台级 `ai:inspect`。返回操作 Schema 和模型 ID、标签、协议、model        |
 | GET `/api/ai/model-options`                                       | 业务面板的模型选项，需 `ai:execute`。仅返回默认模型档案 ID 及各档案的 ID、标签             |
 | POST `/api/ai/executions`                                         | `{operation_id, model_profile?, input}` → 201 执行 DTO、ETag                               |
-| GET `/api/ai/executions?limit=30&cursor=…`                        | 控制台跨用户列出可读执行，按创建时间和 ID 倒序分页；`view=summary` 仅返回记录列表字段      |
+| GET `/api/ai/executions?limit=30&cursor=…`                        | 跨用户列出可读执行，按创建时间和 ID 倒序分页；`view=summary` 仅返回记录列表字段            |
 | GET `/api/ai/executions/:id`                                      | `{execution, interactions, artifacts, activity, activity_truncated, watermark}`、执行 ETag |
 | GET `/api/ai/executions/:id/diagnostics`                          | 单次执行的诊断快照。可用 `download=json` 或 `download=markdown` 下载                       |
 | POST `/api/ai/executions/:id/cancel`                              | `{}`、`If-Match: "<执行 revision>"` → 更新后的执行                                         |

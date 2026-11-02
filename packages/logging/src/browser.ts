@@ -1,5 +1,6 @@
 import pino from 'pino';
 import {
+  browserLogPages,
   safeError,
   type BrowserEvent,
   type BrowserLogBatch,
@@ -123,11 +124,7 @@ export function installBrowserLogging(options: BrowserLoggingOptions = {}) {
       level: event === 'http.failed' ? 'warn' : 'error',
       time: Date.now(),
       // 只记录固定页面名，排除资源标识和查询内容。
-      page: ['/', '/discover', '/publish', '/review', '/sources', '/connect', '/account'].includes(
-        location.pathname,
-      )
-        ? location.pathname
-        : '/resource',
+      page: browserLogPages.find((page) => page === location.pathname) ?? '/resource',
       ...(captured ? { error: { type: captured.type, stack: captured.stack } } : {}),
       ...(detail.requestId && /^[a-f0-9-]{36}$/.test(detail.requestId)
         ? { request_id: detail.requestId }

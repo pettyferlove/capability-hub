@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -11,8 +11,98 @@ import type { ExecutionRecord } from '@capability-hub/ai';
 import { createTestHub } from '../support/application.js';
 import { frameworkConfig } from '../support/ai-framework.js';
 import { httpClient, signIn } from '../support/http.js';
+import { assertProjectTokenUsage } from '../support/token-usage.js';
+import { assertResourceActivity } from '../support/resource-activity.js';
 
 const operationsPath = '/api/admin/operations';
+
+test('只为有效页面提供 HTML，运营子页可直接刷新，废弃路径和账号页签返回 404', async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), 'hub-operations-web-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, 'index.html'), '<!doctype html><title>Hub</title>');
+  const f = await createTestHub(context, { webDirectory: directory });
+  const client = httpClient(f);
+  for (const path of [
+    '/operations',
+    '/operations?tab=agents&execution=run',
+    '/operations?tab=usage',
+    '/account',
+    '/account/?tab=security',
+    '/account?tab=roles',
+    '/asset/skill?tab=feedback',
+  ])
+    await client
+      .get(path)
+      .set('Accept', 'text/html')
+      .expect(200, /<title>Hub<\/title>/);
+  for (const path of [
+    '/ai',
+    '/ai/',
+    '/ai?execution=run',
+    '/ai?new=1',
+    '/account?tab=operations',
+    '/account/?tab=audit',
+    '/account?tab=usage',
+    '/account?tab=unknown',
+    '/account?tab=profile&tab=roles',
+    '/operations?tab=unknown',
+    '/operations?tab=agents&tab=usage',
+    '/operations-missing',
+  ])
+    await client.get(path).set('Accept', 'text/html').expect(404);
+});
+
+test('运营总览按发布、分发和反馈提交日计数，只向平台审计员提供汇总', async (context) => {
+  const f = await createTestHub(context);
+  const path = '/api/admin/resource-activity';
+  await httpClient(f).get(path).expect(401);
+  await (await signIn(f)).get(path).query({ days: '90' }).expect(422);
+  await assertResourceActivity(context, f);
+  const inspect = await f.hub.administration.createRole(f.admin, {
+    name: '流程检查',
+    permissions: ['ai:inspect'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: inspect.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  await (await signIn(f, f.reader.username)).get(path).expect(403);
+});
+
+test('项目 Token 用量按模型调用汇总，时间和归属不随执行创建日变化', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-02T06:30:00.000Z') });
+  await assertProjectTokenUsage(await createTestHub(context, { ai: frameworkConfig() }));
+});
+
+test('全项目 Token 统计需要平台审计权限，空数据与采样失败有不同响应', async (context) => {
+  const f = await createTestHub(context);
+  const path = '/api/admin/token-usage';
+  await httpClient(f).get(path).expect(401);
+  const inspect = await f.hub.administration.createRole(f.admin, {
+    name: 'AI 检查',
+    permissions: ['ai:inspect'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: inspect.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  const reader = await signIn(f, f.reader.username);
+  await reader.get(path).expect(403);
+  const admin = await signIn(f);
+  await admin.get(path).query({ period: 'other' }).expect(422);
+  const empty = await admin.get(path).expect(200);
+  assert.equal(empty.body.totals.requests, 0);
+  assert.deepEqual(empty.body.by_agent, []);
+  context.mock.method(f.hub.ai.runtime.store, 'summarizeTokenUsage', async () => {
+    throw new Error('private-sampling-error');
+  });
+  const failed = await admin.get(path).expect(500);
+  assert.doesNotMatch(failed.text, /private-sampling-error/);
+});
 
 test('执行趋势按北京时间创建日分桶，包含零值日期并排除窗口外和未来的执行', async (context) => {
   const cutoff = '2026-11-01T16:00:00.000Z';

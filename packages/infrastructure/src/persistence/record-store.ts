@@ -89,6 +89,9 @@ class DrizzleStore implements RecordStore {
   sizeBytes(): Promise<number> {
     return this.execute((queries) => queries.sizeBytes());
   }
+  summarizeResourceActivity(from: string, through: string) {
+    return this.execute((queries) => queries.summarizeResourceActivity(from, through));
+  }
   health(): Promise<void> {
     return this.execute((queries) => queries.health());
   }

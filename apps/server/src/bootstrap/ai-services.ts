@@ -26,7 +26,7 @@ const businessOperations = new Set(['resource-audit', 'feedback-triage', 'public
 
 function requireAiConsole(principal: Principal, execute = false) {
   if (!has(principal, 'ai:inspect'))
-    throw new AiError('AI_FORBIDDEN', '当前账号无权访问 AI 控制台');
+    throw new AiError('AI_FORBIDDEN', '当前账号无权访问 Agent 执行记录');
   if (execute && !has(principal, 'ai:execute'))
     throw new AiError('AI_FORBIDDEN', '当前账号无权执行平台级 AI 操作');
 }

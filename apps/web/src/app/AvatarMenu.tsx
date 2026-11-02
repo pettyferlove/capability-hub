@@ -8,7 +8,7 @@ import {
 } from './styles.js';
 import { dangerTextStyles, noticeErrorStyles } from '../shared/styles/recipes.js';
 import {
-  Bot,
+  Activity,
   ChevronDown,
   KeyRound,
   LogOut,
@@ -20,6 +20,7 @@ import { useState } from 'react';
 import { Button, Menu, MenuItem, MenuTrigger, Popover, Separator } from 'react-aria-components';
 import { UserAvatar } from '../shared/components/UserAvatar.js';
 import { useHub } from '../shared/context/HubContext.js';
+import { canOpenOperations } from '../features/operations/navigation.js';
 
 /**
  * 账号菜单：资料/凭据/安全入口按需显示「团队与权限」（需 `capabilities.can_admin`），
@@ -67,10 +68,10 @@ export function AvatarMenu() {
                 <span>团队与权限</span>
               </MenuItem>
             )}
-            {me?.capabilities.can_ai_console && (
-              <MenuItem href="/ai" textValue="AI 控制台">
-                <Bot size={16} />
-                <span>AI 控制台</span>
+            {canOpenOperations(me?.capabilities) && (
+              <MenuItem href="/operations" textValue="运营中心">
+                <Activity size={16} />
+                <span>运营中心</span>
               </MenuItem>
             )}
             <Separator />

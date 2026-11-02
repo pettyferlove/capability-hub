@@ -3,29 +3,12 @@
  * 启动以来的量，不跨重启累计，所以重启后计数会归零；状态码在客户端聚合为成功（2xx/3xx）、
  * 拒绝（401/403）与失败（5xx）三类，其余状态不计入任何一类。
  */
-import {
-  formStackStyles,
-  panelStyles,
-  sectionHeadingStyles,
-  subtleStyles,
-  btnStyles,
-} from '../../shared/styles/recipes.js';
-import {
-  operationsGridStyles,
-  operationsPanelStyles,
-  operationsCardsStyles,
-  operationsFailuresStyles,
-} from './styles.js';
 import type { OperationsResponse } from '@capability-hub/contracts/http';
-import { RefreshCw } from '../../shared/icons/lucide.js';
-import { useQuery } from '../../shared/api/use-query.js';
-import { ErrorState } from '../../shared/components/ErrorState.js';
-import { CardGridSkeleton, SummarySkeleton } from '../../shared/components/Skeleton.js';
-import { useHub } from '../../shared/context/HubContext.js';
-import { bytesLabel, dateLabel } from '../../shared/format/labels.js';
-import { OperationsAgents } from './OperationsAgents.js';
-import { OperationsAnalytics } from './OperationsAnalytics.js';
+import { bytesLabel, dateLabel } from '../../../shared/format/labels.js';
+import { panelStyles, subtleStyles } from '../../../shared/styles/recipes.js';
+import { operationsGridStyles } from '../styles.js';
 import { OperationsStorage } from './OperationsStorage.js';
+import { operationsCardsStyles, operationsFailuresStyles } from './styles.js';
 
 function p95Duration(http: OperationsResponse['http']) {
   if (!http.requests) return '—';
@@ -39,28 +22,8 @@ function p95Duration(http: OperationsResponse['http']) {
   return previous == null ? '—' : `> ${previous} ms`;
 }
 
-/**
- * 所有指标都取自同一份 `OperationsResponse` 快照，避免不同卡片之间出现时间错位；
- * 重取只由 {@link useHub} 的 `refresh` 变化触发，组件内没有定时器。
- */
-export function OperationsPanel() {
-  const { refresh, reload } = useHub();
-  const { data, error, loading } = useQuery<OperationsResponse>('/api/admin/operations', refresh);
-  if (error) return <ErrorState message={error} retry={reload} />;
-  if (!data)
-    return (
-      <div className={formStackStyles}>
-        <CardGridSkeleton label="正在加载实例运行状态…" count={3} variant="stat" />
-        <div className={operationsGridStyles}>
-          <section className={panelStyles}>
-            <SummarySkeleton label="正在加载数据库与对象存储…" />
-          </section>
-          <section className={panelStyles}>
-            <SummarySkeleton label="正在加载 Agent 运行状态…" />
-          </section>
-        </div>
-      </div>
-    );
+/** 同一实例快照中的存储、请求与作业统计。 */
+export function InstanceRuntime({ data }: { data: OperationsResponse }) {
   const { jobs, scans } = data;
   const statuses = data.http.by_status;
   const total = data.http.requests;
@@ -72,22 +35,8 @@ export function OperationsPanel() {
     .filter(([status]) => Number(status) >= 500)
     .reduce((sum, [, count]) => sum + Number(count), 0);
   return (
-    <section className={operationsPanelStyles}>
-      <div className={sectionHeadingStyles}>
-        <div>
-          <h2>实例运行状态</h2>
-          <p className={subtleStyles}>
-            最近采样 {dateLabel(data.observed_at)} · 请求统计从本次进程启动开始
-          </p>
-        </div>
-        <button className={btnStyles} disabled={loading} onClick={reload}>
-          <RefreshCw size={14} />
-          刷新
-        </button>
-      </div>
+    <>
       <OperationsStorage data={data} />
-      <OperationsAnalytics agents={data.agents} />
-      <OperationsAgents agents={data.agents} workerState={data.worker_state} />
       <div className={operationsCardsStyles}>
         <div>
           <span>HTTP 请求</span>
@@ -215,6 +164,6 @@ export function OperationsPanel() {
           </div>
         </section>
       )}
-    </section>
+    </>
   );
 }

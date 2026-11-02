@@ -1,6 +1,7 @@
 import { parseRecord, type RecordMap, type TableName } from '@capability-hub/domain/models';
 import { eq, sql } from 'drizzle-orm';
 import type { RecordQueries } from '../record-driver.js';
+import { resourceActivityQuery } from '../resource-activity-query.js';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pgRevision, type pgSchema, pgTableFor } from './record-schema.js';
 
@@ -81,5 +82,13 @@ export class PgQueries implements RecordQueries {
       sql`select pg_database_size(current_database()) as bytes`,
     );
     return Number(result.rows[0].bytes);
+  }
+  async summarizeResourceActivity(from: string, through: string) {
+    const { fields, source, range, group } = resourceActivityQuery('postgresql', from, through);
+    return await this.db
+      .select(fields)
+      .from(source)
+      .where(range)
+      .groupBy(...group);
   }
 }

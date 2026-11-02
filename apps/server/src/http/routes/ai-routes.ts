@@ -4,16 +4,16 @@ import {
   respondAiInteractionRequestSchema,
   listAiExecutionsQuerySchema,
 } from '@capability-hub/contracts';
-import { AiError, digest, type ExecutionRecord } from '@capability-hub/ai';
+import { digest } from '@capability-hub/ai';
 import { fail } from '@capability-hub/domain/errors';
-import type { Principal } from '@capability-hub/domain/identity';
 import type { Express, Request } from 'express';
 import type { HttpContext } from '../context.js';
 import { idempotencyKey, jsonRoute, withRevision } from '../response.js';
 import { executionResponse, executionView } from './ai-views.js';
 import { streamAiEvents } from './ai-events.js';
-import { executionDiagnostics } from './ai-diagnostics.js';
-import { diagnosticMarkdown } from './ai-diagnostic-markdown.js';
+import { canInspect, decodeCursor, encodeCursor } from './ai-execution-page.js';
+import { registerExecutionDiagnosticsRoute } from './operations/execution-diagnostics.js';
+import { executionLedgerPage } from './operations/execution-ledger.js';
 
 function revision(request: Pick<Request, 'get'>) {
   const value = request.get('If-Match');
@@ -24,107 +24,8 @@ function revision(request: Pick<Request, 'get'>) {
   return Number(match[1]);
 }
 
-type ExecutionCursor = Pick<ExecutionRecord, 'position' | 'id'>;
-
-function encodeCursor(row?: ExecutionCursor) {
-  return row
-    ? Buffer.from(JSON.stringify({ position: row.position, id: row.id })).toString('base64url')
-    : null;
-}
-
-async function canInspect(hub: HttpContext['hub'], principal: Principal, row: ExecutionRecord) {
-  try {
-    await hub.ai.principal(principal, row, true);
-    return true;
-  } catch (error) {
-    if (error instanceof AiError && ['AI_FORBIDDEN', 'AI_NOT_FOUND'].includes(error.code))
-      return false;
-    throw error;
-  }
-}
-
-async function consoleExecutionPage(
-  hub: HttpContext['hub'],
-  principal: Principal,
-  query: z.infer<typeof listAiExecutionsQuerySchema>,
-  after?: ExecutionCursor,
-) {
-  const visible: { row: ExecutionRecord; ownerName: string; title: string }[] = [];
-  const owners = new Map([[principal.id, principal.display_name]]);
-  const term = query.q?.toLocaleLowerCase();
-  const agentTitles = new Map(
-    hub.ai.runtime.catalog().operations.map((operation) => [operation.id, operation.title]),
-  );
-  const batchSize = query.limit + 1;
-  while (visible.length <= query.limit) {
-    const batch = await hub.ai.runtime.store.list('ai_executions', {
-      after,
-      descending: true,
-      status: query.status,
-      lookup_key: query.operation_id === 'feedback-triage' ? undefined : query.operation_id,
-      limit: batchSize,
-    });
-    for (const row of batch) {
-      if (query.operation_id && row.payload.operation_id !== query.operation_id) continue;
-      if (!(await canInspect(hub, principal, row))) continue;
-      const ownerName =
-        owners.get(row.owner_id) ??
-        (await hub.store.get('users', row.owner_id))?.display_name ??
-        row.owner_id;
-      owners.set(row.owner_id, ownerName);
-      const input = row.payload.input;
-      const title =
-        input && typeof input === 'object' && !Array.isArray(input)
-          ? (input.prompt ?? input.topic)
-          : undefined;
-      if (
-        term &&
-        ![
-          row.id,
-          row.owner_id,
-          ownerName,
-          row.payload.operation_id,
-          agentTitles.get(row.payload.operation_id),
-          title,
-          row.payload.error?.code,
-        ].some((value) => typeof value === 'string' && value.toLocaleLowerCase().includes(term))
-      )
-        continue;
-      const text = typeof title === 'string' ? title.trim().replace(/\s+/g, ' ') : '';
-      visible.push({
-        row,
-        ownerName,
-        title:
-          text.length > 100
-            ? text.slice(0, 100) + '…'
-            : text || agentTitles.get(row.payload.operation_id) || row.payload.operation_id,
-      });
-      if (visible.length > query.limit) break;
-    }
-    if (batch.length < batchSize) break;
-    after = batch.at(-1);
-  }
-  return {
-    items: visible.slice(0, query.limit).map(({ row, ownerName, title }) =>
-      query.view === 'summary'
-        ? {
-            id: row.id,
-            owner_id: row.owner_id,
-            owner_display_name: ownerName,
-            operation_id: row.payload.operation_id,
-            status: row.status,
-            created_at: row.created_at,
-            title,
-            error_code: row.payload.error?.code ?? null,
-          }
-        : { ...executionResponse(row), owner_display_name: ownerName },
-    ),
-    next_cursor: visible.length > query.limit ? encodeCursor(visible[query.limit - 1].row) : null,
-  };
-}
-
 /**
- * AI 控制台与业务任务。整组先由 `/api/ai` 前置中间件要求登录会话（无会话 401 `UNAUTHENTICATED`），
+ * Agent 执行记录与业务任务。整组先由 `/api/ai` 前置中间件要求登录会话（无会话 401 `UNAUTHENTICATED`），
  * 每条路由再用 `hub.ai.principal` 结合执行记录复核归属，越权按 `AI_FORBIDDEN`/`AI_NOT_FOUND` 处理，
  * 因此列表只输出调用者可见的执行。提交、取消、应答都走 `hub.idempotency.execute`：
  * 键来自 `Idempotency-Key`，请求体摘要参与去重，避免重试产生重复执行。
@@ -185,20 +86,8 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
       const principal = businessTarget
         ? await hub.ai.principal(res.locals.principal, undefined, true)
         : await hub.ai.consolePrincipal(res.locals.principal);
-      let after: ExecutionCursor | undefined;
-      if (query.cursor) {
-        let data: unknown;
-        try {
-          data = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf8')) as unknown;
-        } catch {
-          fail(422, 'AI_CURSOR_INVALID', '列表游标无效');
-        }
-        after = z
-          .object({ position: z.number().int().nonnegative(), id: z.uuid() })
-          .strict()
-          .parse(data);
-      }
-      if (!businessTarget) return consoleExecutionPage(hub, principal, query, after);
+      const after = decodeCursor(query.cursor);
+      if (!businessTarget) return executionLedgerPage(hub, principal, query, after);
       const rows = await runtime.store.list('ai_executions', {
         owner_id: principal.id,
         status: query.status,
@@ -241,31 +130,7 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
       };
     }),
   );
-  app.get(
-    '/api/ai/executions/:id/diagnostics',
-    jsonRoute(async (req, res) => {
-      const query = z
-        .union([
-          z.object({ download: z.enum(['json', 'markdown']).optional() }).strict(),
-          z.object({ view: z.literal('handoff') }).strict(),
-        ])
-        .parse(req.query);
-      const report = await executionDiagnostics(hub, res.locals.principal, String(req.params.id));
-      res.set('Cache-Control', 'private, no-store');
-      if ('view' in query)
-        return { markdown: diagnosticMarkdown(report), watermark: report.watermark };
-      const { download } = query;
-      if (download) {
-        const name = `agent-${report.execution.id}-seq-${report.watermark}`;
-        res.attachment(name + (download === 'json' ? '.json' : '.md'));
-        if (download === 'markdown') {
-          res.type('text/markdown').send(diagnosticMarkdown(report));
-          return;
-        }
-      }
-      return report;
-    }),
-  );
+  registerExecutionDiagnosticsRoute(app, hub);
   app.get(
     '/api/ai/executions/:id',
     jsonRoute(async (req, res) => {

@@ -20,8 +20,8 @@ import {
   tagStyles,
   btnStyles,
   subtleStyles,
-} from '../../shared/styles/recipes.js';
-import { cn } from '../../shared/styles/cn.js';
+} from '../../../shared/styles/recipes.js';
+import { cn } from '../../../shared/styles/cn.js';
 import { auditCategories } from '@capability-hub/contracts';
 import type { AuditEventResponse } from '@capability-hub/contracts/http';
 import {
@@ -31,11 +31,11 @@ import {
   CircleAlert,
   CircleHelp,
   UserRound,
-} from '../../shared/icons/lucide.js';
-import { CodeBlock } from '../../shared/components/CodeBlock.js';
-import { DialogTitle } from '../../shared/components/DialogTitle.js';
-import { Message } from '../../shared/components/Message.js';
-import { UserAvatar } from '../../shared/components/UserAvatar.js';
+} from '../../../shared/icons/lucide.js';
+import { CodeBlock } from '../../../shared/components/CodeBlock.js';
+import { DialogTitle } from '../../../shared/components/DialogTitle.js';
+import { Message } from '../../../shared/components/Message.js';
+import { UserAvatar } from '../../../shared/components/UserAvatar.js';
 
 function ActorAvatar({ actor }: { actor: AuditEventResponse['actor'] }) {
   if (actor.kind === 'user')

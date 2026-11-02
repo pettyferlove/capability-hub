@@ -1,5 +1,4 @@
-/** 顶栏与 {@link pageHref} 共用的页面名义集合；新增页面要同步 {@link isPagePath} 的白名单。 */
-export type HubPage = 'discover' | 'publish' | 'review' | 'connect' | 'account' | 'login' | 'ai';
+import { hubPageFor, type HubPage } from '@capability-hub/contracts/web-pages';
 
 /** 一次导航解析出的路由形状，是 `<App>` 渲染分支的唯一判据。 */
 export interface HubRoute {
@@ -10,20 +9,12 @@ export interface HubRoute {
   query: string;
 }
 
-/** 页面路径与 API、静态资源路径分别识别。 */
-export function isPagePath(pathname: string): boolean {
-  return (
-    pathname === '/' ||
-    /^\/(?:discover|publish|review|connect|account|login|ai)\/?$/.test(pathname) ||
-    /^\/asset\/[^/]+\/?$/.test(pathname)
-  );
-}
-
 /** 资源标识只解码一次，非法路径回到可用的目录页面。 */
 export function parseHistoryRoute(pathname: string, search = ''): HubRoute {
-  const path = pathname.replace(/\/+$/, '') || '/';
   const query = search.replace(/^\?/, '');
-  const assetMatch = /^\/asset\/([^/]+)$/.exec(path);
+  const page = hubPageFor(pathname + (query ? '?' + query : ''));
+  if (!page) return { page: 'discover', query: '' };
+  const assetMatch = /^\/asset\/([^/]+)\/?$/.exec(pathname);
   if (assetMatch) {
     try {
       const asset = decodeURIComponent(assetMatch[1]);
@@ -32,10 +23,7 @@ export function parseHistoryRoute(pathname: string, search = ''): HubRoute {
       return { page: 'discover', query: '' };
     }
   }
-  if (path === '/' || path === '/discover') return { page: 'discover', query };
-  return ['/publish', '/review', '/connect', '/account', '/login', '/ai'].includes(path)
-    ? { page: path.slice(1) as HubPage, query }
-    : { page: 'discover', query: '' };
+  return { page, query };
 }
 
 /**
@@ -63,10 +51,8 @@ export function loginReturnPath(query: string): string {
   const target = new URLSearchParams(query).get('return_to') ?? '/discover';
   if (!target.startsWith('/') || target.startsWith('//') || target.includes('\\'))
     return '/discover';
-  const pathname = target.split(/[?#]/)[0];
-  return isPagePath(pathname) && parseHistoryRoute(pathname).page !== 'login'
-    ? target
-    : '/discover';
+  const page = hubPageFor(target);
+  return page && page !== 'login' ? target : '/discover';
 }
 
 /** 审核列表的筛选取值；必须与 `PublicationRequestResponse['state']` 的联合保持一致，任一侧新增状态都要同步。 */

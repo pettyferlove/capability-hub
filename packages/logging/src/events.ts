@@ -12,6 +12,18 @@ export const browserEvents = [
 /** 浏览器上报的事件名，取值来自 {@link browserEvents}；不在其中的事件会被服务端拒绝。 */
 export type BrowserEvent = (typeof browserEvents)[number];
 
+/** 固定页面名可写入日志，其余地址统一归入资源类别。 */
+export const browserLogPages = [
+  '/',
+  '/discover',
+  '/publish',
+  '/review',
+  '/connect',
+  '/account',
+  '/operations',
+  '/resource',
+] as const;
+
 /**
  * 一条浏览器诊断记录。字段全部是结构化枚举或受限形态，正文类内容不再被二次清洗，
  * 因此进入队列前必须已完成脱敏。

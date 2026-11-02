@@ -19,6 +19,19 @@ export interface AiRecordQuery {
   limit: number;
 }
 
+/** 单次模型请求只进入一个时间桶，状态保留完整、部分及待结算用量的区别。 */
+export interface TokenUsageBucket {
+  bucket: string;
+  operation_id: string;
+  profile: string;
+  owner_id: string;
+  owner_label: string | null;
+  status: AiRecordMap['ai_calls']['status'];
+  requests: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
 /**
  * 按表读写的通用端口。`insert` 是新增，主键冲突即失败；`put` 是按 `id` 覆盖更新，记录不存在也失败
  * ——两者都不做 upsert，调用方必须先用 `get` 判断存在性。
@@ -47,6 +60,12 @@ export interface AiQueries {
       count: number;
     }[]
   >;
+  /** 按北京时间的请求开始时间汇总，from 和 through 均包含在内。 */
+  summarizeTokenUsage(
+    from: string | null,
+    through: string,
+    granularity: 'day' | 'month',
+  ): Promise<TokenUsageBucket[]>;
   insert<K extends AiTable>(table: K, record: AiRecordMap[K]): Promise<AiRecordMap[K]>;
   put<K extends AiTable>(table: K, record: AiRecordMap[K]): Promise<AiRecordMap[K]>;
   remove(table: AiTable, id: string): Promise<void>;

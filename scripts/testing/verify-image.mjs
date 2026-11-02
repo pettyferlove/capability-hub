@@ -96,7 +96,8 @@ try {
   assert.equal(clientSkill.text, await readFile('dist/skills/' + hubClientSkillName + '/SKILL.md', 'utf8'));
   const page = await request('/discover');
   assert.equal(page.status, 200); assert(page.text.includes('<div id="root">'));
-  assert.equal((await request('/ai')).status, 200);
+  assert.equal((await request('/operations?tab=agents')).status, 200);
+  assert.equal((await request('/unknown-page')).status, 404);
   const missing = await request('/api/missing');
   assert.notEqual(missing.headers['content-type'], 'text/html');
 } finally {

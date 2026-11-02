@@ -7,7 +7,7 @@ import {
   auditCategoryIcons,
   auditResultIcons,
   timeRangeIcons,
-} from '../../shared/components/select-icons.js';
+} from '../../../shared/components/select-icons.js';
 import {
   panelStyles,
   sectionHeadingStyles,
@@ -18,7 +18,7 @@ import {
   tableWrapStyles,
   tableCellStatusStyles,
   tableCellActionsStyles,
-} from '../../shared/styles/recipes.js';
+} from '../../../shared/styles/recipes.js';
 import {
   auditPanelStyles,
   auditMetricsStyles,
@@ -30,7 +30,7 @@ import {
   auditTableStyles,
   auditEvidenceNoteStyles,
 } from './styles.js';
-import { cn } from '../../shared/styles/cn.js';
+import { cn } from '../../../shared/styles/cn.js';
 import { auditCategories } from '@capability-hub/contracts';
 import type { AuditEventResponse, AuditLogResponse } from '@capability-hub/contracts/http';
 import {
@@ -41,17 +41,17 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   X,
-} from '../../shared/icons/lucide.js';
+} from '../../../shared/icons/lucide.js';
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '../../shared/api/use-query.js';
-import { Empty } from '../../shared/components/Empty.js';
-import { ErrorState } from '../../shared/components/ErrorState.js';
-import { Overlay } from '../../shared/components/Overlay.js';
-import { SelectField } from '../../shared/components/SelectField.js';
-import { ServerPagination } from '../../shared/components/ServerPagination.js';
-import { TableSkeleton } from '../../shared/components/Skeleton.js';
-import { QueryRegion } from '../../shared/components/QueryRegion.js';
-import { useHub } from '../../shared/context/HubContext.js';
+import { useQuery } from '../../../shared/api/use-query.js';
+import { Empty } from '../../../shared/components/Empty.js';
+import { ErrorState } from '../../../shared/components/ErrorState.js';
+import { Overlay } from '../../../shared/components/Overlay.js';
+import { SelectField } from '../../../shared/components/SelectField.js';
+import { ServerPagination } from '../../../shared/components/ServerPagination.js';
+import { TableSkeleton } from '../../../shared/components/Skeleton.js';
+import { QueryRegion } from '../../../shared/components/QueryRegion.js';
+import { useHub } from '../../../shared/context/HubContext.js';
 import { AuditEventDetail, AuditEventRow } from './AuditEventDetail.js';
 
 /**

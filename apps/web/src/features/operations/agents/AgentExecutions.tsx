@@ -1,20 +1,27 @@
 import { useEffect, useState } from 'react';
 import { aiCatalogResponseSchema, type AiCatalogResponse } from '@capability-hub/contracts';
-import { api } from '../../shared/api/client.js';
-import { PageHead } from '../../shared/components/PageHead.js';
-import { useHub } from '../../shared/context/HubContext.js';
-import { History, Plus } from '../../shared/icons/lucide.js';
-import { navigate } from '../../shared/navigation/history-navigation.js';
-import { btnStyles, btnPrimaryStyles } from '../../shared/styles/recipes.js';
+import { api } from '../../../shared/api/client.js';
+import { useHub } from '../../../shared/context/HubContext.js';
+import { History, Plus } from '../../../shared/icons/lucide.js';
+import { operationsHref } from '../navigation.js';
+import { navigate } from '../../../shared/navigation/history-navigation.js';
+import {
+  btnStyles,
+  btnPrimaryStyles,
+  sectionHeadingStyles,
+  subtleStyles,
+} from '../../../shared/styles/recipes.js';
 import { ExecutionLedger } from './ExecutionLedger.js';
-import { ExecutionPanel } from './ExecutionPanel.js';
+import { ExecutionDiagnostics } from './ExecutionDiagnostics.js';
+import { ExecutionPanel } from '../../ai/ExecutionPanel.js';
 import { NewExecution } from './NewExecution.js';
-import { useAiExecution } from './use-ai-execution.js';
-import { fillStyles, workspaceStyles } from './styles.js';
-import { cn } from '../../shared/styles/cn.js';
+import { useAiExecution } from '../../ai/use-ai-execution.js';
+import { fillStyles } from '../../ai/styles.js';
+import { workspaceStyles } from './styles.js';
+import { cn } from '../../../shared/styles/cn.js';
 
 /** 记录、诊断和新建表单各有独立链接，返回列表时保留筛选和页码。 */
-export default function AiLabPage({ query }: { query: string }) {
+export function AgentExecutions({ query }: { query: string }) {
   const { me } = useHub();
   const canExecute = !!me?.capabilities.can_ai;
   const params = new URLSearchParams(query);
@@ -42,31 +49,30 @@ export default function AiLabPage({ query }: { query: string }) {
   }, [canExecute, listing]);
   return (
     <div className={fillStyles}>
-      <PageHead
-        eyebrow="AI CONSOLE"
-        title="AI 控制台"
-        description="检索各用户的执行记录，回看 Agent 流程并导出排查材料。"
-        action={
-          <div className="flex flex-wrap gap-2">
-            {!listing && (
-              <a className={btnStyles} href="/ai">
-                <History size={15} />
-                返回执行记录
-              </a>
-            )}
-            {canExecute && !creating && (
-              <button
-                type="button"
-                className={cn(btnStyles, btnPrimaryStyles)}
-                onClick={() => navigate('/ai?new=1')}
-              >
-                <Plus size={15} />
-                新建任务
-              </button>
-            )}
-          </div>
-        }
-      />
+      <div className={sectionHeadingStyles}>
+        <div>
+          <h2>Agent 执行</h2>
+          <p className={subtleStyles}>检索各用户的执行记录，回看流程并导出排查材料。</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {!listing && (
+            <a className={btnStyles} href={operationsHref('agents')}>
+              <History size={15} />
+              返回执行记录
+            </a>
+          )}
+          {canExecute && !creating && (
+            <button
+              type="button"
+              className={cn(btnStyles, btnPrimaryStyles)}
+              onClick={() => navigate(operationsHref('agents', { new: '1' }))}
+            >
+              <Plus size={15} />
+              新建任务
+            </button>
+          )}
+        </div>
+      </div>
       <div className={cn(workspaceStyles, 'flex-col')}>
         <ExecutionLedger active={listing} readOnly={!canExecute} />
         {!listing && (catalogError || execution.error) && (
@@ -77,7 +83,7 @@ export default function AiLabPage({ query }: { query: string }) {
         {creating && catalog && (
           <NewExecution
             catalog={catalog}
-            onCreated={(id) => navigate('/ai?execution=' + encodeURIComponent(id))}
+            onCreated={(id) => navigate(operationsHref('agents', { execution: id }))}
           />
         )}
         {((creating && !catalog && !catalogError) || (selected && !view && !execution.error)) && (
@@ -89,7 +95,7 @@ export default function AiLabPage({ query }: { query: string }) {
           <ExecutionPanel
             key={selected}
             view={view}
-            diagnostics
+            diagnostics={<ExecutionDiagnostics id={selected} liveWatermark={view.watermark} />}
             canManage={
               me?.id === view.execution.owner_id &&
               canExecute &&

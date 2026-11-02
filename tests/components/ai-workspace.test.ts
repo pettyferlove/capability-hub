@@ -18,19 +18,42 @@ import type { MeResponse } from '@capability-hub/contracts/http';
 import App from '../../apps/web/src/app/App.js';
 import { applyAiEvent, useAiExecution } from '../../apps/web/src/features/ai/use-ai-execution.js';
 import { useAiCommand } from '../../apps/web/src/features/ai/use-ai-command.js';
-import { ExecutionDiagnostics } from '../../apps/web/src/features/ai/ExecutionDiagnostics.js';
 import { SchemaFields, initialValues } from '../../apps/web/src/features/ai/SchemaFields.js';
 
 afterEach(cleanup);
+
+function workspaceUser(canExecute: boolean, consoleAccess: boolean): MeResponse {
+  return {
+    id: 'owner',
+    display_name: '用户',
+    username: 'owner',
+    auth_provider: 'local',
+    groups: [],
+    features: { git_hosts: [] },
+    csrf_token: '',
+    capabilities: {
+      can_ai: canExecute,
+      can_ai_console: consoleAccess,
+      can_admin: false,
+      can_audit: consoleAccess && canExecute,
+      can_publish: canExecute,
+      can_review: false,
+    },
+  };
+}
 
 for (const [description, canExecute, consoleAccess] of [
   ['向维护者隐藏并拒绝执行深链', true, false],
   ['通过个人菜单访问', true, true],
   ['向只有检查权限的账号提供只读界面', false, true],
 ] as const)
-  test(`AI 控制台${description}`, async (t) => {
+  test(`运营中心 Agent ${description}`, async (t) => {
     const previous = location.href;
-    history.replaceState(null, '', consoleAccess ? '/ai' : '/ai?execution=private');
+    history.replaceState(
+      null,
+      '',
+      consoleAccess ? '/operations?tab=agents' : '/operations?tab=agents&execution=private',
+    );
     t.after(() => history.replaceState(null, '', previous));
     const aiRequests: string[] = [];
     t.mock.method(globalThis, 'fetch', async (path: string) => {
@@ -40,23 +63,7 @@ for (const [description, canExecute, consoleAccess] of [
         case '/api/auth/status':
           return Response.json({ initialized: true });
         case '/api/me':
-          return Response.json({
-            id: 'owner',
-            display_name: '用户',
-            username: 'owner',
-            auth_provider: 'local',
-            groups: [],
-            features: { git_hosts: [] },
-            csrf_token: '',
-            capabilities: {
-              can_ai: canExecute,
-              can_ai_console: consoleAccess,
-              can_admin: false,
-              can_audit: false,
-              can_publish: canExecute,
-              can_review: false,
-            },
-          } satisfies MeResponse);
+          return Response.json(workspaceUser(canExecute, consoleAccess));
         case '/api/publication-requests':
           return Response.json({ items: [] });
         case '/api/ai/catalog':
@@ -85,6 +92,12 @@ for (const [description, canExecute, consoleAccess] of [
     });
     render(createElement(App));
     if (consoleAccess && canExecute) {
+      assert.equal(
+        (await screen.findByRole('link', { name: 'Token 用量' })).getAttribute('href'),
+        '/operations?tab=usage',
+      );
+      assert.equal(location.pathname, '/operations');
+      assert.equal(new URLSearchParams(location.search).get('tab'), 'agents');
       assert(await screen.findByRole('button', { name: '新建任务' }));
       assert(await screen.findByRole('table', { name: '执行记录列表' }));
       await userEvent.setup().click(screen.getByRole('button', { name: '新建任务' }));
@@ -92,6 +105,7 @@ for (const [description, canExecute, consoleAccess] of [
       await userEvent.setup().click(screen.getByRole('link', { name: '返回执行记录' }));
       assert(await screen.findByRole('table', { name: '执行记录列表' }));
     } else if (consoleAccess) {
+      assert.equal(screen.queryByRole('link', { name: 'Token 用量' }), null);
       assert(await screen.findByText('当前账号具有只读权限，可从任务记录或执行链接查看详情。'));
       assert.equal(screen.queryByRole('button', { name: '新建任务' }), null);
       const records = within(screen.getByRole('region', { name: '执行记录' }));
@@ -104,18 +118,32 @@ for (const [description, canExecute, consoleAccess] of [
         '/api/ai/executions/other-task/diagnostics?download=markdown',
       );
     } else {
-      assert(await screen.findByText('当前账号无权访问 AI 控制台。'));
+      assert(await screen.findByText('当前账号无权访问运营中心。'));
+      assert.equal(new URLSearchParams(location.search).get('execution'), 'private');
       assert.deepEqual(aiRequests, []);
     }
-    assert.equal(document.querySelector('nav a[href="/ai"]'), null);
+    const mainNav = within(screen.getByRole('navigation', { name: '主导航' }));
+    assert.equal(mainNav.queryByRole('link', { name: '运营中心' }), null);
+    if (consoleAccess && canExecute) {
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: '打开命令面板' }));
+      const results = within(await screen.findByRole('listbox', { name: '搜索结果' }));
+      assert.equal(results.queryByRole('option', { name: '运营中心' }), null);
+      await user.click(screen.getByRole('button', { name: '关闭命令面板' }));
+      await waitFor(() => assert.equal(screen.queryByRole('dialog'), null));
+    }
     await userEvent.setup().click(screen.getByRole('button', { name: '个人菜单' }));
     const menu = await screen.findByRole('menu');
-    const item = within(menu).queryByRole('menuitem', { name: 'AI 控制台' });
-    assert.equal(item?.getAttribute('href') ?? null, consoleAccess ? '/ai' : null);
+    const item = within(menu).queryByRole('menuitem', { name: '运营中心' });
+    assert.equal(item?.getAttribute('href') ?? null, consoleAccess ? '/operations' : null);
   });
 
 test('诊断页按原事件序号定位并展示交接快照，导出链接只指向当前任务', async (t) => {
-  const { execution } = streamView();
+  const view = streamView();
+  const { execution } = view;
+  const previous = location.href;
+  history.replaceState(null, '', '/operations?tab=agents&execution=' + execution.id);
+  t.after(() => history.replaceState(null, '', previous));
   const events = Array.from({ length: 42 }, (_, i) => ({
     schema_version: 1,
     execution_id: execution.id,
@@ -128,7 +156,25 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
     data: { step_id: '检查', duration_ms: i },
   }));
   const path = '/api/ai/executions/' + execution.id + '/diagnostics';
+  const latest = {
+    ...view,
+    execution: { ...execution, status: 'succeeded', last_seq: 43 },
+    watermark: 43,
+  };
   t.mock.method(globalThis, 'fetch', async (url: string) => {
+    if (url === '/api/auth/status') return Response.json({ initialized: true });
+    if (url === '/api/me') return Response.json(workspaceUser(false, true));
+    if (url === '/api/publication-requests') return Response.json({ items: [] });
+    if (url === '/api/ai/executions/' + execution.id + '/events')
+      return new Response(
+        'event: stream.snapshot\ndata: ' +
+          JSON.stringify({ schema_version: 1, ...latest }) +
+          '\n\n',
+        {
+          headers: { 'Content-Type': 'text/event-stream' },
+        },
+      );
+    if (url === '/api/ai/executions/' + execution.id) return Response.json(latest);
     if (url === path + '?view=handoff')
       return Response.json({ markdown: '交接正文 #42', watermark: 42 });
     assert.equal(url, path);
@@ -155,7 +201,7 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
       resources: [],
     });
   });
-  render(createElement(ExecutionDiagnostics, { id: execution.id, liveWatermark: 43 }));
+  render(createElement(App));
   assert(await screen.findByText(/执行已推进到 #43/));
   assert.equal(
     screen.getByRole('link', { name: '完整 JSON' }).getAttribute('href'),

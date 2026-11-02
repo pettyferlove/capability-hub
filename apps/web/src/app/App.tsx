@@ -31,7 +31,7 @@ const Publish = lazy(() => import('../features/publishing/PublishPage.js'));
 const Review = lazy(() => import('../features/review/ReviewPage.js'));
 const Connect = lazy(() => import('../features/connect/ConnectPage.js'));
 const Account = lazy(() => import('../features/identity/AccountPage.js'));
-const AiLab = lazy(() => import('../features/ai/AiLabPage.js'));
+const OperationsCenter = lazy(() => import('../features/operations/OperationsCenter.js'));
 const pagePlaceholders = {
   discover: { title: '资源目录', variant: 'cards' },
   publish: { title: '分享 Skill 与 MCP', variant: 'publish' },
@@ -39,7 +39,7 @@ const pagePlaceholders = {
   connect: { title: '安装与接入', variant: 'connect' },
   account: { title: '个人中心', variant: 'profile' },
   login: { title: '登录', variant: 'profile' },
-  ai: { title: 'AI 控制台', variant: 'cards' },
+  operations: { title: '运营中心', variant: 'cards' },
 } as const;
 
 /**
@@ -77,7 +77,7 @@ export default function App() {
     view.page +
     (view.page === 'review'
       ? '?' + reviewLocation(view.query).state
-      : ['connect', 'account', 'publish'].includes(view.page)
+      : ['connect', 'account', 'publish', 'operations'].includes(view.page)
         ? '?' + view.query
         : '');
   useEffect(() => {
@@ -107,7 +107,10 @@ export default function App() {
         </div>
       </LoadingScope>
     );
-  if (!me && (view.page === 'login' || ['publish', 'review', 'account', 'ai'].includes(view.page)))
+  if (
+    !me &&
+    (view.page === 'login' || ['publish', 'review', 'account', 'operations'].includes(view.page))
+  )
     return (
       <LoadingScope scopeKey={pageScrollKey}>
         <Login
@@ -165,12 +168,7 @@ export default function App() {
                 {view.page === 'review' && <Review query={view.query} />}
                 {view.page === 'connect' && <Connect routeQuery={view.query} />}
                 {view.page === 'account' && <Account query={view.query} />}
-                {view.page === 'ai' &&
-                  (me?.capabilities.can_ai_console ? (
-                    <AiLab query={view.query} />
-                  ) : (
-                    <ErrorState message="当前账号无权访问 AI 控制台。" />
-                  ))}
+                {view.page === 'operations' && <OperationsCenter query={view.query} />}
               </div>
             </Suspense>
           </PageBoundary>

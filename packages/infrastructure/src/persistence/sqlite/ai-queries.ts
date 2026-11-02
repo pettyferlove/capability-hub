@@ -1,5 +1,6 @@
 import type { AiQueries, AiRecordQuery } from '@capability-hub/ai/ports';
 import {
+  callRecordSchema,
   executionStatusSchema,
   parseAiRecord,
   type AiTable,
@@ -7,6 +8,7 @@ import {
 } from '@capability-hub/ai/records';
 import { and, or, eq, gt, lt, asc, desc, count, inArray, sql } from 'drizzle-orm';
 import { aiSchema } from './ai-schema.js';
+import { users } from './schema.js';
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy';
 import type { sqliteSchema } from './record-schema.js';
 
@@ -91,6 +93,41 @@ export class SqliteAiQueries implements AiQueries {
       .from(t)
       .where(sql`julianday(${t.created_at}) between julianday(${from}) and julianday(${through})`)
       .groupBy(sql`day_index`, operation, t.status, error);
+  }
+  async summarizeTokenUsage(from: string | null, through: string, granularity: 'day' | 'month') {
+    const calls = aiSchema.ai_calls;
+    const executions = aiSchema.ai_executions;
+    const operation = sql<string>`json_extract(${executions.data}, '$.payload.operation_id')`;
+    const profile = sql<string>`json_extract(${calls.data}, '$.payload.profile')`;
+    const format = granularity === 'month' ? '%Y-%m' : '%Y-%m-%d';
+    return await this.db
+      .select({
+        bucket: sql<string>`strftime(${format}, ${calls.created_at}, '+8 hours')`.as('bucket'),
+        operation_id: operation,
+        profile,
+        owner_id: calls.owner_id,
+        owner_label: sql<string | null>`max(json_extract(${users.data}, '$.display_name'))`,
+        status: sql`${calls.status}`.mapWith((value: unknown) =>
+          callRecordSchema.shape.status.parse(value),
+        ),
+        requests: count(),
+        input_tokens: sql`sum(json_extract(${calls.data}, '$.payload.input_tokens'))`.mapWith(
+          Number,
+        ),
+        output_tokens: sql`sum(json_extract(${calls.data}, '$.payload.output_tokens'))`.mapWith(
+          Number,
+        ),
+      })
+      .from(calls)
+      .innerJoin(executions, eq(executions.id, calls.execution_id))
+      .leftJoin(users, eq(users.id, calls.owner_id))
+      .where(
+        and(
+          sql`julianday(${calls.created_at}) <= julianday(${through})`,
+          from ? sql`julianday(${calls.created_at}) >= julianday(${from})` : undefined,
+        ),
+      )
+      .groupBy(sql`bucket`, operation, profile, calls.owner_id, calls.status);
   }
   async insert<K extends AiTable>(table: K, record: AiRecordMap[K]): Promise<AiRecordMap[K]> {
     const value = parseAiRecord(table, record);

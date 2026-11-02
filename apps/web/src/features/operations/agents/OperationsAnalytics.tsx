@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { aiExecutionErrorLabels } from '@capability-hub/contracts';
 import type { AgentExecutionDay, OperationsResponse } from '@capability-hub/contracts/http';
-import { Segmented } from '../../shared/components/Segmented.js';
-import { SelectField } from '../../shared/components/SelectField.js';
-import { panelStyles, subtleStyles } from '../../shared/styles/recipes.js';
-import { analyticsSummaryStyles, dailyCountsTableStyles } from './styles.js';
+import { Segmented } from '../../../shared/components/Segmented.js';
+import { SelectField } from '../../../shared/components/SelectField.js';
+import { panelStyles, subtleStyles } from '../../../shared/styles/recipes.js';
+import { analyticsSummaryStyles, dailyCountsTableStyles } from '../styles.js';
 
 const periods = [
   { id: '7', label: '近 7 天' },

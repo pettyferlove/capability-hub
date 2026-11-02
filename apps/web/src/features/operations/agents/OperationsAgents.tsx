@@ -1,8 +1,13 @@
 import { aiExecutionStatusSchema } from '@capability-hub/contracts';
 import type { OperationsResponse } from '@capability-hub/contracts/http';
-import { dateLabel } from '../../shared/format/labels.js';
-import { chipsStyles, panelStyles, subtleStyles, tagStyles } from '../../shared/styles/recipes.js';
-import { statusLabels } from '../ai/presentation.js';
+import { dateLabel } from '../../../shared/format/labels.js';
+import {
+  chipsStyles,
+  panelStyles,
+  subtleStyles,
+  tagStyles,
+} from '../../../shared/styles/recipes.js';
+import { statusLabels } from '../../ai/presentation.js';
 import { operationsAgentListStyles } from './styles.js';
 
 /** 注册信息来自当前实例，执行计数覆盖共享数据库中的保留记录。 */

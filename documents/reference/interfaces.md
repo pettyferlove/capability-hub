@@ -28,7 +28,11 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 
 `POST /auth/login` 接受 `username`、`password` 和 `provider`。来源为 `local` 或 `ldap`，省略时仅验证本地密码。实例未启用 LDAP 时，选择 `ldap` 返回 403 `LDAP_DISABLED`。当前账号和管理台用户记录均以 `auth_provider` 标明来源。
 
-`GET /api/admin/operations` 需要 `audit:read`。快照包含实例与存储探测、Agent 注册信息及保留执行的状态计数。近 30 天的趋势按北京时间创建日和当前状态汇总，成功率为完成数除以完成、失败和超时之和。无分母时留空。HTTP P95 显示本进程请求耗时桶的界限。刷新不调用模型。
+从头像菜单进入运营中心（`/operations`）可查看资源趋势。`GET /api/admin/resource-activity?days=7` 支持近 7 或 30 个北京时间自然日，分别按正式发布时间、分发审计时间和反馈提交时间计数。使用包含归档下载、Skill 加载和安装准备请求；当期反馈按当前处理状态分组。
+
+运营总览、Agent 运行分析、Token 用量、实例运行和操作审计需要平台级 `audit:read`。实例运行与 Agent 运行分析复用 `GET /api/admin/operations` 快照，执行趋势按创建日统计，成功率为完成数除以完成、失败和超时之和。HTTP P95 为本进程耗时桶界限。
+
+「Token 用量」使用 `GET /api/admin/token-usage` 按模型请求开始时间汇总留存调用。`period` 支持 `today`、`7d`、`30d` 和默认的 `all`；全部留存按月，其余按日。Agent、模型档案和用户占比均以已确认 Token 为分母，部分回传和待结算请求单列。
 
 `PATCH /api/assets/:id/usage` 更新 Skill 的资产级使用要求，请求体为 `{ "requires_api_key": true }` 或 `false`，需要当前资产维护权限及 `If-Match`。新建资产默认 `false`；目录列表、详情和资产维护列表返回 `requires_api_key`。非 Skill 返回 422，修订冲突返回 412；变更记录审计，不保存实际 API Key。实际变更会递增资产修订，并按现有审核上下文规则使待审申请失效；当前已发布内容保持可用。
 
@@ -89,6 +93,6 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 
 OAuth 与个人手动令牌的生命周期分开，详见 [身份安全](../design/identity-security.md#agent-oauth-连接)。
 
-## AI 控制台与业务任务
+## Agent 执行与业务任务
 
 `/api/ai` 提供操作目录、执行、人工交互与 SSE；详细请求、并发条件和事件协议见 [AI 接口](ai-interfaces.md)。

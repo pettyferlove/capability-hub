@@ -7,7 +7,16 @@ import type { AiQueries } from '@capability-hub/ai/ports';
  */
 export type RecordQueries = Pick<
   RecordStore,
-  'get' | 'all' | 'where' | 'insert' | 'put' | 'remove' | 'revision' | 'sizeBytes' | 'health'
+  | 'get'
+  | 'all'
+  | 'where'
+  | 'insert'
+  | 'put'
+  | 'remove'
+  | 'revision'
+  | 'sizeBytes'
+  | 'health'
+  | 'summarizeResourceActivity'
 >;
 
 /**

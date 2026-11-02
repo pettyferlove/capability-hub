@@ -140,7 +140,7 @@ test('响应已开始的内部异常终止连接，仍记录错误指标且日�
   const { default: request } = await import('supertest');
   const { registerErrorHandler } =
     await import('../../apps/server/src/http/middleware/error-handler.js');
-  const { RequestMetrics } = await import('../../apps/server/src/observability/operations.js');
+  const { RequestMetrics } = await import('../../apps/server/src/observability/request-metrics.js');
   const { logger, entries } = logCapture();
   const metrics = new RequestMetrics();
   const app = express();

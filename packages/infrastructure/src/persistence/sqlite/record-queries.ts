@@ -1,6 +1,7 @@
 import { parseRecord, type RecordMap, type TableName } from '@capability-hub/domain/models';
 import { eq, sql } from 'drizzle-orm';
 import type { RecordQueries } from '../record-driver.js';
+import { resourceActivityQuery } from '../resource-activity-query.js';
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy';
 import { sqliteRevision, type sqliteSchema, sqliteTableFor } from './record-schema.js';
 
@@ -81,5 +82,13 @@ export class SqliteQueries implements RecordQueries {
       .select({ bytes: sql<number>`page_count * page_size` })
       .from(sql`pragma_page_count(), pragma_page_size()`);
     return row.bytes;
+  }
+  async summarizeResourceActivity(from: string, through: string) {
+    const { fields, source, range, group } = resourceActivityQuery('sqlite', from, through);
+    return await this.db
+      .select(fields)
+      .from(source)
+      .where(range)
+      .groupBy(...group);
   }
 }

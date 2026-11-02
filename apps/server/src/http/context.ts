@@ -1,6 +1,6 @@
 import type { HubServices } from '../bootstrap/hub-services.js';
 import type { SourceService } from '@capability-hub/application';
-import type { RequestMetrics } from '../observability/operations.js';
+import type { RequestMetrics } from '../observability/request-metrics.js';
 import type { HttpSecurity } from './security/http-security.js';
 import type { HubWorker } from '../workers/hub-worker.js';
 

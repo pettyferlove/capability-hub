@@ -1,4 +1,5 @@
-import { isPagePath, parseHistoryRoute } from './history-route.js';
+import { hubPageFor } from '@capability-hub/contracts/web-pages';
+import { parseHistoryRoute } from './history-route.js';
 
 /**
  * 客户端导航完成后派发在 `window` 上的事件名。`pushState`/`replaceState` 本身不触发 `popstate`，
@@ -11,7 +12,7 @@ export function internalPageHref(href: string, base: string): string | undefined
   try {
     const url = new URL(href, base);
     const current = new URL(base);
-    if (url.origin !== current.origin || url.hash || !isPagePath(url.pathname)) return;
+    if (url.origin !== current.origin || url.hash || !hubPageFor(url.pathname + url.search)) return;
     return url.pathname + url.search;
   } catch {
     return;
@@ -109,8 +110,7 @@ export function assetBackground(state: unknown): string | undefined {
     value.includes('#')
   )
     return;
-  const pathname = value.split('?')[0];
-  if (!isPagePath(pathname) || parseHistoryRoute(pathname).asset) return;
+  if (!hubPageFor(value) || parseHistoryRoute(value.split('?')[0]).asset) return;
   return value;
 }
 

@@ -9,8 +9,8 @@
  */
 import { useId, useRef, useState } from 'react';
 import { aiExecutionResponseSchema, type AiCatalogResponse } from '@capability-hub/contracts';
-import { useAiCommand } from './use-ai-command.js';
-import { SelectField } from '../../shared/components/SelectField.js';
+import { useAiCommand } from '../../ai/use-ai-command.js';
+import { SelectField } from '../../../shared/components/SelectField.js';
 import {
   ArrowRight,
   Bot,
@@ -20,23 +20,25 @@ import {
   Send,
   Settings2,
   ShieldCheck,
-} from '../../shared/icons/lucide.js';
-import { cn } from '../../shared/styles/cn.js';
-import { btnStyles, btnPrimaryStyles } from '../../shared/styles/recipes.js';
-import { SchemaFields, initialValues, requiredInputNames } from './SchemaFields.js';
-import { jsonObject, operationLabels, operationMeta } from './presentation.js';
+} from '../../../shared/icons/lucide.js';
+import { cn } from '../../../shared/styles/cn.js';
+import { btnStyles, btnPrimaryStyles } from '../../../shared/styles/recipes.js';
+import { SchemaFields, initialValues, requiredInputNames } from '../../ai/SchemaFields.js';
+import { jsonObject, operationLabels, operationMeta } from '../../ai/presentation.js';
+import {
+  disclosureChevronStyles,
+  disclosureStyles,
+  eyebrowStyles,
+  fillStyles,
+  scrollStyles,
+} from '../../ai/styles.js';
 import {
   chipStyles,
   composerStyles,
   composerToolbarStyles,
-  disclosureChevronStyles,
-  disclosureStyles,
   dotFieldStyles,
-  eyebrowStyles,
-  fillStyles,
   modelSelectStyles,
   operationStyles,
-  scrollStyles,
   taskColumnStyles,
 } from './styles.js';
 

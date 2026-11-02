@@ -11,6 +11,7 @@ import {
 } from './http/routes/catalog-routes.js';
 import { registerErrorHandler } from './http/middleware/error-handler.js';
 import { registerIdentityRoutes } from './http/routes/identity-routes.js';
+import { registerOperationsRoutes } from './http/routes/operations/routes.js';
 import { registerIntakesRoutes } from './http/routes/intakes-routes.js';
 import { registerInstallationRoutes } from './http/routes/installation-routes.js';
 import { registerLifecycleRoutes } from './http/routes/lifecycle-routes.js';
@@ -27,7 +28,7 @@ import { HttpSecurity } from './http/security/http-security.js';
 import { registerProfileRoutes } from './http/routes/profile-routes.js';
 import { registerAiRoutes } from './http/routes/ai-routes.js';
 import { HubWorker } from './workers/hub-worker.js';
-import { RequestMetrics } from './observability/operations.js';
+import { RequestMetrics } from './observability/request-metrics.js';
 import type { ServerConfig } from './config/server-config.js';
 
 /**
@@ -79,6 +80,7 @@ export async function createApp(
     registerProfileRoutes(app, context);
     registerSessionRoutes(app, context);
     registerIdentityRoutes(app, context);
+    registerOperationsRoutes(app, context);
     registerProtectedCatalogRoutes(app, context);
     registerSourcesRoutes(app, context);
     registerIntakesRoutes(app, context);

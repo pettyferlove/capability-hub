@@ -18,7 +18,7 @@ import { activityItems, businessPhase } from '../../apps/web/src/features/ai/act
 import { advanceStreamCursor } from '../../apps/web/src/features/ai/stream-text.js';
 import { recentTrail } from '../../apps/web/src/features/ai/agent-brief.js';
 import { InteractionForm } from '../../apps/web/src/features/ai/InteractionForm.js';
-import { NewExecution } from '../../apps/web/src/features/ai/NewExecution.js';
+import { NewExecution } from '../../apps/web/src/features/operations/agents/NewExecution.js';
 import { BusinessAgentPanel } from '../../apps/web/src/features/ai/BusinessAgentPanel.js';
 import { PublicationReviewAssistant } from '../../apps/web/src/features/review/PublicationReviewAssistant.js';
 import { ReviewAuditEvidence } from '../../apps/web/src/features/review/ReviewAuditEvidence.js';

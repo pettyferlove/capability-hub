@@ -1,6 +1,6 @@
 /**
  * 执行面板：把一份执行视图拆成「协作过程／成果／运行详情」三个页签，并承载取消任务与人工确认入口。
- * 视图、连接状态与刷新回调都由调用方注入（独立页面与侧栏浮层共用），写操作经 `{@link useAiCommand}`
+ * 视图、连接状态与刷新回调都由调用方注入（运营中心与业务侧栏共用），写操作经 `{@link useAiCommand}`
  * 提交，因此这里的取消请求同样带幂等键与版本前置条件。
  */
 import { useEffect, useRef, useId, useState, type ReactNode } from 'react';
@@ -24,7 +24,6 @@ import {
 import { btnStyles } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
 import { ExecutionDetails } from './ExecutionDetails.js';
-import { ExecutionDiagnostics } from './ExecutionDiagnostics.js';
 import { ExecutionResult } from './ExecutionResult.js';
 import { ExecutionStatus } from './ExecutionStatus.js';
 import { ActivityFeed } from './ActivityFeed.js';
@@ -48,7 +47,7 @@ export function ExecutionPanel({
   onRefresh,
   compact = false,
   visible = true,
-  diagnostics = false,
+  diagnostics,
 }: {
   view: AiExecutionViewResponse;
   /** 是否展示写操作（取消、确认）入口，由调用方按权限计算。 */
@@ -61,7 +60,7 @@ export function ExecutionPanel({
   compact?: boolean;
   /** 面板当前是否处于可见容器内；为假时停止活动流的自动滚动与流式动画。 */
   visible?: boolean;
-  diagnostics?: boolean;
+  diagnostics?: ReactNode;
 }) {
   const { execution } = view;
   const pending = view.interactions.find(
@@ -285,7 +284,7 @@ export function ExecutionPanel({
           tabIndex={0}
           className={scrollStyles}
         >
-          <ExecutionDiagnostics id={execution.id} liveWatermark={view.watermark} />
+          {diagnostics}
         </section>
       )}
       {showResult && (

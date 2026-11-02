@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import { z } from 'zod';
 import { fail } from '@capability-hub/domain/errors';
-import { browserEvents, safeText } from '@capability-hub/logging/events';
+import { browserEvents, browserLogPages, safeText } from '@capability-hub/logging/events';
 import type { HttpContext } from '../context.js';
 
 const entrySchema = z
@@ -9,16 +9,7 @@ const entrySchema = z
     event: z.enum(browserEvents),
     level: z.enum(['warn', 'error']),
     time: z.number().int().positive(),
-    page: z.enum([
-      '/',
-      '/discover',
-      '/publish',
-      '/review',
-      '/sources',
-      '/connect',
-      '/account',
-      '/resource',
-    ]),
+    page: z.enum(browserLogPages),
     request_id: z.uuid().optional(),
     status: z.number().int().min(0).max(599).optional(),
     code: z

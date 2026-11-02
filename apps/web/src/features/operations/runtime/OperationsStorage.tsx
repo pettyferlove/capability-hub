@@ -1,13 +1,13 @@
 import type { OperationsResponse } from '@capability-hub/contracts/http';
-import { bytesLabel, dateLabel } from '../../shared/format/labels.js';
-import { cn } from '../../shared/styles/cn.js';
+import { bytesLabel, dateLabel } from '../../../shared/format/labels.js';
+import { cn } from '../../../shared/styles/cn.js';
 import {
   panelStyles,
   tagStyles,
   tagTealStyles,
   noticeErrorStyles,
-} from '../../shared/styles/recipes.js';
-import { operationsGridStyles } from './styles.js';
+} from '../../../shared/styles/recipes.js';
+import { operationsGridStyles } from '../styles.js';
 
 function StoragePanel({
   title,

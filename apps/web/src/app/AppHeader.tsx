@@ -23,7 +23,7 @@ import { Bot, Compass, Search, ShieldCheck, UploadCloud } from '../shared/icons/
 import { useEffect, useState } from 'react';
 import { Button } from 'react-aria-components';
 import { Glyph } from '../shared/components/Glyph.js';
-import type { HubPage } from '../shared/navigation/history-route.js';
+import type { HubPage } from '@capability-hub/contracts/web-pages';
 import { AvatarMenu } from './AvatarMenu.js';
 import { useHub } from '../shared/context/HubContext.js';
 import { loginHref } from '../shared/navigation/history-route.js';

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { aiExecutionLedgerResponseSchema } from '@capability-hub/contracts';
-import { useQuery } from '../../shared/api/use-query.js';
-import { SelectField } from '../../shared/components/SelectField.js';
-import { btnStyles, dataTableStyles, tableWrapStyles } from '../../shared/styles/recipes.js';
-import { cn } from '../../shared/styles/cn.js';
-import { ExecutionStatus } from './ExecutionStatus.js';
-import { operationLabels, statusLabels } from './presentation.js';
-import { controlStyles, scrollStyles } from './styles.js';
+import { useQuery } from '../../../shared/api/use-query.js';
+import { SelectField } from '../../../shared/components/SelectField.js';
+import { operationsHref } from '../navigation.js';
+import { btnStyles, dataTableStyles, tableWrapStyles } from '../../../shared/styles/recipes.js';
+import { cn } from '../../../shared/styles/cn.js';
+import { ExecutionStatus } from '../../ai/ExecutionStatus.js';
+import { operationLabels, statusLabels } from '../../ai/presentation.js';
+import { controlStyles, scrollStyles } from '../../ai/styles.js';
 
 /** 筛选应用于服务端可见集合，切换筛选从首页开始，打开详情保留当前页。 */
 export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnly: boolean }) {
@@ -135,7 +136,7 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
                       <td>
                         <a
                           className="font-medium text-brand"
-                          href={'/ai?execution=' + encodeURIComponent(row.id)}
+                          href={operationsHref('agents', { execution: row.id })}
                         >
                           {row.title}
                         </a>

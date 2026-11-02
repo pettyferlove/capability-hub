@@ -12,6 +12,42 @@ import { signIn } from '../support/http.js';
 import { externalDatabase, externalBucket } from '../support/external.js';
 import { createSqliteStore, deferred } from '../support/store.js';
 import { assertFrozenEvidence } from '../support/evidence.js';
+import { assertProjectTokenUsage } from '../support/token-usage.js';
+import { assertResourceActivity } from '../support/resource-activity.js';
+
+test('PostgreSQL 和 SQLite 使用相同的资源运营趋势口径', async (context) => {
+  const database = await externalDatabase();
+  try {
+    const f = await createTestHub(context, {
+      database: { driver: 'postgresql', url: database.url, poolSize: 2 },
+    });
+    try {
+      await assertResourceActivity(context, f);
+    } finally {
+      await f.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
+
+test('PostgreSQL 的项目 Token 总量、时间边界和分布与 SQLite 一致', async (context) => {
+  const database = await externalDatabase();
+  try {
+    context.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-02T06:30:00.000Z') });
+    const f = await createTestHub(context, {
+      ai: frameworkConfig(),
+      database: { driver: 'postgresql', url: database.url, poolSize: 2 },
+    });
+    try {
+      await assertProjectTokenUsage(f);
+    } finally {
+      await f.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
 
 test('PostgreSQL 上两个连接争抢同一约束只有一个成功，失败事务全部回滚并允许后续使用', async () => {
   const database = await externalDatabase();

@@ -30,6 +30,11 @@
       "types": "./dist/http.d.ts",
       "default": "./dist/http.js"
     },
+    "./web-pages": {
+      "development": "./src/web-pages.ts",
+      "types": "./dist/web-pages.d.ts",
+      "default": "./dist/web-pages.js"
+    },
     "./schemas/mcp-server.schema.json": "./schemas/mcp-server.schema.json"
   },
   "files": [

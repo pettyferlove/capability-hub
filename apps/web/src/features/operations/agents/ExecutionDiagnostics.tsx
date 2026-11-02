@@ -4,14 +4,14 @@ import {
   aiExecutionDiagnosticsResponseSchema,
   type AiEventResponse,
 } from '@capability-hub/contracts';
-import { useQuery } from '../../shared/api/use-query.js';
-import { CopyButton } from '../../shared/components/CopyButton.js';
-import { SelectField } from '../../shared/components/SelectField.js';
-import { Download } from '../../shared/icons/lucide.js';
-import { cn } from '../../shared/styles/cn.js';
-import { btnStyles, dataTableStyles, tableWrapStyles } from '../../shared/styles/recipes.js';
-import { eventLabel } from './presentation.js';
-import { codeStyles, controlStyles, disclosureStyles } from './styles.js';
+import { useQuery } from '../../../shared/api/use-query.js';
+import { CopyButton } from '../../../shared/components/CopyButton.js';
+import { SelectField } from '../../../shared/components/SelectField.js';
+import { Download } from '../../../shared/icons/lucide.js';
+import { cn } from '../../../shared/styles/cn.js';
+import { btnStyles, dataTableStyles, tableWrapStyles } from '../../../shared/styles/recipes.js';
+import { eventLabel } from '../../ai/presentation.js';
+import { codeStyles, controlStyles, disclosureStyles } from '../../ai/styles.js';
 
 const categories = {
   key: '关键事件',

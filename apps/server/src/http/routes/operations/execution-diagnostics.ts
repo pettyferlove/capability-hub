@@ -1,9 +1,13 @@
+import { z } from 'zod';
+import type { Express } from 'express';
 import { aiExecutionDiagnosticsResponseSchema } from '@capability-hub/contracts';
 import type { AiRecordQuery, AiStore } from '@capability-hub/ai/ports';
 import type { AiRecordMap } from '@capability-hub/ai/records';
 import type { Principal } from '@capability-hub/domain/identity';
-import type { HttpContext } from '../context.js';
-import { executionResponse, interactionResponse, visibleArtifacts } from './ai-views.js';
+import type { HttpContext } from '../../context.js';
+import { jsonRoute } from '../../response.js';
+import { diagnosticMarkdown } from './diagnostic-markdown.js';
+import { executionResponse, interactionResponse, visibleArtifacts } from '../ai-views.js';
 
 async function executionRows<K extends keyof AiRecordMap>(
   store: AiStore,
@@ -28,7 +32,7 @@ async function executionRows<K extends keyof AiRecordMap>(
 }
 
 /** 授权、事件水位和派生内容共用事务，活动快照的展示上限不适用于诊断导出。 */
-export function executionDiagnostics(hub: HttpContext['hub'], actor: Principal, id: string) {
+function executionDiagnostics(hub: HttpContext['hub'], actor: Principal, id: string) {
   const runtime = hub.ai.runtime;
   return runtime.store.tx(async () => {
     const principal = await hub.ai.consolePrincipal(actor);
@@ -112,4 +116,33 @@ export function executionDiagnostics(hub: HttpContext['hub'], actor: Principal, 
       }),
     });
   });
+}
+
+/** 注册在 AI 会话校验之后，快照和导出共用执行检查权限。 */
+export function registerExecutionDiagnosticsRoute(app: Express, hub: HttpContext['hub']) {
+  app.get(
+    '/api/ai/executions/:id/diagnostics',
+    jsonRoute(async (req, res) => {
+      const query = z
+        .union([
+          z.object({ download: z.enum(['json', 'markdown']).optional() }).strict(),
+          z.object({ view: z.literal('handoff') }).strict(),
+        ])
+        .parse(req.query);
+      const report = await executionDiagnostics(hub, res.locals.principal, String(req.params.id));
+      res.set('Cache-Control', 'private, no-store');
+      if ('view' in query)
+        return { markdown: diagnosticMarkdown(report), watermark: report.watermark };
+      const { download } = query;
+      if (download) {
+        const name = `agent-${report.execution.id}-seq-${report.watermark}`;
+        res.attachment(name + (download === 'json' ? '.json' : '.md'));
+        if (download === 'markdown') {
+          res.type('text/markdown').send(diagnosticMarkdown(report));
+          return;
+        }
+      }
+      return report;
+    }),
+  );
 }

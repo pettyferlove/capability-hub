@@ -6,7 +6,7 @@ import type { Express } from 'express';
 import { type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import { flattenError, ZodError } from 'zod';
-import { type RequestMetrics } from '../../observability/operations.js';
+import { type RequestMetrics } from '../../observability/request-metrics.js';
 
 /** 统一处理 API、上传和用例错误，内部异常只写入脱敏日志。 */
 export function registerErrorHandler(

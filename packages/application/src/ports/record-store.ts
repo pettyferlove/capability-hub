@@ -1,5 +1,21 @@
 import type { RecordMap, TableName } from '@capability-hub/domain/models';
 
+/** 北京时间的日桶只返回计数，审计明细和反馈正文留在各自读取边界内。 */
+export interface ResourceActivityBucket {
+  date: string;
+  metric:
+    | 'first_releases'
+    | 'repeat_releases'
+    | 'downloads'
+    | 'skill_loads'
+    | 'install_requests'
+    | 'feedback_pending'
+    | 'feedback_in_progress'
+    | 'feedback_resolved'
+    | 'feedback_declined';
+  count: number;
+}
+
 /**
  * 持久化调用统一异步，嵌套操作共享同一事务。
  *
@@ -52,6 +68,7 @@ export interface RecordStore {
   revision(): Promise<string>;
   /** 当前数据库占用的字节数；SQLite 按数据库页计量。 */
   sizeBytes(): Promise<number>;
+  summarizeResourceActivity(from: string, through: string): Promise<ResourceActivityBucket[]>;
   health(): Promise<void>;
   close(): Promise<void>;
 }

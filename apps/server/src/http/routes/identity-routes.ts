@@ -1,28 +1,18 @@
-import { auditLogQuerySchema } from '@capability-hub/contracts';
 import type { Express } from 'express';
-import { operations } from '../../observability/operations.js';
 import type { HttpContext } from '../context.js';
 import { idempotencyKey, jsonRoute as send, withRevision } from '../response.js';
 
 /**
- * 管理面。整组挂在 `/api` 前缀下，先经 `security.authenticate` 要求会话或 Bearer，写操作再过 CSRF；
- * 组内权限由服务层按 `principal` 逐次校验：`/api/admin/operations` 需要 `audit:read`，
- * `administration` 的变更需要 `identity:manage`，审计读取另按 `audit:read` 收敛可见范围。
+ * 账号、角色、授权与场景管理。整组挂在 `/api` 前缀下，先经 `security.authenticate` 要求会话或 Bearer，写操作再过 CSRF；
+ * 管理权限由服务层按当前身份逐次校验。
  * `PATCH` 把 `If-Match` 修订号交给 `matchRevision`：缺失 → 428 `IF_MATCH_REQUIRED`，
  * 不符 → 412 `REVISION_CONFLICT`；其余失败以 `HubError` 抛给统一错误处理器映射状态码。
  */
-export function registerIdentityRoutes(app: Express, { hub, metrics, worker }: HttpContext): void {
-  const { identity, administration } = hub;
+export function registerIdentityRoutes(app: Express, { hub }: HttpContext): void {
+  const { administration } = hub;
   app.get(
     '/api/admin/identity',
     send(async (_req, res) => await administration.adminSnapshot(res.locals.principal)),
-  );
-  app.get(
-    '/api/admin/operations',
-    send(async (_req, res) => {
-      identity.require(res.locals.principal, 'audit:read');
-      return await operations(hub, metrics, worker);
-    }),
   );
   app.post(
     '/api/admin/users',
@@ -89,13 +79,6 @@ export function registerIdentityRoutes(app: Express, { hub, metrics, worker }: H
           req.body,
           req.get('If-Match'),
         ),
-    ),
-  );
-  app.get(
-    '/api/admin/audit',
-    send(
-      async (req, res) =>
-        await hub.audit.list(res.locals.principal, auditLogQuerySchema.parse(req.query)),
     ),
   );
   app.post(

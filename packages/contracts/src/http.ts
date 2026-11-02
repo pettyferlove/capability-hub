@@ -4,6 +4,6 @@ export type * from './http/intake.js';
 export type * from './http/source.js';
 export type * from './http/publication.js';
 export type * from './http/integration.js';
-export type * from './http/operations.js';
+export type * from './http/operations/snapshot.js';
 export type * from './http/audit.js';
 export type * from './http/feedback.js';
