@@ -8,6 +8,110 @@ import { HubError } from '@capability-hub/domain/errors';
 import { createSqliteStore, deferred } from '../support/store.js';
 import { createTestHub } from '../support/application.js';
 import { skillDocument } from '../support/content.js';
+import { frameworkConfig } from '../support/ai-framework.js';
+import { fixture as providerFixture } from '../support/ai-provider.js';
+
+test('两个连接争最后一个空位时，AI 与内容的有效租约合计不能超过配置', async (t) => {
+  const { store, path } = await createSqliteStore(t);
+  const other = await openRecordStore({ driver: 'sqlite', path });
+  t.after(() => other.close());
+  const queue = new JobQueue(store, 2);
+  const competing = new JobQueue(other, 2);
+  await queue.enqueue('intake', randomUUID(), {});
+  for (const id of [randomUUID(), randomUUID()])
+    await queue.enqueue('ai_execution', id, { execution_id: id });
+  const content = await queue.claim('first', ['intake']);
+  assert(content);
+  const winners = await Promise.all([
+    queue.claimBatch('first', { kinds: ['ai_execution'] }),
+    competing.claimBatch('second', { kinds: ['ai_execution'] }),
+  ]);
+  const claimed = winners.flat();
+  assert.equal(claimed.length, 1);
+  await queue.withLease(content, (current) =>
+    store.put('jobs', { ...current, state: 'succeeded', lease_until: 0 }),
+  );
+  assert.deepEqual(await queue.claimBatch('first', { activeIds: [content.id] }), []);
+  const next = await competing.claim('second');
+  assert(next);
+  assert.notEqual(next.id, claimed[0].id);
+  assert.equal(next.attempt, 1);
+});
+
+test('五个共享名额可混跑 AI 和扫描，第六项在一个扫描结束后补位', { timeout: 20000 }, async (t) => {
+  const provider = await providerFixture('openai', 'text', true);
+  t.after(provider.close);
+  const previous = process.env.AI_FIXTURE_KEY;
+  process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+  t.after(() => {
+    if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+    else process.env.AI_FIXTURE_KEY = previous;
+  });
+  const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
+  type Gate = ReturnType<typeof deferred<void>>;
+  const holds = new Map<string, { entered: Gate; release: Gate }>();
+  const read = f.blobs.read.bind(f.blobs);
+  t.mock.method(f.blobs, 'read', async (ref: string) => {
+    const hold = holds.get(ref);
+    if (hold) {
+      hold.entered.resolve();
+      await hold.release.promise;
+    }
+    return read(ref);
+  });
+  async function upload(slug: string) {
+    const bytes = await archive([
+      { path: 'SKILL.md', bytes: skillDocument(slug), executable: false },
+    ]);
+    const receipt = await f.hub.intakes.receive(
+      f.admin,
+      bytes,
+      'skill.zip',
+      {
+        target: 'new',
+        kind: 'skill',
+        slug,
+        owner_group_id: f.teamId,
+        version_label: '1.0.0',
+      },
+      randomUUID(),
+    );
+    const intake = await f.store.get('intakes', receipt.intake_id);
+    assert(intake?.payload_ref);
+    const hold = { entered: deferred(), release: deferred() };
+    holds.set(intake.payload_ref, hold);
+    return { ...hold, id: intake.id };
+  }
+  const scans = await Promise.all(['first-scan', 'second-scan', 'third-scan'].map(upload));
+  const agents = await Promise.all(
+    ['one', 'two'].map((prompt) => f.hub.ai.runtime.submit(f.admin.id, 'assistant', { prompt })),
+  );
+  try {
+    f.worker.start();
+    await Promise.all([provider.firstDelta.promise, ...scans.map((scan) => scan.entered.promise)]);
+    const next = await upload('next-scan');
+    const jobs = await f.store.all('jobs');
+    const active = jobs.filter((job) => job.state === 'running');
+    assert.equal(active.filter((job) => job.kind === 'intake').length, 3);
+    assert.equal(active.filter((job) => job.kind === 'ai_execution').length, 2);
+    assert.equal(jobs.find((job) => job.aggregate_id === next.id)?.state, 'queued');
+    assert.equal(await f.hub.jobs.claim('other-worker'), undefined);
+    scans[0].release.resolve();
+    await next.entered.promise;
+    assert.equal((await f.store.get('intakes', scans[0].id))?.state, 'ready');
+    assert.equal((await f.store.all('jobs')).filter((job) => job.state === 'running').length, 5);
+  } finally {
+    const stopping = f.worker.stop();
+    for (const hold of holds.values()) hold.release.resolve();
+    try {
+      await stopping;
+    } finally {
+      provider.release.resolve();
+    }
+  }
+  for (const agent of agents) assert.equal((await f.hub.ai.runtime.get(agent.id)).status, 'queued');
+  assert.equal(f.worker.busy, false);
+});
 
 test('租约过期后由另一个连接接管，旧执行者不能续约或提交任何业务结果', async (context) => {
   const { store, path } = await createSqliteStore(context);

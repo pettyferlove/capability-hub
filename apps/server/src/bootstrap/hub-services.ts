@@ -134,7 +134,7 @@ export class HubServices {
       this.idempotency,
       new AesCredentialCipher(config.secret, 'mcp-header-v1'),
     );
-    this.jobs = new JobQueue(store);
+    this.jobs = new JobQueue(store, config.workerConcurrency);
     this.intakeQueries = new IntakeQueryService(context, this.assetAccess);
     this.intakeProcessor = new IntakeProcessor(
       context,

@@ -9,14 +9,14 @@ import type { ReviewResponse } from '@capability-hub/contracts/http';
 import { api } from '../../shared/api/client.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { useHub } from '../../shared/context/HubContext.js';
-import { LoaderCircle, RefreshCw } from '../../shared/icons/lucide.js';
+import { Check, ChevronDown, FileText, RefreshCw } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
-import { btnStyles, textBtnStyles } from '../../shared/styles/recipes.js';
+import { btnPrimaryStyles, btnStyles, textBtnStyles } from '../../shared/styles/recipes.js';
 import { BusinessAssessment } from '../ai/BusinessAssessment.js';
-import { riskLabels } from '../ai/agent-brief.js';
-import { jsonObject, statusLabels, type Json } from '../ai/presentation.js';
+import { jsonObject, type Json } from '../ai/presentation.js';
 import { useAiCommand } from '../ai/use-ai-command.js';
 import { useAiExecution } from '../ai/use-ai-execution.js';
+import { ReviewAuditActivity } from './ReviewAuditActivity.js';
 
 type AuditTarget = Pick<ReviewResponse, 'version_id' | 'content_digest'>;
 
@@ -97,7 +97,10 @@ export function ReviewAuditEvidence({
       ? record
       : undefined;
   const execution = useAiExecution(latest?.id ?? '', refresh + hubRefresh);
-  const view = latest && execution.view?.execution.id === latest.id ? execution.view : undefined;
+  const view =
+    !execution.error && latest && execution.view?.execution.id === latest.id
+      ? execution.view
+      : undefined;
   const task = !execution.error ? (view?.execution ?? latest) : undefined;
   const active = !!task && ['queued', 'running', 'waiting_input'].includes(task.status);
   const pending =
@@ -176,109 +179,66 @@ export function ReviewAuditEvidence({
       setBusy(false);
     }
   };
-  const adopted = jsonObject(report).approved;
-  const stateLabel =
-    adopted === true
-      ? '已采纳'
-      : adopted === false
-        ? '未采纳'
-        : task
-          ? statusLabels[task.status]
-          : record !== undefined
-            ? '尚无报告'
-            : '正在读取';
   return (
     <section
       aria-label="版本资源审计"
-      className="mb-3 min-w-0 rounded-xl border border-separator bg-page px-4 py-3"
+      className="mb-3 min-w-0 overflow-hidden rounded-2xl border border-separator bg-paper"
     >
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <h4 className="inline-flex min-h-7 items-center text-label font-semibold leading-none">
-          版本资源审计
-        </h4>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
-          <span
-            role="status"
-            className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap text-label leading-none text-muted-ink"
-          >
-            {active && task?.status !== 'waiting_input' ? (
-              <LoaderCircle
-                aria-hidden="true"
-                size={12}
-                className="text-brand motion-safe:animate-spin"
-              />
-            ) : (
-              <i
-                aria-hidden="true"
-                className={cn(
-                  'size-1.5 rounded-full',
-                  adopted === true ? 'bg-success' : pending ? 'bg-warning' : 'bg-muted-ink/55',
-                )}
-              />
-            )}
-            <span key={stateLabel} className="motion-safe:animate-[popover-in_220ms_ease-out_both]">
-              {stateLabel}
-              {typeof assessment.risk === 'string' &&
-                ' · ' + (riskLabels[assessment.risk] ?? '证据有限')}
-            </span>
-          </span>
-          {!active && (
-            <button
-              type="button"
-              className="group/audit-retry inline-flex h-7 items-center justify-center gap-1 rounded-md border border-separator bg-paper px-2 text-label font-medium leading-none whitespace-nowrap text-brand hover:border-brand/40 hover:bg-brand-soft disabled:opacity-50"
-              disabled={busy || record === undefined || !models.data?.profiles.length}
-              onClick={() => {
-                void start();
-              }}
-            >
-              <RefreshCw
-                aria-hidden="true"
-                size={12}
-                className={
-                  busy
-                    ? 'motion-safe:animate-spin'
-                    : 'motion-safe:transition-transform motion-safe:group-hover/audit-retry:rotate-45'
-                }
-              />
-              {task ? '重新审计' : '发起审计'}
-            </button>
-          )}
-        </div>
-      </div>
-      {!task && (
-        <p className="mt-2 text-caption text-muted-ink">
-          {models.data && !models.data.profiles.length
+      <ReviewAuditActivity
+        status={task?.status}
+        view={view}
+        report={report}
+        saving={Boolean(responded)}
+        emptyLabel={
+          error || execution.error ? '状态不可用' : record === undefined ? '正在读取' : '尚无报告'
+        }
+        emptyHint={
+          models.data && !models.data.profiles.length
             ? '尚未配置 AI 模型，可继续人工审核。'
-            : '核对这个版本的文件与扫描发现，作为填写审核意见的参考。'}
-        </p>
-      )}
+            : '核对版本文件和扫描发现，为填写审核意见提供依据。'
+        }
+      >
+        {!active && (
+          <button
+            type="button"
+            className="group/audit-retry inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-separator bg-paper px-2.5 text-label font-medium whitespace-nowrap text-brand hover:border-brand/40 hover:bg-brand-soft disabled:opacity-50"
+            disabled={busy || record === undefined || !models.data?.profiles.length}
+            onClick={() => void start()}
+          >
+            <RefreshCw
+              aria-hidden="true"
+              size={13}
+              className={
+                busy
+                  ? 'motion-safe:animate-spin'
+                  : 'motion-safe:transition-transform motion-safe:group-hover/audit-retry:rotate-45'
+              }
+            />
+            {task ? '重新审计' : '发起审计'}
+          </button>
+        )}
+      </ReviewAuditActivity>
       {task?.result && !report && (
-        <p className="mt-2 text-caption text-muted-ink">这份报告与候选内容不匹配，请重新审计。</p>
-      )}
-      {active && !pending && (
-        <p role="status" className="mt-2 text-caption text-muted-ink">
-          {responded
-            ? '正在保存审计结果…'
-            : task?.status === 'queued'
-              ? '审计已排队，可继续填写审核意见。'
-              : '正在核对版本内容，可继续填写审核意见。'}
+        <p className="border-t border-separator px-3.5 py-2 text-caption text-warning">
+          这份报告与候选内容不匹配，请重新审计。
         </p>
       )}
       {pending && report && (
-        <div className="mt-3 space-y-2">
+        <div className="space-y-2 border-t border-warning/20 px-3.5 py-3 motion-safe:animate-[audit-action-in_260ms_var(--ease-out)_both]">
           <p className="whitespace-pre-wrap break-words">{suggestion}</p>
           <p className="text-caption text-muted-ink">
-            采纳后，建议会带入空白审核意见；已有文字时由你决定是否追加。
+            采纳后，建议会带入空白审核意见。已有文字时可手动追加。
           </p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className={btnStyles}
+              className={cn(btnStyles, btnPrimaryStyles)}
               disabled={busy || responded === pending.id}
               onClick={() => {
                 void respond(true);
               }}
             >
+              <Check aria-hidden="true" size={14} />
               采纳审计建议
             </button>
             <button
@@ -292,19 +252,29 @@ export function ReviewAuditEvidence({
               暂不采纳
             </button>
           </div>
-          {responded === pending.id && <p role="status">正在保存审计结果…</p>}
         </div>
       )}
       {report && (
-        <details className="mt-2 text-caption">
-          <summary className="cursor-pointer text-brand">查看审计发现与文件依据</summary>
-          <div className="mt-3 text-body">
+        <details className="group/evidence border-t border-separator text-caption">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 font-medium text-brand hover:bg-brand-soft/50 focus-visible:-outline-offset-2 [&::-webkit-details-marker]:hidden">
+            <FileText aria-hidden="true" size={14} />
+            查看审计发现与文件依据
+            <ChevronDown
+              aria-hidden="true"
+              size={14}
+              className="ml-auto motion-safe:transition-transform group-open/evidence:rotate-180"
+            />
+          </summary>
+          <div className="min-w-0 px-3.5 pb-3.5 text-body group-open/evidence:motion-safe:animate-[audit-action-in_260ms_var(--ease-out)_both]">
             <BusinessAssessment value={report} onEvidence={onEvidence} review />
           </div>
         </details>
       )}
       {(error || models.error || execution.error || task?.error) && (
-        <p role="alert" className="mt-2 text-caption text-danger">
+        <p
+          role="alert"
+          className="border-t border-danger/20 bg-danger-soft/40 px-3.5 py-2 text-caption text-danger"
+        >
           {error || models.error || execution.error || task?.error?.message}{' '}
           <button type="button" className={textBtnStyles} onClick={() => setRefresh((v) => v + 1)}>
             刷新

@@ -280,6 +280,62 @@ test('反馈提交自动排队且幂等，采纳后仅写入处理中，效果�
   );
 });
 
+test('整理反馈报告时能独立核对上报原文，即使调查扩大了影响范围', async (t) => {
+  const investigation = '远端服务故障，所有用户都无法连接。';
+  const provider = await fixture('openai', 'tools', false, {
+    turns: [
+      { name: 'read_file', input: { path: 'SKILL.md' } },
+      { name: 'read_feedback', input: {} },
+    ],
+    text: investigation,
+    json: JSON.stringify({
+      summary: '提交者报告一次连接超时，现有材料不能确定原因或影响范围。',
+      risk: 'unknown',
+      findings: [],
+      limitations: ['缺少区分客户端和服务端故障的证据。'],
+      suggested_resolution: '核对同一次请求的脱敏错误码。',
+    }),
+  });
+  t.after(provider.close);
+  const previous = process.env.AI_FIXTURE_KEY;
+  process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+  t.after(() => {
+    if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+    else process.env.AI_FIXTURE_KEY = previous;
+  });
+  const f = await createTestHub(t);
+  const { intake } = await publishSkill(f);
+  Object.assign(f.hub.ai.runtime.config, frameworkConfig(provider.url));
+  const feedback = await f.hub.feedback.report(
+    f.admin,
+    assetFeedbackRequestSchema.parse({
+      version_id: intake.version_id,
+      idempotency_key: randomUUID(),
+      consent: true,
+      kind: 'defect',
+      title: '首次连接超时',
+      scenario: '首次连接',
+      expected: '连接成功',
+      actual: '我在第一次连接时超时，第二次成功。',
+      evidence: '客户端日志：首次请求 ETIMEDOUT。',
+      blocking: false,
+    }),
+  );
+  const waiting = await run(f);
+  assert.equal(waiting.status, 'waiting_input', JSON.stringify(waiting.payload.error));
+  const messages = provider.requests.at(-1)?.body.messages as { role: string; content: string }[];
+  const message = messages.find((item) => item.role === 'user');
+  assert(message);
+  const material = JSON.parse(message.content) as {
+    investigation: string;
+    reported_feedback: Pick<typeof feedback, 'actual' | 'evidence' | 'blocking'>;
+  };
+  assert.equal(material.investigation, investigation);
+  assert.equal(material.reported_feedback.actual, feedback.actual);
+  assert.equal(material.reported_feedback.evidence, feedback.evidence);
+  assert.equal(material.reported_feedback.blocking, feedback.blocking);
+});
+
 test('原上传人失去维护权限时，反馈保留并只向当前合格的维护者派单', async (t) => {
   const f = await createTestHub(t);
   const { intake } = await publishSkill(f);

@@ -57,10 +57,10 @@ cycles, and `web/src/shared` → `web/src/features` imports are rejected.
 - **Concurrency safety:** mutating commands use `Idempotency-Key` plus `ETag`/`If-Match` revision
   checks (`withRevision`, `packages/application/src/shared/revision.ts`); conflicts are 409/412/428,
   never silent last-write-wins.
-- **Worker:** exactly one, `apps/server/src/workers/hub-worker.ts` — 1s tick, single-flight guard,
-  claims jobs with a lease, renews every 20s. Content jobs retain backoff `[30s,120s,600s]` and max
-  3 attempts; AI uses one separate slot in the same Worker, with durable resume and no automatic
-  provider-failure retry. See [AI framework](documents/design/ai-framework.md).
+- **Worker:** one HubWorker claims ready AI and content jobs every second. They share 1–5 slots
+  (`CAPABILITY_HUB_WORKER_CONCURRENCY`, default 5) and renew leases every 20s. Content jobs retain
+  backoff `[30s,120s,600s]` and max 3 attempts. AI supports durable resume without automatic
+  provider-failure retries. See [AI framework](documents/design/ai-framework.md).
 - **Web:** no state library. `shared/api/client.ts` is the only transport (auto `X-CSRF-Token`, auto
   `Idempotency-Key`, 401 → `hub:unauthenticated`); `shared/api/use-query.ts` supplies `useQuery`;
   session lives in `HubCtx`; routing is history-based via `app/use-app-route.ts`.

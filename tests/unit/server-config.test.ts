@@ -50,6 +50,19 @@ test('布尔环境变量使用 true/false，未设置时默认启用，显式配
   }
 });
 
+test('Worker 并发默认 5，可调为 1–5 的整数，超出范围时拒绝启动', async (context) => {
+  const dataDir = await directory(context);
+  assert.equal(loadServerConfig({ dataDir }, {}).workerConcurrency, 5);
+  assert.equal(
+    loadServerConfig({ dataDir }, { CAPABILITY_HUB_WORKER_CONCURRENCY: '2' }).workerConcurrency,
+    2,
+  );
+  for (const value of ['0', '6', '2.5', 'invalid', ''])
+    assert.throws(() =>
+      loadServerConfig({ dataDir }, { CAPABILITY_HUB_WORKER_CONCURRENCY: value }),
+    );
+});
+
 test('非法布尔环境变量在创建实例目录前报错并指出变量名', async (context) => {
   const root = await directory(context);
   const dataDir = join(root, 'invalid');

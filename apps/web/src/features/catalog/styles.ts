@@ -229,7 +229,7 @@ export const catalogSearchStyles = cn(
   '[&_>_input]:leading-[1.5] [&_>_input::placeholder]:text-muted-ink',
   '[&_>_input::placeholder]:opacity-[0.8] max-[600px]:h-12.5 max-[600px]:gap-2.5 max-[600px]:pl-3',
   'max-[600px]:rounded-[12px] max-[600px]:[&_>_input]:text-[length:17px]',
-  '[&:has(:focus-visible)]:outline-2 [&:has(:focus-visible)]:outline-solid [&:has(:focus-visible)]:outline-muted-ink [&:has(:focus-visible)]:outline-offset-2',
+  '[&:has(>_input:focus)]:[outline:2px_solid_var(--brand)] [&:has(>_input:focus)]:-outline-offset-2',
 );
 
 export const catalogSearchIconStyles =

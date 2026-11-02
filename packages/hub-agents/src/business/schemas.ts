@@ -58,7 +58,9 @@ export const publicationSuggestion = z
       .array(z.string().trim().min(1).max(128))
       .min(1)
       .max(10)
-      .describe('3–8 个检索关键词，按重要性排序，互不包含；用户会搜索的专名或核心能力名词短语'),
+      .describe(
+        '通常 3–8 个，依据有限时可少至 1 个；按重要性排序、互不包含的专名或核心能力名词短语',
+      ),
     /** 适用对象与用途说明，上限 2000 字符，不得用于声明授权。 */
     purpose: z
       .string()
@@ -80,10 +82,13 @@ export const assessmentSchema = z
       .min(1)
       .max(4000)
       .describe(
-        'Markdown，最多 3 段共约 200 字，段间空一行：首句写结论与风险理由，再写最关键的 1–3 个问题，末句写下一步；不列已读文件或检查范围，不用标题和表格',
+        'Markdown，最多 3 段共约 200 字：写本次结论、依据及必要的下一步；无具体问题可直接说明，关键证据不足则说明尚不能判断什么。不列文件清单或行号，不用标题和表格',
       ),
-    /** 资源整体风险判断；`unknown` 表示证据不足，不能与 `low` 混用。 */
-    risk: z.enum(['low', 'medium', 'high', 'unknown']),
+    risk: z
+      .enum(['low', 'medium', 'high', 'unknown'])
+      .describe(
+        '只评本次任务：low 表示关键路径证据充分，未见具体问题或影响轻微；medium 表示有依据且需关注的影响；high 需有明确触发条件和严重影响的依据；缺少决定性证据而无法定级时用 unknown',
+      ),
     findings: z
       .array(
         z
@@ -93,14 +98,17 @@ export const assessmentSchema = z
               .min(1)
               .max(200)
               .describe('纯文本，不超过 30 字的名词短语，不含行号和句末标点'),
-            /** `critical` 表示阻断发布依据；`info` 仅作说明。 */
-            severity: z.enum(['info', 'warning', 'critical']),
+            severity: z
+              .enum(['info', 'warning', 'critical'])
+              .describe(
+                'info 为有用说明，warning 为有依据且需关注的问题；critical 仅用于有直接依据的严重问题，扫描告警或待核实的猜测不足以定为 critical',
+              ),
             explanation: z
               .string()
               .min(1)
               .max(2000)
               .describe(
-                'Markdown，1–3 句：现象、影响，以及依据属于事实、推断还是待验证；文件名、命令和变量可用行内代码',
+                'Markdown，1–3 句：写明实际观察或声明、触发条件与有依据的影响；推断须保留条件，不能写成已发生。文件名、命令和变量可用行内代码',
               ),
             recommendation: z
               .string()
@@ -111,17 +119,18 @@ export const assessmentSchema = z
           })
           .strict(),
       )
-      .max(30),
+      .max(30)
+      .describe('只列本次任务有具体依据的发现；没有则返回空数组，不把缺失的证据列为缺陷'),
     limitations: z
       .array(z.string().min(1).max(1000))
       .max(30)
-      .describe('每条一句纯文本，只写一项未验证或缺失的事项'),
+      .describe('每条一句纯文本，写明哪个关键条件未能核实以及它限制了什么判断；无则为空'),
     suggested_resolution: z
       .string()
       .min(1)
       .max(1800)
       .describe(
-        '纯文本处理说明（反馈研判会写入反馈供提交者查看，资源审计写给维护者）：首句写结论与原因，随后最多 3 行以「1. 」编号的步骤，约 300 字内',
+        '纯文本处理说明（反馈研判可供提交者查看，资源审计写给维护者）：先写有依据的判断或仍缺的证据，按需补充最多 3 行以「1. 」编号的下一步，约 300 字内',
       ),
   })
   .strict();

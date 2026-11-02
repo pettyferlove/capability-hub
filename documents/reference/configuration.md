@@ -12,6 +12,7 @@
 | CAPABILITY_HUB_INSTANCE_SECRET                | 64 位十六进制；生产必须明确设置，开发可生成私有 instance.key         |
 | CAPABILITY_HUB_SETUP_TOKEN                    | 生产首次初始化需要，未配置不能初始化                                 |
 | CAPABILITY_HUB_WORKER                         | true；false 关闭内嵌 Worker                                          |
+| CAPABILITY_HUB_WORKER_CONCURRENCY             | 默认 5，可设 1–5 的整数。AI、接收、重扫和 Git 同步共用此上限         |
 | CAPABILITY_HUB_GIT_HOSTS                      | github.com,gitlab.com，规范域名/IP 列表                              |
 | CAPABILITY_HUB_PRIVATE_GIT_HOSTS              | 空；必须为 Git 允许列表子集                                          |
 | CAPABILITY_HUB_LOG_LEVEL                      | info，允许 trace/debug/info/warn/error/fatal/silent                  |

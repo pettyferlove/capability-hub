@@ -12,7 +12,11 @@ const now = () => new Date().toISOString();
 
 /** 使用租约代次约束结果提交，过期执行者不能写回结果。 */
 export class JobQueue {
-  constructor(private readonly store: RecordStore) {}
+  static readonly maxConcurrency = 5;
+  constructor(
+    private readonly store: RecordStore,
+    private readonly concurrency: number = JobQueue.maxConcurrency,
+  ) {}
   /**
    * 插入一条 `queued` 作业，`run_after` 即当前时间，无租约（`lease_epoch` 为 0）。
    * 不做去重：同一聚合重复调用会排入多个作业，幂等需由调用方自行保证。
@@ -43,25 +47,52 @@ export class JobQueue {
    * 写回结果前必须用 {@link withLease} 或 {@link assertLease} 重新校验租约。
    */
   async claim(worker: string, kinds?: readonly JobKind[]) {
+    const [job] = await this.claimBatch(worker, { kinds, limit: 1 });
+    return job;
+  }
+  /** 空位与就绪作业在同一事务内确定。所有类型及 Worker 的有效租约共用并发额度。 */
+  async claimBatch(
+    worker: string,
+    {
+      activeIds = [],
+      kinds,
+      limit = this.concurrency,
+    }: { activeIds?: readonly string[]; kinds?: readonly JobKind[]; limit?: number } = {},
+  ): Promise<JobRecord[]> {
+    if (activeIds.length >= this.concurrency) return [];
     return await this.store.tx(async () => {
-      const job = (await this.store.all('jobs'))
+      const rows = await this.store.all('jobs');
+      const timestamp = Date.now();
+      // 本机可能还在清理已结束租约的任务，它与其他 Worker 的有效租约均占用名额。
+      const occupied = new Set(activeIds);
+      for (const row of rows)
+        if (row.state === 'running' && row.lease_until > timestamp) occupied.add(row.id);
+      const slots = Math.min(limit, this.concurrency - occupied.size);
+      if (slots <= 0) return [];
+      const ready = rows
         .filter(
           (j) =>
             (!kinds || kinds.includes(j.kind)) &&
+            !occupied.has(j.id) &&
             !j.cancel_requested &&
-            ((j.state === 'queued' && j.run_after <= Date.now()) ||
-              (j.state === 'running' && j.lease_until <= Date.now())),
+            ((j.state === 'queued' && j.run_after <= timestamp) ||
+              (j.state === 'running' && j.lease_until <= timestamp)),
         )
-        .sort((a, b) => a.run_after - b.run_after)[0];
-      if (!job) return;
-      return await this.store.put('jobs', {
-        ...job,
-        state: 'running',
-        lease_owner: worker,
-        lease_epoch: job.lease_epoch + 1,
-        lease_until: Date.now() + 60000,
-        attempt: job.attempt + 1,
-      });
+        .sort((a, b) => a.run_after - b.run_after)
+        .slice(0, slots);
+      const claimed: JobRecord[] = [];
+      for (const job of ready)
+        claimed.push(
+          await this.store.put('jobs', {
+            ...job,
+            state: 'running',
+            lease_owner: worker,
+            lease_epoch: job.lease_epoch + 1,
+            lease_until: timestamp + 60000,
+            attempt: job.attempt + 1,
+          }),
+        );
+      return claimed;
     });
   }
   private async activeLease(job: JobRecord) {

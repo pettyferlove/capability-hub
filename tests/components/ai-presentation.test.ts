@@ -18,6 +18,7 @@ import { recentTrail } from '../../apps/web/src/features/ai/agent-brief.js';
 import { InteractionForm } from '../../apps/web/src/features/ai/InteractionForm.js';
 import { BusinessAgentPanel } from '../../apps/web/src/features/ai/BusinessAgentPanel.js';
 import { PublicationReviewAssistant } from '../../apps/web/src/features/review/PublicationReviewAssistant.js';
+import { ReviewAuditEvidence } from '../../apps/web/src/features/review/ReviewAuditEvidence.js';
 import { ReviewDetail } from '../../apps/web/src/features/review/ReviewDetail.js';
 import { createTestHub, receiveSkill, submitPublication } from '../support/application.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
@@ -1072,6 +1073,76 @@ test('审核底栏跟随取证和整理阶段，可直接取消并重新研判',
   await screen.findByText('这个外部调用是否获得授权？');
   fireEvent.click(screen.getByRole('button', { name: '核对依据' }));
   assert.deepEqual(citation.mock.calls[0].arguments, ['entry.js', 12, 12]);
+});
+
+test('版本审计跟随执行事件显示读取行段，整理或中断后清除旧动作', async (t) => {
+  const target = { version_id: 'version', content_digest: 'sha256:fixed' };
+  const view = executionView({
+    operation_id: 'resource-audit',
+    status: 'queued',
+    input: { version_id: target.version_id },
+  });
+  let stream: ReadableStreamDefaultController<Uint8Array>;
+  const events = new ReadableStream<Uint8Array>({
+    start(controller) {
+      stream = controller;
+    },
+  });
+  const emit = async (type: string, data: unknown) => {
+    await act(async () => {
+      stream.enqueue(
+        new TextEncoder().encode('event: ' + type + '\ndata: ' + JSON.stringify(data) + '\n\n'),
+      );
+    });
+  };
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === '/api/ai/model-options')
+      return Response.json({
+        default_profile: 'primary',
+        profiles: [{ id: 'primary', label: '模型' }],
+      });
+    if (path.startsWith('/api/ai/executions?'))
+      return Response.json({ items: [view.execution], next_cursor: null });
+    assert.equal(path, '/api/ai/executions/execution/events');
+    return new Response(events, { headers: { 'Content-Type': 'text/event-stream' } });
+  });
+  const page = render(
+    withHub(
+      createElement(ReviewAuditEvidence, {
+        request: target,
+        onAdvice: () => undefined,
+        onEvidence: () => undefined,
+      }),
+    ),
+  );
+  t.after(() => {
+    page.unmount();
+    stream.close();
+  });
+  const card = within(screen.getByRole('region', { name: '版本资源审计' }));
+  await card.findByText('已排队');
+  await emit('stream.snapshot', { schema_version: 1, ...view });
+  const track = within(await card.findByRole('list', { name: '研判进度' }));
+  assert.equal(track.queryByRole('listitem', { current: 'step' }), null);
+  await emit('execution.started', activityEvent(1, 'execution.started', {}));
+  const display = 'SKILL.md · 第 8–27 行';
+  await emit(
+    'tool.started',
+    activityEvent(2, 'tool.started', {
+      tool_id: 'read-file',
+      invocation_id: 'read-1',
+      display,
+    }),
+  );
+  assert(await card.findByText(display));
+  assert.match(track.getByRole('listitem', { current: 'step' }).textContent ?? '', /查阅证据/);
+  await emit('step.started', activityEvent(3, 'step.started', { step_id: 'assessment' }));
+  assert.match(track.getByRole('listitem', { current: 'step' }).textContent ?? '', /整理报告/);
+  assert.equal(card.queryByText(display), null);
+  await emit('execution.cancelled', activityEvent(4, 'execution.cancelled', {}));
+  assert(await card.findByText('已取消'));
+  assert.match(track.getByRole('listitem', { current: 'step' }).textContent ?? '', /整理报告/);
+  assert(card.getByRole('button', { name: '重新审计' }));
 });
 
 test('待审页按身份展示工具，版本审计只出现在独立审核员的决定抽屉中', async (t) => {

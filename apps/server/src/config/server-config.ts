@@ -11,6 +11,7 @@ import {
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { aiConfigurationSchema } from '@capability-hub/ai';
+import { JobQueue } from '@capability-hub/application';
 import { builtinRoles } from '@capability-hub/domain/rbac';
 import { defaultDataDirectory, defaultWebDirectory, workspaceRoot } from './paths.js';
 
@@ -58,6 +59,7 @@ const configSchema = z
     gitHosts: z.array(z.string()),
     privateGitHosts: z.array(z.string()),
     worker: z.boolean(),
+    workerConcurrency: z.number().int().min(1).max(JobQueue.maxConcurrency),
     requestLogging: z.boolean(),
     setupToken: z.string().optional(),
     logLevel: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']),
@@ -234,6 +236,9 @@ export function loadServerConfig(
     logLevel: environment.CAPABILITY_HUB_LOG_LEVEL ?? 'info',
     setupToken: environment.CAPABILITY_HUB_SETUP_TOKEN,
     worker: overrides.worker ?? flag(environment, 'CAPABILITY_HUB_WORKER', true),
+    workerConcurrency: Number(
+      environment.CAPABILITY_HUB_WORKER_CONCURRENCY ?? JobQueue.maxConcurrency,
+    ),
     requestLogging:
       overrides.requestLogging ?? flag(environment, 'CAPABILITY_HUB_REQUEST_LOGS', true),
     ...overrides,

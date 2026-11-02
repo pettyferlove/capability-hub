@@ -116,7 +116,7 @@ export function businessTools(
     }),
     resource_overview: tool(
       'resource-overview',
-      '读取当前固定版本的类型、入口文件与摘要。先使用此工具确定审计入口。',
+      '读取固定版本的类型、入口文件与摘要；任务已给出入口时可直接读取入口。',
       empty,
       () => service.overview(context.ownerId, versionId),
     ),
@@ -133,7 +133,7 @@ export function businessTools(
     ),
     read_file: tool(
       'read-file',
-      '按行读取固定版本文本。Skill 必须先读 SKILL.md，MCP 先读 server.json，再按引用读取脚本、说明等。truncated 表示还有内容，需继续分页。',
+      '按行读取固定版本文本。Skill 先读 SKILL.md，MCP 先读 server.json。truncated 时按需补读影响判断的行段；unavailable 表示该段未能读取，不代表文件为空。',
       z
         .object({
           path: z.string().min(1).max(500),
@@ -171,7 +171,7 @@ export function businessTools(
     ),
     compare_release: tool(
       'compare-release',
-      '列出与当前发布版本之间新增、修改、删除的文件。不会自动加载内容。',
+      '比较当前发布版本的文件清单，不加载正文。base_version_id 为 null 表示没有可比较的基线，不能据此断言行为未变或发生回归。',
       empty,
       () => service.compare(context.ownerId, versionId),
     ),
