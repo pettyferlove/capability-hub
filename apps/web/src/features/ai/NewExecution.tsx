@@ -4,7 +4,7 @@
  *
  * 输入字段按 schema 属性推导：`prompt`/`topic` 之一作为主输入置于输入框正文，
  * `require_approval` 与模型、提交按钮同在输入框底部工具条，
- * 其余字段收进「参考资源与工具」折叠区；没有主输入的操作（如资源审计）把全部字段放进输入框。
+ * 其余必填字段直接展示，可选字段收进「参考资源与工具」折叠区；没有主输入的操作把全部字段放进输入框。
  * 示例提示词按 `operation_id` 提供，仅当存在主输入时可用。
  */
 import { useId, useRef, useState } from 'react';
@@ -23,7 +23,7 @@ import {
 } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import { btnStyles, btnPrimaryStyles } from '../../shared/styles/recipes.js';
-import { SchemaFields, initialValues } from './SchemaFields.js';
+import { SchemaFields, initialValues, requiredInputNames } from './SchemaFields.js';
 import { jsonObject, operationLabels, operationMeta } from './presentation.js';
 import {
   chipStyles,
@@ -98,7 +98,13 @@ export function NewExecution({
     : fields.includes('topic')
       ? 'topic'
       : undefined;
-  const advanced = fields.filter((key) => key !== primary && key !== 'require_approval');
+  const required = requiredInputNames(definition?.input_schema ?? {});
+  const advanced = primary
+    ? fields.filter(
+        (key) => key !== primary && key !== 'require_approval' && !required.includes(key),
+      )
+    : [];
+  const mainFields = fields.filter((key) => key !== 'require_approval' && !advanced.includes(key));
   const ready = !!profile && !!definition;
   const submit = async () => {
     if (busy || !ready) return;
@@ -198,7 +204,7 @@ export function NewExecution({
                 <div className="px-4 pt-4 pb-3 sm:px-5">
                   <SchemaFields
                     schema={definition.input_schema}
-                    names={primary ? [primary] : advanced}
+                    names={mainFields}
                     value={input}
                     onChange={setInput}
                     disabled={busy}

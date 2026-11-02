@@ -5,10 +5,10 @@ type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 const labels: Record<string, string> = {
   prompt: '你的问题',
   topic: '讨论主题',
-  resource_ref: '参考资源（可选）',
+  resource_ref: '参考资源',
   require_approval: '保存前由我确认',
-  mcp_endpoint: 'MCP 工具目录（可选）',
-  skill_ref: '参考 Skill（可选）',
+  mcp_endpoint: 'MCP 工具目录',
+  skill_ref: '参考 Skill',
   approved: '采用这份草案',
   comment: '补充意见',
   version_id: '固定版本 ID',
@@ -23,6 +23,18 @@ function object(value: Json | undefined): Record<string, Json> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+/** 目录和已保存的交互描述解析后的对象，带默认值的键可由服务端补齐。 */
+export function requiredInputNames(schema: Json): string[] {
+  const { properties, required } = object(schema);
+  const fields = object(properties);
+  return Array.isArray(required)
+    ? required.filter(
+        (key): key is string =>
+          typeof key === 'string' && object(fields[key]).default === undefined,
+      )
+    : [];
+}
+
 /**
  * 由 JSON Schema 生成表单初值，优先级：`default` 最高，其次仅为 `required` 字段合成空值（枚举取首项，
  * 其余按类型给 `false`／`0`／空对象／空数组／空串）。可选且无默认值的字段直接不出现，因此提交体
@@ -30,12 +42,12 @@ function object(value: Json | undefined): Record<string, Json> {
  */
 export function initialValues(schema: Json): Record<string, Json> {
   const properties = object(object(schema).properties);
-  const required = object(schema).required;
+  const required = requiredInputNames(schema);
   return Object.fromEntries(
     Object.entries(properties).flatMap(([key, value]) => {
       const field = object(value);
       if (field.default !== undefined) return [[key, field.default]];
-      if (!Array.isArray(required) || !required.includes(key)) return [];
+      if (!required.includes(key)) return [];
       if (Array.isArray(field.enum) && field.enum.length) return [[key, field.enum[0]!]];
       return [
         [
@@ -59,12 +71,14 @@ function JsonField({
   value,
   onChange,
   disabled,
+  required,
 }: {
   value: Json | undefined;
-  onChange: (value: Json) => void;
+  onChange: (value: Json | undefined) => void;
   disabled: boolean;
+  required: boolean;
 }) {
-  const serialized = JSON.stringify(value ?? null, null, 2);
+  const serialized = value === undefined ? '' : JSON.stringify(value, null, 2);
   const [text, setText] = useState(serialized);
   useEffect(() => setText(serialized), [serialized]);
   return (
@@ -73,10 +87,17 @@ function JsonField({
       rows={6}
       value={text}
       disabled={disabled}
+      required={required}
       onChange={(event) => {
-        setText(event.target.value);
+        const raw = event.target.value;
+        setText(raw);
+        if (!raw.trim() && !required) {
+          event.target.setCustomValidity('');
+          onChange(undefined);
+          return;
+        }
         try {
-          const parsed = JSON.parse(event.target.value) as Json;
+          const parsed = JSON.parse(raw) as Json;
           event.target.setCustomValidity('');
           onChange(parsed);
         } catch {
@@ -106,7 +127,7 @@ export function SchemaFields({
   names?: string[];
 }) {
   const fields = object(object(schema).properties);
-  const required = object(schema).required;
+  const required = requiredInputNames(schema);
   return (
     <div className={stackStyles}>
       {Object.entries(fields)
@@ -114,7 +135,14 @@ export function SchemaFields({
         .map(([key, raw]) => {
           const field = object(raw);
           const label = typeof field.title === 'string' ? field.title : (labels[key] ?? key);
-          const update = (item: Json) => onChange({ ...value, [key]: item });
+          const isRequired = required.includes(key);
+          const reference = key.endsWith('_ref') || key === 'mcp_endpoint';
+          const update = (item: Json | undefined) => {
+            const next = { ...value };
+            if (item === undefined) delete next[key];
+            else next[key] = item;
+            onChange(next);
+          };
           const current = value[key];
           if (field.type === 'boolean')
             return (
@@ -132,7 +160,10 @@ export function SchemaFields({
             );
           return (
             <label className={fieldStyles} key={key}>
-              <span>{label}</span>
+              <span>
+                {label}
+                {reference && (isRequired ? '（必填）' : '（可选）')}
+              </span>
               {Array.isArray(field.enum) ? (
                 <select
                   className={controlStyles}
@@ -141,12 +172,13 @@ export function SchemaFields({
                   disabled={disabled}
                   onChange={(event) =>
                     update(
-                      (field.enum as Json[]).find(
-                        (item) => enumLabel(item) === event.target.value,
-                      ) ?? event.target.value,
+                      (field.enum as Json[]).find((item) => enumLabel(item) === event.target.value),
                     )
                   }
                 >
+                  {!isRequired && !field.enum.some((item) => enumLabel(item) === '') && (
+                    <option value="">不选择</option>
+                  )}
                   {field.enum.map((item) => (
                     <option key={enumLabel(item)} value={enumLabel(item)}>
                       {enumLabel(item)}
@@ -158,7 +190,12 @@ export function SchemaFields({
                 field.$ref ||
                 field.anyOf ||
                 field.oneOf ? (
-                <JsonField value={current} onChange={update} disabled={disabled} />
+                <JsonField
+                  value={current}
+                  onChange={update}
+                  disabled={disabled}
+                  required={isRequired}
+                />
               ) : field.type === 'number' || field.type === 'integer' ? (
                 <input
                   className={controlStyles}
@@ -166,7 +203,10 @@ export function SchemaFields({
                   type="number"
                   value={typeof current === 'number' ? current : ''}
                   disabled={disabled}
-                  onChange={(event) => update(Number(event.target.value))}
+                  required={isRequired}
+                  onChange={(event) =>
+                    update(event.target.value === '' ? undefined : event.target.valueAsNumber)
+                  }
                   min={typeof field.minimum === 'number' ? field.minimum : undefined}
                   max={typeof field.maximum === 'number' ? field.maximum : undefined}
                 />
@@ -179,11 +219,11 @@ export function SchemaFields({
                       ? '描述你想解决的问题，或从上方示例开始…'
                       : key === 'topic'
                         ? '描述主题、目标和约束，让多个 Agent 一起完善方案…'
-                        : key === 'comment'
+                        : key === 'comment' && !isRequired
                           ? '补充你的判断或修改建议（可选）'
                           : `输入${label}…`
                   }
-                  rows={key.endsWith('_ref') || key === 'mcp_endpoint' || key === 'comment' ? 2 : 4}
+                  rows={reference || key === 'comment' ? 2 : 4}
                   value={
                     typeof current === 'string'
                       ? current
@@ -192,9 +232,13 @@ export function SchemaFields({
                         : JSON.stringify(current)
                   }
                   disabled={disabled}
-                  required={Array.isArray(required) && required.includes(key)}
+                  required={isRequired}
+                  minLength={typeof field.minLength === 'number' ? field.minLength : undefined}
                   maxLength={typeof field.maxLength === 'number' ? field.maxLength : undefined}
-                  onChange={(event) => update(event.target.value)}
+                  onChange={(event) => {
+                    const text = event.target.value;
+                    update(!isRequired && !text.trim() ? undefined : text);
+                  }}
                 />
               )}
               {typeof field.description === 'string' && (

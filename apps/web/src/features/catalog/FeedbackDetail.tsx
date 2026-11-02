@@ -160,6 +160,7 @@ function FeedbackResolution({
   onSaved: (updated: AssetFeedbackResponse) => void;
 }) {
   const [status, setStatus] = useState<AssetFeedbackUpdateRequest['status']>(f.status);
+  const resolutionRequired = status === 'resolved' || status === 'declined';
   const [draft, setDraft] = useState<string>();
   const resolution = draft ?? (f.resolution || suggestion || '');
   const [fixed, setFixed] = useState(f.fixed_version_id ?? '');
@@ -209,14 +210,14 @@ function FeedbackResolution({
           </SelectField>
         </label>
         <label>
-          处理说明
+          处理说明{resolutionRequired && '（必填）'}
           <textarea
             ref={editor}
             maxLength={2000}
-            required={status === 'resolved' || status === 'declined'}
+            required={resolutionRequired}
             value={resolution}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="说明处理结果；拒绝时写明原因…"
+            placeholder={resolutionRequired ? '说明解决方式或不采纳的原因' : '可补充处理进展'}
           />
         </label>
         {suggestion && (

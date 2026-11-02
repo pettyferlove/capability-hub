@@ -13,9 +13,10 @@ import {
   subtleStyles,
 } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
+import { nominationReasonLength } from '@capability-hub/contracts';
 import type { AssetResponse } from '@capability-hub/contracts/http';
 import { ArrowUpRight, Award, Check, ThumbsUp } from '../../shared/icons/lucide.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
@@ -32,6 +33,9 @@ export function AssetCommunity({ asset }: { asset: AssetResponse }) {
   const [community, setCommunity] = useState(asset.community);
   const [nominating, setNominating] = useState(false);
   const [reason, setReason] = useState('');
+  const reasonHintId = useId();
+  const reasonLength = reason.trim().length;
+  const missingCharacters = Math.max(0, nominationReasonLength.min - reasonLength);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   useEffect(() => setCommunity(asset.community), [asset.community]);
@@ -139,17 +143,27 @@ export function AssetCommunity({ asset }: { asset: AssetResponse }) {
             void nominate();
           }}
         >
-          <label>
-            为什么值得成为通用能力？
-            <textarea
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              required
-              minLength={10}
-              maxLength={2000}
-              placeholder="说明适用的团队、可复用场景和实际使用效果，至少 10 个字。"
-            />
-          </label>
+          <div className="grid gap-2">
+            <label>
+              为什么值得成为通用能力？
+              <textarea
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                required
+                minLength={nominationReasonLength.min}
+                maxLength={nominationReasonLength.max}
+                aria-describedby={reasonHintId}
+                placeholder="哪些团队能复用它？它能帮他们解决什么问题？"
+              />
+            </label>
+            <p id={reasonHintId} className={subtleStyles} role="status">
+              {reasonLength === 0
+                ? `请填写 ${nominationReasonLength.min}～${nominationReasonLength.max} 字的提名理由。`
+                : missingCharacters > 0
+                  ? `再写 ${missingCharacters} 个字就能提交。`
+                  : '提名理由已填好。'}
+            </p>
+          </div>
           <p className={subtleStyles}>
             审核通过后归入「通用」，当前可见范围仍为「{asset.current_release.visibility_label}」。
           </p>
@@ -157,7 +171,7 @@ export function AssetCommunity({ asset }: { asset: AssetResponse }) {
             <Submit
               type="submit"
               busy={busy === 'nominate'}
-              disabled={!!busy || reason.trim().length < 10}
+              disabled={!!busy || missingCharacters > 0}
             >
               提交通用提名
             </Submit>

@@ -180,14 +180,14 @@ export function CredentialForm({
               />
             </label>
             <label>
-              私钥口令 <small>选填</small>
+              私钥口令 <small>仅加密私钥必填</small>
               <InputField
                 icon="lock"
                 name="passphrase"
                 type="password"
                 autoComplete="new-password"
                 maxLength={1024}
-                placeholder="私钥未加密可留空"
+                placeholder="输入私钥的解密口令"
               />
             </label>
             <label>

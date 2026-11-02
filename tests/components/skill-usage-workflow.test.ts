@@ -5,6 +5,7 @@ import { createElement, type ReactNode } from 'react';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { IntakeDetail } from '../../apps/web/src/features/publishing/IntakeDetail.js';
+import { AssetCommunity } from '../../apps/web/src/features/catalog/AssetCommunity.js';
 import ManagementPanel from '../../apps/web/src/features/catalog/ManagementPanel.js';
 import { VersionComparison } from '../../apps/web/src/shared/components/VersionComparison.js';
 import { UploadPanel } from '../../apps/web/src/features/publishing/UploadPanel.js';
@@ -268,6 +269,49 @@ test('维护资产显示版本与审核入口，更新链接预选原资产', as
     screen.getByRole('radio', { name: '已有资产新版本' }).getAttribute('aria-checked'),
     'true',
   );
+});
+
+test('通用提名按输入状态显示一条提示，扣除首尾空白后满十字才能提交', async (context) => {
+  const fixture = await createTestHub(context);
+  const { intake } = await publishSkill(fixture);
+  const asset = await fixture.hub.catalog.getDetail(fixture.reader, intake.asset_id);
+  const submitted: unknown[] = [];
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    assert.equal(path, '/api/nominations');
+    submitted.push(JSON.parse(String(options.body)));
+    return Response.json({ id: 'nomination' });
+  });
+  const user = userEvent.setup();
+  render(page(createElement(AssetCommunity, { asset })));
+  await user.click(screen.getByRole('button', { name: '提名为通用' }));
+  const reason = screen.getByRole('textbox', {
+    name: '为什么值得成为通用能力？',
+    description: /\b10\D+2000\b/,
+  });
+  const submit = screen.getByRole<HTMLButtonElement>('button', { name: '提交通用提名' });
+  assert(submit.disabled);
+  await user.type(reason, '   通用技能   ');
+  assert(screen.getByRole('textbox', { description: /^\D*6\D*$/ }));
+  assert(submit.disabled);
+  await user.clear(reason);
+  await user.type(reason, '跨团队复用提交信息');
+  assert(screen.getByRole('textbox', { description: /^\D*1\D*$/ }));
+  assert(submit.disabled);
+  await user.type(reason, '。');
+  assert(
+    screen.getByRole('textbox', {
+      description: (hint) => !/\d/.test(hint) && /已填好|达标|可(?:以)?提交|完成/.test(hint),
+    }),
+  );
+  assert.equal(submit.disabled, false);
+  await user.click(submit);
+  assert(await screen.findByText('通用提名审核中'));
+  assert.deepEqual(submitted, [
+    {
+      release_id: asset.current_release.release_id,
+      reason: '跨团队复用提交信息。',
+    },
+  ]);
 });
 
 test('版本点阵区分首次发布、相同内容与内容更新', () => {

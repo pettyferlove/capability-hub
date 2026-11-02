@@ -1,8 +1,10 @@
 import '../support/dom.js';
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'node:test';
+import { afterEach, test, type TestContext } from 'node:test';
 import { createElement, type ReactElement } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { userEvent } from '@testing-library/user-event';
+import { createHubAgentRegistry } from '@capability-hub/hub-agents';
 import {
   aiExecutionViewResponseSchema,
   aiEventResponseSchema,
@@ -16,6 +18,7 @@ import { activityItems, businessPhase } from '../../apps/web/src/features/ai/act
 import { advanceStreamCursor } from '../../apps/web/src/features/ai/stream-text.js';
 import { recentTrail } from '../../apps/web/src/features/ai/agent-brief.js';
 import { InteractionForm } from '../../apps/web/src/features/ai/InteractionForm.js';
+import { NewExecution } from '../../apps/web/src/features/ai/NewExecution.js';
 import { BusinessAgentPanel } from '../../apps/web/src/features/ai/BusinessAgentPanel.js';
 import { PublicationReviewAssistant } from '../../apps/web/src/features/review/PublicationReviewAssistant.js';
 import { ReviewAuditEvidence } from '../../apps/web/src/features/review/ReviewAuditEvidence.js';
@@ -369,6 +372,141 @@ test('维护者从反馈详情打开同事的自动研判能看负责人和报�
       businessReport.assessment.summary,
     ),
   );
+});
+
+test('已保存的人工确认在选定决定后允许留空补充意见', async (context) => {
+  const decision = createHubAgentRegistry().get('agent-lab').interactions.approval;
+  const submitted: unknown[] = [];
+  context.mock.method(globalThis, 'fetch', async (_url: string, options: RequestInit) => {
+    submitted.push(decision.parse(JSON.parse(String(options.body)).response));
+    return Response.json({});
+  });
+  render(
+    createElement(InteractionForm, {
+      executionId: 'execution',
+      interaction: {
+        id: 'approval',
+        status: 'pending',
+        revision: 1,
+        request: {},
+        response: null,
+        response_schema: {
+          type: 'object',
+          required: ['approved', 'comment'],
+          properties: { approved: { type: 'boolean' }, comment: { type: 'string', default: '' } },
+        },
+        expires_at: Date.now() + 60000,
+      },
+      onDone: () => {},
+    }),
+  );
+  const user = userEvent.setup();
+  assert.equal(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '补充意见' }).value, '');
+  const submit = screen.getByRole<HTMLButtonElement>('button', { name: '确认并继续' });
+  assert(submit.disabled);
+  await user.click(screen.getByRole('radio', { name: '暂不采纳' }));
+  await user.click(submit);
+  assert.deepEqual(submitted, [{ approved: false, comment: '' }]);
+});
+
+function renderTaskForm(context: TestContext, inputSchema: AiExecutionResponse['input']) {
+  const inputs: AiExecutionResponse['input'][] = [];
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    assert.equal(path, '/api/ai/executions');
+    const { input } = JSON.parse(String(options.body)) as Pick<AiExecutionResponse, 'input'>;
+    inputs.push(input);
+    return Response.json(
+      executionView({ operation_id: 'reference-task', status: 'queued', input }).execution,
+    );
+  });
+  render(
+    createElement(NewExecution, {
+      catalog: {
+        default_profile: 'primary',
+        profiles: [{ id: 'primary', label: '模型', format: 'openai', model: 'test' }],
+        operations: [
+          {
+            id: 'reference-task',
+            version: '1',
+            title: '参考资料任务',
+            description: '',
+            digest: 'test',
+            input_schema: inputSchema,
+            output_schema: {},
+            interactions: {},
+          },
+        ],
+      },
+      onCreated: () => {},
+    }),
+  );
+  return inputs;
+}
+
+test('必填参考项在可选折叠区外，填写后才能开始任务', async (context) => {
+  const inputs = renderTaskForm(context, {
+    type: 'object',
+    required: ['prompt', 'resource_ref'],
+    properties: {
+      prompt: { type: 'string', minLength: 1 },
+      resource_ref: { type: 'string', minLength: 1 },
+      skill_ref: { type: 'string' },
+    },
+  });
+  const user = userEvent.setup();
+  const references = screen.getByText('参考资源与工具').closest('details')!;
+  const required = screen.getByRole('textbox', { name: /^参考资源.*必填/ });
+  assert(!references.contains(required), '必填项必须在展开可选区之前就能填写');
+  const submit = screen.getByRole('button', { name: '开始任务' });
+  await user.type(screen.getByRole('textbox', { name: '你的问题' }), '请检查资源');
+  await user.click(submit);
+  assert.deepEqual(inputs, []);
+  await user.type(required, 'resource');
+  await user.click(submit);
+  assert.deepEqual(inputs, [{ prompt: '请检查资源', resource_ref: 'resource' }]);
+});
+
+test('可选任务参数提交时保留填写的值，清空后从请求中省略', async (context) => {
+  const inputs = renderTaskForm(context, {
+    type: 'object',
+    required: ['prompt'],
+    properties: {
+      prompt: { type: 'string', minLength: 1 },
+      skill_ref: { type: 'string', minLength: 2 },
+      count: { type: 'integer', minimum: 1 },
+      mode: { type: 'string', enum: ['fast', 'slow'] },
+      options: { type: 'object' },
+    },
+  });
+  const user = userEvent.setup();
+  await user.type(screen.getByRole('textbox', { name: '你的问题' }), '请检查资源');
+  await user.click(screen.getByText('参考资源与工具'));
+  const skill = screen.getByRole('textbox', { name: /参考 Skill/ });
+  const count = screen.getByRole('spinbutton', { name: 'count' });
+  const mode = screen.getByRole('combobox', { name: 'mode' });
+  const options = screen.getByRole('textbox', { name: 'options' });
+  const submit = screen.getByRole('button', { name: '开始任务' });
+  await user.type(skill, 'skill');
+  await user.type(count, '2');
+  await user.selectOptions(mode, 'slow');
+  fireEvent.change(options, { target: { value: '{"limit":1}' } });
+  await user.click(submit);
+  assert.deepEqual(inputs, [
+    {
+      prompt: '请检查资源',
+      skill_ref: 'skill',
+      count: 2,
+      mode: 'slow',
+      options: { limit: 1 },
+    },
+  ]);
+
+  await user.clear(skill);
+  await user.clear(count);
+  await user.selectOptions(mode, '');
+  await user.clear(options);
+  await user.click(submit);
+  assert.deepEqual(inputs.at(-1), { prompt: '请检查资源' });
 });
 
 test('反馈写回必须明确采纳；改为不采纳会清除写回选择', () => {
