@@ -47,7 +47,7 @@ export function createMcp(
           instructions: [
             `邀请同事接入 Hub 时，原样转交公开接口 ${hub.config.publicUrl}/api/hub-share 返回的 prompt。`,
             scope === 'hub:read'
-              ? `当前连接可搜索和使用资源。提交本地 Skill、为某个版本登记或取消推荐、上报反馈时，引导用户在 ${hub.config.publicUrl}/connect?permission=contribute 追加贡献授权并刷新工具列表。不要索取访问令牌。`
+              ? `当前连接可搜索和使用资源。提交本地 Skill、推荐或取消推荐资源、上报版本反馈时，引导用户在 ${hub.config.publicUrl}/connect?permission=contribute 追加贡献授权并刷新工具列表。不要索取访问令牌。`
               : '当前连接支持搜索、使用与贡献，操作受账号权限约束。提交 Skill 前取得用户授权，发布仍需独立审核。',
             `当次使用 Skill 可搜索并加载正文。需要安装、接入目标 MCP 或贡献资源时，可阅读官方使用指南 ${hub.config.publicUrl}${hubClientSkillPath}`,
             ...(publishedSkillUrl
@@ -145,7 +145,7 @@ export function createMcp(
       );
       register(
         'rate_asset',
-        '推荐或取消推荐有权访问的 Skill/MCP 固定版本；每人每版本只计一次，需要连接的贡献权限',
+        '按 asset_id 推荐或取消推荐可读的 Skill/MCP 资源。每人对同一资源只计一次，需要连接的贡献权限。',
         assetRecommendationRequestSchema,
         async ({ _principal, ...b }) => await hub.community.rate(_principal, b),
         true,

@@ -120,7 +120,7 @@ export const conversationExamples: {
       {
         kind: 'confirmation',
         title: '提交经验文件',
-        text: '向研发团队提交 api-review-guide v1.0.0，并推荐 api-review-checklist v1.2.0？',
+        text: '向研发团队提交 api-review-guide v1.0.0，并推荐 api-review-checklist？',
         action: '提交并推荐',
       },
       {
@@ -132,7 +132,7 @@ export const conversationExamples: {
       {
         kind: 'tool',
         name: 'rate_asset',
-        input: 'api-review-checklist · v1.2.0',
+        input: 'api-review-checklist',
         status: '已推荐',
       },
       {

@@ -3,23 +3,12 @@ import { test } from 'node:test';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
-import { migrationRuntime } from '../support/migrations.js';
+import { assertRecommendationMigration, migrationRuntime } from '../support/migrations.js';
 
 test('认证来源迁移保留已有账号与角色绑定，只放开跨来源同名', async (context) => {
   const runtime = await migrationRuntime(context, 'sqlite');
   const options = { driver: 'sqlite' as const, path: join(runtime.directory, 'hub.sqlite') };
-  const journalPath = join(
-    runtime.directory,
-    'src/persistence/sqlite/migrations/meta/_journal.json',
-  );
-  const complete = await readFile(journalPath, 'utf8');
-  const journal = JSON.parse(complete) as { entries: { idx: number }[] };
-  await writeFile(
-    journalPath,
-    JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx < 2) }),
-  );
-  const old = await runtime.open(options);
+  const old = await runtime.openBefore(options, 2);
   const local = {
     id: randomUUID(),
     username: 'member',
@@ -58,7 +47,6 @@ test('认证来源迁移保留已有账号与角色绑定，只放开跨来源�
     await old.insert('role_bindings', grant);
   } finally {
     await old.close();
-    await writeFile(journalPath, complete);
   }
   const store = await runtime.open(options);
   context.after(() => store.close());
@@ -78,6 +66,20 @@ test('认证来源迁移保留已有账号与角色绑定，只放开跨来源�
   await assert.rejects(() =>
     store.insert('users', { ...ldap, id: randomUUID(), username: 'another-uid' }),
   );
+});
+
+test('SQLite 升级按用户和资源合并历史推荐，保留首次推荐', async (context) => {
+  const runtime = await migrationRuntime(context, 'sqlite');
+  const path = join(runtime.directory, 'hub.sqlite');
+  await assertRecommendationMigration(context, runtime, { driver: 'sqlite', path }, (votes) => {
+    const db = new DatabaseSync(path);
+    try {
+      const insert = db.prepare('INSERT INTO recommendations (id, data) VALUES (?, ?)');
+      for (const vote of votes) insert.run(vote.id, JSON.stringify(vote));
+    } finally {
+      db.close();
+    }
+  });
 });
 
 test('SQLite 迁移首次并发打开只执行一次，后续迁移保留已有记录，重复打开不重放', async (context) => {

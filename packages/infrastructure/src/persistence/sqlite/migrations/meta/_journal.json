@@ -22,6 +22,13 @@
       "when": 1793539467074,
       "tag": "0002_identity_providers",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793609326468,
+      "tag": "0003_asset_recommendations",
+      "breakpoints": true
     }
   ]
 }

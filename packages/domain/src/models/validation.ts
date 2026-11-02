@@ -533,7 +533,7 @@ const schemas = {
     created_at: date,
     updated_at: date,
   }),
-  recommendations: z.strictObject({ ...base, user_id: id, version_id: id, created_at: date }),
+  recommendations: z.strictObject({ ...base, user_id: id, asset_id: id, created_at: date }),
 } satisfies { [K in TableName]: z.ZodType<RecordMap[K]> };
 
 /**

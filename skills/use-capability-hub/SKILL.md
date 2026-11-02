@@ -1,6 +1,6 @@
 ---
 name: use-capability-hub
-description: 接入 Capability Hub，查找并使用团队共享的 Skill 和 MCP。适用于任务需要 Hub 中的团队规范或服务、用户给出 Hub 邀请或资源链接、要邀请同事接入 Hub，或要向 Hub 提交本地 Skill、为某个版本登记推荐或反馈的场景。
+description: 接入 Capability Hub，查找并使用团队共享的 Skill 和 MCP。适用于任务需要 Hub 中的团队规范或服务、用户给出 Hub 邀请或资源链接、要邀请同事接入 Hub，或要向 Hub 提交本地 Skill、推荐资源或上报版本反馈的场景。
 ---
 
 # 使用 Capability Hub
@@ -42,9 +42,9 @@ description: 接入 Capability Hub，查找并使用团队共享的 Skill 和 MC
 2. 用 `share_skill` 新建时，`destination` 取 `target: new`、`slug` 和 `owner_group_id`。归属不明确就到发布页选择。更新已有上传资产则取 `target: existing` 和 `asset_id`。Git 来源的资产从登记来源同步。
 3. 返回 `submitted_for_scanning` 时报告“已提交扫描”，给出 `publication_url` 供用户选择受众并提交独立审核。
 
-### 为用过的版本登记推荐或反馈
+### 推荐资源或上报版本反馈
 
-- **“给刚用的版本点推荐”**。对实际使用的 `version_id` 调用 `rate_asset`，登记时传 `recommended: true`，取消时传 `false`。
+- **“给刚用的资源点推荐”**。用目录结果的 `asset_id` 调用 `rate_asset`，推荐时传 `recommended: true`，取消时传 `false`。
 - **“把这个问题反馈给维护者”**。有本次或预先授予的上报授权时，才对固定版本调用 `report_asset_feedback` 并传 `consent: true`。按缺陷、能力缺口或改进建议选择 `kind`，写明标题、使用场景、预期和实际结果，区分观察与推断。只提交脱敏的最小复现，成功后交付返回的 `detail_url`。
 
 同一次提交或反馈重试时，保持请求内容和 `idempotency_key` 一致，提交 Skill 使用 UUID。工具返回 `isError: true` 时，读取错误码和原因，说明受影响的步骤，按 `retryable` 判断是否原样重试。

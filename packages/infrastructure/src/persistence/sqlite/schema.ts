@@ -647,7 +647,7 @@ export const scenarios = sqliteTable(
   ],
 );
 
-/** `(user_id, version_id)` 唯一：同一用户对同一版本只有一条推荐，重复推荐必须更新而非新增。 */
+/** 资源升级不影响用户的推荐，同一用户对同一资源至多计一次。 */
 export const recommendations = sqliteTable(
   'recommendations',
   {
@@ -656,8 +656,8 @@ export const recommendations = sqliteTable(
     user_id: text('user_id')
       .generatedAlwaysAs(sql`json_extract(data, '$.user_id')`, { mode: 'stored' })
       .notNull(),
-    version_id: text('version_id')
-      .generatedAlwaysAs(sql`json_extract(data, '$.version_id')`, { mode: 'stored' })
+    asset_id: text('asset_id')
+      .generatedAlwaysAs(sql`json_extract(data, '$.asset_id')`, { mode: 'stored' })
       .notNull(),
   },
   (t): SQLiteTableExtraConfigValue[] => [
@@ -665,9 +665,9 @@ export const recommendations = sqliteTable(
       'recommendations_data_check',
       sql`( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1`,
     ),
-    unique().on(t.user_id, t.version_id),
+    unique().on(t.user_id, t.asset_id),
     foreignKey({ columns: [t.user_id], foreignColumns: [users.id] }),
-    foreignKey({ columns: [t.version_id], foreignColumns: [versions.id] }),
+    foreignKey({ columns: [t.asset_id], foreignColumns: [assets.id] }),
   ],
 );
 

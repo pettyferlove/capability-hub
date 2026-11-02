@@ -136,7 +136,7 @@ export class CatalogService {
         can_lifecycle: !!p && has(p, 'asset:lifecycle', this.access.assetContext(asset)),
         can_revoke: !!p && has(p, 'version:revoke'),
       },
-      community: await this.community.summary(version.id, release.id, p),
+      community: await this.community.summary(asset.id, release.id, p),
       revision: asset.revision,
     };
   }

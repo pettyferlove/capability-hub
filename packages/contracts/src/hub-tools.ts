@@ -57,7 +57,7 @@ export const hubTools = [
   {
     name: 'rate_asset',
     title: '推荐有用的资源',
-    description: '推荐或取消推荐一份 Skill / MCP 的固定版本。',
+    description: '推荐或取消推荐一个 Skill / MCP 资源。',
     action: 'contribute',
   },
 ] as const;

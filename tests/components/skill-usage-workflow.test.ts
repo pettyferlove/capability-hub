@@ -284,6 +284,7 @@ test('通用提名按输入状态显示一条提示，扣除首尾空白后满�
   const user = userEvent.setup();
   render(page(createElement(AssetCommunity, { asset })));
   await user.click(screen.getByRole('button', { name: '提名为通用' }));
+  assert(within(screen.getByText('本次提名版本：')).getByText(asset.current_release.version_label));
   const reason = screen.getByRole('textbox', {
     name: '为什么值得成为通用能力？',
     description: /\b10\D+2000\b/,

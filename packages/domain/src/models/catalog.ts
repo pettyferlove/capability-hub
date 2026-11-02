@@ -83,13 +83,12 @@ export interface VersionRecord {
 }
 
 /**
- * 用户对某个版本的推荐（「有用」标记）。同一用户对同一版本至多一条：推荐是幂等的开关，
- * 取消推荐直接删除记录，因此计数就是本表的行数。
+ * 同一用户对同一资源至多保留一条推荐，取消推荐即删除该记录。
  */
 export interface RecommendationRecord {
   id: string;
   user_id: string;
-  version_id: string;
+  asset_id: string;
   created_at: IsoDateTime;
 }
 

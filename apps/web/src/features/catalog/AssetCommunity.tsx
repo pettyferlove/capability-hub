@@ -24,9 +24,7 @@ import { useHub } from '../../shared/context/HubContext.js';
 import { assetHref, loginHref, pageHref } from '../../shared/navigation/history-route.js';
 
 /**
- * 详情里的社区区：推荐（`POST /api/ratings`），以及分类为 general 时的精选提名
- * （`POST /api/nominations`）。两个动作都要登录，成功后用接口返回的社区对象覆盖本地状态
- * 并触发全局 reload。
+ * 推荐归属资源，通用提名固定到表单所示版本的发布记录。
  */
 export function AssetCommunity({ asset }: { asset: AssetResponse }) {
   const { me, reload } = useHub();
@@ -45,7 +43,7 @@ export function AssetCommunity({ asset }: { asset: AssetResponse }) {
     setError('');
     try {
       const result = await mutate<AssetResponse['community']>('/api/ratings', {
-        version_id: asset.current_release.version_id,
+        asset_id: asset.asset_id,
         recommended: !community.recommended,
       });
       setCommunity(result);
@@ -143,6 +141,10 @@ export function AssetCommunity({ asset }: { asset: AssetResponse }) {
             void nominate();
           }}
         >
+          <p className={subtleStyles}>
+            本次提名版本：
+            <strong className="break-all">{asset.current_release.version_label}</strong>
+          </p>
           <div className="grid gap-2">
             <label>
               为什么值得成为通用能力？

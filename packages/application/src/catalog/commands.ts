@@ -1,10 +1,8 @@
 /**
- * 推荐开关的输入，来自 HTTP 的 JSON body；版本可读性由服务端再校验，
- * 不信任 body 里的任何归属信息。
+ * 推荐要求资源的当前发布对操作者可读。
  */
 export interface RecommendationCommand {
-  /** 必须是当前用户可读的版本，否则按不存在处理（404），不区分“无权”与“不存在”。 */
-  version_id: string;
+  asset_id: string;
   /** 目标状态而非增量操作：重复提交同一状态不会产生额外记录或审计。 */
   recommended: boolean;
 }

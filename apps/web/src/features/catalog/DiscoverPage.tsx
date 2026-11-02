@@ -442,7 +442,7 @@ export default function DiscoverPage() {
                     </div>
                     <div className={assetCardFootStyles}>
                       {!!a.community.recommendation_count && (
-                        <span className={cardRecommendationsStyles} title="此版本获得的用户推荐">
+                        <span className={cardRecommendationsStyles} title="此资源获得的用户推荐">
                           <ThumbsUp size={13} />
                           {a.community.recommendation_count}
                         </span>

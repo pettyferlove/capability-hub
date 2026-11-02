@@ -20,11 +20,11 @@ export const nominateAssetRequestSchema = z
   .strict();
 
 /**
- * 推荐请求：按固定版本记录目标状态，重复提交同一取值结果一致，无需额外幂等键。
+ * 推荐请求按资源记录目标状态，重复提交同一取值结果一致，无需额外幂等键。
  */
 export const assetRecommendationRequestSchema = z
   .object({
-    version_id: uuidSchema,
+    asset_id: uuidSchema,
     recommended: z.boolean(),
   })
   .strict();

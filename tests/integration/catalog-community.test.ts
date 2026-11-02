@@ -73,32 +73,53 @@ test('目录游标绑定查询、身份和目录版本，权限收窄后旧游�
   await assert.rejects(
     () =>
       fixture.hub.community.rate(fixture.reader, {
-        version_id: first.intake.version_id,
+        asset_id: first.intake.asset_id,
         recommended: true,
       }),
     code('NOT_FOUND'),
   );
 });
 
-test('同一版本的并发推荐只产生一条记录，取消后审计保留而计数归零', async (context) => {
+test('推荐只接受资源 ID，UUID 格式的资源短名不能代替 ID', async (context) => {
+  const fixture = await createTestHub(context);
+  const slug = randomUUID();
+  const { intake } = await publishSkill(fixture, { slug });
+  await assert.rejects(
+    () => fixture.hub.community.rate(fixture.reader, { asset_id: slug, recommended: true }),
+    code('NOT_FOUND'),
+  );
+  const asset = await fixture.hub.catalog.getDetail(fixture.reader, intake.asset_id);
+  assert.equal(asset.community.recommendation_count, 0);
+});
+
+test('同一资源升级后保留推荐，并发重试只计一票，取消后保留审计', async (context) => {
   const fixture = await createTestHub(context);
   const published = await publishSkill(fixture);
-  const body = { version_id: published.intake.version_id, recommended: true };
+  const body = { asset_id: published.intake.asset_id, recommended: true };
   await Promise.all([
     fixture.hub.community.rate(fixture.reader, body),
     fixture.hub.community.rate(fixture.reader, body),
   ]);
   assert.equal((await fixture.store.all('recommendations')).length, 1);
-  const asset = await fixture.hub.catalog.getDetail(fixture.reader, published.intake.asset_id);
+  await publishSkill(fixture, { assetId: body.asset_id, version: '2.0.0' });
+  const asset = await fixture.hub.catalog.getDetail(fixture.reader, body.asset_id);
+  assert.equal(asset.current_release.version_label, '2.0.0');
   assert.equal(asset.community.recommendation_count, 1);
   assert.equal(asset.community.recommended, true);
-  await fixture.hub.community.rate(fixture.reader, { ...body, recommended: false });
+  assert.equal((await fixture.hub.community.rate(fixture.reader, body)).recommendation_count, 1);
+  const cancelled = await fixture.hub.community.rate(fixture.reader, {
+    ...body,
+    recommended: false,
+  });
+  assert.equal(cancelled.recommendation_count, 0);
+  assert.equal(cancelled.recommended, false);
   assert.equal((await fixture.store.all('recommendations')).length, 0);
-  assert.equal(
-    (await fixture.store.all('audit')).filter((event) => event.action === 'asset.recommended')
-      .length,
-    1,
-  );
+  const audit = await fixture.store.where('audit', 'entity_id', body.asset_id);
+  for (const action of ['asset.recommended', 'asset.recommendation_removed']) {
+    const events = audit.filter((event) => event.action === action);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].subject?.kind, 'asset');
+  }
 });
 
 test('读者可提名已有发布，独立审核只改变分类并保留内容和分发受众', async (context) => {

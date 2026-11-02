@@ -597,7 +597,7 @@ export const scenarios = pgTable(
   ],
 );
 
-/** `(user_id, version_id)` 唯一：同一用户对同一版本只有一条推荐，重复推荐必须更新而非新增。 */
+/** 资源升级不影响用户的推荐，同一用户对同一资源至多计一次。 */
 export const recommendations = pgTable(
   'recommendations',
   {
@@ -606,8 +606,8 @@ export const recommendations = pgTable(
     user_id: text('user_id')
       .generatedAlwaysAs(sql`(data ->> 'user_id')`)
       .notNull(),
-    version_id: text('version_id')
-      .generatedAlwaysAs(sql`(data ->> 'version_id')`)
+    asset_id: text('asset_id')
+      .generatedAlwaysAs(sql`(data ->> 'asset_id')`)
       .notNull(),
   },
   (t): PgTableExtraConfigValue[] => [
@@ -615,9 +615,9 @@ export const recommendations = pgTable(
       'recommendations_data_check',
       sql`( jsonb_typeof(data) = 'object' AND jsonb_typeof(data -> 'id') = 'string' AND data ->> 'id' = id ) IS TRUE`,
     ),
-    unique().on(t.user_id, t.version_id),
+    unique().on(t.user_id, t.asset_id),
     foreignKey({ columns: [t.user_id], foreignColumns: [users.id] }),
-    foreignKey({ columns: [t.version_id], foreignColumns: [versions.id] }),
+    foreignKey({ columns: [t.asset_id], foreignColumns: [assets.id] }),
   ],
 );
 

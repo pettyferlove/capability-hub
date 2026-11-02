@@ -2,7 +2,36 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Pool } from 'pg';
 import { externalDatabase } from '../support/external.js';
-import { migrationRuntime } from '../support/migrations.js';
+import { assertRecommendationMigration, migrationRuntime } from '../support/migrations.js';
+
+test('PostgreSQL 升级按用户和资源合并历史推荐，保留首次推荐', async (context) => {
+  const runtime = await migrationRuntime(context, 'postgresql');
+  const database = await externalDatabase();
+  const pool = new Pool({ connectionString: database.url });
+  try {
+    await assertRecommendationMigration(
+      context,
+      runtime,
+      {
+        driver: 'postgresql',
+        url: database.url,
+        onPoolError: (error) => {
+          throw error;
+        },
+      },
+      async (votes) => {
+        for (const vote of votes)
+          await pool.query('INSERT INTO recommendations (id, data) VALUES ($1, $2)', [
+            vote.id,
+            vote,
+          ]);
+      },
+    );
+  } finally {
+    await pool.end();
+    await database.close();
+  }
+});
 
 test('PostgreSQL 并发初始化、增量迁移、重复启动和失败回滚均保留正确迁移历史', async (context) => {
   const runtime = await migrationRuntime(context, 'postgresql');

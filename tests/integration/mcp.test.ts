@@ -5,6 +5,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { serveTestHub } from '../support/server.js';
 import { publishSkill } from '../support/application.js';
 import { skillDocument } from '../support/content.js';
+import { signIn } from '../support/http.js';
 import { agentClientIds } from '@capability-hub/contracts';
 import { digest } from '@capability-hub/domain/canonical';
 
@@ -180,6 +181,34 @@ test('分享令牌提供提交工具，重复幂等请求只生成一次接收�
     await fixture.worker.tick();
     assert.equal((await fixture.store.all('intakes'))[0].state, 'ready');
     assert.equal((await fixture.hub.catalog.search(null, {})).total, 0);
+  } finally {
+    await client.close();
+  }
+});
+
+test('MCP 推荐与网页登录用户共享同一资源的推荐状态', async (context) => {
+  const fixture = await serveTestHub(context);
+  const { intake } = await publishSkill(fixture);
+  const token = await fixture.hub.tokens.issue(fixture.reader, {
+    name: 'recommend',
+    scope: 'hub:contribute',
+  });
+  const web = await signIn(fixture, 'reader');
+  const client = await connect(fixture.origin, token.token);
+  try {
+    const body = { asset_id: intake.asset_id, recommended: true };
+    await web.post('/api/ratings').send(body).expect(200);
+    const repeated = await client.callTool({ name: 'rate_asset', arguments: body });
+    assert(!repeated.isError);
+    assert.equal(object(repeated.structuredContent).recommendation_count, 1);
+    const cancelled = await client.callTool({
+      name: 'rate_asset',
+      arguments: { ...body, recommended: false },
+    });
+    assert(!cancelled.isError);
+    const detail = await web.get('/api/assets/' + intake.asset_id).expect(200);
+    assert.equal(detail.body.community.recommended, false);
+    assert.equal(detail.body.community.recommendation_count, 0);
   } finally {
     await client.close();
   }
