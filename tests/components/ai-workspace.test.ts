@@ -9,6 +9,7 @@ import {
   render,
   renderHook,
   screen,
+  waitFor,
   within,
 } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
@@ -17,6 +18,7 @@ import type { MeResponse } from '@capability-hub/contracts/http';
 import App from '../../apps/web/src/app/App.js';
 import { applyAiEvent, useAiExecution } from '../../apps/web/src/features/ai/use-ai-execution.js';
 import { useAiCommand } from '../../apps/web/src/features/ai/use-ai-command.js';
+import { ExecutionDiagnostics } from '../../apps/web/src/features/ai/ExecutionDiagnostics.js';
 import { SchemaFields, initialValues } from '../../apps/web/src/features/ai/SchemaFields.js';
 
 afterEach(cleanup);
@@ -33,7 +35,8 @@ for (const [description, canExecute, consoleAccess] of [
     const aiRequests: string[] = [];
     t.mock.method(globalThis, 'fetch', async (path: string) => {
       if (path.startsWith('/api/ai/')) aiRequests.push(path);
-      switch (path) {
+      const url = new URL(path, 'http://localhost');
+      switch (url.pathname) {
         case '/api/auth/status':
           return Response.json({ initialized: true });
         case '/api/me':
@@ -59,7 +62,23 @@ for (const [description, canExecute, consoleAccess] of [
         case '/api/ai/catalog':
           return Response.json({ default_profile: '', profiles: [], operations: [] });
         case '/api/ai/executions':
-          return Response.json({ items: [], next_cursor: null });
+          assert.equal(url.searchParams.get('view'), 'summary');
+          return Response.json({
+            items: [
+              { id: 'execution', owner_id: 'owner', owner_display_name: '用户' },
+              { id: 'other-task', owner_id: 'other', owner_display_name: '林工' },
+            ]
+              .filter((row) => row.owner_display_name.includes(url.searchParams.get('q') ?? ''))
+              .map((row) => ({
+                ...row,
+                title: '检查任务',
+                operation_id: 'assistant',
+                created_at: new Date().toISOString(),
+                status: 'queued',
+                error_code: null,
+              })),
+            next_cursor: null,
+          });
         default:
           throw new Error('意外请求 ' + path);
       }
@@ -67,9 +86,23 @@ for (const [description, canExecute, consoleAccess] of [
     render(createElement(App));
     if (consoleAccess && canExecute) {
       assert(await screen.findByRole('button', { name: '新建任务' }));
+      assert(await screen.findByRole('table', { name: '执行记录列表' }));
+      await userEvent.setup().click(screen.getByRole('button', { name: '新建任务' }));
+      assert(await screen.findByRole('group', { name: '选择任务类型' }));
+      await userEvent.setup().click(screen.getByRole('link', { name: '返回执行记录' }));
+      assert(await screen.findByRole('table', { name: '执行记录列表' }));
     } else if (consoleAccess) {
       assert(await screen.findByText('当前账号具有只读权限，可从任务记录或执行链接查看详情。'));
       assert.equal(screen.queryByRole('button', { name: '新建任务' }), null);
+      const records = within(screen.getByRole('region', { name: '执行记录' }));
+      assert(await records.findByRole('cell', { name: '用户' }));
+      await userEvent.setup().type(records.getByRole('searchbox'), '林工');
+      await waitFor(() => assert(!records.queryByRole('cell', { name: '用户' })));
+      assert(await records.findByRole('cell', { name: '林工' }));
+      assert.equal(
+        records.getByRole('link', { name: '下载 other-task 的 markdown' }).getAttribute('href'),
+        '/api/ai/executions/other-task/diagnostics?download=markdown',
+      );
     } else {
       assert(await screen.findByText('当前账号无权访问 AI 控制台。'));
       assert.deepEqual(aiRequests, []);
@@ -80,6 +113,65 @@ for (const [description, canExecute, consoleAccess] of [
     const item = within(menu).queryByRole('menuitem', { name: 'AI 控制台' });
     assert.equal(item?.getAttribute('href') ?? null, consoleAccess ? '/ai' : null);
   });
+
+test('诊断页按原事件序号定位并展示交接快照，导出链接只指向当前任务', async (t) => {
+  const { execution } = streamView();
+  const events = Array.from({ length: 42 }, (_, i) => ({
+    schema_version: 1,
+    execution_id: execution.id,
+    audience: 'operator',
+    seq: i + 1,
+    type: 'step.completed',
+    attempt: 1,
+    continuation: 0,
+    occurred_at: execution.created_at,
+    data: { step_id: '检查', duration_ms: i },
+  }));
+  const path = '/api/ai/executions/' + execution.id + '/diagnostics';
+  t.mock.method(globalThis, 'fetch', async (url: string) => {
+    if (url === path + '?view=handoff')
+      return Response.json({ markdown: '交接正文 #42', watermark: 42 });
+    assert.equal(url, path);
+    return Response.json({
+      schema_version: 1,
+      captured_at: execution.created_at,
+      watermark: 42,
+      event_gaps: [],
+      execution: { ...execution, last_seq: 42 },
+      owner_display_name: '负责人',
+      workflow: {
+        workflow_id: 'assistant',
+        run_id: 'run',
+        definition_version: '1',
+        definition_digest: 'v',
+        model_digest: 'm',
+      },
+      events,
+      model_calls: [],
+      traces: [],
+      interactions: [],
+      effects: [],
+      artifacts: [],
+      resources: [],
+    });
+  });
+  render(createElement(ExecutionDiagnostics, { id: execution.id, liveWatermark: 43 }));
+  assert(await screen.findByText(/执行已推进到 #43/));
+  assert.equal(
+    screen.getByRole('link', { name: '完整 JSON' }).getAttribute('href'),
+    path + '?download=json',
+  );
+  assert.equal(
+    screen.getByRole('link', { name: '交接 Markdown' }).getAttribute('href'),
+    path + '?download=markdown',
+  );
+  assert.equal(screen.queryByText('#42'), null);
+  await userEvent.setup().type(screen.getByRole('searchbox', { name: '定位事件序号' }), '42');
+  assert(await screen.findByText('#42'));
+  assert.equal(screen.queryByText('#1'), null);
+  await userEvent.setup().click(screen.getByRole('button', { name: '预览并复制交接文本' }));
+  assert(await screen.findByDisplayValue('交接正文 #42'));
+});
 
 test('AI UI 按块和 UTF-16 偏移应用增量，去重并拒绝跨执行与缺口', () => {
   const now = new Date().toISOString();

@@ -14,21 +14,6 @@ export const submitAiExecutionRequestSchema = z
 /** 回应交互请求：`response` 为任意 JSON，形状取决于该交互声明的 `response_schema`。 */
 export const respondAiInteractionRequestSchema = z.object({ response: json }).strict();
 
-/**
- * 执行列表查询：`limit` 1–100 默认 30，`cursor` ≤500 字符且不透明；
- * `operation_id` 只接受业务操作，其余筛选按关联目标 id 精确匹配。
- */
-export const listAiExecutionsQuerySchema = z
-  .object({
-    cursor: z.string().max(500).optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(30),
-    operation_id: z.enum(['resource-audit', 'feedback-triage', 'publication-review']).optional(),
-    version_id: z.uuid().optional(),
-    feedback_id: z.uuid().optional(),
-    publication_request_id: z.uuid().optional(),
-  })
-  .strict();
-
 /** 执行状态机：`waiting_input` 表示等待外部回应，`timed_out` 与 `cancelled` 都是终态。 */
 export const aiExecutionStatusSchema = z.enum([
   'queued',
@@ -39,6 +24,32 @@ export const aiExecutionStatusSchema = z.enum([
   'cancelled',
   'timed_out',
 ]);
+
+/** 控制台可跨页检索可读记录；业务查询按目标 ID 约束个人任务。 */
+export const listAiExecutionsQuerySchema = z
+  .object({
+    cursor: z.string().max(500).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(30),
+    operation_id: id.optional(),
+    status: aiExecutionStatusSchema.optional(),
+    q: z.string().trim().max(200).optional(),
+    view: z.literal('summary').optional(),
+    version_id: z.uuid().optional(),
+    feedback_id: z.uuid().optional(),
+    publication_request_id: z.uuid().optional(),
+  })
+  .strict()
+  .superRefine((query, ctx) => {
+    if (!(query.version_id || query.feedback_id || query.publication_request_id)) return;
+    if (query.q) ctx.addIssue({ code: 'custom', path: ['q'], message: '文本检索仅用于控制台列表' });
+    if (query.view)
+      ctx.addIssue({ code: 'custom', path: ['view'], message: '概要仅用于控制台列表' });
+    if (
+      query.operation_id &&
+      !['resource-audit', 'feedback-triage', 'publication-review'].includes(query.operation_id)
+    )
+      ctx.addIssue({ code: 'custom', path: ['operation_id'], message: '业务列表仅接受业务操作' });
+  });
 
 /** 跨账号汇总只展示这些错误类别，执行详情中的错误原文保持独立授权。 */
 export const aiExecutionErrorLabels = {
@@ -159,14 +170,33 @@ export const aiCatalogResponseSchema = aiModelOptionsResponseSchema.extend({
   ),
 });
 
-/** `items` 分页列出本人任务；按反馈查询时，首页另附当前维护者可读的自动研判。 */
+const executionWithOwner = aiExecutionResponseSchema.extend({ owner_display_name: z.string() });
+
+/** 控制台检索仅返回列表所需字段，完整消息和成果由单次执行接口提供。 */
+export const aiExecutionLedgerResponseSchema = z
+  .object({
+    items: z.array(
+      executionWithOwner
+        .pick({
+          id: true,
+          owner_id: true,
+          owner_display_name: true,
+          operation_id: true,
+          status: true,
+          created_at: true,
+        })
+        .extend({ title: z.string(), error_code: z.string().nullable() }),
+    ),
+    next_cursor: z.string().nullable(),
+  })
+  .strict();
+
+/** 控制台列出可读任务及负责人；按业务目标查询时仅列本人任务，反馈首页可另附自动研判。 */
 export const aiExecutionListResponseSchema = z
   .object({
-    items: z.array(aiExecutionResponseSchema),
+    items: z.array(executionWithOwner.partial({ owner_display_name: true })),
     next_cursor: z.string().nullable(),
-    automatic_triage: aiExecutionResponseSchema
-      .extend({ owner_display_name: z.string() })
-      .optional(),
+    automatic_triage: executionWithOwner.optional(),
   })
   .strict();
 
@@ -343,3 +373,84 @@ export type AiModelOptionsResponse = z.infer<typeof aiModelOptionsResponseSchema
 
 /** {@link aiEventResponseSchema} 的输出侧类型，用于 SSE 单条事件。 */
 export type AiEventResponse = z.infer<typeof aiEventResponseSchema>;
+
+/** 单次执行的诊断快照。事件按 seq 排列，缺失区间以闭区间表示。 */
+export const aiExecutionDiagnosticsResponseSchema = z
+  .object({
+    schema_version: z.literal(1),
+    captured_at: z.iso.datetime(),
+    watermark: z.number().int().nonnegative(),
+    event_gaps: z.array(
+      z
+        .object({ from_seq: z.number().int().positive(), through_seq: z.number().int().positive() })
+        .strict(),
+    ),
+    execution: aiExecutionResponseSchema,
+    owner_display_name: z.string(),
+    workflow: z
+      .object({
+        workflow_id: id,
+        run_id: id,
+        definition_version: id,
+        definition_digest: id,
+        model_digest: id,
+      })
+      .strict(),
+    events: z.array(aiEventResponseSchema),
+    model_calls: z.array(
+      z
+        .object({
+          id,
+          started_at: z.iso.datetime(),
+          updated_at: z.iso.datetime(),
+          status: z.enum(['pending', 'succeeded', 'failed', 'unknown']),
+          attempt: z.number().int().nonnegative(),
+          profile: id,
+          input_tokens: z.number().nonnegative(),
+          output_tokens: z.number().nonnegative(),
+          duration_ms: z.number().nonnegative(),
+          error_code: z.string().nullable(),
+        })
+        .strict(),
+    ),
+    traces: z.array(
+      z
+        .object({
+          id,
+          name: id,
+          parent_id: id.nullable(),
+          started_at: z.iso.datetime(),
+          duration_ms: z.number().nonnegative(),
+        })
+        .strict(),
+    ),
+    interactions: z.array(
+      aiInteractionResponseSchema.extend({
+        step_path: z.array(id),
+        responded_by: id.nullable(),
+        updated_at: z.iso.datetime(),
+      }),
+    ),
+    effects: z.array(
+      z
+        .object({
+          id,
+          tool_id: id,
+          status: z.enum(['committed', 'unknown']),
+          arguments_digest: id,
+          created_at: z.iso.datetime(),
+        })
+        .strict(),
+    ),
+    artifacts: z.array(aiArtifactResponseSchema),
+    resources: z.array(z.object({ reference: z.string(), digest: z.string().nullable() }).strict()),
+  })
+  .strict();
+
+/** 机器可读的诊断格式与交接 Markdown 共用同一份执行快照。 */
+export type AiExecutionDiagnosticsResponse = z.infer<typeof aiExecutionDiagnosticsResponseSchema>;
+
+/** 在线复制使用独立采集的文本及水位。 */
+export const aiDiagnosticHandoffResponseSchema = z
+  .object({ markdown: z.string(), watermark: z.number().int().nonnegative() })
+  .strict();

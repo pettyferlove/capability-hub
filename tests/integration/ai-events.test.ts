@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { aiEventResponseSchema, aiExecutionViewResponseSchema } from '@capability-hub/contracts';
+import {
+  aiEventResponseSchema,
+  aiExecutionDiagnosticsResponseSchema,
+  aiExecutionViewResponseSchema,
+} from '@capability-hub/contracts';
 import { serveTestHub } from '../support/server.js';
 import { publishSkill, testPassword } from '../support/application.js';
 import { fixture } from '../support/ai-provider.js';
@@ -122,7 +126,7 @@ test('AI SSE 实时增量、断开不取消、游标重放、越界重置和实�
   await pendingEvents.close();
 });
 
-for (const delivery of ['detail', 'events'] as const)
+for (const delivery of ['detail', 'events', 'diagnostics'] as const)
   test(
     `AI ${delivery} 授权期间并发提交受限资源内容不会越过读取边界`,
     { timeout: 20000 },
@@ -142,14 +146,15 @@ for (const delivery of ['detail', 'events'] as const)
       let reads = 0;
       t.mock.method(hub.hub.ai, 'principal', async (...args: Parameters<typeof principal>) => {
         const result = await principal(...args);
-        if (args[1]?.id === execution.id && ++reads === (delivery === 'detail' ? 1 : 2)) {
+        if (args[1]?.id === execution.id && ++reads === (delivery === 'events' ? 2 : 1)) {
           checked.resolve();
           await release.promise;
         }
         return result;
       });
-      const path = `/api/ai/executions/${execution.id}`;
-      const response = fetch(hub.origin + path + (delivery === 'events' ? '/events' : ''), {
+      const path =
+        `/api/ai/executions/${execution.id}` + (delivery === 'detail' ? '' : '/' + delivery);
+      const response = fetch(hub.origin + path, {
         headers: {
           Cookie: cookie,
           ...(delivery === 'events' ? { 'Last-Event-ID': `${execution.id}:operator:0` } : {}),
@@ -185,6 +190,11 @@ for (const delivery of ['detail', 'events'] as const)
       await writing;
       assert.doesNotMatch(text, /restricted-derived-content/);
       if (delivery === 'events') assert.match(text, /ACCESS_REVOKED/);
+      else if (delivery === 'diagnostics')
+        assert.equal(
+          aiExecutionDiagnosticsResponseSchema.parse(JSON.parse(text)).execution.result,
+          null,
+        );
       else
         assert.equal(aiExecutionViewResponseSchema.parse(JSON.parse(text)).execution.result, null);
       const denied = await fetch(hub.origin + path, { headers: { Cookie: cookie } });

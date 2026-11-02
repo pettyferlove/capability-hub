@@ -3,6 +3,7 @@ import {
   aiExecutionViewResponseSchema,
 } from '@capability-hub/contracts';
 import type { AiRuntime, ExecutionRecord } from '@capability-hub/ai';
+import type { AiRecordMap } from '@capability-hub/ai/records';
 
 /**
  * 把存储行投影成对外的执行响应：`payload` 之外的字段（id/owner/status/时间戳）来自行本身，
@@ -32,6 +33,26 @@ export function executionResponse(row: ExecutionRecord) {
   });
 }
 
+/** 日常交互视图只投影请求、答复和修订，原生暂停路径由诊断接口单独授权。 */
+export function interactionResponse(row: AiRecordMap['ai_interactions']) {
+  return {
+    id: row.id,
+    status: row.status,
+    revision: row.payload.revision,
+    request: row.payload.request,
+    response_schema: row.payload.response_schema,
+    response: row.payload.response,
+    expires_at: row.payload.expires_at,
+  };
+}
+
+/** 固定资源证据只用于授权复查，其正文不属于可下载的任务成果。 */
+export function visibleArtifacts(rows: AiRecordMap['ai_artifacts'][]) {
+  return rows
+    .filter((row) => !row.payload.name.startsWith('resource:'))
+    .map((row) => ({ id: row.id, ...row.payload }));
+}
+
 /**
  * 评审视图：`watermark` 是本次快照覆盖到的事件位置，客户端据此判断后续增量从哪开始；
  * `resource:` 前缀的产物是被内联进消息的资源证据，不在此列出。
@@ -42,17 +63,7 @@ export function executionView(view: Awaited<ReturnType<AiRuntime['view']>>) {
     watermark: view.watermark,
     activity: view.activity.map((row) => ({ ...row.payload, execution_id: row.execution_id })),
     activity_truncated: view.activity_truncated,
-    interactions: view.interactions.map((row) => ({
-      id: row.id,
-      status: row.status,
-      revision: row.payload.revision,
-      request: row.payload.request,
-      response_schema: row.payload.response_schema,
-      response: row.payload.response,
-      expires_at: row.payload.expires_at,
-    })),
-    artifacts: view.artifacts
-      .filter((row) => !row.payload.name.startsWith('resource:'))
-      .map((row) => ({ id: row.id, ...row.payload })),
+    interactions: view.interactions.map(interactionResponse),
+    artifacts: visibleArtifacts(view.artifacts),
   });
 }

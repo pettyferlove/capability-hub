@@ -4,13 +4,16 @@ import {
   respondAiInteractionRequestSchema,
   listAiExecutionsQuerySchema,
 } from '@capability-hub/contracts';
-import { AiError, digest } from '@capability-hub/ai';
+import { AiError, digest, type ExecutionRecord } from '@capability-hub/ai';
 import { fail } from '@capability-hub/domain/errors';
+import type { Principal } from '@capability-hub/domain/identity';
 import type { Express, Request } from 'express';
 import type { HttpContext } from '../context.js';
 import { idempotencyKey, jsonRoute, withRevision } from '../response.js';
 import { executionResponse, executionView } from './ai-views.js';
 import { streamAiEvents } from './ai-events.js';
+import { executionDiagnostics } from './ai-diagnostics.js';
+import { diagnosticMarkdown } from './ai-diagnostic-markdown.js';
 
 function revision(request: Pick<Request, 'get'>) {
   const value = request.get('If-Match');
@@ -19,6 +22,105 @@ function revision(request: Pick<Request, 'get'>) {
   if (!match || !Number.isSafeInteger(Number(match[1])))
     fail(412, 'REVISION_CONFLICT', '修订号无效');
   return Number(match[1]);
+}
+
+type ExecutionCursor = Pick<ExecutionRecord, 'position' | 'id'>;
+
+function encodeCursor(row?: ExecutionCursor) {
+  return row
+    ? Buffer.from(JSON.stringify({ position: row.position, id: row.id })).toString('base64url')
+    : null;
+}
+
+async function canInspect(hub: HttpContext['hub'], principal: Principal, row: ExecutionRecord) {
+  try {
+    await hub.ai.principal(principal, row, true);
+    return true;
+  } catch (error) {
+    if (error instanceof AiError && ['AI_FORBIDDEN', 'AI_NOT_FOUND'].includes(error.code))
+      return false;
+    throw error;
+  }
+}
+
+async function consoleExecutionPage(
+  hub: HttpContext['hub'],
+  principal: Principal,
+  query: z.infer<typeof listAiExecutionsQuerySchema>,
+  after?: ExecutionCursor,
+) {
+  const visible: { row: ExecutionRecord; ownerName: string; title: string }[] = [];
+  const owners = new Map([[principal.id, principal.display_name]]);
+  const term = query.q?.toLocaleLowerCase();
+  const agentTitles = new Map(
+    hub.ai.runtime.catalog().operations.map((operation) => [operation.id, operation.title]),
+  );
+  const batchSize = query.limit + 1;
+  while (visible.length <= query.limit) {
+    const batch = await hub.ai.runtime.store.list('ai_executions', {
+      after,
+      descending: true,
+      status: query.status,
+      lookup_key: query.operation_id === 'feedback-triage' ? undefined : query.operation_id,
+      limit: batchSize,
+    });
+    for (const row of batch) {
+      if (query.operation_id && row.payload.operation_id !== query.operation_id) continue;
+      if (!(await canInspect(hub, principal, row))) continue;
+      const ownerName =
+        owners.get(row.owner_id) ??
+        (await hub.store.get('users', row.owner_id))?.display_name ??
+        row.owner_id;
+      owners.set(row.owner_id, ownerName);
+      const input = row.payload.input;
+      const title =
+        input && typeof input === 'object' && !Array.isArray(input)
+          ? (input.prompt ?? input.topic)
+          : undefined;
+      if (
+        term &&
+        ![
+          row.id,
+          row.owner_id,
+          ownerName,
+          row.payload.operation_id,
+          agentTitles.get(row.payload.operation_id),
+          title,
+          row.payload.error?.code,
+        ].some((value) => typeof value === 'string' && value.toLocaleLowerCase().includes(term))
+      )
+        continue;
+      const text = typeof title === 'string' ? title.trim().replace(/\s+/g, ' ') : '';
+      visible.push({
+        row,
+        ownerName,
+        title:
+          text.length > 100
+            ? text.slice(0, 100) + '…'
+            : text || agentTitles.get(row.payload.operation_id) || row.payload.operation_id,
+      });
+      if (visible.length > query.limit) break;
+    }
+    if (batch.length < batchSize) break;
+    after = batch.at(-1);
+  }
+  return {
+    items: visible.slice(0, query.limit).map(({ row, ownerName, title }) =>
+      query.view === 'summary'
+        ? {
+            id: row.id,
+            owner_id: row.owner_id,
+            owner_display_name: ownerName,
+            operation_id: row.payload.operation_id,
+            status: row.status,
+            created_at: row.created_at,
+            title,
+            error_code: row.payload.error?.code ?? null,
+          }
+        : { ...executionResponse(row), owner_display_name: ownerName },
+    ),
+    next_cursor: visible.length > query.limit ? encodeCursor(visible[query.limit - 1].row) : null,
+  };
 }
 
 /**
@@ -79,11 +181,11 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
     '/api/ai/executions',
     jsonRoute(async (req, res) => {
       const query = listAiExecutionsQuerySchema.parse(req.query);
-      const principal =
-        query.version_id || query.feedback_id || query.publication_request_id
-          ? await hub.ai.principal(res.locals.principal, undefined, true)
-          : await hub.ai.consolePrincipal(res.locals.principal);
-      let after: { position: number; id: string } | undefined;
+      const businessTarget = query.version_id || query.feedback_id || query.publication_request_id;
+      const principal = businessTarget
+        ? await hub.ai.principal(res.locals.principal, undefined, true)
+        : await hub.ai.consolePrincipal(res.locals.principal);
+      let after: ExecutionCursor | undefined;
       if (query.cursor) {
         let data: unknown;
         try {
@@ -96,8 +198,10 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
           .strict()
           .parse(data);
       }
+      if (!businessTarget) return consoleExecutionPage(hub, principal, query, after);
       const rows = await runtime.store.list('ai_executions', {
         owner_id: principal.id,
+        status: query.status,
         ...(query.publication_request_id && { lookup_key: 'publication-review' }),
         descending: true,
         after,
@@ -107,24 +211,16 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
       const visible = [];
       for (const row of rows) {
         if (query.operation_id && row.payload.operation_id !== query.operation_id) continue;
-        if (query.version_id || query.feedback_id || query.publication_request_id) {
-          const target = row.payload.input;
-          if (!target || typeof target !== 'object' || Array.isArray(target)) continue;
-          if (query.version_id && target.version_id !== query.version_id) continue;
-          if (query.feedback_id && target.feedback_id !== query.feedback_id) continue;
-          if (
-            query.publication_request_id &&
-            target.publication_request_id !== query.publication_request_id
-          )
-            continue;
-        }
-        try {
-          await hub.ai.principal(principal, row, true);
-          visible.push(executionResponse(row));
-        } catch (error) {
-          if (!(error instanceof AiError && ['AI_FORBIDDEN', 'AI_NOT_FOUND'].includes(error.code)))
-            throw error;
-        }
+        const target = row.payload.input;
+        if (!target || typeof target !== 'object' || Array.isArray(target)) continue;
+        if (query.version_id && target.version_id !== query.version_id) continue;
+        if (query.feedback_id && target.feedback_id !== query.feedback_id) continue;
+        if (
+          query.publication_request_id &&
+          target.publication_request_id !== query.publication_request_id
+        )
+          continue;
+        if (await canInspect(hub, principal, row)) visible.push(executionResponse(row));
       }
       const shared =
         !after &&
@@ -141,13 +237,33 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
             owner_display_name: shared.ownerName,
           },
         }),
-        next_cursor:
-          rows.length === query.limit && last
-            ? Buffer.from(JSON.stringify({ position: last.position, id: last.id })).toString(
-                'base64url',
-              )
-            : null,
+        next_cursor: rows.length === query.limit ? encodeCursor(last) : null,
       };
+    }),
+  );
+  app.get(
+    '/api/ai/executions/:id/diagnostics',
+    jsonRoute(async (req, res) => {
+      const query = z
+        .union([
+          z.object({ download: z.enum(['json', 'markdown']).optional() }).strict(),
+          z.object({ view: z.literal('handoff') }).strict(),
+        ])
+        .parse(req.query);
+      const report = await executionDiagnostics(hub, res.locals.principal, String(req.params.id));
+      res.set('Cache-Control', 'private, no-store');
+      if ('view' in query)
+        return { markdown: diagnosticMarkdown(report), watermark: report.watermark };
+      const { download } = query;
+      if (download) {
+        const name = `agent-${report.execution.id}-seq-${report.watermark}`;
+        res.attachment(name + (download === 'json' ? '.json' : '.md'));
+        if (download === 'markdown') {
+          res.type('text/markdown').send(diagnosticMarkdown(report));
+          return;
+        }
+      }
+      return report;
     }),
   );
   app.get(

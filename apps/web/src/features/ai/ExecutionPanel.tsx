@@ -24,6 +24,7 @@ import {
 import { btnStyles } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
 import { ExecutionDetails } from './ExecutionDetails.js';
+import { ExecutionDiagnostics } from './ExecutionDiagnostics.js';
 import { ExecutionResult } from './ExecutionResult.js';
 import { ExecutionStatus } from './ExecutionStatus.js';
 import { ActivityFeed } from './ActivityFeed.js';
@@ -31,7 +32,7 @@ import { PhaseTrack } from './PhaseTrack.js';
 import { executionTitle, jsonObject, operationLabels, operationMeta } from './presentation.js';
 import { fillStyles, iconTileStyles, scrollStyles } from './styles.js';
 
-type Tab = 'activity' | 'result' | 'details';
+type Tab = 'activity' | 'result' | 'details' | 'diagnostics';
 
 /**
  * 执行视图的交互外壳：页签切换、状态徽标、错误提示、取消与「前往确认」。
@@ -47,6 +48,7 @@ export function ExecutionPanel({
   onRefresh,
   compact = false,
   visible = true,
+  diagnostics = false,
 }: {
   view: AiExecutionViewResponse;
   /** 是否展示写操作（取消、确认）入口，由调用方按权限计算。 */
@@ -59,6 +61,7 @@ export function ExecutionPanel({
   compact?: boolean;
   /** 面板当前是否处于可见容器内；为假时停止活动流的自动滚动与流式动画。 */
   visible?: boolean;
+  diagnostics?: boolean;
 }) {
   const { execution } = view;
   const pending = view.interactions.find(
@@ -69,7 +72,7 @@ export function ExecutionPanel({
     view.artifacts.length > 0 ||
     (execution.result !== null && typeof jsonObject(execution.result).text !== 'string');
   const resultReady = execution.result !== null || view.artifacts.length > 0;
-  const [tab, setChoice] = useState<Tab>('activity');
+  const [tab, setChoice] = useState<Tab>(diagnostics ? 'diagnostics' : 'activity');
   const [focusRequest, setFocusRequest] = useState(0);
   const entered = useRef(false);
   useEffect(() => {
@@ -92,6 +95,19 @@ export function ExecutionPanel({
   const { usage } = execution;
   const tokens = usage.input_tokens + usage.output_tokens;
   const items: { id: Tab; label: ReactNode }[] = [
+    ...(diagnostics
+      ? [
+          {
+            id: 'diagnostics' as const,
+            label: (
+              <>
+                <Activity size={14} />
+                流程诊断
+              </>
+            ),
+          },
+        ]
+      : []),
     {
       id: 'activity',
       label: (
@@ -261,6 +277,17 @@ export function ExecutionPanel({
           focusRequest={focusRequest}
         />
       </section>
+      {diagnostics && tab === 'diagnostics' && (
+        <section
+          id={`${panelId}-diagnostics`}
+          role="tabpanel"
+          aria-labelledby={`${panelId}-tab-diagnostics`}
+          tabIndex={0}
+          className={scrollStyles}
+        >
+          <ExecutionDiagnostics id={execution.id} liveWatermark={view.watermark} />
+        </section>
+      )}
       {showResult && (
         <section
           id={`${panelId}-result`}

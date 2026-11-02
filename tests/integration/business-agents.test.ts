@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { AgentEvidenceService } from '@capability-hub/application';
 import { AiError } from '@capability-hub/ai';
 import {
+  aiExecutionLedgerResponseSchema,
   aiExecutionListResponseSchema,
   assetFeedbackRequestSchema,
 } from '@capability-hub/contracts';
@@ -495,6 +496,60 @@ test('反馈仅共享带自动分派标识的研判，协作者只读且两项�
   await f.store.put('assets', { ...asset, lifecycle: 'blocked' });
   assert.equal((await list(colleague, target)).automatic_triage, undefined);
   await colleague.get(path).expect(404);
+});
+
+test('控制台跨用户分页只列可读执行，业务面板仍只列本人的任务', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f);
+  const request = await submitPublication(f, intake);
+  const runtime = f.hub.ai.runtime;
+  Object.assign(runtime.config, frameworkConfig());
+  const target = { version_id: intake.version_id };
+  const audit = await runtime.submit(f.reviewer.id, 'resource-audit', target);
+  const own = await runtime.submit(f.admin.id, 'assistant', { prompt: '检查发布状态' });
+  const review = await runtime.submit(f.reviewer.id, 'publication-review', {
+    publication_request_id: request.id,
+  });
+  const admin = await signIn(f);
+  await admin.get(`/api/ai/executions/${audit.id}`).expect(200);
+  await admin.get(`/api/ai/executions/${review.id}`).expect(403);
+  const list = async (query: Record<string, string | number>) =>
+    aiExecutionListResponseSchema.parse(
+      (await admin.get('/api/ai/executions').query(query).expect(200)).body,
+    );
+  const first = await list({ limit: 1 });
+  assert.equal(first.items.length, 1);
+  assert(first.next_cursor);
+  const second = await list({ limit: 1, cursor: first.next_cursor });
+  assert.equal(second.items.length, 1);
+  assert.equal(second.next_cursor, null);
+  assert.deepEqual(
+    new Map([...first.items, ...second.items].map((item) => [item.id, item.owner_display_name])),
+    new Map([
+      [own.id, f.admin.display_name],
+      [audit.id, f.reviewer.display_name],
+    ]),
+  );
+  assert.deepEqual((await list(target)).items, []);
+  assert.deepEqual(
+    (
+      await list({ q: f.reviewer.display_name, operation_id: 'resource-audit', status: 'queued' })
+    ).items.map((item) => item.id),
+    [audit.id],
+  );
+  assert.deepEqual((await list({ q: review.id })).items, []);
+  const summary = aiExecutionLedgerResponseSchema.parse(
+    (await admin.get('/api/ai/executions').query({ view: 'summary', q: '资源审计' }).expect(200))
+      .body,
+  );
+  assert.deepEqual(
+    summary.items.map((item) => item.id),
+    [audit.id],
+  );
+  await admin.get(`/api/ai/executions/${audit.id}/diagnostics`).expect(200);
+  await admin.get(`/api/ai/executions/${review.id}/diagnostics?download=markdown`).expect(403);
+  const reviewer = await signIn(f, f.reviewer.username);
+  await reviewer.get(`/api/ai/executions/${audit.id}/diagnostics?download=json`).expect(403);
 });
 
 test('团队维护者的上传自动排队，撤回目标团队授权后公开版本的任务也不可读', async (t) => {

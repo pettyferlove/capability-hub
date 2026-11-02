@@ -8,7 +8,10 @@ import { createTestHub, publishSkill } from '../support/application.js';
 import { fixture as providerFixture } from '../support/ai-provider.js';
 import { signIn } from '../support/http.js';
 import { deferred } from '../support/store.js';
-import { aiExecutionViewResponseSchema } from '@capability-hub/contracts';
+import {
+  aiExecutionDiagnosticsResponseSchema,
+  aiExecutionViewResponseSchema,
+} from '@capability-hub/contracts';
 import type { AiRecordMap, AiTable } from '@capability-hub/ai/records';
 
 function config(baseUrl = 'https://example.test/v1', format: 'openai' | 'anthropic' = 'openai') {
@@ -271,6 +274,16 @@ test('AI 协作演示经 HTTP 完成并行检查、人工确认与成果保存�
   );
   assert.equal(result.body.execution.result.approved, true);
   assert.equal(result.body.artifacts.length, 2);
+  const report = aiExecutionDiagnosticsResponseSchema.parse(
+    (await client.get(`/api/ai/executions/${id}/diagnostics`).expect(200)).body,
+  );
+  assert.equal(report.model_calls.length, 3);
+  assert(report.model_calls.every((call) => call.status === 'succeeded'));
+  assert(report.traces.length > 0);
+  assert.equal(report.interactions[0].responded_by, hub.admin.id);
+  assert(report.events.some((event) => event.type === 'message.delta'));
+  assert.equal(report.events.at(-1)?.type, 'execution.completed');
+  assert.deepEqual(report.artifacts, result.body.artifacts);
   assert.equal(provider.requests.length, 3);
 });
 

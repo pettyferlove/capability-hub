@@ -10,16 +10,6 @@ export const workspaceStyles = cn(
   'relative flex h-[clamp(520px,calc(100dvh_-_240px),980px)] min-h-0 shrink-0 overflow-hidden rounded-[22px] border border-[color:var(--line)] bg-paper',
   '[box-shadow:0_1px_0_var(--highlight)_inset,0_12px_48px_color-mix(in_srgb,_var(--shadow-ink)_6%,_transparent)]',
 );
-export const sidebarStyles =
-  'min-h-0 w-full shrink-0 flex-col border-[color:var(--line)] bg-page/55 md:w-68 md:border-r';
-export const historyGroupStyles =
-  'sticky top-0 z-[1] bg-page/90 px-2.5 pt-3 pb-1.5 text-caption font-medium text-muted-ink backdrop-blur-sm';
-export const historyStyles = cn(
-  'group/history relative flex w-full min-w-0 items-start gap-2.5 rounded-xl px-2.5 py-2.5 text-left',
-  'transition-colors hover:bg-paper/80 aria-[current=true]:bg-paper',
-  'aria-[current=true]:[box-shadow:0_1px_2px_color-mix(in_srgb,_var(--shadow-ink)_6%,_transparent),0_0_0_1px_var(--line)]',
-  'before:absolute before:inset-y-3 before:-left-2 before:w-[3px] before:rounded-full before:bg-brand before:opacity-0 before:transition-opacity aria-[current=true]:before:opacity-100',
-);
 export const eyebrowStyles = 'text-caption font-semibold tracking-[0.16em] text-brand uppercase';
 export const iconTileStyles =
   'inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-brand/15 bg-brand-soft text-brand';
