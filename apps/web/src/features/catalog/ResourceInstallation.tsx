@@ -10,6 +10,7 @@ import type { AssetResponse, ClientConfigurationResponse } from '@capability-hub
 import { publicResourcePath } from '@capability-hub/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../shared/api/client.js';
+import { useHub } from '../../shared/context/HubContext.js';
 import { CodeBlock } from '../../shared/components/CodeBlock.js';
 import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
@@ -29,6 +30,7 @@ import {
  * 各分支都使用当前发布版本，因此安装结果与页面展示的版本一致。
  */
 export function ResourceInstallation({ asset, origin }: { asset: AssetResponse; origin: string }) {
+  const { me } = useHub();
   const methods = installationMethods(asset);
   const [client, setClient] = useState<InstallationClient>('codex');
   if (methods.conversation)
@@ -68,7 +70,7 @@ export function ResourceInstallation({ asset, origin }: { asset: AssetResponse; 
     );
   return (
     <RestrictedMcpInstallation
-      key={asset.current_release.release_id}
+      key={asset.current_release.release_id + ':' + (me?.id ?? '')}
       asset={asset}
       origin={origin}
     />
@@ -91,6 +93,7 @@ function RestrictedMcpInstallation({ asset, origin }: { asset: AssetResponse; or
   const options = installationMethods(asset).options;
   const [client, setClient] = useState<InstallationClient>('codex');
   const [optionId, setOptionId] = useState(options[0]?.option_id ?? '');
+  const shared = options.find((option) => option.option_id === optionId)?.has_shared_key;
   const [configuration, setConfiguration] = useState<ClientConfigurationResponse>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -101,12 +104,13 @@ function RestrictedMcpInstallation({ asset, origin }: { asset: AssetResponse; or
     setBusy(false);
     pending.current?.abort();
     return () => pending.current?.abort();
-  }, [client, optionId]);
+  }, [client, optionId, shared]);
 
   async function previewConfiguration() {
     pending.current?.abort();
     const request = new AbortController();
     pending.current = request;
+    setConfiguration(undefined);
     setBusy(true);
     setError('');
     try {
@@ -115,7 +119,7 @@ function RestrictedMcpInstallation({ asset, origin }: { asset: AssetResponse; or
           new URLSearchParams({
             installation_option_id: optionId,
             client,
-            scope: 'project',
+            scope: shared ? 'user' : 'project',
           }).toString(),
         { signal: request.signal },
       );
@@ -155,11 +159,14 @@ function RestrictedMcpInstallation({ asset, origin }: { asset: AssetResponse; or
           </SelectField>
         </label>
       </div>
+      {shared && (
+        <Message>登录后生成的配置包含共享密钥。请保存到客户端的用户配置，轮换后重新获取。</Message>
+      )}
       <details className={installationRouteStyles} open>
         <summary>通过 CLI 生成配置</summary>
         <CliLogin origin={origin} />
         <CodeBlock
-          title="生成项目配置 · 保留现有客户端设置"
+          title={shared ? '生成用户配置 · 含共享密钥' : '生成项目配置 · 保留现有客户端设置'}
           code={cliResourceCommand(asset, origin, optionId, client)}
         />
       </details>

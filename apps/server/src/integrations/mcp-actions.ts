@@ -118,8 +118,8 @@ export async function prepareMcpActivation(
     status: 'awaiting_client_confirmation',
     configuration,
     instructions: [
-      '向用户展示目标 MCP、配置、所需变量和配置位置，请用户在客户端确认接入。',
-      '确认后合并配置并保留已有条目；真实密钥只在本地设置。',
+      '向用户展示目标 MCP、所需变量和配置位置，请用户确认接入。对话中隐藏请求头的密钥值。',
+      '确认后将配置合并到客户端，保留已有条目。只为 required_variables 列出的变量设置本地值。',
       '由客户端重新加载并连接目标 MCP，再报告实际连接状态和可用工具。',
     ],
   };

@@ -46,9 +46,9 @@ Skill 的上传与提交审核请求均可携带布尔字段 `requires_api_key`�
 | report_asset_feedback         | 上报固定版本的问题或建议，返回编号、状态与详情链接   |
 | rate_asset                    | 对固定版本推荐或取消推荐                             |
 
-hub:read 不注册贡献工具；hub:contribute 按操作核对权限：分享需要创建/维护权限，推荐与反馈只要求有权读取对应版本。工具调用重新解析当前身份。配置输出的客户端标识与路径见 [Agent 客户端接入](agent-clients.md)。秘密变量由目标环境设置，runtime_client_verification 为 false，不声称目标连接已验证。install_skill 可通过 client 选择建议技能目录。
+hub:read 不注册贡献工具。hub:contribute 的分享操作需要创建或维护权限，推荐与反馈要求版本可读。工具调用重新解析当前身份。客户端配置与变量格式见 [Agent 客户端接入](agent-clients.md)。runtime_client_verification 为 false。install_skill 可通过 client 选择建议技能目录。
 
-远程 MCP 的 Streamable HTTP 服务地址支持 HTTP 和 HTTPS，禁止 URL 内嵌账号密码。添加 HTTP 地址时，表单提示连接未经加密、适合可信内网，公网建议使用 HTTPS；该提示不阻止提交，也不增加审核确认项。
+远程 MCP 服务地址禁止内嵌账号密码，公网建议使用 HTTPS。API Key 和团队 Bearer Token 可由使用者自备或由 Hub 共享。录入、替换共享凭据须再次确认。已登录且可读该版本的用户可从安装配置中复制原值，公开版本对所有登录用户开放。共享值单独提交、加密保存，写入须传 `confirm_sharing: true`。维护接口 `GET/PUT /api/management/assets/:id/mcp-keys` 按地址、头名及认证方式区分绑定，Bearer 使用 `scheme: "bearer"`。写操作需要 If-Match 和 Idempotency-Key。
 
 ## 资源反馈
 

@@ -69,8 +69,7 @@ export interface BindingRecord extends Policy {
 
 /**
  * AES-256-GCM 加密后的凭据载荷，三个字段均为标准 base64。
- * 密文以 `[id, user_id, host, kind]` 作为 AAD，因此换账号、换域名或换认证方式后旧密文无法解密——
- * 迁移身份时必须重新加密，而不能只搬字段。
+ * Git 凭据绑定账号、主机和方式，MCP 密钥绑定资产、服务地址和头名。换绑定后旧密文不可复用。
  */
 export interface EncryptedCredential {
   iv: string;

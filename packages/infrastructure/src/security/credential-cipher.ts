@@ -9,12 +9,23 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:cr
 /** 密文绑定凭据身份；同一实例中的其他账号、域名和认证类型不能复用密文。 */
 export class AesCredentialCipher implements CredentialCipher {
   private readonly key: Buffer;
-  constructor(instanceSecret: string) {
-    this.key = Buffer.from(
-      hkdfSync('sha256', instanceSecret, 'capability-hub', 'git-credential-v1', 32),
-    );
+  constructor(
+    instanceSecret: string,
+    purpose: 'git-credential-v1' | 'mcp-header-v1' = 'git-credential-v1',
+  ) {
+    this.key = Buffer.from(hkdfSync('sha256', instanceSecret, 'capability-hub', purpose, 32));
   }
   private aad(identity: CredentialIdentity): Buffer {
+    if (identity.kind === 'mcp-header')
+      return Buffer.from(
+        JSON.stringify([
+          identity.kind,
+          identity.asset_id,
+          identity.url,
+          identity.name.toLowerCase(),
+          ...(identity.scheme ? [identity.scheme] : []),
+        ]),
+      );
     return Buffer.from(
       JSON.stringify([identity.id, identity.user_id, identity.host, identity.kind]),
     );

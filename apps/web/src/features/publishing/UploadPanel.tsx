@@ -39,6 +39,10 @@ import { SelectField } from '../../shared/components/SelectField.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
+import {
+  McpSharingConfirmation,
+  type McpSharingDetails,
+} from '../../shared/components/McpSharingConfirmation.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { IntakeHistoryPanel } from './IntakeHistoryPanel.js';
 import { McpEntryFields } from './McpEntryFields.js';
@@ -46,7 +50,9 @@ import { UploadFilePicker } from './UploadFilePicker.js';
 import {
   buildMcpDocument,
   emptyMcpEntry,
+  mcpAddress,
   mcpEntryIdentity,
+  sharedKeyForUpload,
   type McpEntryDraft,
 } from './mcp-entry.js';
 import {
@@ -87,6 +93,11 @@ export function UploadPanel({
   const [mcp, setMcp] = useState(emptyMcpEntry);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pendingSharing, setPendingSharing] = useState<{
+    details: McpSharingDetails;
+    data: FormData;
+    key: string;
+  }>();
   const [reading, setReading] = useState(false);
   const [active, setActive] = useState(initialIntakeId);
   const [suggestion, setSuggestion] = useState('');
@@ -204,6 +215,7 @@ export function UploadPanel({
     }
   }
   function changeMcp(next: McpEntryDraft) {
+    if (next.sharedKey !== mcp.sharedKey) lastRequest.current = null;
     if (next.mode !== mcp.mode) clearFile();
     setMcp(next);
     if (next.mode !== 'file')
@@ -213,6 +225,7 @@ export function UploadPanel({
     event.preventDefault();
     if (
       busy ||
+      pendingSharing ||
       (target === 'existing' &&
         (!selectedAsset?.can_submit || selectedAsset.lifecycle !== 'active')) ||
       reading ||
@@ -225,12 +238,14 @@ export function UploadPanel({
     setError('');
     let content: File | string;
     let payload: File;
+    let sharedKey: string | undefined;
     try {
       if (needsFile && file) {
         content = file;
         payload =
           kind === 'mcp' ? new File([file], 'server.json', { type: 'application/json' }) : file;
       } else {
+        sharedKey = sharedKeyForUpload(mcp);
         content = JSON.stringify(buildMcpDocument(mcp, documentSlug, releaseVersion), null, 2);
         payload = new File([content], 'server.json', { type: 'application/json' });
       }
@@ -238,7 +253,7 @@ export function UploadPanel({
       setError(errorMessage(error));
       return;
     }
-    const metadata = JSON.stringify(
+    const uploadMetadata =
       target === 'new'
         ? {
             target,
@@ -256,19 +271,43 @@ export function UploadPanel({
             version_mode: versionMode === 'manual' ? 'manual' : 'automatic',
             keywords,
             ...(kind === 'skill' ? { requires_api_key: requiresApiKey } : {}),
-          },
-    );
+          };
+    const metadata = JSON.stringify(uploadMetadata);
     if (lastRequest.current?.metadata !== metadata || lastRequest.current.content !== content)
       lastRequest.current = { metadata, content, key: crypto.randomUUID() };
     const data = new FormData();
     data.append('file', payload);
-    data.append('metadata', metadata);
+    data.append(
+      'metadata',
+      sharedKey === undefined
+        ? metadata
+        : JSON.stringify({ ...uploadMetadata, shared_mcp_key: sharedKey, confirm_sharing: true }),
+    );
+    const key = lastRequest.current.key;
+    if (sharedKey !== undefined) {
+      setPendingSharing({
+        data,
+        key,
+        details: {
+          action: 'upload',
+          asset: documentSlug,
+          url: mcpAddress(mcp.url).href,
+          name: mcp.authMode === 'bearer' ? 'Authorization' : mcp.headerName.trim(),
+          scheme: mcp.authMode === 'bearer' ? 'bearer' : undefined,
+        },
+      });
+      return;
+    }
+    await sendUpload(data, key);
+  }
+
+  async function sendUpload(data: FormData, key: string) {
     setBusy(true);
     try {
       const result = await api<{ intake_id: string }>('/api/intakes', {
         method: 'POST',
         body: data,
-        headers: { 'Idempotency-Key': lastRequest.current.key },
+        headers: { 'Idempotency-Key': key },
       });
       setActive(result.intake_id);
       clearFile();
@@ -310,6 +349,8 @@ export function UploadPanel({
                   onChange={(next) => {
                     if (next === target) return;
                     setTarget(next);
+                    setMcp((current) => ({ ...current, sharedKey: '' }));
+                    lastRequest.current = null;
                     setRequiresApiKey(
                       next === 'existing' && selectedAsset?.requires_api_key === true,
                     );
@@ -405,7 +446,13 @@ export function UploadPanel({
               {(target === 'new' || assetId) && (
                 <>
                   <div className={uploadSourceStyles}>
-                    {kind === 'mcp' && <McpEntryFields value={mcp} onChange={changeMcp} />}
+                    {kind === 'mcp' && (
+                      <McpEntryFields
+                        value={mcp}
+                        onChange={changeMcp}
+                        existingAsset={target === 'existing'}
+                      />
+                    )}
                     {needsFile && (
                       <UploadFilePicker
                         kind={kind}
@@ -597,6 +644,16 @@ export function UploadPanel({
         </section>
         <IntakeHistoryPanel active={active} onSelect={setActive} />
       </div>
+      {pendingSharing && (
+        <McpSharingConfirmation
+          details={pendingSharing.details}
+          onCancel={() => setPendingSharing(undefined)}
+          onConfirm={() => {
+            setPendingSharing(undefined);
+            void sendUpload(pendingSharing.data, pendingSharing.key);
+          }}
+        />
+      )}
     </div>
   );
 }

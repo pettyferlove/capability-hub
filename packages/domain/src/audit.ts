@@ -128,6 +128,11 @@ export const auditDefinitions: Record<string, AuditDefinition> = {
   'publication.cancelled': { label: '撤回申请', category: 'publication', subject: 'publication' },
   'asset.active': { label: '恢复资源', category: 'publication', subject: 'asset' },
   'asset.usage_updated': { label: '更新使用要求', category: 'publication', subject: 'asset' },
+  'asset.mcp_key_updated': {
+    label: '维护 MCP 共享密钥',
+    category: 'publication',
+    subject: 'asset',
+  },
   'asset.blocked': { label: '封禁资源', category: 'publication', subject: 'asset' },
   'asset.deprecated': { label: '弃用资源', category: 'publication', subject: 'asset' },
   'asset.source_migrated': { label: '迁移资源来源', category: 'publication', subject: 'asset' },

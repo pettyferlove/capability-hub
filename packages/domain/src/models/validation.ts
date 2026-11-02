@@ -10,6 +10,13 @@ const date = z.iso.datetime();
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const jsonObject = z.record(text, z.unknown());
+const encryptedCredential = z.strictObject({ iv: text, tag: text, data: text });
+const mcpSharedKey = z.strictObject({
+  url: text,
+  name: text,
+  scheme: z.literal('bearer').optional(),
+  encrypted: encryptedCredential,
+});
 const base = { id };
 const versioned = { ...base, revision };
 const applicability = z.strictObject({
@@ -277,6 +284,8 @@ const schemas = {
     slug: text,
     kind: z.enum(['skill', 'mcp']),
     requires_api_key: z.boolean().optional(),
+    mcp_shared_keys: z.array(mcpSharedKey).optional(),
+    mcp_key_revision: revision.optional(),
     source_id: id,
     owner_group_id: id,
     lifecycle: z.enum(['active', 'deprecated', 'blocked']),
@@ -320,6 +329,7 @@ const schemas = {
     filename: text.optional(),
     keywords: strings.optional(),
     requires_api_key: z.boolean().optional(),
+    pending_mcp_key: mcpSharedKey.extend({ base_revision: revision }).optional(),
     binding_id: id.nullish(),
     source_sync_job_id: id.optional(),
     source_generation: integer.nullish(),
@@ -481,7 +491,7 @@ const schemas = {
     created_at: date,
     updated_at: date,
     revoked_at: date.nullable(),
-    encrypted: z.strictObject({ iv: text, tag: text, data: text }).nullable(),
+    encrypted: encryptedCredential.nullable(),
   }),
   asset_feedback: z.strictObject({
     ...versioned,

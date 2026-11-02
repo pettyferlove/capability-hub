@@ -1,4 +1,8 @@
-import type { EncryptedCredential, GitCredentialRecord } from '@capability-hub/domain/models';
+import type {
+  EncryptedCredential,
+  GitCredentialRecord,
+  McpSharedKeyTarget,
+} from '@capability-hub/domain/models';
 
 /**
  * 口令哈希端口。实现方必须自带随机盐、用慢哈希并做时序安全比较；
@@ -22,9 +26,11 @@ export interface DirectoryAuthenticator {
 }
 
 /** 密文绑定的身份维度：脱离这些字段，密文既不能解密也不应被复用。 */
-export type CredentialIdentity = Pick<GitCredentialRecord, 'id' | 'user_id' | 'host' | 'kind'>;
+export type CredentialIdentity =
+  | Pick<GitCredentialRecord, 'id' | 'user_id' | 'host' | 'kind'>
+  | ({ kind: 'mcp-header'; asset_id: string } & McpSharedKeyTarget);
 
-/** 明文凭据材料；只在内存中短暂存在，不得写入日志、审计或响应。 */
+/** 明文凭据材料仅供授权的调用方使用，不得写入日志或审计。 */
 export interface CredentialSecret {
   secret: string;
   passphrase: string;

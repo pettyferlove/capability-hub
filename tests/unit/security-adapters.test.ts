@@ -46,6 +46,30 @@ test('凭据密文绑定账号、凭据 ID、域名和认证类型，修改任�
   assert.throws(() => new AesCredentialCipher('cd'.repeat(32)).open(identity, first));
 });
 
+test('MCP 密文不能移到另一资产、地址或请求头，也不能用 Git 凭据密钥解开', () => {
+  const cipher = new AesCredentialCipher('ab'.repeat(32), 'mcp-header-v1');
+  const target = {
+    kind: 'mcp-header' as const,
+    asset_id: randomUUID(),
+    url: 'https://example.test/mcp',
+    name: 'X-Api-Key',
+  };
+  const secret = { secret: randomUUID(), passphrase: '' };
+  const encrypted = cipher.seal(target, secret);
+  assert.deepEqual(cipher.open({ ...target, name: 'x-api-key' }, encrypted), secret);
+  for (const changed of [
+    { ...target, asset_id: randomUUID() },
+    { ...target, url: target.url + '/v2' },
+    { ...target, name: 'X-Other' },
+  ])
+    assert.throws(() => cipher.open(changed, encrypted));
+  assert.throws(() => new AesCredentialCipher('ab'.repeat(32)).open(target, encrypted));
+  const rawAuthorization = { ...target, name: 'Authorization' };
+  const bearer = { ...rawAuthorization, scheme: 'bearer' as const };
+  assert.throws(() => cipher.open(bearer, cipher.seal(rawAuthorization, secret)));
+  assert.throws(() => cipher.open(rawAuthorization, cipher.seal(bearer, secret)));
+});
+
 test('目录游标拒绝篡改、跨实例签名和额外段，解码不信任已签名对象的字段类型', () => {
   const codec = new SignedCatalogCursorCodec('test-key');
   const value = {

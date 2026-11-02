@@ -2,15 +2,49 @@ import {
   uploadIntakeRequestSchema,
   intakeListQuerySchema,
   keywordOptionsQuerySchema,
+  mcpHeaderNamePattern,
+  mcpSharedKeyUpdateRequestSchema,
 } from '@capability-hub/contracts';
+import { sharedMcpHeaderTarget } from '@capability-hub/application';
 import { boundedJson } from '@capability-hub/infrastructure/content';
 import { fail } from '@capability-hub/domain/errors';
 import type { Express } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import type { HttpContext } from '../context.js';
-import { idempotencyKey as key, jsonRoute as send } from '../response.js';
+import { idempotencyKey as key, jsonRoute as send, withRevision } from '../response.js';
 import { streamIntakeProgress } from './intake-events.js';
+
+const sharedKeyDocument = z.object({
+  remotes: z.tuple([
+    z.object({
+      type: z.literal('streamable-http'),
+      url: z
+        .url({ protocol: /^https?$/ })
+        .max(4096)
+        .refine((value) => {
+          if (!URL.canParse(value)) return false;
+          const url = new URL(value);
+          return !url.username && !url.password && !url.hash && !/[{}\s]/.test(value);
+        }),
+      variables: z.undefined().optional(),
+      headers: z.tuple([
+        z.object({
+          name: z.string().regex(mcpHeaderNamePattern),
+          isSecret: z.literal(true),
+          value: z.string().min(1).optional(),
+          default: z.undefined().optional(),
+          variables: z
+            .record(
+              z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/),
+              z.strictObject({ isSecret: z.literal(true) }),
+            )
+            .optional(),
+        }),
+      ]),
+    }),
+  ]),
+});
 
 /**
  * 上传与运营视图。`POST /api/intakes` 只接受一个 multipart 文件：multer 在内存中限制单文件
@@ -34,7 +68,26 @@ export function registerIntakesRoutes(app: Express, context: HttpContext): void 
         .object({ metadata: z.string().max(16384) })
         .strict()
         .parse(req.body);
-      const metadata = uploadIntakeRequestSchema.parse(boundedJson(form.metadata));
+      const {
+        shared_mcp_key: value,
+        confirm_sharing: _confirmation,
+        ...metadata
+      } = uploadIntakeRequestSchema.parse(boundedJson(form.metadata));
+      let sharedKey;
+      if (value !== undefined) {
+        const document = boundedJson(req.file.buffer.toString());
+        if (JSON.stringify(document).includes(JSON.stringify(value)))
+          fail(422, 'MCP_KEY_IN_DOCUMENT', '请只在共享密钥字段中提交实际值');
+        const parsed = sharedKeyDocument.safeParse(document);
+        if (!parsed.success)
+          fail(422, 'MCP_KEY_TARGET', '共享凭据需要一个固定服务地址和一个秘密请求头');
+        const [remote] = parsed.data.remotes;
+        const header = remote.headers[0];
+        const target = sharedMcpHeaderTarget(remote.url, header);
+        if (!target || (!target.scheme && (header.value || header.variables)))
+          fail(422, 'MCP_KEY_TARGET', '共享请求头仅支持原值或 Authorization 的 Bearer 模板');
+        sharedKey = { ...target, value };
+      }
       res.status(202);
       return await hub.intakes.receive(
         res.locals.principal,
@@ -42,6 +95,7 @@ export function registerIntakesRoutes(app: Express, context: HttpContext): void 
         req.file.originalname,
         metadata,
         key(req),
+        sharedKey,
       );
     }),
   );
@@ -64,6 +118,27 @@ export function registerIntakesRoutes(app: Express, context: HttpContext): void 
   app.get(
     '/api/management/assets',
     send(async (_req, res) => hub.assetManagement.list(res.locals.principal)),
+  );
+  app.get(
+    '/api/management/assets/:id/mcp-keys',
+    send(async (req, res) =>
+      withRevision(res, await hub.mcpKeys.describe(res.locals.principal, String(req.params.id))),
+    ),
+  );
+  app.put(
+    '/api/management/assets/:id/mcp-keys',
+    send(async (req, res) =>
+      withRevision(
+        res,
+        await hub.mcpKeys.update(
+          res.locals.principal,
+          String(req.params.id),
+          mcpSharedKeyUpdateRequestSchema.parse(req.body),
+          req.get('If-Match'),
+          key(req),
+        ),
+      ),
+    ),
   );
   app.get(
     '/api/management/assets/:id/version-plan',

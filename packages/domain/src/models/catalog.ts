@@ -1,6 +1,19 @@
 import type { AssetKind } from '../content.js';
 import type { ContentMetadata, Manifest, ManifestFile } from '../content.js';
 import type { IsoDateTime, VersionedRecord } from './base.js';
+import type { EncryptedCredential } from './source.js';
+
+/** 同一服务地址的原值请求头与 Bearer 认证分别绑定。 */
+export interface McpSharedKeyTarget {
+  url: string;
+  name: string;
+  scheme?: 'bearer';
+}
+
+/** 密文只供对应资产和认证目标使用。 */
+export interface McpSharedKeyRecord extends McpSharedKeyTarget {
+  encrypted: EncryptedCredential;
+}
 
 /**
  * 资产（用户可见的资源实体）。`slug` 一经创建即用于公开链接，改名会断开既有链接，因此不随发布变更。
@@ -11,6 +24,8 @@ export interface AssetRecord extends VersionedRecord {
   kind: AssetKind;
   /** 使用前需要调用方自备 API Key；改变此标记会作废待审的发布请求。 */
   requires_api_key?: boolean;
+  mcp_shared_keys?: McpSharedKeyRecord[];
+  mcp_key_revision?: number;
   /** 内容来源；上传型与 Git 型来源的取名与同步方式不同。 */
   source_id: string;
   /** 维护团队，同时是默认分发受众与 `asset:maintain` 的作用域依据。 */

@@ -11,6 +11,7 @@ import {
   CatalogService,
   CliLoginService,
   GitCredentialService,
+  McpSharedKeyService,
   IdempotencyService,
   IdentityAdministrationService,
   IdentityService,
@@ -68,6 +69,7 @@ export class HubServices {
   readonly tokens: TokenService;
   readonly oauth: OAuthService;
   readonly credentials: GitCredentialService;
+  readonly mcpKeys: McpSharedKeyService;
   readonly cliLogin: CliLoginService;
   readonly profile: ProfileService;
   readonly sources: SourceService;
@@ -125,6 +127,12 @@ export class HubServices {
     );
     this.content = new AssetContentService(context, this.assetAccess);
     this.idempotency = new IdempotencyService(store, this.identity);
+    this.mcpKeys = new McpSharedKeyService(
+      context,
+      this.assetAccess,
+      this.idempotency,
+      new AesCredentialCipher(config.secret, 'mcp-header-v1'),
+    );
     this.jobs = new JobQueue(store);
     this.intakeQueries = new IntakeQueryService(context, this.assetAccess);
     this.intakeProcessor = new IntakeProcessor(
@@ -142,12 +150,14 @@ export class HubServices {
       this.jobs,
       this.idempotency,
       this.intakeQueries,
+      this.mcpKeys,
     );
     this.publicationQueries = new PublicationQueryService(context, this.assetAccess);
     this.publications = new PublicationService(
       context,
       this.assetAccess,
       this.idempotency,
+      this.mcpKeys,
       async (principal, versionId) => {
         await this.ai.autoSubmit(principal, 'resource-audit', versionId);
       },

@@ -8,6 +8,7 @@ import { has } from '@capability-hub/domain/rbac';
 import type { CatalogCursorCodec } from '../ports/index.js';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
+import { sharedKeysForOption } from '../credentials/mcp-shared-key-service.js';
 import type { AssetCommunityService } from './asset-community-service.js';
 
 const chineseWords = new Intl.Segmenter('zh', { granularity: 'word' });
@@ -117,7 +118,9 @@ export class CatalogService {
       content_digest: version.content_digest,
       artifact_digest: version.artifact_digest,
       files: version.manifest.files,
-      installation_options: version.metadata.installation_options ?? [],
+      installation_options: (version.metadata.installation_options ?? []).map((option) =>
+        sharedKeysForOption(asset, option).length ? { ...option, has_shared_key: true } : option,
+      ),
       metadata:
         asset.kind === 'mcp'
           ? { registry_name: version.metadata.name, tools_verified: false, declared_tools: [] }

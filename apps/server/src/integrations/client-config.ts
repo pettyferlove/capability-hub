@@ -20,13 +20,13 @@ const input = z
   .strict();
 
 /**
- * 生成客户端 MCP 配置文本。只输出、不执行：远程安装项输出 url + 用环境变量引用替换的秘密 Header，
+ * 生成客户端 MCP 配置文本。远程安装项按绑定交付共享密钥，其他秘密请求头引用环境变量。
  * stdio 安装项输出 `npx -y <pkg>@<version>`，平台自身不会运行它。
  * 上游声明里凡带模板变量、秘密或客户端表达式（`${}`、`%VAR%`、`{env:}`、Pi 的 `!` 前缀）的值，
  * 一律拒绝而不是猜测展开，避免把未审阅的值升级成命令执行。
  * 失败抛 `HubError` 422：`NOT_MCP`、`UNSUPPORTED_CLIENT`、`UNSUPPORTED_INSTALLATION_OPTION`、
  * `UNSUPPORTED_CLIENT_EXPRESSION`、`UNSUPPORTED_VARIABLE`、`UNSUPPORTED_HEADER_TEMPLATE` 等。
- * 调用方必须已通过 `requireReadableVersion`，本例不再重复鉴权。
+ * 共享密钥随授权安装配置交付，读取权限和密钥绑定在同一事务中核对。
  */
 export async function createClientConfiguration(
   hub: HubServices,
@@ -34,8 +34,12 @@ export async function createClientConfiguration(
   body: unknown,
 ) {
   const b = input.parse(body);
-  const v = await hub.assetAccess.requireReadableVersion(p, b.version_id);
-  const a = await hub.assetAccess.getAsset(v.asset_id);
+  const {
+    version: v,
+    asset: a,
+    option,
+    sharedHeaders,
+  } = await hub.mcpKeys.installation(p, b.version_id, b.installation_option_id);
   if (a.kind !== 'mcp') fail(422, 'NOT_MCP', '该版本不是 MCP');
   const parsedClient = agentClientSchema.safeParse(b.client);
   if (!parsedClient.success)
@@ -45,9 +49,6 @@ export async function createClientConfiguration(
       installation_options: v.metadata.installation_options,
     });
   const client = parsedClient.data;
-  const option = (v.metadata.installation_options ?? []).find(
-    (o) => o.option_id === b.installation_option_id,
-  );
   if (!option || !option.supported)
     fail(422, 'UNSUPPORTED_INSTALLATION_OPTION', '该安装项尚不支持生成配置');
   const required_variables: {
@@ -96,6 +97,11 @@ export async function createClientConfiguration(
     const headers: Record<string, string> = {};
     const envHeaders: Record<string, string> = {};
     for (const h of option.headers ?? []) {
+      const shared = sharedHeaders.get(h.name.toLowerCase());
+      if (shared !== undefined) {
+        headers[h.name] = literal(shared);
+        continue;
+      }
       if (h.value) literal(h.value);
       if (h.isSecret || (h.variables && Object.keys(h.variables).length)) {
         const vars = Object.keys(h.variables ?? {});
@@ -120,6 +126,8 @@ export async function createClientConfiguration(
     }
     if (Object.keys(headers).length) config.headers = headers;
     if (Object.keys(envHeaders).length) config.env_http_headers = envHeaders;
+    if (sharedHeaders.size)
+      notes.push('配置内含 Hub 共享密钥。请保存到客户端私有配置，密钥轮换后重新获取配置。');
   } else {
     if (
       option.registryType !== 'npm' ||

@@ -33,7 +33,7 @@ export interface AssetResponse {
   content_digest: string;
   artifact_digest: string;
   files: { path: string; size: number; sha256: string; executable: boolean }[];
-  installation_options: InstallationOption[];
+  installation_options: (InstallationOption & { has_shared_key?: boolean })[];
   metadata: {
     compatibility?: string;
     registry_name?: string;
@@ -83,6 +83,12 @@ export interface ManagementAssetResponse {
   current_version: Pick<VersionSnapshotResponse, 'version_label' | 'content_digest'> | null;
   latest_intake: { id: string; version_label: string; state: string } | null;
   pending_requests: { id: string; version_label: string }[];
+}
+
+/** 维护者可设置的请求头及其配置状态，读取接口只返回地址和名称。 */
+export interface McpSharedKeysResponse {
+  revision: number;
+  targets: { url: string; name: string; scheme?: 'bearer'; configured: boolean }[];
 }
 
 /** 已有关键词联想，`items` 已去重并限制在查询的 `limit` 内。 */

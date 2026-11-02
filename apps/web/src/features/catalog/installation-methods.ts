@@ -10,7 +10,7 @@ export function installationMethods(asset: AssetResponse) {
   const options = asset.installation_options.filter((option) => option.supported);
   return {
     publicResource,
-    conversation: publicResource,
+    conversation: publicResource && !options.some((option) => option.has_shared_key),
     cli:
       asset.kind === 'skill'
         ? ('skill-install' as const)
@@ -53,20 +53,18 @@ export function cliResourceCommand(
     const command = `capability-hub add ${shellArgument(asset.slug)} ${base} --to ${agentClients[client].skillDirectory}`;
     return `# 预览\n${command} --dry-run\n\n# 安装\n${command}`;
   }
-  requireMcpOption(asset, optionId);
-  return `capability-hub mcp-config ${shellArgument(asset.slug)} ${base} --client ${client} --option ${shellArgument(optionId!)}`;
+  const option = requireMcpOption(asset, optionId);
+  return `capability-hub mcp-config ${shellArgument(asset.slug)} ${base} --client ${client} --option ${shellArgument(option.option_id)}${option.has_shared_key ? ' --scope user' : ''}`;
 }
 
 function requireMcpOption(asset: AssetResponse, optionId: string | undefined) {
-  if (
-    asset.kind !== 'mcp' ||
-    !installationMethods(asset).options.some((option) => option.option_id === optionId)
-  )
-    throw new Error('请选择受支持的 MCP 安装项');
+  const option = installationMethods(asset).options.find((option) => option.option_id === optionId);
+  if (asset.kind !== 'mcp' || !option) throw new Error('请选择受支持的 MCP 安装项');
+  return option;
 }
 
 /**
- * 提示词里的 `scope` 固定为 `project`，且要求真实密钥留在本地，Hub 只返回占位配置。
+ * 含共享密钥的安装项使用用户配置，并要求 Agent 隐去对话中的密钥。
  * `optionId` 不受支持时与 {@link cliResourceCommand} 一样抛错，不返回兜底文案。
  */
 export function hubMcpConfigurationPrompt(
@@ -74,15 +72,15 @@ export function hubMcpConfigurationPrompt(
   optionId: string,
   client: InstallationClient,
 ): string {
-  requireMcpOption(asset, optionId);
-  return `请使用已配置的 Capability Hub MCP，为「${asset.slug}」生成 ${client} 的项目配置。\n调用 get_mcp_config，参数：\n${JSON.stringify(
+  const option = requireMcpOption(asset, optionId);
+  return `请使用已配置的 Capability Hub MCP，为「${asset.slug}」生成 ${client} 的${option.has_shared_key ? '用户' : '项目'}配置。\n调用 get_mcp_config，参数：\n${JSON.stringify(
     {
       version_id: asset.current_release.version_id,
       installation_option_id: optionId,
       client,
-      scope: 'project',
+      scope: option.has_shared_key ? 'user' : 'project',
     },
     null,
     2,
-  )}\n获取配置后，按所选客户端约定合并配置，保留已有条目，并说明变量设置和重新加载步骤。真实密钥由我在本地配置，不发送给 Hub。请区分配置生成、配置写入和连接验证的实际结果。`;
+  )}\n获取配置后，按所选客户端约定合并配置，保留已有条目。隐藏对话中的密钥，仅对 required_variables 列出的变量说明本地设置步骤，再重新加载客户端。请区分配置生成、配置写入和连接验证的实际结果。`;
 }

@@ -1,5 +1,6 @@
 import type { Finding } from '../content.js';
 import type { IsoDateTime } from './base.js';
+import type { McpSharedKeyRecord } from './catalog.js';
 
 /**
  * 接收记录的状态机：`received → fetching → scanning → ready`，失败落在 `failed`（可按 `retryable` 重试），
@@ -39,6 +40,8 @@ export interface IntakeRecord {
   filename?: string;
   keywords?: string[];
   requires_api_key?: boolean;
+  /** 候选密钥独立于归档，批准后才对该资产的安装配置生效。 */
+  pending_mcp_key?: McpSharedKeyRecord & { base_revision: number };
   /** 由来源绑定触发时指向该绑定；非绑定路径为空，为空也意味着不能按绑定重试。 */
   binding_id?: string | null;
   source_sync_job_id?: string;

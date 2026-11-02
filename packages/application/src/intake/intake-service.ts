@@ -3,7 +3,7 @@ import { contentScanRuleset } from '@capability-hub/domain/content';
 import type { Principal } from '@capability-hub/domain/identity';
 import type { ReceiveIntakeCommand } from './commands.js';
 import { compareVersionLabels } from '@capability-hub/domain/version-labels';
-import type { AssetRecord } from '@capability-hub/domain/models';
+import type { AssetRecord, McpSharedKeyTarget } from '@capability-hub/domain/models';
 import { canonical, digest, sha256 } from '@capability-hub/domain/canonical';
 import { fail, notFound } from '@capability-hub/domain/errors';
 import { randomUUID } from 'node:crypto';
@@ -12,6 +12,7 @@ import type { JobQueue } from '../jobs/job-queue.js';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { IdempotencyService } from '../shared/idempotency-service.js';
 import type { IntakeQueryService } from './intake-query-service.js';
+import type { McpSharedKeyService } from '../credentials/mcp-shared-key-service.js';
 
 const now = () => new Date().toISOString();
 
@@ -23,6 +24,7 @@ export class IntakeService {
     private readonly jobs: JobQueue,
     private readonly idempotency: IdempotencyService,
     private readonly queries: IntakeQueryService,
+    private readonly mcpKeys: McpSharedKeyService,
   ) {}
   /**
    * 为上传的 Skill ZIP / MCP `server.json` 建立接收记录，并排入 `intake` 作业。
@@ -47,6 +49,7 @@ export class IntakeService {
     filename: string,
     body: ReceiveIntakeCommand,
     key: string | undefined,
+    sharedKey?: McpSharedKeyTarget & { value: string },
   ) {
     const metadata = body;
     if (!bytes.length || bytes.length > 20 * 1024 * 1024)
@@ -57,6 +60,7 @@ export class IntakeService {
         : (await this.assets.getAsset(metadata.asset_id)).kind;
     if (kind !== 'skill' && metadata.requires_api_key !== undefined)
       fail(422, 'NOT_SKILL', '仅 Skill 支持 API Key 需求声明');
+    if (sharedKey && kind !== 'mcp') fail(422, 'NOT_MCP', '共享请求头密钥仅用于 MCP');
     if (
       (kind === 'skill' && !filename.toLowerCase().endsWith('.zip')) ||
       (kind === 'mcp' && filename !== 'server.json')
@@ -76,7 +80,7 @@ export class IntakeService {
       principal,
       'intakes',
       key,
-      digest(canonical(metadata) + sha256(bytes)),
+      digest(canonical(metadata) + sha256(bytes) + (sharedKey ? digest(canonical(sharedKey)) : '')),
       async () => {
         let asset: AssetRecord;
         if (metadata.target === 'new') {
@@ -127,6 +131,7 @@ export class IntakeService {
           source_id: asset.source_id,
           asset_id: asset.id,
           requested_by: principal.id,
+          ...(sharedKey ? { pending_mcp_key: this.mcpKeys.prepare(asset, sharedKey) } : {}),
           version_label: metadata.version_label,
           payload_ref,
           filename,

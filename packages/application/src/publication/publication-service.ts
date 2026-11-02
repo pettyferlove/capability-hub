@@ -17,6 +17,7 @@ import type { AssetAccessService } from '../catalog/asset-access-service.js';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { IdempotencyService } from '../shared/idempotency-service.js';
 import { matchRevision } from '../shared/revision.js';
+import type { McpSharedKeyService } from '../credentials/mcp-shared-key-service.js';
 
 const now = () => new Date().toISOString();
 const rulesDigest = digest(
@@ -32,6 +33,7 @@ export class PublicationService {
     private readonly context: ApplicationContext,
     private readonly assets: AssetAccessService,
     private readonly idempotency: IdempotencyService,
+    private readonly mcpKeys: McpSharedKeyService,
     private readonly onSubmitted?: (principal: Principal, versionId: string) => Promise<void>,
   ) {}
   /**
@@ -448,7 +450,7 @@ export class PublicationService {
         if (v.availability === 'unreleased')
           await this.context.store.put('versions', { ...v, availability: 'released' });
         await this.context.store.put('assets', {
-          ...a,
+          ...(await this.mcpKeys.publish(p, a, intake, v)),
           current_release_id: release.id,
           ...(a.kind === 'skill' ? { requires_api_key: r.requires_api_key === true } : {}),
           revision: a.revision + 1,

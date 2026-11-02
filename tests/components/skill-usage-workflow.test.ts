@@ -94,6 +94,55 @@ test('上传入口提供 API Key 选项并随文件提交，切换 MCP 后隐藏
   );
 });
 
+test('新 MCP 的团队 Bearer Token 仅在确认领取范围后随接收请求提交', async (context) => {
+  const posted: Record<string, unknown>[] = [];
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path === '/api/management/assets') return Response.json([]);
+    if (path.startsWith('/api/intakes?'))
+      return Response.json({
+        items: [],
+        total: 0,
+        page: 1,
+        page_size: 5,
+        counts: {},
+        processing_total: 0,
+      });
+    if (path === '/api/intakes') {
+      assert(options.body instanceof FormData);
+      posted.push(JSON.parse(String(options.body.get('metadata'))));
+      return Response.json({ error: { message: '接收测试结束' } }, { status: 503 });
+    }
+    assert.fail('Unexpected fetch: ' + path);
+  });
+  const user = userEvent.setup();
+  render(page(createElement(UploadPanel)));
+  await user.click(screen.getByRole('radio', { name: 'MCP 服务' }));
+  const url = 'https://example.test/mcp';
+  await user.type(screen.getByRole('textbox', { name: 'MCP 服务地址' }), url);
+  await user.type(screen.getByRole('textbox', { name: 'MCP 用途' }), '团队服务');
+  await user.click(screen.getByRole('radio', { name: 'Bearer Token' }));
+  assert(screen.getByRole('textbox', { name: /Token 环境变量名/ }));
+  await user.click(screen.getByRole('radio', { name: 'Hub 共享凭据' }));
+  const token = 'test-team-token';
+  await user.type(screen.getByLabelText(/共享 Bearer Token/), token);
+  const submit = screen.getByRole('button', { name: '添加并校验' });
+  await user.click(submit);
+  const dialog = screen.getByRole('dialog', { name: '确认共享凭据' });
+  assert(within(dialog).getByText(url));
+  assert(within(dialog).getByText('Authorization'));
+  assert(within(dialog).getByText(/已登录且有该版本读取权限的人.+复制真实凭据/));
+  assert(!dialog.textContent?.includes(token));
+  assert.equal(posted.length, 0);
+  await user.click(within(dialog).getByRole('button', { name: '取消' }));
+  assert.equal(posted.length, 0);
+  await user.click(submit);
+  await user.click(screen.getByRole('button', { name: '确认共享并提交校验' }));
+  await screen.findByText('接收测试结束');
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].shared_mcp_key, token);
+  assert.equal(posted[0].confirm_sharing, true);
+});
+
 test('审核详情可重复定位 Skill 文件，未声明不推断无需认证', async (context) => {
   const scrollTargets: string[] = [];
   context.mock.method(

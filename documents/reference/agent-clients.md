@@ -19,12 +19,12 @@
 
 ## 配置差异
 
-- Codex 使用 TOML 的 `mcp_servers`；Bearer 令牌引用 `bearer_token_env_var`，其他秘密 Header 使用 `env_http_headers`，stdio 环境变量通过 `env_vars` 传递。
+- Codex 使用 TOML 的 `mcp_servers`。自备 Bearer Token 用 `bearer_token_env_var`，其他自备密钥用 `env_http_headers`，Hub 共享凭据用 `http_headers`，stdio 环境变量用 `env_vars`。
 - Claude Code、Cursor、Pi、Gemini CLI 和 Copilot CLI 使用 JSON 的 `mcpServers`。Claude Code 与 Copilot CLI 的 HTTP 条目含 `type: "http"`；Pi 由 `url` 选择 Streamable HTTP。
 - OpenCode 使用 `mcp`，远程为 `type: "remote"`，本地为 `type: "local"`。本地 `command` 是包含可执行程序及参数的数组，环境字段为 `environment`。带显式 Authorization Header 的配置关闭自动 OAuth，普通业务 Header 保留 OAuth 探测，Hub 默认不生成 Authorization Header，从而保留原生 OAuth；仅高级手动令牌方式生成该 Header。
 - Gemini CLI 使用 `httpUrl` 指定 Streamable HTTP；`url` 表示 SSE，不能互换。
 - VS Code 使用顶层 `servers` 和明确的 `http` / `stdio` 类型。Copilot CLI 不读取这个格式，必须选择独立的 `copilot-cli` 适配。
-- Cursor 与 VS Code 引用 `${env:NAME}`；OpenCode 引用 `{env:NAME}`；Claude Code、Pi、Gemini CLI 与 Copilot CLI 引用 `${NAME}`。真实值由运行客户端或连接服务的本机、远程主机或容器提供，不写入 Hub。
+- 使用者自备的环境变量由客户端读取。Cursor 与 VS Code 引用 `${env:NAME}`，OpenCode 引用 `{env:NAME}`，Claude Code、Pi、Gemini CLI 与 Copilot CLI 引用 `${NAME}`。
 
 Pi 的原 `badlogic/pi-mono` 仓库当前重定向至 `earendil-works/pi`。本适配依据该官方仓库的原生 MCP 文档，需要安装具备该功能的版本；不为旧版本生成第三方扩展配置。项目配置还需要在客户端完成项目信任。
 
@@ -38,7 +38,7 @@ Codex 使用 `codex mcp login capability-hub --scopes hub:read`，OpenCode 使�
 
 首次默认只授权搜索和使用。如需分享、推荐与反馈，在接入页勾选对应能力后重新复制指令；Codex 请求 `hub:read,hub:contribute`，助手使用 `--contribute`。浏览器再次明确批准后刷新工具列表。账号角色仍决定实际资源权限。
 
-目标 MCP 自身的认证独立于 Hub 连接；Hub 凭据不会转发给目标服务。
+客户端直接连接目标 MCP。同一资产、完整服务地址、请求头和认证方式共用绑定，改回自备凭据须在维护设置中移除绑定。团队 Bearer Token 只填原值，Hub 生成 `Authorization: Bearer <token>`。将安装配置保存到客户端的用户配置，轮换后重新获取并加载。已分发的旧凭据需在目标服务撤销。
 
 ```sh
 capability-hub login --url https://hub.example.com

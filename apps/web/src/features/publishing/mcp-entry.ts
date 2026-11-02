@@ -1,9 +1,13 @@
-import { assetSlugSchema as assetSlug, isFixedVersionLabel } from '@capability-hub/contracts';
+import {
+  assetSlugSchema as assetSlug,
+  isFixedVersionLabel,
+  mcpHeaderNamePattern,
+  mcpSharedKeyValueSchema,
+} from '@capability-hub/contracts';
 import { suggestSlug, type IdentitySuggestion } from './upload-identity.js';
 
 /**
- * 手动录入 MCP 入口的表单快照。`mode` 决定哪些字段参与提交：`url` 只用 `url` 与 `tokenVariable`，
- * `command` 只用 `command`/`packageVersion`/`environment`，`file` 不读表单、须走 server.json 导入。
+ * 手动录入只提交当前添加方式和认证方式的字段，描述文件直接走 server.json 导入。
  */
 export interface McpEntryDraft {
   mode: 'url' | 'command' | 'file';
@@ -11,20 +15,31 @@ export interface McpEntryDraft {
   command: string;
   packageVersion: string;
   description: string;
-  authenticated: boolean;
+  authMode: 'none' | 'bearer' | 'api-key';
   tokenVariable: string;
+  headerName: string;
+  apiKeyVariable: string;
+  keySource: 'shared' | 'client';
+  sharedKey: string;
   environment: string;
 }
 
-/** 初始值默认走 `url` 模式，Token 变量名预填 `MCP_TOKEN`，省去带鉴权远程入口的必填提醒。 */
+/** HTTP 密钥引用和 stdio 环境变量都必须是可直接设置的变量名。 */
+export const environmentNamePattern = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+
+/** 两种认证方式分别保留变量名，切换时只使用当前方式的凭据引用。 */
 export const emptyMcpEntry: McpEntryDraft = {
   mode: 'url',
   url: '',
   command: '',
   packageVersion: '',
   description: '',
-  authenticated: false,
+  authMode: 'none',
   tokenVariable: 'MCP_TOKEN',
+  headerName: 'X-Api-Key',
+  apiKeyVariable: 'MCP_API_KEY',
+  keySource: 'shared',
+  sharedKey: '',
   environment: '',
 };
 
@@ -155,15 +170,24 @@ export function mcpEntryIdentity(draft: McpEntryDraft): IdentitySuggestion {
 
 function environmentNames(text: string): string[] {
   const names = [...new Set(text.split(/[,，;；\s]+/).filter(Boolean))];
-  if (names.length > 20 || names.some((name) => !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)))
+  if (names.length > 20 || names.some((name) => !environmentNamePattern.test(name)))
     throw new Error('环境变量只填写名称，例如 GITHUB_TOKEN；最多 20 个，不要填写等号和值。');
   return names;
+}
+
+/** 共享密钥单独提交，不能进入用于预览、扫描、审核和下载的 server.json。 */
+export function sharedKeyForUpload(draft: McpEntryDraft): string | undefined {
+  if (draft.mode !== 'url' || draft.authMode === 'none' || draft.keySource !== 'shared')
+    return undefined;
+  const key = mcpSharedKeyValueSchema.safeParse(draft.sharedKey);
+  if (!key.success) throw new Error(key.error.issues[0]?.message ?? '请填写有效的共享密钥');
+  return key.data;
 }
 
 /**
  * 把 draft 转成 server.json 结构：`url` 模式产出单个 `remotes` 条目，`command` 模式产出 `packages`
  * 条目（只有 `npx` 包，走 stdio）。校验失败一律抛 {@link Error}：slug 须通过契约校验、版本须为固定
- * 版本且不超过 128 字符、描述 1–100 字符。`authenticated` 为真才写入 Bearer 头与变量声明；
+ * 版本且不超过 128 字符、描述 1–100 字符。共享请求头只声明名称，实际值单独提交。
  * `environment` 只收变量名，最多 20 个，写等号或值会被拒。
  */
 export function buildMcpDocument(draft: McpEntryDraft, slug: string, version: string) {
@@ -175,28 +199,52 @@ export function buildMcpDocument(draft: McpEntryDraft, slug: string, version: st
     throw new Error('请用 1–100 个字符说明这个 MCP 的用途。');
   const base = { name: `local.capability-hub/${slug}`, description, version };
   if (draft.mode === 'url') {
-    const url = mcpAddress(draft.url).href;
-    const variable = draft.tokenVariable.trim();
-    if (draft.authenticated && !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(variable))
-      throw new Error('请填写有效的 Token 环境变量名，例如 DOCS_TOKEN。');
+    const remote = { type: 'streamable-http', url: mcpAddress(draft.url).href };
+    if (draft.authMode === 'none') return { ...base, remotes: [remote] };
+    const apiKey = draft.authMode === 'api-key';
+    const name = apiKey ? draft.headerName.trim() : 'Authorization';
+    if (!mcpHeaderNamePattern.test(name))
+      throw new Error('请填写有效的请求头名称，例如 X-Api-Key。');
+    if (apiKey && draft.keySource === 'shared')
+      return {
+        ...base,
+        remotes: [
+          {
+            ...remote,
+            headers: [
+              {
+                name,
+                isRequired: true,
+                isSecret: true,
+                description: '由 Hub 随授权安装配置提供共享密钥。',
+              },
+            ],
+          },
+        ],
+      };
+    const sharedBearer = draft.authMode === 'bearer' && draft.keySource === 'shared';
+    const variable = sharedBearer
+      ? emptyMcpEntry.tokenVariable
+      : (apiKey ? draft.apiKeyVariable : draft.tokenVariable).trim();
+    if (!environmentNamePattern.test(variable))
+      throw new Error('请填写有效的环境变量名，例如 MCP_API_KEY。');
     return {
       ...base,
       remotes: [
         {
-          type: 'streamable-http',
-          url,
-          ...(draft.authenticated
-            ? {
-                headers: [
-                  {
-                    name: 'Authorization',
-                    value: `Bearer {${variable}}`,
-                    isSecret: true,
-                    variables: { [variable]: { isSecret: true } },
-                  },
-                ],
-              }
-            : {}),
+          ...remote,
+          headers: [
+            {
+              name,
+              value: apiKey ? `{${variable}}` : `Bearer {${variable}}`,
+              ...(apiKey || sharedBearer ? { isRequired: true } : {}),
+              ...(sharedBearer
+                ? { description: '由 Hub 随授权安装配置提供团队 Bearer Token。' }
+                : {}),
+              isSecret: true,
+              variables: { [variable]: { isSecret: true } },
+            },
+          ],
         },
       ],
     };

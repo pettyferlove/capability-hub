@@ -8,6 +8,11 @@ export { AuthenticationService } from './identity/authentication-service.js';
 export { CatalogService } from './catalog/catalog-service.js';
 export { CliLoginService } from './identity/cli-login-service.js';
 export { GitCredentialService } from './credentials/git-credential-service.js';
+export {
+  McpSharedKeyService,
+  sharedKeysForOption,
+  sharedMcpHeaderTarget,
+} from './credentials/mcp-shared-key-service.js';
 export { IdempotencyService } from './shared/idempotency-service.js';
 export { IdentityAdministrationService } from './identity/identity-administration-service.js';
 export { IdentityService } from './identity/identity-service.js';

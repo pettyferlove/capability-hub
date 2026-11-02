@@ -31,6 +31,7 @@ import {
 import { cn } from '../../shared/styles/cn.js';
 import { AssetFeedback } from './AssetFeedback.js';
 import { SkillUsageForm } from './SkillUsageForm.js';
+import { McpSharedKeysForm } from './McpSharedKeysForm.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import type {
   ManagementAssetResponse,
@@ -405,6 +406,14 @@ function Controls({
             />
           ) : (
             <>
+              {a.kind === 'mcp' && a.can_submit && a.lifecycle === 'active' && (
+                <McpSharedKeysForm
+                  key={a.id + ':' + a.revision}
+                  assetId={a.id}
+                  assetSlug={a.slug}
+                  onSaved={onSaved}
+                />
+              )}
               {a.kind === 'skill' && a.can_submit && (
                 <SkillUsageForm
                   key={a.id + ':' + a.revision}
