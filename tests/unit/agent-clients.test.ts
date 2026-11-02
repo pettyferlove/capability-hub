@@ -2,11 +2,64 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   hubMcpClientConfiguration,
+  hubMcpConnectionGuide,
+  hubShareInvitation,
   renderMcpClientConfiguration,
   type AgentClient,
 } from '@capability-hub/contracts';
 
 const endpoint = 'https://hub.example.test/mcp';
+
+test('本机和远程地址的分享邀请只包含接入请求和实例链接', () => {
+  for (const hostname of ['127.0.0.1', 'hub.example.test']) {
+    const invite = hubShareInvitation(`http://${hostname}:4100/?token=private`);
+    assert.equal(
+      invite.prompt,
+      `请帮我将这个 Capability Hub 接入当前使用的 Agent：\nhttp://${hostname}:4100/INSTALL.md`,
+    );
+  }
+});
+
+test('OAuth 适配区分读取和贡献范围，无法表达范围时交付可申请贡献权限的助手配置', () => {
+  for (const client of [
+    'codex',
+    'opencode',
+    'pi',
+    'gemini-cli',
+    'cursor',
+    'claude-code',
+    'vscode',
+    'copilot-cli',
+  ] as const) {
+    for (const permission of ['read', 'contribute'] as const) {
+      const scopes = permission === 'read' ? ['hub:read'] : ['hub:read', 'hub:contribute'];
+      const guide = hubMcpConnectionGuide(client, endpoint, 'user', 'oauth', permission);
+      const service = Object.values(guide.config)[0]['capability-hub'];
+      if (client === 'codex') assert.deepEqual(service.scopes, scopes);
+      else if (client === 'opencode' || client === 'pi')
+        assert.deepEqual(service.oauth, { scope: scopes.join(' ') });
+      else if (client === 'gemini-cli') assert.deepEqual(service.oauth, { enabled: true, scopes });
+      else if (permission === 'contribute') {
+        assert.equal(guide.method, 'assistant');
+        assert.deepEqual(service.args, [
+          'bridge',
+          '--url',
+          new URL(endpoint).origin,
+          '--client',
+          client,
+        ]);
+        assert(guide.assistant_command.includes('--scope user --contribute'));
+        assert.equal(
+          guide.assistant_command.includes('--config-file ""'),
+          client === 'claude-code' || client === 'vscode',
+        );
+        continue;
+      }
+      assert.equal(guide.method, 'oauth');
+      assert.equal(service.httpUrl ?? service.url, endpoint);
+    }
+  }
+});
 const cases: { client: AgentClient; path: string; config: unknown }[] = [
   {
     client: 'opencode',

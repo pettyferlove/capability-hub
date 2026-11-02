@@ -3,6 +3,7 @@
  * 已有资产；版本建议来自 `/api/management/assets/{id}/version-plan`。重复提交复用同一
  * `Idempotency-Key`，版本计划过期（`VERSION_SUGGESTION_STALE`）时刷新建议并要求用户重新确认。
  */
+import { browserUuid } from '@capability-hub/logging/browser';
 import { InputField } from '../../shared/components/InputField.js';
 import { versionPlanIcons } from '../../shared/components/select-icons.js';
 import {
@@ -274,7 +275,7 @@ export function UploadPanel({
           };
     const metadata = JSON.stringify(uploadMetadata);
     if (lastRequest.current?.metadata !== metadata || lastRequest.current.content !== content)
-      lastRequest.current = { metadata, content, key: crypto.randomUUID() };
+      lastRequest.current = { metadata, content, key: browserUuid() };
     const data = new FormData();
     data.append('file', payload);
     data.append(

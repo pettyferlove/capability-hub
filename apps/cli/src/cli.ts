@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { createInterface } from 'node:readline/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { sha256 } from '@capability-hub/domain/canonical';
 import {
@@ -10,6 +11,7 @@ import {
   agentClientSchema,
   agentConfigurationScopeSchema,
   hubMcpConnectionGuide,
+  needsAssistantConfigFile,
   assetSlugSchema,
 } from '@capability-hub/contracts';
 import {
@@ -101,18 +103,27 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     const directory = flags['config-dir']
       ? resolve(flags['config-dir'])
       : join(homedir(), '.config', 'capability-hub');
-    if (command === 'connect')
+    if (command === 'connect') {
+      let configFile = flags['config-file'];
+      if (!configFile && needsAssistantConfigFile(client, scope) && process.stdin.isTTY) {
+        const terminal = createInterface({ input: process.stdin, output: process.stderr });
+        try {
+          configFile = (await terminal.question('请输入客户端用户配置文件的实际绝对路径：')).trim();
+        } finally {
+          terminal.close();
+        }
+      }
       await connectAgent({
         url,
         client,
         directory,
         scope,
-        configFile: flags['config-file'],
+        configFile,
         replace: flags.replace,
         contribute: !!flags.contribute,
         noBrowser: !!flags['no-browser'],
       });
-    else if (command === 'bridge') await bridgeAgent(url, directory, client);
+    } else if (command === 'bridge') await bridgeAgent(url, directory, client);
     else await checkConnection(url, directory, client);
     return;
   }

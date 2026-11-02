@@ -1,3 +1,4 @@
+import { browserUuid } from '@capability-hub/logging/browser';
 import { reportError } from '../logging.js';
 import { readPreviewText } from './preview.js';
 
@@ -67,7 +68,7 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
     headers.set('Content-Type', 'application/json');
   if (options.method && !['GET', 'HEAD'].includes(options.method)) {
     headers.set('X-CSRF-Token', csrfToken);
-    if (!headers.has('Idempotency-Key')) headers.set('Idempotency-Key', crypto.randomUUID());
+    if (!headers.has('Idempotency-Key')) headers.set('Idempotency-Key', browserUuid());
   }
   const response = await fetch(path, {
     ...options,

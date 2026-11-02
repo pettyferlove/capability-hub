@@ -18,6 +18,7 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 | /api/admin/*                                             | 账号、角色、审计及运行管理             |
 | /api/hub-mcp-config、/connect/mcp                        | 首次接入配置与 Markdown 说明，无秘密值 |
 | /api/hub-share、/INSTALL.md                              | 公开分享邀请与不预选客户端的接入引导   |
+| /connect/skills/use-capability-hub/SKILL.md              | 随产品交付的官方客户端使用指南         |
 | /mcp                                                     | Hub MCP；需要有效身份                  |
 
 需要修订的修改携带 If-Match，幂等用例携带 Idempotency-Key。Cookie 写入还需 CSRF。
@@ -74,7 +75,7 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 | hub-config | --url、--client；可选 --scope、--conversation     |
 | mcp-config | NAME、--version、--client，可选 --option、--scope |
 
-所有命令支持 --config-dir；hub-config 是离线配置生成，不使用凭据目录或环境令牌。默认凭据位于用户 .config/capability-hub/auth.json。设置 CAPABILITY_HUB_TOKEN 时必须同时提供 --url，且不读取本地凭据。Hub URL 仅 HTTPS，loopback 可 HTTP；禁止控制字符、嵌入凭据和非根路径。JSON/下载有大小限制，重定向不携带授权继续跳转。
+所有命令支持 --config-dir；hub-config 是离线配置生成，不使用凭据目录或环境令牌。默认凭据位于用户 .config/capability-hub/auth.json。设置 CAPABILITY_HUB_TOKEN 时必须同时提供 --url，且不读取本地凭据。Hub URL 接受 HTTP 或 HTTPS 根地址，禁止控制字符、嵌入凭据和非根路径。JSON/下载有大小限制，重定向不携带授权继续跳转。
 
 ## OAuth 与客户端连接
 

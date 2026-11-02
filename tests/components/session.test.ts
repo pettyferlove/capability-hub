@@ -4,6 +4,7 @@ import { afterEach, test } from 'node:test';
 import { createElement } from 'react';
 import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
+import { installBrowserLogging } from '@capability-hub/logging/browser';
 import LoginPage from '../../apps/web/src/features/auth/LoginPage.js';
 import { useSession } from '../../apps/web/src/app/use-session.js';
 import { api, setCsrf } from '../../apps/web/src/shared/api/client.js';
@@ -12,6 +13,23 @@ import { deferred } from '../support/store.js';
 afterEach(() => {
   cleanup();
   setCsrf('');
+});
+
+test('内网 HTTP 浏览器缺少 randomUUID 时仍能启动日志并发起写请求', async (context) => {
+  const getRandomValues = crypto.getRandomValues.bind(crypto);
+  context.mock.getter(globalThis, 'crypto', () => ({ getRandomValues }));
+  const logging = installBrowserLogging();
+  context.after(() => logging.dispose());
+  const keys: string[] = [];
+  context.mock.method(globalThis, 'fetch', (_path: string, options: RequestInit) => {
+    keys.push(new Headers(options.headers).get('Idempotency-Key') ?? '');
+    return Promise.resolve(Response.json({ ok: true }));
+  });
+  await api('/auth/login', { method: 'POST' });
+  await api('/auth/logout', { method: 'POST' });
+  assert.equal(new Set(keys).size, 2);
+  for (const key of keys)
+    assert.match(key, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });
 
 test('切换登录方式清空上一组凭据和错误，只提交当前选择的来源', async (context) => {

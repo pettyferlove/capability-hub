@@ -53,7 +53,7 @@ const configSchema = z
     webDirectory: z.string().min(1),
     host: z.string().min(1),
     port: z.number().int().min(1).max(65535),
-    publicUrl: z.string(),
+    publicUrl: z.string().min(1, '必须设置 CAPABILITY_HUB_PUBLIC_URL 为 HTTP(S) 根地址'),
     production: z.boolean(),
     secret: z.union([secretSchema, z.literal('')]),
     gitHosts: z.array(z.string()),
@@ -72,7 +72,7 @@ const configSchema = z
 
 /**
  * 已校验的运行时配置。`publicUrl` 在此被归一化为 origin（不带路径/查询）；
- * 生产环境额外要求 64 位十六进制 `secret` 与 HTTPS 公开地址。
+ * 生产环境必须显式设置 64 位十六进制 `secret`。
  */
 export type ServerConfig = z.infer<typeof configSchema>;
 
@@ -103,8 +103,6 @@ function validate(config: ServerConfig): void {
     publicUrl.hash
   )
     throw new Error('公开地址必须为 HTTP(S) 根地址，不得包含凭据、路径或查询参数');
-  if (config.production && publicUrl.protocol !== 'https:')
-    throw new Error('生产 CAPABILITY_HUB_PUBLIC_URL 必须使用 HTTPS');
   config.publicUrl = publicUrl.origin;
   if (config.ldap) {
     const url = new URL(config.ldap.url);
@@ -183,6 +181,7 @@ export function loadServerConfig(
   overrides: Partial<ServerConfig> = {},
   environment: NodeJS.ProcessEnv = process.env,
 ): ServerConfig {
+  const production = overrides.production ?? environment.NODE_ENV === 'production';
   const database =
     overrides.database ??
     (environment.CAPABILITY_HUB_DATABASE_DRIVER === 'postgresql'
@@ -228,8 +227,8 @@ export function loadServerConfig(
       ),
     host: environment.CAPABILITY_HUB_HOST ?? '127.0.0.1',
     port: Number(environment.PORT ?? 4100),
-    publicUrl: environment.CAPABILITY_HUB_PUBLIC_URL ?? 'http://127.0.0.1:4100',
-    production: environment.NODE_ENV === 'production',
+    publicUrl: environment.CAPABILITY_HUB_PUBLIC_URL ?? (production ? '' : 'http://127.0.0.1:4100'),
+    production,
     secret: environment.CAPABILITY_HUB_INSTANCE_SECRET ?? '',
     gitHosts: (environment.CAPABILITY_HUB_GIT_HOSTS ?? 'github.com,gitlab.com').split(','),
     privateGitHosts: (environment.CAPABILITY_HUB_PRIVATE_GIT_HOSTS ?? '').split(','),

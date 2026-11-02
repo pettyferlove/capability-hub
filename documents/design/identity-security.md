@@ -10,7 +10,7 @@
 
 ## HTTP 会话和令牌
 
-浏览器使用 HttpOnly 会话 Cookie；生产 Cookie 使用 Secure。修改请求校验 Origin 和 CSRF。请求先检查 Host/Origin，再进行有大小限制的 JSON 解析。不存在的 API 和静态资源不返回 SPA 页面。
+浏览器会话 Cookie 使用 HttpOnly 和 SameSite=Strict，公开地址为 HTTPS 时设置 Secure。HTTP 直连时，登录凭据和会话随明文请求传输。修改请求校验 Origin 和 CSRF。请求先检查 Host/Origin，再进行有大小限制的 JSON 解析。不存在的 API 和静态资源不返回 SPA 页面。
 
 消费令牌区分 hub:read 与 hub:contribute，仍受当前用户 RBAC 和内容受众约束。读取令牌不能写入，contribute 只增加明确工具能力；不能据此访问个人会话、凭据和管理 API。无效的显式 Bearer 不降级成匿名；过期 Cookie 在公开读取中按匿名处理。
 

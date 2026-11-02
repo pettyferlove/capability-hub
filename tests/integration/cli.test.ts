@@ -193,6 +193,7 @@ test('CLI 首次接入无需凭据或服务连接，支持用户范围与完整�
       'capability-hub': {
         url: 'https://hub.example.test/mcp',
         type: 'remote',
+        oauth: { scope: 'hub:read' },
       },
     },
   });

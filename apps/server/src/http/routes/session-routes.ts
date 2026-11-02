@@ -10,7 +10,7 @@ import { jsonRoute } from '../response.js';
  * `res.locals.principal.id`，无法操作他人令牌；`/api/cli/approve` 需要登录态，
  * 把设备码批准绑定到当前用户。
  */
-export function registerSessionRoutes(app: Express, { hub }: HttpContext): void {
+export function registerSessionRoutes(app: Express, { hub, security }: HttpContext): void {
   app.get(
     '/api/me',
     jsonRoute(
@@ -23,7 +23,7 @@ export function registerSessionRoutes(app: Express, { hub }: HttpContext): void 
     jsonRoute(async (_req, res) => {
       const session = res.locals.session;
       if (session) await hub.sessions.logout(session.user_id, session.id);
-      res.clearCookie('hub_session', { path: '/' });
+      security.clearSessionCookie(res);
       return { ok: true };
     }),
   );
@@ -36,7 +36,7 @@ export function registerSessionRoutes(app: Express, { hub }: HttpContext): void 
         input.current_password,
         input.new_password,
       );
-      res.clearCookie('hub_session', { path: '/' });
+      security.clearSessionCookie(res);
       return { ok: true };
     }),
   );

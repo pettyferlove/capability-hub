@@ -6,7 +6,7 @@
 | --------------------------------------------- | -------------------------------------------------------------------- |
 | NODE_ENV                                      | production 启用生产约束                                              |
 | CAPABILITY_HUB_HOST / PORT                    | 127.0.0.1 / 4100；开发仅允许 loopback，端口 1–65535                  |
-| CAPABILITY_HUB_PUBLIC_URL                     | http://127.0.0.1:4100；根 HTTP(S) 地址，无凭据/路径/查询，生产 HTTPS |
+| CAPABILITY_HUB_PUBLIC_URL                     | http://127.0.0.1:4100；生产必填 HTTP(S) 根地址，不含凭据、路径或查询 |
 | CAPABILITY_HUB_DATA_DIR                       | 仓库 .data；部署包相对服务目录                                       |
 | CAPABILITY_HUB_WEB_DIR                        | 仓库 apps/web/dist；部署包 web                                       |
 | CAPABILITY_HUB_INSTANCE_SECRET                | 64 位十六进制；生产必须明确设置，开发可生成私有 instance.key         |

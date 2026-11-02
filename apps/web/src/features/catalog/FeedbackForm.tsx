@@ -1,3 +1,4 @@
+import { browserUuid } from '@capability-hub/logging/browser';
 import { InputField } from '../../shared/components/InputField.js';
 import { feedbackKindIcons } from '../../shared/components/select-icons.js';
 import { checkLabelStyles } from '../../shared/styles/recipes.js';
@@ -75,7 +76,7 @@ export function FeedbackForm({
       consent: values.get('consent') === 'on',
     };
     const body = JSON.stringify(content);
-    if (retry.current?.body !== body) retry.current = { body, key: crypto.randomUUID() };
+    if (retry.current?.body !== body) retry.current = { body, key: browserUuid() };
     pending.current = true;
     setBusy(true);
     setError('');

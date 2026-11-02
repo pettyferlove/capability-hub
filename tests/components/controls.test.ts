@@ -5,6 +5,7 @@ import { createElement, useState } from 'react';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { DataTable } from '../../apps/web/src/shared/components/DataTable.js';
+import { CopyButton } from '../../apps/web/src/shared/components/CopyButton.js';
 import { PageTabs } from '../../apps/web/src/shared/components/PageTabs.js';
 import { SelectField } from '../../apps/web/src/shared/components/SelectField.js';
 import { ServerPagination } from '../../apps/web/src/shared/components/ServerPagination.js';
@@ -12,6 +13,18 @@ import { domWindow } from '../support/dom.js';
 import { credentialKindIcons } from '../../apps/web/src/shared/components/select-icons.js';
 
 afterEach(cleanup);
+
+test('没有剪贴板权限时提供可手动复制的完整多行文本', async (context) => {
+  const user = userEvent.setup();
+  context.mock.getter(navigator, 'clipboard', () => undefined);
+  const text = '第一行\n  第二行';
+  render(createElement(CopyButton, { text }));
+  await user.click(screen.getByRole('button', { name: '复制' }));
+  const field = await screen.findByRole<HTMLTextAreaElement>('textbox', { name: '请复制以下文本' });
+  assert.equal(field.value, text);
+  assert(field.readOnly);
+  assert.equal(screen.queryByRole('button', { name: '已复制' }), null);
+});
 
 test('带图标的下拉保持文字名称、键盘搜索和原生表单值', async () => {
   const user = userEvent.setup();

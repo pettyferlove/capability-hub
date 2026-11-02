@@ -2,6 +2,7 @@ import type { Principal } from '@capability-hub/domain/identity';
 import {
   assetFeedbackRequestSchema,
   catalogSearchQuerySchema,
+  hubClientSkillPath,
   assetRecommendationRequestSchema,
 } from '@capability-hub/contracts';
 import type { TokenRecord } from '@capability-hub/domain/models';
@@ -28,20 +29,31 @@ const search = {
 };
 
 /**
- * 构造一次连接对应的 MCP handler。`hub:read` 连接不注册贡献类工具，即使绕过工具列表直接调用也会
- * 得到 403 `TOKEN_SCOPE`；每次调用还会重新读取 principal，服务层再按当前权限判定，
+ * 构造一次连接对应的 MCP handler。`hub:read` 连接不注册贡献类工具，直接调用时协议返回工具不存在。
+ * 每次调用还会重新读取 principal，服务层再按当前权限判定，
  * 因此令牌作用域是上限而不是能力来源。工具入参在这里按 schema 校验，错误以 MCP 工具错误返回。
  */
-export function createMcp(hub: HubServices, p: Principal, scope: TokenRecord['scope']) {
+export function createMcp(
+  hub: HubServices,
+  p: Principal,
+  scope: TokenRecord['scope'],
+  publishedSkillUrl?: string,
+) {
   const handler = createMcpHandler(
     () => {
       const server = new McpServer(
         { name: 'capability-hub', version: '0.1.0' },
         {
-          instructions:
+          instructions: [
+            `邀请同事接入 Hub 时，原样转交公开接口 ${hub.config.publicUrl}/api/hub-share 返回的 prompt。`,
             scope === 'hub:read'
-              ? `当前连接仅允许搜索和使用。用户需要分享、推荐或反馈时，引导其在 ${hub.config.publicUrl}/connect?permission=contribute 确认分享能力并重新授权，然后刷新工具列表。不要索取访问令牌。`
-              : '当前连接支持搜索、使用与贡献；所有操作仍受用户当前权限约束。分享前取得用户授权，发布仍需独立审核。',
+              ? `当前连接可搜索和使用资源。提交本地 Skill、为某个版本登记或取消推荐、上报反馈时，引导用户在 ${hub.config.publicUrl}/connect?permission=contribute 追加贡献授权并刷新工具列表。不要索取访问令牌。`
+              : '当前连接支持搜索、使用与贡献，操作受账号权限约束。提交 Skill 前取得用户授权，发布仍需独立审核。',
+            `当次使用 Skill 可搜索并加载正文。需要安装、接入目标 MCP 或贡献资源时，可阅读官方使用指南 ${hub.config.publicUrl}${hubClientSkillPath}`,
+            ...(publishedSkillUrl
+              ? [`如需安装该指南，使用本实例已审核的固定版本 ${publishedSkillUrl}`]
+              : []),
+          ].join('\n'),
         },
       );
       const register = <S extends z.ZodRawShape, R extends object>(

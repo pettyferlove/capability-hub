@@ -16,6 +16,7 @@ export default defineConfig({
       '/mcp-servers': 'http://127.0.0.1:4100',
       '/mcp': 'http://127.0.0.1:4100',
       '/connect/mcp': 'http://127.0.0.1:4100',
+      '/connect/skills': 'http://127.0.0.1:4100',
       '/INSTALL.md': 'http://127.0.0.1:4100',
     },
   },

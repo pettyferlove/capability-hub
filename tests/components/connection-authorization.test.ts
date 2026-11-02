@@ -2,7 +2,7 @@ import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { test, afterEach } from 'node:test';
 import { createElement } from 'react';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { ConnectionAuthorization } from '../../apps/web/src/features/connect/ConnectionAuthorization.js';
 import ConnectPage from '../../apps/web/src/features/connect/ConnectPage.js';
@@ -73,6 +73,26 @@ test('授权页默认只允许读取，贡献权限需用户选择，失败后�
   assert.deepEqual(requests[1], { allow: true, contribute: true });
   await user.click(screen.getByRole('button', { name: '取消' }));
   assert.deepEqual(requests[2], { allow: false, contribute: true });
+});
+
+test('需要贡献权限时会显示可用桥接命令并保留客户端管理的用户范围', async (context) => {
+  history.replaceState(null, '', '/connect?client=vscode&scope=user&permission=contribute');
+  context.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(
+      Response.json({ installation_url: 'https://hub.example/INSTALL.md', prompt: 'test' }),
+    ),
+  );
+  const user = userEvent.setup();
+  render(
+    createElement(HubCtx.Provider, { value: { ...state, me: null } }, createElement(ConnectPage)),
+  );
+  const methods = within(await screen.findByRole('group', { name: '连接方式' }));
+  assert(methods.getByRole('button', { pressed: true }).textContent?.includes('接入助手'));
+  assert((methods.getByRole('button', { pressed: false }) as HTMLButtonElement).disabled);
+  await user.click(screen.getByRole('button', { name: '复制 Hub 接入指令' }));
+  const prompt = await navigator.clipboard.readText();
+  assert(prompt.includes('--scope user --contribute --config-file ""'));
+  assert(prompt.includes('MCP: Open User Configuration'));
 });
 
 test('未登录的授权入口保留本次请求，隐藏普通接入表单，登录后能继续', () => {

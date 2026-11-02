@@ -233,17 +233,23 @@ function HubConnection() {
         </label>
         <div className={connectionMethodsStyles} role="group" aria-label="连接方式">
           <button
-            className={cn(connectionMethodStyles, method === 'oauth' ? isActiveStyles : '')}
-            aria-pressed={method === 'oauth'}
+            className={cn(connectionMethodStyles, config.method === 'oauth' ? isActiveStyles : '')}
+            aria-pressed={config.method === 'oauth'}
+            disabled={!config.native_oauth_available}
             onClick={() => setMethod('oauth')}
           >
             <ShieldCheck size={20} />
             <strong>浏览器授权</strong>
-            <span>推荐 · 凭据由客户端管理</span>
+            <span>
+              {config.native_oauth_available ? '推荐 · 凭据由客户端管理' : '贡献权限请使用接入助手'}
+            </span>
           </button>
           <button
-            className={cn(connectionMethodStyles, method === 'assistant' ? isActiveStyles : '')}
-            aria-pressed={method === 'assistant'}
+            className={cn(
+              connectionMethodStyles,
+              config.method === 'assistant' ? isActiveStyles : '',
+            )}
+            aria-pressed={config.method === 'assistant'}
             onClick={() => setMethod('assistant')}
           >
             <Link size={20} />
@@ -265,12 +271,9 @@ function HubConnection() {
             <span>检查工具，继续原来的任务</span>
           </li>
         </ol>
-        {method === 'assistant' && (
+        {config.method === 'assistant' && (
           <>
-            <p className={subtleStyles}>
-              先安装部署方提供的 Capability Hub CLI，在运行 Agent
-              的同一环境执行。助手会保存凭据并配置桥接；远程环境可按终端提示手动打开授权链接。
-            </p>
+            <p className={subtleStyles}>{config.assistant_instruction}</p>
             <CodeBlock title="启动接入助手" code={config.assistant_command} />
           </>
         )}

@@ -24,6 +24,15 @@ export type AgentClient = z.infer<typeof agentClientSchema>;
 /** 配置作用范围：`project` 写入当前仓库，`user` 写入当前用户级配置。 */
 export const agentConfigurationScopeSchema = z.enum(['project', 'user']);
 
+/** 首次接入和重复接入共用同一个只读探测，空目录同样可以完成验证。 */
+export const hubConnectionCheck =
+  '在目标客户端发现 Hub 工具后调用 search_skills({"query":"","limit":1})。调用成功即验证了连接，items 为空也算成功。';
+
+/** 宿主管理的用户配置文件必须由客户端确定路径，助手不能推断。 */
+export function needsAssistantConfigFile(client: AgentClient, scope: 'project' | 'user'): boolean {
+  return scope === 'user' && (client === 'claude-code' || client === 'vscode');
+}
+
 /**
  * 接入页面查询串：`client` 必填，`scope` 默认 `project`，`method` 默认 `oauth`，
  * `permission` 默认 `read`（`contribute` 需显式指定才会申请写权限）；严格模式拒绝未知参数。
@@ -139,6 +148,7 @@ export interface McpClientServerRecord {
   env_http_headers?: Record<string, string>;
   env_vars?: string[];
   scopes?: string[];
+  oauth?: { scope: string } | { enabled: true; scopes: string[] };
 }
 
 /** 仅序列化已校验的安装项，不读取本机环境、不写配置、不连接服务。 */
@@ -208,13 +218,22 @@ export function renderMcpClientConfiguration(
   };
 }
 
-/**
- * 生成 Hub 自己的 MCP 配置：`assistant` 走 CLI 桥接命令，`oauth` 直接用远端地址
- * （仅 codex 额外写入 `scopes`，`contribute` 时申请读写两段权限），`token` 通过环境变量
- * `CAPABILITY_HUB_TOKEN` 注入（codex 用 `bearer_token_env_var` 指向变量名，其余写入
- * `Authorization` 头）。
- * 只返回结构与文本，不写本地文件、不发起连接。
- */
+function nativeHubAuthorization(client: AgentClient, permission: 'read' | 'contribute') {
+  const scopes = permission === 'contribute' ? ['hub:read', 'hub:contribute'] : ['hub:read'];
+  switch (client) {
+    case 'codex':
+      return { scopes };
+    case 'opencode':
+    case 'pi':
+      return { oauth: { scope: scopes.join(' ') } };
+    case 'gemini-cli':
+      return { oauth: { enabled: true as const, scopes } };
+    default:
+      return permission === 'read' ? {} : undefined;
+  }
+}
+
+/** 只有能表达所选权限的原生适配才生成 OAuth 配置，其余贡献连接由本地助手申请范围。 */
 export function hubMcpClientConfiguration(
   client: AgentClient,
   endpoint: string,
@@ -222,43 +241,50 @@ export function hubMcpClientConfiguration(
   method: 'oauth' | 'assistant' | 'token' = 'oauth',
   permission: 'read' | 'contribute' = 'read',
 ) {
-  if (method === 'assistant')
-    return renderMcpClientConfiguration(
-      client,
-      'capability-hub',
-      {
-        command: 'capability-hub',
-        args: ['bridge', '--url', new URL(endpoint).origin, '--client', client],
-      },
-      scope,
-    );
-  if (method === 'oauth')
-    return renderMcpClientConfiguration(
+  if (method === 'oauth') {
+    const authorization = nativeHubAuthorization(client, permission);
+    if (authorization)
+      return {
+        method,
+        ...renderMcpClientConfiguration(
+          client,
+          'capability-hub',
+          { url: endpoint, ...authorization },
+          scope,
+        ),
+      };
+  }
+  if (method !== 'token')
+    return {
+      method: 'assistant' as const,
+      ...renderMcpClientConfiguration(
+        client,
+        'capability-hub',
+        {
+          command: 'capability-hub',
+          args: ['bridge', '--url', new URL(endpoint).origin, '--client', client],
+        },
+        scope,
+      ),
+    };
+  return {
+    method,
+    ...renderMcpClientConfiguration(
       client,
       'capability-hub',
       {
         url: endpoint,
         ...(client === 'codex'
-          ? { scopes: permission === 'contribute' ? ['hub:read', 'hub:contribute'] : ['hub:read'] }
-          : {}),
+          ? { bearer_token_env_var: 'CAPABILITY_HUB_TOKEN' }
+          : {
+              headers: {
+                Authorization: `Bearer ${clientEnvironmentReference(client, 'CAPABILITY_HUB_TOKEN')}`,
+              },
+            }),
       },
       scope,
-    );
-  return renderMcpClientConfiguration(
-    client,
-    'capability-hub',
-    {
-      url: endpoint,
-      ...(client === 'codex'
-        ? { bearer_token_env_var: 'CAPABILITY_HUB_TOKEN' }
-        : {
-            headers: {
-              Authorization: `Bearer ${clientEnvironmentReference(client, 'CAPABILITY_HUB_TOKEN')}`,
-            },
-          }),
-    },
-    scope,
-  );
+    ),
+  };
 }
 
 /** 首次接入说明只包含公开地址和变量名，不依赖已连接的 Hub 工具。 */
@@ -266,23 +292,50 @@ export function hubMcpConnectionGuide(
   client: AgentClient,
   origin: string,
   scope: 'project' | 'user' = 'project',
-  method: 'oauth' | 'assistant' | 'token' = 'oauth',
+  requestedMethod: 'oauth' | 'assistant' | 'token' = 'oauth',
   permission: 'read' | 'contribute' = 'read',
 ) {
   const base = new URL(origin).origin;
-  const configuration = hubMcpClientConfiguration(client, `${base}/mcp`, scope, method, permission);
+  const configuration = hubMcpClientConfiguration(
+    client,
+    `${base}/mcp`,
+    scope,
+    requestedMethod,
+    permission,
+  );
+  const { method } = configuration;
   const authorizationNote =
     method === 'token'
       ? '高级手动方式：由用户在客户端运行环境设置 CAPABILITY_HUB_TOKEN；不要把真实令牌粘贴到对话或提交到仓库。'
       : method === 'assistant'
         ? '接入助手会发起浏览器授权、私有保存凭据并配置本地桥接，无需手动复制令牌。'
         : '使用客户端原生 OAuth 登录，在浏览器登录 Hub 并确认连接，凭据由客户端管理，无需设置环境变量。';
-  const assistantCommand = `capability-hub connect --url ${base} --client ${client} --scope ${scope}${permission === 'contribute' ? ' --contribute' : ''}`;
+  const needsPath = needsAssistantConfigFile(client, scope);
+  const targetFile =
+    method === 'assistant' && needsPath
+      ? `${agentClients[client].label} 的用户配置文件（由 --config-file 指定）`
+      : configuration.target_file;
+  const assistantCommand = `capability-hub connect --url ${base} --client ${client} --scope ${scope}${permission === 'contribute' ? ' --contribute' : ''}${needsPath ? ' --config-file ""' : ''}`;
+  const assistantInstruction = [
+    ...(method !== requestedMethod
+      ? ['当前适配通过接入助手申请贡献权限。请先确认使用本地桥接。']
+      : []),
+    '先安装部署方提供的 Capability Hub CLI，在运行 Agent 的同一环境执行。',
+    ...(needsPath
+      ? [
+          client === 'vscode'
+            ? '通过 MCP: Open User Configuration 确认用户 mcp.json 的路径。'
+            : '确认 Claude Code 当前用户配置文件的路径。',
+          '将 --config-file 后的空引号填入该文件的实际绝对路径。交互终端也可保留空值，由助手询问路径。',
+        ]
+      : []),
+  ].join('');
   const notes = [
     agentClients[client].note,
     authorizationNote,
+    ...(method === 'assistant' ? [assistantInstruction] : []),
     '客户端需要能访问此 Hub 地址；远程 Agent 中的 localhost 指向远程主机。',
-    '配置生成不代表已经连接；重新加载后检查工具列表并执行一次有权限的资源检索。',
+    hubConnectionCheck,
   ];
   const loginInstruction =
     client === 'codex'
@@ -293,43 +346,48 @@ export function hubMcpConnectionGuide(
   const installation_prompt = [
     `请为 ${agentClients[client].label} 接入 Capability Hub MCP，作用域：${scope === 'project' ? '当前项目' : '当前用户'}。`,
     `Hub 地址：${base}；MCP 地址：${base}/mcp。`,
-    `目标配置位置：${configuration.target_file}。`,
-    '这是首次接入，不需要先调用 Hub 的 get_mcp_config 或 activate_mcp。',
+    `目标配置位置：${targetFile}。`,
+    '先核对当前连接的实际目标。若同一实例已通过检索验证且具备本次任务所需工具，沿用连接并继续原任务。同名目标不同须先确认替换。',
     method === 'assistant'
       ? '检查当前客户端版本和已有配置；由接入助手合并配置，不要先手动写入下方示例。助手会写入实际运行路径；已有同名条目时先核对地址和差异。'
       : '检查当前客户端版本和已有配置，合并 capability-hub 条目并保留其他设置；已有同名条目时先核对地址和差异。',
     `\n\`\`\`${client === 'codex' ? 'toml' : 'json'}\n${configuration.text}\n\`\`\`\n`,
     ...(method === 'assistant'
-      ? [
-          `使用部署方提供的 Capability Hub CLI 执行：${assistantCommand}。接入助手可写入支持的位置；需要显式配置路径的客户端按提示处理。`,
-        ]
+      ? [assistantCommand]
       : method === 'token'
         ? [`手动令牌入口：${base}/connect，展开高级手动接入。`]
         : [
             loginInstruction,
             '原生 OAuth 不可用时，先确认是否需要使用接入助手；不要自动降级为手动令牌。',
-            `接入助手（需先安装部署方提供的 CLI）：${assistantCommand}`,
+            assistantInstruction,
+            assistantCommand,
           ]),
     ...notes,
     ...(permission === 'contribute'
       ? [
-          '本次需要追加分享、推荐与反馈权限：原生客户端请求 hub:read hub:contribute，并由用户在授权页勾选相应能力；接入助手使用 --contribute。已有连接需重新授权并刷新工具列表。',
+          method === 'token'
+            ? '请用户选择具有贡献范围的手动令牌，刷新后确认本次所需的贡献工具可见。'
+            : '授权时勾选分享、推荐与反馈。已有只读连接需重新授权，刷新后确认本次所需的贡献工具可见。账号权限仍决定可操作的资源。',
         ]
       : []),
-    '浏览器登录及授权确认由用户完成，不要搜索、读取或回显秘密值。默认仅搜索和使用；需要分享、推荐或反馈时再请用户追加授权。',
+    method === 'token'
+      ? '手动令牌由用户在客户端运行环境设置，不要搜索、读取或回显秘密值。'
+      : '浏览器登录及授权确认由用户完成，不要搜索、读取或回显秘密值。',
     '如需项目信任、重启或当前 Agent 无法写入配置，请明确给出用户操作步骤。分别报告配置写入、授权和实际连接验证的结果。',
     '连接成功后继续用户最初的检索或安装任务，不要求用户重新复制原始请求。',
   ].join('\n');
   return {
     client,
     scope,
-    method,
     permission,
     hub_url: base,
     ...configuration,
+    target_file: targetFile,
+    native_oauth_available: !!nativeHubAuthorization(client, permission),
     installation_prompt,
     notes,
     assistant_command: assistantCommand,
+    assistant_instruction: assistantInstruction,
     required_variables:
       method === 'token'
         ? [{ name: 'CAPABILITY_HUB_TOKEN', secret: true, instruction: authorizationNote }]

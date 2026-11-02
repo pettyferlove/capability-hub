@@ -27,6 +27,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { get } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { hubClientSkillName, hubClientSkillPath } from '@capability-hub/contracts';
 import { scanIsolated } from '@capability-hub/infrastructure/scanning';
 import { openRecordStore } from '@capability-hub/infrastructure/store';
 import { createAiStore, HubAiQueue } from '@capability-hub/infrastructure/ai';
@@ -80,6 +81,11 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert(ready, 'compiled server readiness');
+  const guide = await request('/INSTALL.md');
+  assert.equal(guide.status, 200); assert(guide.text.includes(hubClientSkillPath));
+  const clientSkill = await request(hubClientSkillPath);
+  assert.equal(clientSkill.status, 200); assert(clientSkill.headers['content-type']?.startsWith('text/markdown'));
+  assert.equal(clientSkill.text, await readFile('dist/skills/' + hubClientSkillName + '/SKILL.md', 'utf8'));
   const page = await request('/discover');
   assert.equal(page.status, 200); assert(page.text.includes('<div id="root">'));
   assert.equal((await request('/ai')).status, 200);

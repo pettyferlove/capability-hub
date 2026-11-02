@@ -113,12 +113,15 @@ export async function receiveSkill(
     version?: string;
     assetId?: string;
     body?: string;
+    files?: Parameters<typeof archive>[0];
   } = {},
 ) {
   const slug = options.slug ?? 'sample-skill';
-  const bytes = await archive([
-    { path: 'SKILL.md', bytes: skillDocument(slug, options.body), executable: false },
-  ]);
+  const bytes = await archive(
+    options.files ?? [
+      { path: 'SKILL.md', bytes: skillDocument(slug, options.body), executable: false },
+    ],
+  );
   const receipt = await fixture.hub.intakes.receive(
     fixture.admin,
     bytes,

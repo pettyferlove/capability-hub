@@ -213,9 +213,10 @@ Development (SDD) framework is adopted here; discovering a skill does not author
 initializing, or upgrading one. Use the repository's established workflow. Tool defaults must not
 relax package boundaries, RBAC, concurrency, persistence, or test rules.
 
-- Keep project-owned instructions, skills, configuration, and scripts eligible for version control,
-  including `.agents/skills/`; review generated files by purpose, not by origin. Keep personal
-  installations and machine-specific settings out of commits.
+- Author Skills distributed to client Agents under `skills/<name>/SKILL.md` at the repository root.
+  Keep project-owned contributor skills in `.agents/skills/` eligible for version control alongside
+  shared instructions, configuration, and scripts. Review generated files by purpose and keep
+  personal installations and machine-specific settings out of commits.
 - Put ad hoc design exploration, scratch plans, investigation notes, progress records, caches, and
   temporary outputs in ignored `.agents/local/`; keep them out of commits and the documentation
   index. Existing exploratory proposals live in `.agents/local/design/`.
@@ -237,7 +238,7 @@ relax package boundaries, RBAC, concurrency, persistence, or test rules.
 - No CI config in-repo: `pnpm check` is the gate. Then `pnpm test:external`, `docker build`, and
   `pnpm test:image <tag>` for release confidence.
 - `.env` is loaded by child processes via `--env-file-if-exists`; see
-  `documents/reference/configuration.md`. Production needs `NODE_ENV=production`, HTTPS public URL,
+  `documents/reference/configuration.md`. Production needs `NODE_ENV=production`, an HTTP(S) public URL,
   64-hex `CAPABILITY_HUB_INSTANCE_SECRET`, and `CAPABILITY_HUB_SETUP_TOKEN`.
 
 ## Commit & PR Conventions

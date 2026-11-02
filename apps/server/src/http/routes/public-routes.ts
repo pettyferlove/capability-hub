@@ -4,6 +4,7 @@ import {
   hubConnectionQuerySchema,
   hubMcpConnectionGuide,
   hubInstallationGuide,
+  hubClientSkillPath,
   hubShareInvitation,
 } from '@capability-hub/contracts';
 import { fail } from '@capability-hub/domain/errors';
@@ -11,6 +12,10 @@ import type { Express } from 'express';
 import { loginRequestSchema, setupHttpRequestSchema } from '@capability-hub/contracts';
 import type { HttpContext } from '../context.js';
 import { jsonRoute as send } from '../response.js';
+import {
+  publishedHubClientSkillUrl,
+  readHubClientSkill,
+} from '../../integrations/hub-client-skill.js';
 
 /**
  * 匿名入口，注册在 `security.authenticate` 之前，因此任何一条都不得读取 `res.locals.principal`。
@@ -30,8 +35,15 @@ export function registerPublicRoutes(app: Express, { hub, security }: HttpContex
   );
   app.get(
     '/INSTALL.md',
-    send((_req, res) => {
-      res.type('text/markdown').send(hubInstallationGuide(config.publicUrl));
+    send(async (_req, res) => {
+      const publishedSkillUrl = await publishedHubClientSkillUrl(hub);
+      res.type('text/markdown').send(hubInstallationGuide(config.publicUrl, publishedSkillUrl));
+    }),
+  );
+  app.get(
+    hubClientSkillPath,
+    send(async (_req, res) => {
+      res.type('text/markdown; charset=utf-8').send(await readHubClientSkill());
     }),
   );
   app.get(

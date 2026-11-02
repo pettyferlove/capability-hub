@@ -9,7 +9,7 @@ pnpm test:image YOUR_REGISTRY/capability-hub:VERSION
 
 多阶段构建使用锁定的 Node/pnpm，编译各 workspace 和运维脚本，最终镜像由 node 用户运行已编译的 JavaScript。运行资产包括两方言完整迁移目录（SQL、快照与 journal）、扫描子进程、官方 MCP Schema 和 Web dist。
 
-部署方配置 HTTPS 反向代理、允许 Host、公网根 URL、出站网络及持久卷。生产需要 64 位十六进制实例密钥和首次初始化令牌；秘密从部署秘密存储注入，不写镜像或版本库。
+部署方配置客户端可达的 HTTP 或 HTTPS 根地址、出站网络及持久卷。生产需要 64 位十六进制实例密钥和首次初始化令牌，由部署秘密存储注入。
 
 ## Compose
 
@@ -23,7 +23,7 @@ docker compose up -d server
 
 bootstrap 是一次性配置：创建私有桶、独立应用账号及 blobs/* 读取/写入策略，遇到已有账号或策略会拒绝覆盖。日常运维不重复运行它。正常 API 无删除对象权限；离线回收需要单独授权的维护账号。
 
-server 默认只发布到本机回环端口，前置代理终止 HTTPS。容器只读根文件系统、私有数据卷和临时目录，capabilities 全部移除；Git/SSH 临时内容和扫描在临时目录工作。为 /tmp 按最大作业实际需求配置容量。
+server 默认发布到回环地址。内网 HTTP 直连可设 `CAPABILITY_HUB_BIND_HOST=192.168.1.20`、`CAPABILITY_HUB_PORT=4100` 和 `CAPABILITY_HUB_PUBLIC_URL=http://192.168.1.20:4100`，将示例 IP 换成服务器内网地址。选择 HTTPS 时由反向代理终止 TLS，并转发公开地址的 Host。容器根文件系统只读，Git 和扫描作业所需的 /tmp 容量按实际负载配置。
 
 ## 验收
 

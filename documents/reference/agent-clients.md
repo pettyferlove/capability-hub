@@ -32,11 +32,11 @@ Pi 的原 `badlogic/pi-mono` 仓库当前重定向至 `earendil-works/pi`。本�
 
 Hub `/mcp` 同时接受现代 `2026-07-28` 协议和 `2025-03-26`、`2025-06-18`、`2025-11-25` 的 Streamable HTTP 握手，详见 [MCP 协议支持](interfaces.md#hub-mcp)。客户端应使用自身支持的协议协商，不要手工覆盖协议版本 Header。
 
-在“连接你的 Agent”页选择客户端和配置范围，复制接入指令给 Agent。默认配置只有服务地址，使用客户端原生 OAuth；Codex 还显式选择 `hub:read`。在客户端发起登录，用户在 Hub 浏览器页面确认，凭据由客户端保存。已登录网页可以继续确认授权，不自动授予新客户端访问权限。
+在“连接你的 Agent”页选择客户端和配置范围，复制接入指令。默认使用原生 OAuth 申请读取权限，用户在浏览器确认。Codex 用 `scopes`，OpenCode 与 Pi 用 `oauth.scope`，Gemini CLI 用 `oauth.scopes`。
 
 Codex 使用 `codex mcp login capability-hub --scopes hub:read`，OpenCode 使用 `opencode mcp auth capability-hub`；其他客户端从各自 MCP 设置发起授权。是否支持原生 OAuth 及具体操作取决于客户端版本，不能把配置生成视为真实产品验收。Hub 支持 DCR，不声明 CIMD 支持。
 
-首次默认只授权搜索和使用。如需分享、推荐与反馈，在接入页勾选对应能力后重新复制指令；Codex 请求 `hub:read,hub:contribute`，助手使用 `--contribute`。浏览器再次明确批准后刷新工具列表。账号角色仍决定实际资源权限。
+分享 Skill、推荐或反馈时再追加 `hub:contribute`。上述四种适配直接请求相应范围，其他适配提供接入助手的 `--contribute` 指令。用户勾选授权后刷新工具列表，账号权限仍决定可操作的资源。
 
 客户端直接连接目标 MCP。同一资产、完整服务地址、请求头和认证方式共用绑定，改回自备凭据须在维护设置中移除绑定。团队 Bearer Token 只填原值，Hub 生成 `Authorization: Bearer <token>`。将安装配置保存到客户端的用户配置，轮换后重新获取并加载。已分发的旧凭据需在目标服务撤销。
 
@@ -61,11 +61,11 @@ Hub 生成 Streamable HTTP 远程配置和固定版本 npm stdio 配置，不运
 https://hub.example.com/INSTALL.md
 ```
 
-分享地址取自服务端配置的公开地址，不携带当前用户身份、令牌或页面查询参数。`GET /api/hub-share` 返回 `installation_url` 与 `prompt`；`GET /INSTALL.md` 直接返回无需登录的 Markdown。部署地址必须能被接收者的 Agent 访问。
+分享邀请只包含接入请求和实例公开链接。`GET /api/hub-share` 返回 `installation_url` 与 `prompt`，`GET /INSTALL.md` 匿名交付 Markdown。
 
-通用说明引导 Agent 根据明确的运行上下文识别客户端，无法确定时再询问用户，并确认项目/用户范围。客户端列表复用现有定义，具体配置链接继续使用 `/connect/mcp?client=…&scope=…`，不另外维护配置模板。不支持的客户端转向手动接入页；未获得账号或资源权限的接收者需联系 Hub 管理员。
+先核对现有连接是否指向同一实例，并在目标客户端用 `search_skills` 检索一次。成功返回空列表也可以复用。需要接入时再确定客户端和项目/用户范围，读取 `/connect/mcp?client=…&scope=…`。
 
-“连接你的 Agent”页可选择客户端及项目/用户范围，点击“复制 Hub 接入指令”。指令内包含配置合并、浏览器授权及验证步骤，不要求先调用尚未接入的 Hub 工具。授权完成后继续用户原来的检索或安装任务。公开资源原本允许匿名交付的，不要求先接入整个 Hub。
+接入说明和 MCP 工具发现均指向随产品交付的 [use-capability-hub](../../skills/use-capability-hub/SKILL.md)。资产状态为 `active`、当前版本公开且内容与随附包一致时，才提供该版本的安装链接。目录查询失败时仍交付接入步骤和随附正文。
 
 也可以把以下说明链接交给 Agent；链接无需登录即可读取，但不包含任何令牌，也不授予 MCP 或资源访问权限：
 
@@ -100,7 +100,7 @@ capability-hub status --url https://hub.example.com --client cursor
 
 JSON/JSONC 合并保留其他设置与注释；TOML 新增普通表条目保留原文，内联表需要重新序列化。已有同名不同配置时拒绝覆盖，核对后可使用 `--replace`，写入前在 CLI 私有目录的 `config-backups/` 保存权限为 `0600` 的原文备份，避免配置中的秘密随项目提交；替换现有 TOML 条目会重新序列化文件，设置保留、注释保存在备份中。拒绝符号链接和特殊文件，检查读取后配置被其他程序修改的情况。
 
-Claude Code 与 VS Code 的用户级配置位置由客户端管理，助手要求使用项目范围或通过 `--config-file` 明确文件路径。用户目录支持 Codex 的 `CODEX_HOME` 和 Copilot CLI 的 `COPILOT_HOME`；OpenCode 已有 JSONC 时优先保留。使用源码运行助手进行开发时，客户端桥接仍需要已构建的 CLI；部署分发应包含完整运行产物。
+Claude Code 与 VS Code 的用户配置由客户端管理。将实际文件路径填入助手命令的 `--config-file`，交互终端也可按提示输入。Codex 和 Copilot CLI 分别支持 `CODEX_HOME` 和 `COPILOT_HOME`，OpenCode 优先沿用已有 JSONC。桥接需要已构建的 CLI。
 
 `status` 验证助手到 Hub 的真实工具发现；`connect` 还验证检索。它们不证明目标 Agent 已重载配置；最后仍须在目标 Agent 检查工具并继续原任务。缺少、过期或撤销的授权可以重新运行 `connect`；重复接入先复用有效授权。刷新与配置写入使用心跳锁，崩溃残留锁会自动回收。临时网络故障不会自动覆盖原授权；更换账号或授权后，运行中的桥接会要求重新加载，避免悄悄切换身份。
 

@@ -17,8 +17,11 @@ function assertFailure(
   assert.match(String(response.body.error.request_id), /^[a-f0-9-]{36}$/);
 }
 
-test('目录允许匿名读取，管理入口要求登录，登录和写入严格检查来源与 CSRF', async (context) => {
-  const fixture = await createTestHub(context);
+test('生产 HTTP 支持内网地址的登录会话，匿名目录、来源和 CSRF 校验按权限生效', async (context) => {
+  const fixture = await createTestHub(context, {
+    production: true,
+    publicUrl: 'http://192.168.1.20:4100',
+  });
   const guest = httpClient(fixture);
   await guest.get('/api/assets').expect(200);
   assertFailure(await guest.get('/api/me'), 401, 'UNAUTHENTICATED');
@@ -38,12 +41,14 @@ test('目录允许匿名读取，管理入口要求登录，登录和写入严�
   );
   const login = await guest
     .post('/auth/login')
+    .set('X-Forwarded-Proto', 'https')
     .send({ username: 'owner', password: testPassword })
     .expect(200);
   const cookie = login.headers['set-cookie'];
   assert(Array.isArray(cookie));
   assert.match(cookie[0], /HttpOnly/);
   assert.match(cookie[0], /SameSite=Strict/);
+  assert.doesNotMatch(cookie[0], /; Secure\b/i);
   assertFailure(await guest.post('/api/tokens').send({ name: '缺少 CSRF' }), 403, 'CSRF_REJECTED');
   const me = await guest.get('/api/me').expect(200);
   const issued = await guest
@@ -54,6 +59,20 @@ test('目录允许匿名读取，管理入口要求登录，登录和写入严�
   assert.deepEqual(Object.keys(issued.body), ['token']);
   await guest.post('/auth/logout').set('X-CSRF-Token', me.body.csrf_token).send({}).expect(200);
   assertFailure(await guest.get('/api/me'), 401, 'UNAUTHENTICATED');
+});
+
+test('HTTPS 入口经 HTTP 转发登录请求时仍签发 Secure 会话 Cookie', async (context) => {
+  const fixture = await createTestHub(context, {
+    production: true,
+    publicUrl: 'https://hub.example.test',
+  });
+  const login = await httpClient(fixture)
+    .post('/auth/login')
+    .send({ username: 'owner', password: testPassword })
+    .expect(200);
+  const cookie = login.headers['set-cookie'];
+  assert(Array.isArray(cookie));
+  assert.match(cookie[0], /; Secure\b/i);
 });
 
 test('Bearer 只访问消费接口，不能读取个人管理资料；失效凭据不会降级为匿名读取', async (context) => {

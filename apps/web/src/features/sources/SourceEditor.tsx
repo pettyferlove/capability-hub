@@ -2,6 +2,7 @@
  * Git 来源的新增/编辑抽屉：依赖 `/api/git-credentials` 列出可用凭据，
  * 保存时按是否有 `source` 走 `POST /api/sources` 或 `PATCH /api/sources/:id`（带 `revision`）。
  */
+import { browserUuid } from '@capability-hub/logging/browser';
 import { InputField } from '../../shared/components/InputField.js';
 import { resourceKindIcons, sourceStateIcons } from '../../shared/components/select-icons.js';
 import {
@@ -57,7 +58,7 @@ export function SourceEditor({
     ),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
-  const [keys, setKeys] = useState(() => targets.map(() => crypto.randomUUID()));
+  const [keys, setKeys] = useState(() => targets.map(() => browserUuid()));
   let repositoryHost = '',
     repositoryKind = '';
   try {
@@ -332,7 +333,7 @@ export function SourceEditor({
           type="button"
           onClick={() => {
             setTargets((old) => [...old, newTarget()]);
-            setKeys((old) => [...old, crypto.randomUUID()]);
+            setKeys((old) => [...old, browserUuid()]);
           }}
         >
           <Plus size={15} />

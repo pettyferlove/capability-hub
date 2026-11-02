@@ -47,11 +47,11 @@ test('环境令牌要求明确实例且不读取本地凭据，URL 不接受控�
     return Promise.resolve({ url: 'https://hub.example.test', token: 'saved-token' });
   };
   const selected = await resolveConsumerCredentials({
-    url: 'https://other.example.test',
+    url: 'http://192.168.1.20:4100/',
     environmentToken: 'explicit-token',
     load,
   });
-  assert.equal(selected.url, 'https://other.example.test');
+  assert.equal(selected.url, 'http://192.168.1.20:4100');
   assert.equal(loads, 0);
   await assert.rejects(() =>
     resolveConsumerCredentials({ environmentToken: 'explicit-token', load }),
@@ -63,7 +63,7 @@ test('环境令牌要求明确实例且不读取本地凭据，URL 不接受控�
   for (const url of [
     'https://hub.example.test\n',
     'https://hub.example.test/path',
-    'http://public.example.test',
+    'ftp://public.example.test',
     'https://user:secret@hub.example.test',
     'https://hub.example.test?token=secret',
   ])

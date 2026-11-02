@@ -19,6 +19,7 @@ test('配置错误在创建数据目录之前报错，校验不会产生半初�
     { CAPABILITY_HUB_DATABASE_DRIVER: 'unknown' },
     { CAPABILITY_HUB_WORKER: 'invalid' },
     { CAPABILITY_HUB_PUBLIC_URL: 'https://user:secret@example.test/path' },
+    { CAPABILITY_HUB_PUBLIC_URL: 'ftp://192.168.1.20:4100' },
     {
       CAPABILITY_HUB_DATABASE_DRIVER: 'postgresql',
       CAPABILITY_HUB_DATABASE_URL: 'https://example.test/db',
@@ -147,7 +148,7 @@ test('实例密钥拒绝符号链接、公开权限和损坏内容，不能静�
   assert.equal(await readFile(key, 'utf8'), 'broken-key');
 });
 
-test('生产配置要求显式密钥和 HTTPS，Git 私有域名必须属于允许列表', async (context) => {
+test('生产配置要求显式密钥和 HTTP(S) 根地址，Git 私有域名必须属于允许列表', async (context) => {
   const root = await directory(context);
   assert.throws(() =>
     loadServerConfig(
@@ -157,10 +158,21 @@ test('生产配置要求显式密钥和 HTTPS，Git 私有域名必须属于允�
   );
   assert.throws(() =>
     loadServerConfig(
-      { dataDir: join(root, 'no-tls'), production: true, secret: 'ab'.repeat(32) },
+      { dataDir: join(root, 'missing-url'), production: true, secret: 'ab'.repeat(32) },
       {},
     ),
   );
+  for (const origin of ['http://192.168.1.20:4100', 'https://hub.example']) {
+    const config = loadServerConfig(
+      { dataDir: root },
+      {
+        NODE_ENV: 'production',
+        CAPABILITY_HUB_INSTANCE_SECRET: 'ab'.repeat(32),
+        CAPABILITY_HUB_PUBLIC_URL: origin + '/',
+      },
+    );
+    assert.equal(config.publicUrl, origin);
+  }
   assert.throws(() =>
     loadServerConfig(
       {

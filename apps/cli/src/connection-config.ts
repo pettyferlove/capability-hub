@@ -8,6 +8,7 @@ import { parse, parseTree, modify, applyEdits, type ParseError, type Node } from
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import {
   agentClients,
+  needsAssistantConfigFile,
   renderMcpClientConfiguration,
   type AgentClient,
 } from '@capability-hub/contracts';
@@ -36,9 +37,9 @@ export interface ConnectionConfigOptions {
  */
 export async function prepareConnectionConfig(options: ConnectionConfigOptions) {
   const { client, scope } = options;
-  if (!options.configFile && scope === 'user' && ['claude-code', 'vscode'].includes(client))
+  if (!options.configFile && needsAssistantConfigFile(client, scope))
     throw new Error(
-      '此客户端的用户配置位置由客户端管理。请使用 --scope project，或通过 --config-file 指定客户端提供的配置文件路径。',
+      '此客户端的用户配置位置由客户端管理。请通过 --config-file 指定实际用户配置文件的路径。',
     );
   let target =
     options.configFile ??

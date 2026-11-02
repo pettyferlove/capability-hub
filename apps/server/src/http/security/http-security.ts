@@ -1,13 +1,21 @@
 import type { Principal } from '@capability-hub/domain/identity';
 import { tokenRecordSchema } from '@capability-hub/domain/token';
 import { fail, HubError } from '@capability-hub/domain/errors';
-import type { NextFunction, Request, Response } from 'express';
+import type { CookieOptions, NextFunction, Request, Response } from 'express';
 import { readSessionClient } from './session-client.js';
 import type { HubServices } from '../../bootstrap/hub-services.js';
 
 /** 浏览器会话、Bearer 作用域和 CSRF 的 HTTP 边界。 */
 export class HttpSecurity {
-  constructor(private readonly hub: HubServices) {}
+  private readonly sessionCookie: CookieOptions;
+  constructor(private readonly hub: HubServices) {
+    this.sessionCookie = {
+      httpOnly: true,
+      secure: new URL(hub.config.publicUrl).protocol === 'https:',
+      sameSite: 'strict',
+      path: '/',
+    };
+  }
   private get config() {
     return this.hub.config;
   }
@@ -118,11 +126,11 @@ export class HttpSecurity {
       readSessionClient(req.get('User-Agent')),
     );
     res.cookie('hub_session', token, {
-      httpOnly: true,
-      secure: this.config.production,
-      sameSite: 'strict',
-      path: '/',
+      ...this.sessionCookie,
       maxAge: 8 * 3600000,
     });
+  }
+  clearSessionCookie(res: Response) {
+    res.clearCookie('hub_session', this.sessionCookie);
   }
 }

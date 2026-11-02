@@ -16,17 +16,12 @@ export function parseCredentials(value: unknown): CliCredentials {
 }
 
 /**
- * 归一化 Hub 地址为 origin。强制 HTTPS，只对 loopback（127.0.0.1/localhost/[::1]）放行明文 HTTP；
- * 带凭据、路径或查询的地址一律拒绝，保证后续凭据只会发往单一实例根地址。
+ * 归一化 HTTP(S) Hub 地址为 origin，保证后续凭据只会发往选定的实例根地址。
  */
 export function hubUrl(value: string) {
   if (/[\p{Cc}\p{Cf}\s]/u.test(value)) throw new Error('Hub URL 不能含空白或控制字符');
   const url = new URL(value);
-  if (
-    url.protocol !== 'https:' &&
-    !(url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))
-  )
-    throw new Error('Hub 地址必须为 HTTPS；仅 loopback 允许 HTTP');
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Hub 地址必须为 HTTP 或 HTTPS');
   if (url.username || url.password || url.search || url.hash || url.pathname !== '/')
     throw new Error('Hub URL 必须为实例根地址，不得带凭据、路径或查询');
   return url.origin;

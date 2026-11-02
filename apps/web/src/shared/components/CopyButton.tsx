@@ -2,19 +2,20 @@ import {
   btnStyles,
   btnPrimaryStyles,
   copyInvitationStyles,
+  formStackStyles,
   kfocusStyles,
 } from '../styles/recipes.js';
 import { cn } from '../styles/cn.js';
-import { Toast } from '@heroui/react/toast';
 import { Check, Copy } from '../icons/lucide.js';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
-
 import { spring } from '../motion/transitions.js';
+import { DialogTitle } from './DialogTitle.js';
+import { Overlay } from './Overlay.js';
 
 /**
  * 复制按钮：写完剪贴板后 1.6s 内显示「已复制」再自动复原，并用 `aria-live` 播报结果。
- * 浏览器拒绝写剪贴板时只弹提示，不进入成功态；需要的是 HTTPS 或 localhost 环境。
+ * 剪贴板不可用时提供可选中的完整原文，保留多行指令的换行。
  */
 export function CopyButton({
   text,
@@ -28,6 +29,7 @@ export function CopyButton({
   variant?: 'code' | 'primary';
 }) {
   const [done, setDone] = useState(false);
+  const [manual, setManual] = useState(false);
   const reduceMotion = useReducedMotion();
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -38,7 +40,8 @@ export function CopyButton({
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => setDone(false), 1600);
     } catch {
-      Toast.toast.warning('浏览器拒绝了复制，请手动选中文本');
+      setDone(false);
+      setManual(true);
     }
   };
   return (
@@ -79,6 +82,20 @@ export function CopyButton({
       <span className="sr-only" role="status" aria-live="polite">
         {done ? '已复制到剪贴板' : ''}
       </span>
+      {manual && (
+        <Overlay open label="手动复制" variant="palette" onClose={() => setManual(false)}>
+          <DialogTitle title="手动复制" onClose={() => setManual(false)} />
+          <label className={cn(formStackStyles, 'p-4')}>
+            请复制以下文本
+            <textarea
+              readOnly
+              autoFocus
+              value={text}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          </label>
+        </Overlay>
+      )}
     </>
   );
 }

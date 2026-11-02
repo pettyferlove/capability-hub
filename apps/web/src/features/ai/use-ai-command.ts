@@ -1,3 +1,4 @@
+import { browserUuid } from '@capability-hub/logging/browser';
 import { useRef } from 'react';
 import { api } from '../../shared/api/client.js';
 
@@ -12,8 +13,7 @@ export function useAiCommand() {
   return async <T = unknown>(path: string, body: unknown, revision?: number): Promise<T> => {
     const serialized = JSON.stringify(body);
     const signature = JSON.stringify([path, serialized, revision]);
-    if (retry.current?.signature !== signature)
-      retry.current = { signature, key: crypto.randomUUID() };
+    if (retry.current?.signature !== signature) retry.current = { signature, key: browserUuid() };
     const command = retry.current;
     const headers = new Headers({ 'Idempotency-Key': command.key });
     if (revision !== undefined) headers.set('If-Match', `"${revision}"`);

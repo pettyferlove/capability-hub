@@ -26,6 +26,29 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+test('只读连接可以转交公开 Hub 邀请，无需取得 Skill 提交权限', async (context) => {
+  const fixture = await serveTestHub(context);
+  const token = await fixture.hub.tokens.issue(fixture.reader, {
+    name: 'invite',
+    scope: 'hub:read',
+  });
+  const client = await connect(fixture.origin, token.token);
+  try {
+    const shareUrl = fixture.origin + '/api/hub-share';
+    assert(client.getInstructions()?.includes(shareUrl));
+    const invitation = await fetch(shareUrl);
+    assert.equal(invitation.status, 200);
+    const installUrl = fixture.origin + '/INSTALL.md';
+    assert.deepEqual(await invitation.json(), {
+      installation_url: installUrl,
+      prompt: `请帮我将这个 Capability Hub 接入当前使用的 Agent：\n${installUrl}`,
+    });
+    assert(!(await client.listTools()).tools.some((tool) => tool.name === 'share_skill'));
+  } finally {
+    await client.close();
+  }
+});
+
 test('官方 MCP 客户端完成协议发现，读取令牌只看到读取工具，逐字符读取与分段归档可还原固定内容', async (context) => {
   const fixture = await serveTestHub(context);
   const published = await publishSkill(fixture, { body: '中文🙂内容' });
