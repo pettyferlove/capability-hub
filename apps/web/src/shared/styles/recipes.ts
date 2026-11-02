@@ -219,9 +219,6 @@ export const sectionHeadingStyles = cn(
   'max-[760px]:gap-3.5 max-[760px]:flex-wrap',
 );
 
-export const sourceGridStyles =
-  'grid grid-cols-[repeat(2,_minmax(0,_1fr))] gap-5 items-start max-[850px]:grid-cols-[1fr]';
-
 export const tagRedStyles = 'bg-danger-soft text-danger';
 
 export const sourceActionsStyles =

@@ -27,9 +27,13 @@ export default function PublishPage({ query = location.search }: { query?: strin
   return (
     <div className={publishPageStyles}>
       <PageHead
-        eyebrow="CONTRIBUTE TO YOUR TEAM"
-        title="分享 Skill 与 MCP"
-        description="从文件、服务地址或安装命令开始，校验后提交审核。"
+        eyebrow={tab === 'git' ? 'REPOSITORY SYNC' : 'CONTRIBUTE TO YOUR TEAM'}
+        title={tab === 'git' ? 'Git 同步' : '分享 Skill 与 MCP'}
+        description={
+          tab === 'git'
+            ? '从指定分支读取 Skill 目录或 MCP 描述文件，校验后提交审核。'
+            : '从文件、服务地址或安装命令开始，校验后提交审核。'
+        }
       />
       <PageTabs
         label="发布方式"

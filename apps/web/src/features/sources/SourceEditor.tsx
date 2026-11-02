@@ -14,12 +14,25 @@ import {
   textBtnStyles,
   btnStyles,
 } from '../../shared/styles/recipes.js';
-import { targetEditorStyles } from './styles.js';
+import {
+  editorFooterStyles,
+  editorHeadingStyles,
+  editorSectionStyles,
+  sourceLinkStyles,
+  targetEditorStyles,
+} from './styles.js';
 import { cn } from '../../shared/styles/cn.js';
 import { useState, type SubmitEvent } from 'react';
 import type { Policy, Applicability } from '@capability-hub/contracts';
 import type { SourceResponse, GitCredentialResponse } from '@capability-hub/contracts/http';
-import { Plus, Trash2 } from '../../shared/icons/lucide.js';
+import {
+  ArrowUpRight,
+  FolderGit2,
+  Layers3,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from '../../shared/icons/lucide.js';
 import { ApiError, mutate } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { useQuery } from '../../shared/api/use-query.js';
@@ -46,8 +59,12 @@ export function SourceEditor({
   onSaved: () => void;
 }) {
   const { me } = useHub();
-  const { data: personalCredentials, error: credentialError } =
-    useQuery<GitCredentialResponse[]>('/api/git-credentials');
+  const [credentialRefresh, setCredentialRefresh] = useState(0);
+  const {
+    data: personalCredentials,
+    error: credentialError,
+    loading: loadingCredentials,
+  } = useQuery<GitCredentialResponse[]>('/api/git-credentials', credentialRefresh);
   const [url, setUrl] = useState(source?.canonical_url ?? ''),
     [branch, setBranch] = useState(source?.branch ?? 'main'),
     [group, setGroup] = useState(source?.owner_group_id ?? me?.groups[0]?.id ?? ''),
@@ -152,201 +169,256 @@ export function SourceEditor({
   return (
     <>
       <DialogTitle title={source ? '编辑 Git 来源' : '新增 Git 来源'} onClose={onClose} />
-      <form className={cn(sheetScrollStyles, formStackStyles)} onSubmit={submit}>
-        <label>
-          仓库地址
-          <InputField
-            icon="link"
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            readOnly={!!source}
-            required
-            placeholder="https://host/team/repo.git 或 git@host:team/repo.git"
-          />
-          {source && <small>仓库身份不可直接修改；更换正本需要受控迁移。</small>}
-        </label>
-        <div className={formRowStyles}>
-          <label>
-            分支
-            <InputField
-              icon="branch"
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-              required
-              maxLength={255}
-              placeholder="main"
-            />
-          </label>
-          <label>
-            维护团队
-            <SelectField
-              value={group}
-              disabled={!!source}
-              onValueChange={(nextValue) => setGroup(nextValue)}
-            >
-              {me?.groups.map((g) => (
-                <option value={g.id} key={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </SelectField>
-          </label>
-        </div>
-        <label>
-          仓库访问凭据
-          <SelectField
-            value={credential}
-            required={repositoryKind === 'ssh'}
-            onValueChange={(nextValue) => setCredential(nextValue)}
-          >
-            <option value="" disabled={repositoryKind === 'ssh'}>
-              {repositoryKind === 'ssh' ? '请选择 SSH 凭据' : '公开仓库 · 不使用凭据'}
-            </option>
-            {availableCredentials.map((r) => (
-              <option
-                key={r.id}
-                value={r.id}
-                disabled={
-                  !!r.revoked_at || !!(r.expires_at && Date.parse(r.expires_at) <= Date.now())
-                }
-              >
-                {r.name} · {r.kind === 'ssh' ? 'SSH' : 'Token'} · {r.host}
-                {r.revoked_at
-                  ? ' · 已撤销'
-                  : r.expires_at && Date.parse(r.expires_at) <= Date.now()
-                    ? ' · 已过期'
-                    : ''}
-              </option>
-            ))}
-            {retainedCredential && (
-              <option value={retainedCredential}>当前绑定凭据 · 由所属账号维护</option>
-            )}
-          </SelectField>
-          <small>
-            请先在 <a href="/account?tab=credentials">个人中心 → Git 凭据</a> 维护 Token 或 SSH
-            密钥。域名和认证方式须与仓库一致。
-          </small>
-          {personalCredentials &&
-            repositoryKind === 'ssh' &&
-            !availableCredentials.length &&
-            !retainedCredential && (
-              <small className={dangerTextStyles}>
-                该域名暂无可用的 SSH 凭据，请先在个人中心添加。
-              </small>
-            )}
-        </label>
-        {credentialError && <Message error>{credentialError}</Message>}
-        {source && source.state !== 'blocked' && (
-          <label>
-            同步状态
-            <SelectField
-              optionIcons={sourceStateIcons}
-              value={state}
-              onValueChange={(nextValue) => setState(nextValue)}
-            >
-              <option value="active">活动</option>
-              <option value="paused">暂停</option>
-            </SelectField>
-          </label>
-        )}
-        <h3>精确读取目标</h3>
-        {targets.map((t, i) => (
-          <fieldset className={targetEditorStyles} key={keys[i]}>
-            <legend>目标 {i + 1}</legend>
+      <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
+        <div className={cn(sheetScrollStyles, formStackStyles)}>
+          <section className={editorSectionStyles} aria-labelledby="git-connection-fields">
+            <h3 id="git-connection-fields" className={editorHeadingStyles}>
+              <FolderGit2 size={17} />
+              仓库连接
+            </h3>
+            <label>
+              仓库地址
+              <InputField
+                icon="link"
+                type="text"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                readOnly={!!source}
+                required
+                placeholder="https://host/team/repo.git 或 git@host:team/repo.git"
+              />
+              {source && <small>仓库地址已固定。需要更换仓库时，请迁移来源。</small>}
+            </label>
             <div className={formRowStyles}>
               <label>
-                资产名称
+                分支
                 <InputField
-                  icon="package"
-                  value={t.slug}
-                  readOnly={!!t.binding_id}
+                  icon="branch"
+                  value={branch}
+                  onChange={(e) => setBranch(e.target.value)}
                   required
-                  maxLength={64}
-                  pattern="[a-z0-9]+(-[a-z0-9]+)*"
-                  onChange={(e) => update(i, { slug: e.target.value })}
-                  placeholder="java-conventions"
+                  maxLength={255}
+                  placeholder="main"
                 />
               </label>
               <label>
-                类型
+                维护团队
                 <SelectField
-                  optionIcons={resourceKindIcons}
-                  value={t.kind}
-                  disabled={!!t.binding_id}
-                  onValueChange={(nextValue) =>
-                    update(i, { kind: nextValue as SourceTargetDraft['kind'] })
-                  }
+                  value={group}
+                  disabled={!!source}
+                  onValueChange={(nextValue) => setGroup(nextValue)}
                 >
-                  <option value="skill">Skill 目录</option>
-                  <option value="mcp">MCP 描述文件</option>
+                  {me?.groups.map((g) => (
+                    <option value={g.id} key={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
                 </SelectField>
               </label>
             </div>
-            <label>
-              读取路径
-              <InputField
-                icon="folder"
-                value={t.path}
-                onChange={(e) => update(i, { path: e.target.value })}
-                required
-                maxLength={240}
-                placeholder={
-                  t.kind === 'skill' ? '.agents/skills/java-conventions' : 'mcp/docs/server.json'
-                }
-              />
-              <small>
-                {t.kind === 'skill'
-                  ? '填写包含 SKILL.md 的目录，仓库根可用单独的 .'
-                  : '填写具体 server.json 文件路径'}
-                ；不支持通配符。
-              </small>
-            </label>
-            <PublicationPolicyFields value={t} onChange={(v) => update(i, v)} />
-            <KeywordField
-              value={t.applies_to.keywords ?? []}
-              onChange={(keywords) => update(i, { applies_to: { ...t.applies_to, keywords } })}
-            />
-            {t.binding_id ? (
-              <label className={checkLabelStyles}>
-                <input
-                  type="checkbox"
-                  checked={t.enabled}
-                  onChange={(e) => update(i, { enabled: e.target.checked })}
-                />
-                <span>启用目标（停用仍保留资产身份）</span>
-              </label>
-            ) : (
-              targets.length > 1 && (
-                <button
-                  className={cn(textBtnStyles, dangerTextStyles)}
-                  type="button"
-                  onClick={() => {
-                    setTargets((old) => old.filter((_, n) => n !== i));
-                    setKeys((old) => old.filter((_, n) => n !== i));
-                  }}
+            <div className="grid gap-1">
+              <label>
+                仓库访问凭据
+                <SelectField
+                  value={credential}
+                  required={repositoryKind === 'ssh'}
+                  onValueChange={(nextValue) => setCredential(nextValue)}
                 >
-                  <Trash2 size={14} />
-                  移除新目标
+                  <option value="" disabled={repositoryKind === 'ssh'}>
+                    {repositoryKind === 'ssh' ? '请选择 SSH 凭据' : '公开仓库 · 不使用凭据'}
+                  </option>
+                  {availableCredentials.map((r) => (
+                    <option
+                      key={r.id}
+                      value={r.id}
+                      disabled={
+                        !!r.revoked_at || !!(r.expires_at && Date.parse(r.expires_at) <= Date.now())
+                      }
+                    >
+                      {r.name} ·{' '}
+                      {r.kind === 'ssh'
+                        ? 'SSH 私钥'
+                        : r.auth_method === 'bearer'
+                          ? 'HTTPS Bearer'
+                          : 'HTTPS Basic'}{' '}
+                      · {r.host}
+                      {r.revoked_at
+                        ? ' · 已撤销'
+                        : r.expires_at && Date.parse(r.expires_at) <= Date.now()
+                          ? ' · 已过期'
+                          : ''}
+                    </option>
+                  ))}
+                  {retainedCredential && (
+                    <option value={retainedCredential}>当前绑定凭据 · 由所属账号维护</option>
+                  )}
+                </SelectField>
+                <small>
+                  {repositoryKind === 'ssh'
+                    ? 'SSH 仓库需要私钥和已核对的主机公钥。'
+                    : repositoryKind === 'token'
+                      ? '私有 HTTPS 仓库需选择与平台要求一致的 Basic 或 Bearer 凭据。'
+                      : '凭据按仓库域名和连接协议匹配。'}
+                </small>
+                {personalCredentials &&
+                  repositoryKind === 'ssh' &&
+                  !availableCredentials.length &&
+                  !retainedCredential && (
+                    <small className={dangerTextStyles}>
+                      该域名暂无可用的 SSH 凭据，请先在个人中心添加。
+                    </small>
+                  )}
+              </label>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <a
+                  href="/account?tab=credentials"
+                  target="_blank"
+                  rel="noopener"
+                  className={sourceLinkStyles}
+                >
+                  管理 Git 凭据<span className="sr-only">（新标签页）</span>
+                  <ArrowUpRight size={14} />
+                </a>
+                <button
+                  type="button"
+                  className={sourceLinkStyles}
+                  disabled={loadingCredentials}
+                  onClick={() => setCredentialRefresh((revision) => revision + 1)}
+                >
+                  <RefreshCw
+                    size={13}
+                    className={loadingCredentials ? 'motion-safe:animate-spin' : undefined}
+                  />
+                  刷新凭据
                 </button>
-              )
+              </div>
+            </div>
+            {credentialError && <Message error>{credentialError}</Message>}
+            {source && source.state !== 'blocked' && (
+              <label>
+                同步状态
+                <SelectField
+                  optionIcons={sourceStateIcons}
+                  value={state}
+                  onValueChange={(nextValue) => setState(nextValue)}
+                >
+                  <option value="active">启用</option>
+                  <option value="paused">暂停</option>
+                </SelectField>
+              </label>
             )}
-          </fieldset>
-        ))}
-        <button
-          className={btnStyles}
-          type="button"
-          onClick={() => {
-            setTargets((old) => [...old, newTarget()]);
-            setKeys((old) => [...old, browserUuid()]);
-          }}
-        >
-          <Plus size={15} />
-          添加读取目标
-        </button>
-        <Message>保存只更新读取配置；同步成功后需确认具体快照并提交审核，不会直接发布。</Message>
-        {error && <Message error>{error}</Message>}
-        <Submit busy={busy}>保存来源配置</Submit>
+          </section>
+          <section className={editorSectionStyles} aria-labelledby="git-target-fields">
+            <h3 id="git-target-fields" className={editorHeadingStyles}>
+              <Layers3 size={17} />
+              读取目标 <small className="text-muted-ink">{targets.length}</small>
+            </h3>
+            {targets.map((t, i) => (
+              <fieldset className={targetEditorStyles} key={keys[i]}>
+                <legend>
+                  目标 {i + 1}
+                  {t.binding_id && ` · ${t.slug}`}
+                </legend>
+                <div className={formRowStyles}>
+                  <label>
+                    资产名称
+                    <InputField
+                      icon="package"
+                      value={t.slug}
+                      readOnly={!!t.binding_id}
+                      required
+                      maxLength={64}
+                      pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                      onChange={(e) => update(i, { slug: e.target.value })}
+                      placeholder="java-conventions"
+                    />
+                  </label>
+                  <label>
+                    类型
+                    <SelectField
+                      optionIcons={resourceKindIcons}
+                      value={t.kind}
+                      disabled={!!t.binding_id}
+                      onValueChange={(nextValue) =>
+                        update(i, { kind: nextValue as SourceTargetDraft['kind'] })
+                      }
+                    >
+                      <option value="skill">Skill 目录</option>
+                      <option value="mcp">MCP 描述文件</option>
+                    </SelectField>
+                  </label>
+                </div>
+                <label>
+                  读取路径
+                  <InputField
+                    icon="folder"
+                    value={t.path}
+                    onChange={(e) => update(i, { path: e.target.value })}
+                    required
+                    maxLength={240}
+                    placeholder={
+                      t.kind === 'skill'
+                        ? '.agents/skills/java-conventions'
+                        : 'mcp/docs/server.json'
+                    }
+                  />
+                  <small>
+                    {t.kind === 'skill'
+                      ? '填写包含 SKILL.md 的目录。仓库根目录填 .，路径不支持通配符。'
+                      : '填写具体的 server.json 路径，路径不支持通配符。'}
+                  </small>
+                </label>
+                <PublicationPolicyFields value={t} onChange={(v) => update(i, v)} />
+                <KeywordField
+                  value={t.applies_to.keywords ?? []}
+                  onChange={(keywords) => update(i, { applies_to: { ...t.applies_to, keywords } })}
+                />
+                {t.binding_id ? (
+                  <label className={checkLabelStyles}>
+                    <input
+                      type="checkbox"
+                      checked={t.enabled}
+                      onChange={(e) => update(i, { enabled: e.target.checked })}
+                    />
+                    <span>启用目标（停用仍保留资产身份）</span>
+                  </label>
+                ) : (
+                  targets.length > 1 && (
+                    <button
+                      className={cn(textBtnStyles, dangerTextStyles)}
+                      type="button"
+                      onClick={() => {
+                        setTargets((old) => old.filter((_, n) => n !== i));
+                        setKeys((old) => old.filter((_, n) => n !== i));
+                      }}
+                    >
+                      <Trash2 size={14} />
+                      移除新目标
+                    </button>
+                  )
+                )}
+              </fieldset>
+            ))}
+            <button
+              className={btnStyles}
+              type="button"
+              onClick={() => {
+                setTargets((old) => [...old, newTarget()]);
+                setKeys((old) => [...old, browserUuid()]);
+              }}
+            >
+              <Plus size={15} />
+              添加读取目标
+            </button>
+          </section>
+        </div>
+        <footer className={editorFooterStyles}>
+          {error && <Message error>{error}</Message>}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <small className="text-muted-ink">同步结果通过校验后可提交审核。</small>
+            <Submit busy={busy}>保存来源配置</Submit>
+          </div>
+        </footer>
       </form>
     </>
   );

@@ -1,46 +1,45 @@
 import { cn } from '../../shared/styles/cn.js';
 
-export const targetEditorStyles = 'flex flex-col gap-[17px] pt-4.5 pr-4.5 pb-4.5 pl-4.5';
+export const sourceCardStyles = 'min-w-0 overflow-hidden rounded-2xl border border-line bg-paper';
 
-export const sourceCardStyles = cn(
-  "group/source-card flex flex-col [&_[class~='group/source-actions']]:mt-auto",
-  "[&_[class~='group/source-actions']]:pt-5",
+export const sourceCardHeaderStyles = cn(
+  'flex min-w-0 flex-col items-start gap-4 px-4 py-4 sm:px-5',
+  'md:flex-row md:items-center md:justify-between',
 );
 
-export const sourceTopStyles = cn(
-  'group/source-top flex items-center gap-2.5 [&_>_div]:flex-1 [&_>_div]:min-w-0',
-  '[&_h3]:text-[length:12px] [&_h3]:[overflow-wrap:anywhere] max-[600px]:flex-wrap',
-  'max-[600px]:[&_h3]:text-[length:12px] max-[600px]:[&_>_div]:min-w-35',
-  "[&_[class~='group/mono']]:flex [&_[class~='group/mono']]:items-center",
-  "[&_[class~='group/mono']]:gap-1 [&_[class~='group/mono']]:mt-[5px]",
-  "[&_[class~='group/mono']]:text-[length:11px] [&_[class~='group/mono']]:min-w-0",
-  "[&_[class~='group/mono']]:[overflow-wrap:anywhere] [&_[class~='group/mono']_>_svg]:shrink-0",
-  "[&_>_[class~='group/tag']]:shrink-0",
+export const sourceCardBodyStyles = cn(
+  'grid min-w-0 gap-4 border-t border-line px-4 py-4 sm:px-5',
+  'md:grid-cols-[minmax(0,1.8fr)_minmax(13rem,1fr)] md:gap-5',
 );
 
-export const sourceIconStyles = cn(
-  'flex items-center justify-center shrink-0 pt-2.5 pr-2.5 pb-2.5 pl-2.5 rounded-[11px] bg-brand-soft',
-  'text-brand',
+export const sourceSectionTitleStyles =
+  'inline-flex items-center gap-2 text-label font-semibold text-ink';
+
+export const sourceTargetRowStyles = cn(
+  'grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 py-2',
+  'max-[480px]:grid-cols-[auto_minmax(0,1fr)] max-[480px]:[&>div:last-child]:col-start-2',
+  'max-[480px]:[&>div:last-child]:justify-start',
 );
 
-export const sourceTargetsStyles = cn(
-  'group/source-targets mt-5 mr-0 mb-5 ml-0 border-t [border-top-style:solid] border-t-[color:var(--line)] [&_>_div]:flex',
-  '[&_>_div]:items-center [&_>_div]:gap-2 [&_>_div]:pt-3 [&_>_div]:pr-0 [&_>_div]:pb-3',
-  '[&_>_div]:pl-0 [&_>_div]:border-b [&_>_div]:[border-bottom-style:solid] [&_>_div]:border-b-[color:var(--line)] [&_>_div_>_div]:flex-1',
-  '[&_>_div_>_div]:min-w-0 [&_strong]:text-body [&_strong]:[overflow-wrap:anywhere] [&_code]:block',
-  '[&_code]:text-caption [&_code]:[overflow-wrap:anywhere] [&_code]:text-muted-ink',
-  '[&_small]:text-caption [&_small]:text-muted-ink [&_small]:whitespace-nowrap [&_small]:shrink-0',
-  "[&_>_div_>_[class~='group/tag']]:shrink-0",
+export const sourceMetaStyles = cn(
+  'mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-body',
+  '[&_dt]:text-muted-ink [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:[overflow-wrap:anywhere]',
 );
 
-export const sourceStatusStyles =
-  'flex items-center justify-between text-caption text-muted-ink gap-2 flex-wrap';
-
-export const breakAllStyles = '[word-break:break-all]';
-
-export const jobTargetStyles = cn(
-  'group/job-target flex items-center gap-2.5 text-[length:11px] pt-2.5 pr-0 pb-2.5 pl-0 flex-wrap',
-  '[&_>_span:nth-child(2)]:[flex:1_1_140px] [&_>_span:nth-child(2)]:min-w-0',
-  "[&_>_span:nth-child(2)]:[overflow-wrap:anywhere] [&_>_[class~='group/text-btn']]:ml-auto",
-  "[&_>_[class~='group/text-btn']]:shrink-0",
+export const sourceIssueStyles = cn(
+  'mx-4 mb-4 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1',
+  'rounded-lg border-l-2 border-danger bg-danger-soft px-3 py-2.5 text-body text-ink sm:mx-5',
+  '[&_a]:col-start-2 md:grid-cols-[auto_minmax(0,1fr)_auto] md:[&_a]:col-start-3',
 );
+
+export const sourceLinkStyles = cn(
+  'inline-flex min-h-7 items-center gap-1.5 justify-self-start rounded-sm border-0 bg-transparent',
+  'p-0 text-label font-medium text-brand underline-offset-4 hover:underline',
+);
+
+export const editorSectionStyles = 'grid min-w-0 gap-4';
+export const editorHeadingStyles =
+  'flex items-center gap-2 border-b border-line pb-2 text-base font-semibold';
+export const targetEditorStyles = 'grid min-w-0 gap-4 rounded-xl border-line bg-paper p-4';
+export const editorFooterStyles =
+  'grid shrink-0 gap-2 border-t border-line bg-paper px-4 py-3 sm:px-6';
