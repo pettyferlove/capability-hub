@@ -1,5 +1,6 @@
 import type { ManagementAssetResponse } from '@capability-hub/contracts/http';
 import { ArrowRight } from '../icons/lucide.js';
+import { cn } from '../styles/cn.js';
 import { Glyph } from './Glyph.js';
 
 type Snapshot = NonNullable<ManagementAssetResponse['current_version']>;
@@ -15,6 +16,7 @@ export function VersionComparison({
   candidate,
   previousLabel = '当前发布',
   candidateLabel = '本次快照',
+  compact = false,
 }: {
   /** 资产类型，决定点阵配色（skill/mcp）与文案；必须与候选版本本身的类型一致。 */
   kind: ManagementAssetResponse['kind'];
@@ -26,28 +28,43 @@ export function VersionComparison({
   previousLabel?: string;
   /** 右栏标签，缺省「本次快照」。 */
   candidateLabel?: string;
+  compact?: boolean;
 }) {
   const same = previous?.content_digest === candidate.content_digest;
   return (
     <section
       aria-label="内容版本对比"
-      className="mt-4 rounded-xl border border-[color:var(--line)] bg-page p-4"
+      className={cn(
+        'rounded-xl border border-[color:var(--line)] bg-page',
+        compact ? 'mt-3 px-3 py-2' : 'mt-4 p-4',
+      )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+      <div
+        className={cn(
+          'flex flex-wrap items-center justify-between gap-2',
+          compact ? 'mb-1' : 'mb-4',
+        )}
+      >
         <strong>{!previous ? '首次发布' : same ? '内容未变化' : '内容更新'}</strong>
         <span className="text-muted-ink">{kind === 'skill' ? 'Skill' : 'MCP'} · 同一资产</span>
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
-        <SnapshotView snapshot={previous} kind={kind} label={previousLabel} />
+        <SnapshotView snapshot={previous} kind={kind} label={previousLabel} compact={compact} />
         <ArrowRight size={18} className="text-muted-ink" />
         <SnapshotView
           snapshot={candidate}
           kind={kind}
           label={candidateLabel}
           diffWith={previous?.content_digest}
+          compact={compact}
         />
       </div>
-      <p className="text-muted-ink mt-4 mb-0 text-caption leading-relaxed">
+      <p
+        className={cn(
+          'mb-0 text-caption leading-relaxed text-muted-ink',
+          compact ? 'mt-1' : 'mt-4',
+        )}
+      >
         {!previous
           ? '尚无发布基线；审核通过后才会出现在目录中。'
           : same
@@ -63,27 +80,43 @@ function SnapshotView({
   kind,
   label,
   diffWith,
+  compact,
 }: {
   snapshot: Snapshot | null;
   kind: ManagementAssetResponse['kind'];
   label: string;
   diffWith?: string;
+  compact: boolean;
 }) {
   return (
-    <div className="flex min-w-0 flex-col items-center gap-2 text-center">
-      <span className="text-muted-ink text-caption">{label}</span>
+    <div
+      className={cn(
+        'flex min-w-0 items-center',
+        compact
+          ? 'justify-center gap-2.5 max-sm:flex-col max-sm:self-start max-sm:gap-1'
+          : 'flex-col gap-2 text-center',
+      )}
+    >
+      <span className="shrink-0 text-muted-ink text-caption">{label}</span>
       {snapshot ? (
-        <>
-          <Glyph seed={snapshot.content_digest} kind={kind} size={64} diffWith={diffWith} />
-          <strong className="font-mono break-all" title={snapshot.version_label}>
-            {snapshot.version_label}
-          </strong>
-          <code className="text-muted-ink text-caption" title={snapshot.content_digest}>
-            {snapshot.content_digest.replace(/^sha256:/, '').slice(0, 8)}
-          </code>
-        </>
+        <div className={compact ? 'flex min-w-0 items-center gap-2' : 'contents'}>
+          <Glyph
+            seed={snapshot.content_digest}
+            kind={kind}
+            size={compact ? 32 : 64}
+            diffWith={diffWith}
+          />
+          <div className={compact ? 'flex min-w-0 flex-wrap items-baseline gap-x-2' : 'contents'}>
+            <strong className="font-mono break-all" title={snapshot.version_label}>
+              {snapshot.version_label}
+            </strong>
+            <code className="text-muted-ink text-caption" title={snapshot.content_digest}>
+              {snapshot.content_digest.replace(/^sha256:/, '').slice(0, 8)}
+            </code>
+          </div>
+        </div>
       ) : (
-        <span className="flex h-16 items-center text-muted-ink">尚未发布</span>
+        <span className={cn('flex items-center text-muted-ink', !compact && 'h-16')}>尚未发布</span>
       )}
     </div>
   );

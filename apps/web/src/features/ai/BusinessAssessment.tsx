@@ -27,7 +27,15 @@ const risks: Record<string, string> = {
  * 报告主体：`value` 为整份报告对象，`assessment` 缺失时各区块自动隐藏；
  * 已采纳但没有 `publication_suggestion` 的历史报告会提示改在新研判中重新生成。
  */
-export function BusinessAssessment({ value }: { value: Json }) {
+export function BusinessAssessment({
+  value,
+  onEvidence,
+  review = false,
+}: {
+  value: Json;
+  onEvidence?: (path: string, start: number, end: number) => void;
+  review?: boolean;
+}) {
   const suggestion = reportSuggestion(value);
   const report = jsonObject(value);
   const assessment = jsonObject(report.assessment);
@@ -62,8 +70,8 @@ export function BusinessAssessment({ value }: { value: Json }) {
           <p className="mt-2 whitespace-pre-wrap">{report.comment}</p>
         )}
       </section>
-      {suggestion && <SuggestionPreview fields={suggestion} />}
-      {!suggestion && !report.feedback_id && report.approved === true && (
+      {!review && suggestion && <SuggestionPreview fields={suggestion} />}
+      {!review && !suggestion && !report.feedback_id && report.approved === true && (
         <p className="rounded-xl border border-separator p-3 text-caption text-muted-ink">
           这份历史报告未生成发布建议。在「任务记录与模型设置」中发起新研判，即可生成分类、关键词和共享目的。
         </p>
@@ -108,6 +116,24 @@ export function BusinessAssessment({ value }: { value: Json }) {
             <div className="mt-3 flex flex-wrap gap-2">
               {(Array.isArray(finding.evidence) ? finding.evidence : []).map((raw, index) => {
                 const item = jsonObject(raw);
+                if (
+                  onEvidence &&
+                  typeof item.path === 'string' &&
+                  typeof item.start_line === 'number' &&
+                  typeof item.end_line === 'number'
+                ) {
+                  const { path, start_line, end_line } = item;
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      className="break-all text-left font-mono text-caption text-brand underline"
+                      onClick={() => onEvidence(path, start_line, end_line)}
+                    >
+                      {path}:{start_line}–{end_line}
+                    </button>
+                  );
+                }
                 return (
                   <span
                     key={index}

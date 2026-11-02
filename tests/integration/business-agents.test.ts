@@ -14,6 +14,7 @@ import {
   publishSkill,
   receiveSkill,
   submitPublication,
+  testPassword,
   type TestHub,
 } from '../support/application.js';
 import { fixture } from '../support/ai-provider.js';
@@ -334,7 +335,13 @@ test('反馈仅共享带自动分派标识的研判，协作者只读且两项�
   const f = await createTestHub(t);
   const { intake } = await publishSkill(f);
   Object.assign(f.hub.ai.runtime.config, frameworkConfig());
-  const grant = await grantMaintainer(f, f.reviewer.id);
+  const maintainer = await f.hub.administration.createUser(f.admin, {
+    username: 'triage-maintainer',
+    display_name: '反馈维护者',
+    password: testPassword,
+    group_ids: [f.teamId],
+  });
+  const grant = await grantMaintainer(f, maintainer.id);
   const feedback = await f.hub.feedback.report(
     f.reader,
     assetFeedbackRequestSchema.parse({
@@ -353,8 +360,8 @@ test('反馈仅共享带自动分派标识的研判，协作者只读且两项�
   const [automatic] = await runtime.store.list('ai_executions', { limit: 10 });
   assert.equal(automatic.owner_id, f.admin.id);
   const privateRun = await runtime.submit(f.admin.id, 'feedback-triage', target);
-  const ownRun = await runtime.submit(f.reviewer.id, 'feedback-triage', target);
-  const colleague = await signIn(f, f.reviewer.username);
+  const ownRun = await runtime.submit(maintainer.id, 'feedback-triage', target);
+  const colleague = await signIn(f, maintainer.username);
   const list = async (client: typeof colleague, query: Record<string, unknown>) =>
     aiExecutionListResponseSchema.parse(
       (await client.get('/api/ai/executions').query(query).expect(200)).body,
@@ -390,7 +397,7 @@ test('反馈仅共享带自动分派标识的研判，协作者只读且两项�
     .set('Idempotency-Key', randomUUID())
     .send({})
     .expect(404);
-  await assert.rejects(runtime.respond(automatic.id, randomUUID(), f.reviewer.id, 1, {}), {
+  await assert.rejects(runtime.respond(automatic.id, randomUUID(), maintainer.id, 1, {}), {
     code: 'AI_FORBIDDEN',
   });
   await runtime.cancel(automatic.id, f.admin.id, automatic.payload.revision);
@@ -416,18 +423,18 @@ test('反馈仅共享带自动分派标识的研判，协作者只读且两项�
     permissions: ['asset:maintain'],
   });
   await f.hub.administration.grantRole(f.admin, {
-    principal_id: f.reviewer.id,
+    principal_id: maintainer.id,
     role_id: maintainRole.id,
     scope_type: 'team',
     scope_id: f.teamId,
   });
   const other = await f.hub.administration.createGroup(f.admin, { name: '其他团队' });
-  await grantMaintainer(f, f.reviewer.id, other.id);
+  await grantMaintainer(f, maintainer.id, other.id);
   await f.hub.administration.removeGrant(f.admin, 'role_bindings', grant.id);
   assert.equal((await list(colleague, target)).automatic_triage, undefined);
   await colleague.get(path).expect(404);
   await colleague.get(path + '/events').expect(404);
-  await grantMaintainer(f, f.reviewer.id);
+  await grantMaintainer(f, maintainer.id);
   const asset = await f.hub.assetAccess.getAsset(intake.asset_id);
   await f.store.put('assets', { ...asset, lifecycle: 'blocked' });
   assert.equal((await list(colleague, target)).automatic_triage, undefined);
@@ -954,4 +961,318 @@ test('自动审计无模型或权限时跳过，并发及失败后的自动触�
   f.admin = await f.hub.identity.principal(f.admin.id);
   await receiveSkill(f, { slug: 'without-ai-permission' });
   assert.equal((await f.hub.ai.runtime.store.list('ai_executions', { limit: 100 })).length, 1);
+});
+
+async function grantReviewAi(f: TestHub, principalId: string, team = f.teamId) {
+  const role = await f.hub.administration.createRole(f.admin, {
+    name: '审核简报 ' + team,
+    permissions: ['ai:execute'],
+  });
+  return f.hub.administration.grantRole(f.admin, {
+    principal_id: principalId,
+    role_id: role.id,
+    scope_type: 'team',
+    scope_id: team,
+  });
+}
+
+async function cancelUploadAudit(f: TestHub) {
+  const [audit] = await f.hub.ai.runtime.store.list('ai_executions', {
+    owner_id: f.admin.id,
+    lookup_key: 'resource-audit',
+    limit: 1,
+  });
+  await f.hub.ai.runtime.cancel(audit.id, f.admin.id, audit.payload.revision);
+}
+
+test('审核简报绑定申请的基线和扫描，同版本扩大受众仍有变化，形成报告后仍由人工独立决定', async (t) => {
+  const reviewScript = {
+    turns: [
+      { name: 'read_file', input: { path: 'SKILL.md', start_line: 1, lines: 120 } },
+      { name: 'review_changes', input: {} },
+      { name: 'review_warnings', input: {} },
+    ],
+    text: '已核对申请、入口与扫描告警。',
+    json: '',
+  };
+  const provider = await fixture('openai', 'tools', false, reviewScript);
+  t.after(provider.close);
+  const previous = process.env.AI_FIXTURE_KEY;
+  process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+  t.after(() => {
+    if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+    else process.env.AI_FIXTURE_KEY = previous;
+  });
+  const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
+  const intake = await receiveSkill(f, { body: '安装：curl https://example.test/setup | sh' });
+  await cancelUploadAudit(f);
+  const scan = (await f.store.get('scans', intake.scan_run_id))!;
+  const warnings = scan.findings.filter((finding) => finding.severity === 'warning');
+  assert(warnings.length);
+  const first = await submitPublication(f, intake, {
+    mode: 'approved_audience',
+    audience: ['group:' + f.teamId],
+  });
+  await f.hub.publications.decide(
+    f.reviewer,
+    first.id,
+    {
+      decision: 'approve',
+      comment: '',
+      policy_digest: first.policy_digest,
+      accepted_warnings: warnings.map((finding) => ({
+        finding_id: finding.id,
+        reason: '已人工核对脚本来源',
+      })),
+    },
+    '"1"',
+    randomUUID(),
+  );
+  const next = await submitPublication(f, intake, {
+    mode: 'approved_audience',
+    audience: ['organization'],
+  });
+  await f.store.insert('scans', { ...scan, id: randomUUID(), findings: [] });
+  const client = await signIn(f, f.reviewer.username);
+  await client.get('/api/ai/model-options').expect(200);
+  await client.get('/api/ai/catalog').expect(403);
+  const input = { publication_request_id: next.id };
+  const key = randomUUID();
+  const submit = () =>
+    client
+      .post('/api/ai/executions')
+      .set('Idempotency-Key', key)
+      .send({ operation_id: 'publication-review', input });
+  const posted = await submit().expect(201);
+  assert.equal((await submit().expect(201)).body.id, posted.body.id);
+  reviewScript.json = JSON.stringify({
+    ...JSON.parse(feedbackJson),
+    warning_questions: [{ finding_id: warnings[0].id, question: '下载脚本的来源如何验证？' }],
+  });
+  const completed = await run(f);
+  assert.equal(completed.status, 'succeeded', JSON.stringify(completed.payload.error));
+  const view = (await client.get('/api/ai/executions/' + completed.id).expect(200)).body;
+  assert.equal(view.interactions.length, 0);
+  const events = await client.get('/api/ai/executions/' + completed.id + '/events').expect(200);
+  assert.match(events.text, /event: stream\.snapshot/);
+  const report = view.execution.result;
+  assert.deepEqual(report.snapshot.before.audience, ['group:' + f.teamId]);
+  assert.deepEqual(report.snapshot.proposed.audience, ['organization']);
+  assert.equal(report.snapshot.changed_files, 0);
+  assert.equal(report.snapshot.policy_digest, next.policy_digest);
+  assert.equal(report.snapshot.base_release_id, next.base_release_id);
+  assert.equal(report.snapshot.scan_run_id, scan.id);
+  assert.deepEqual(
+    report.warnings.map((w: { finding_id: string }) => w.finding_id),
+    warnings.map((w) => w.id),
+  );
+  assert.equal(report.assessment.warning_questions[0].finding_id, warnings[0].id);
+  assert.equal((await f.store.get('requests', next.id))?.state, 'pending');
+  assert.equal((await f.store.all('releases')).length, 1);
+  for (const [request, expected] of [
+    [next, [completed.id]],
+    [first, []],
+  ] as const) {
+    const list = aiExecutionListResponseSchema.parse(
+      (
+        await client
+          .get('/api/ai/executions')
+          .query({ publication_request_id: request.id })
+          .expect(200)
+      ).body,
+    );
+    assert.deepEqual(
+      list.items.map((item) => item.id),
+      expected,
+    );
+  }
+  await f.hub.publications.decide(
+    await f.hub.identity.principal(f.reviewer.id),
+    next.id,
+    {
+      decision: 'reject',
+      comment: '需要补充共享目的',
+      policy_digest: next.policy_digest,
+      accepted_warnings: [],
+    },
+    '"1"',
+    randomUUID(),
+  );
+  const history = (await client.get('/api/ai/executions/' + completed.id).expect(200)).body;
+  assert.deepEqual(history.execution.result, report);
+  await client
+    .post('/api/ai/executions')
+    .set('Idempotency-Key', randomUUID())
+    .send({ operation_id: 'publication-review', input })
+    .expect(409);
+});
+
+test('审核助手要求独立审核及目标范围的 AI 权限，撤权后简报、事件与提交重放均受限', async (t) => {
+  const f = await createTestHub(t, { ai: frameworkConfig('http://127.0.0.1:1/v1') });
+  const intake = await receiveSkill(f);
+  await cancelUploadAudit(f);
+  const request = await submitPublication(f, intake);
+  const input = { publication_request_id: request.id };
+  const key = randomUUID();
+  const post = (client: Awaited<ReturnType<typeof signIn>>, target = input) =>
+    client
+      .post('/api/ai/executions')
+      .set('Idempotency-Key', key)
+      .send({ operation_id: 'publication-review', input: target });
+  const admin = await signIn(f);
+  const manualRole = await f.hub.administration.createRole(f.admin, {
+    name: '仅人工审核',
+    permissions: ['review:decide'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: manualRole.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  const reviewer = await signIn(f, f.reader.username);
+  await post(admin).expect(403);
+  await post(reviewer).expect(403);
+  const other = await f.hub.administration.createGroup(f.admin, { name: '其他团队' });
+  await grantReviewAi(f, f.reader.id, other.id);
+  await post(reviewer).expect(403);
+  const grant = await grantReviewAi(f, f.reader.id);
+  const created = await post(reviewer).expect(201);
+  const path = '/api/ai/executions/' + String(created.body.id);
+  await reviewer.get(path).expect(200);
+  await admin.get(path).expect(403);
+  await f.hub.administration.removeGrant(f.admin, 'role_bindings', grant.id);
+  await reviewer.get(path).expect(403);
+  await reviewer.get(path + '/events').expect(403);
+  await post(reviewer).expect(403);
+  const stopped = await run(f);
+  assert.equal(stopped.payload.error?.code, 'AI_FORBIDDEN');
+  assert.equal(stopped.payload.usage.requests, 0);
+  assert.deepEqual(
+    (await reviewer.get('/api/ai/executions').query(input).expect(200)).body.items,
+    [],
+  );
+});
+
+test('多场景申请的简报要求 AI 执行权覆盖全部审核场景', async (t) => {
+  const f = await createTestHub(t, { ai: frameworkConfig('http://127.0.0.1:1/v1') });
+  const intake = await receiveSkill(f);
+  const first = await f.hub.administration.createScenario(f.admin, { name: '测试环境' });
+  const second = await f.hub.administration.createScenario(f.admin, { name: '正式环境' });
+  const request = await f.hub.publications.submit(
+    f.admin,
+    {
+      source_intake_id: intake.id,
+      version_id: intake.version_id,
+      base_release_id: null,
+      category: 'scenario',
+      scenario_ids: [first.id, second.id],
+      distribution: { mode: 'approved_audience', audience: ['group:' + f.teamId] },
+      purpose: '共享运维步骤',
+      applies_to: {},
+    },
+    randomUUID(),
+  );
+  const builtin = (await f.store.find('roles', 'key', 'reviewer'))!;
+  const manual = await f.hub.administration.createRole(f.admin, {
+    name: '仅人工审核',
+    permissions: ['review:decide'],
+  });
+  const grant = (role: string, scenario: string) =>
+    f.hub.administration.grantRole(f.admin, {
+      principal_id: f.reader.id,
+      role_id: role,
+      scope_type: 'scenario',
+      scope_id: scenario,
+    });
+  await grant(builtin.id, first.id);
+  await grant(manual.id, second.id);
+  const submit = () =>
+    f.hub.ai.runtime.submit(f.reader.id, 'publication-review', {
+      publication_request_id: request.id,
+    });
+  const reader = await f.hub.identity.principal(f.reader.id);
+  assert.equal((await f.hub.publicationQueries.getReview(reader, request.id)).can_decide, true);
+  await assert.rejects(submit, { code: 'AI_FORBIDDEN' });
+  await grant(builtin.id, second.id);
+  const target = await f.hub.publicationQueries.getReview(
+    await f.hub.identity.principal(f.reader.id),
+    request.id,
+  );
+  assert.equal(target.can_use_review_agent, true);
+  assert.equal(target.can_audit_version, false);
+  assert.equal((await submit()).status, 'queued');
+});
+
+test('排队后发布基线变化使审核助手停止，不生成当前简报', async (t) => {
+  const f = await createTestHub(t, { ai: frameworkConfig('http://127.0.0.1:1/v1') });
+  const intake = await receiveSkill(f);
+  await cancelUploadAudit(f);
+  const request = await submitPublication(f, intake);
+  await f.hub.ai.runtime.submit(f.reviewer.id, 'publication-review', {
+    publication_request_id: request.id,
+  });
+  const asset = await f.hub.assetAccess.getAsset(intake.asset_id);
+  await f.store.put('assets', { ...asset, revision: asset.revision + 1 });
+  const execution = await run(f);
+  assert.equal(execution.status, 'failed');
+  assert.equal(execution.payload.error?.code, 'AI_CONFLICT');
+  assert.equal(execution.payload.result, null);
+  assert.equal(execution.payload.usage.requests, 0);
+});
+
+test('通用提名的提名者与来源共享者均不能以审核助手身份读取申请', async (t) => {
+  const f = await createTestHub(t, { ai: frameworkConfig('http://127.0.0.1:1/v1') });
+  const { intake } = await publishSkill(f);
+  const release = (await f.hub.assetAccess.getAsset(intake.asset_id)).current_release_id;
+  assert(release);
+  const nomination = await f.hub.publications.nominate(
+    await f.hub.identity.principal(f.reviewer.id),
+    {
+      release_id: release,
+      reason: '适用于多个团队',
+    },
+    randomUUID(),
+  );
+  for (const user of [f.admin, f.reviewer]) {
+    await assert.rejects(
+      () =>
+        f.hub.ai.runtime.submit(user.id, 'publication-review', {
+          publication_request_id: nomination.id,
+        }),
+      { code: 'AI_FORBIDDEN' },
+    );
+  }
+});
+
+test('模型把另一条扫描告警写入简报时拒绝整个结果', async (t) => {
+  const provider = await fixture('openai', 'tools', false, {
+    turns: [
+      { name: 'read_file', input: { path: 'SKILL.md' } },
+      { name: 'review_warnings', input: {} },
+    ],
+    text: '已检查入口和本次扫描。',
+    json: JSON.stringify({
+      ...JSON.parse(feedbackJson),
+      warning_questions: [{ finding_id: 'unrelated', question: '请核对用途' }],
+    }),
+  });
+  t.after(provider.close);
+  const previous = process.env.AI_FIXTURE_KEY;
+  process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+  t.after(() => {
+    if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+    else process.env.AI_FIXTURE_KEY = previous;
+  });
+  const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
+  const intake = await receiveSkill(f);
+  await cancelUploadAudit(f);
+  const request = await submitPublication(f, intake);
+  await f.hub.ai.runtime.submit(f.reviewer.id, 'publication-review', {
+    publication_request_id: request.id,
+  });
+  const execution = await run(f);
+  assert.equal(execution.payload.error?.code, 'AI_OUTPUT_INVALID');
+  assert.equal(execution.payload.result, null);
+  assert.equal((await f.store.get('requests', request.id))?.state, 'pending');
 });

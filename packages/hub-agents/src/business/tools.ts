@@ -1,7 +1,40 @@
 import type { AgentEvidenceService } from '@capability-hub/application';
-import type { AgentInvocation, OperationContext } from '@capability-hub/ai';
+import { AiError, type AgentInvocation, type OperationContext } from '@capability-hub/ai';
 import { z } from 'zod';
 import type { evidenceSchema } from './schemas.js';
+
+type ReadRange = z.infer<typeof evidenceSchema>;
+
+/** 同一文件相邻或重叠的读取视为连续区间；中间有未读行时仍保持分段。 */
+export function mergeReadRanges(ranges: readonly ReadRange[]) {
+  const merged: ReadRange[] = [];
+  const sorted = [...ranges].sort(
+    (a, b) => a.path.localeCompare(b.path) || a.start_line - b.start_line,
+  );
+  for (const range of sorted) {
+    const last = merged.at(-1);
+    if (last?.path === range.path && range.start_line <= last.end_line + 1)
+      last.end_line = Math.max(last.end_line, range.end_line);
+    else merged.push({ ...range });
+  }
+  return merged;
+}
+
+/** 每处引用必须完全落在同一文件实际读过的连续行段内。 */
+export function validateCitations(findings: { evidence: ReadRange[] }[], readRanges: ReadRange[]) {
+  for (const finding of findings)
+    for (const citation of finding.evidence)
+      if (
+        citation.end_line < citation.start_line ||
+        !readRanges.some(
+          (item) =>
+            item.path === citation.path &&
+            item.start_line <= citation.start_line &&
+            item.end_line >= citation.end_line,
+        )
+      )
+        throw new AiError('AI_OUTPUT_INVALID', '报告引用超出实际读取范围');
+}
 
 interface BusinessEvidence {
   feedbackRead: boolean;

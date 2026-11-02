@@ -69,6 +69,8 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
             ),
           ),
       );
+      if (input.operation_id === 'publication-review')
+        await hub.ai.principal(principal, await runtime.get(result.id), true);
       res.status(201);
       return withRevision(res, result);
     }),
@@ -78,7 +80,7 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
     jsonRoute(async (req, res) => {
       const query = listAiExecutionsQuerySchema.parse(req.query);
       const principal =
-        query.version_id || query.feedback_id
+        query.version_id || query.feedback_id || query.publication_request_id
           ? await hub.ai.principal(res.locals.principal, undefined, true)
           : await hub.ai.consolePrincipal(res.locals.principal);
       let after: { position: number; id: string } | undefined;
@@ -96,6 +98,7 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
       }
       const rows = await runtime.store.list('ai_executions', {
         owner_id: principal.id,
+        ...(query.publication_request_id && { lookup_key: 'publication-review' }),
         descending: true,
         after,
         limit: query.limit,
@@ -104,11 +107,16 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
       const visible = [];
       for (const row of rows) {
         if (query.operation_id && row.payload.operation_id !== query.operation_id) continue;
-        if (query.version_id || query.feedback_id) {
+        if (query.version_id || query.feedback_id || query.publication_request_id) {
           const target = row.payload.input;
           if (!target || typeof target !== 'object' || Array.isArray(target)) continue;
           if (query.version_id && target.version_id !== query.version_id) continue;
           if (query.feedback_id && target.feedback_id !== query.feedback_id) continue;
+          if (
+            query.publication_request_id &&
+            target.publication_request_id !== query.publication_request_id
+          )
+            continue;
         }
         try {
           await hub.ai.principal(principal, row, true);
@@ -120,6 +128,7 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
       }
       const shared =
         !after &&
+        !query.publication_request_id &&
         query.feedback_id &&
         (!query.operation_id || query.operation_id === 'feedback-triage')
           ? await hub.ai.sharedTriage(principal, query.feedback_id, query.version_id)

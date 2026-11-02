@@ -2,7 +2,8 @@
  * 审核申请详情：变更清单、来源授权、受众变化与扫描结论，并在同一视图里做出通过/退回决定。
  * 决定与撤回都提交到 `/api/publication-requests/:id/{decision,cancel}`，携带 `revision`。
  */
-import { BusinessAgentPanel } from '../ai/BusinessAgentPanel.js';
+import { ReviewAuditEvidence, type ReviewAuditAdvice } from './ReviewAuditEvidence.js';
+import { PublicationReviewAssistant } from './PublicationReviewAssistant.js';
 import { VersionComparison } from '../../shared/components/VersionComparison.js';
 import {
   reviewOverviewStyles,
@@ -81,7 +82,7 @@ import {
   ShieldCheck,
   X,
 } from '../../shared/icons/lucide.js';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ApiError, mutate } from '../../shared/api/client.js';
 import { Overlay } from '../../shared/components/Overlay.js';
 import { Message } from '../../shared/components/Message.js';
@@ -89,7 +90,7 @@ import { Submit } from '../../shared/components/Submit.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { categoryLabel, dateLabel, stateLabel } from '../../shared/format/labels.js';
 import { FileWorkbench } from './FileWorkbench.js';
-import type { ChangeFile } from './types.js';
+import type { ChangeFile, ReviewFileFocus } from './types.js';
 import { shortVersion } from './version-label.js';
 import { audienceChange } from './audience-change.js';
 import { ApiKeyBadge } from '../catalog/ApiKeyBadge.js';
@@ -102,14 +103,29 @@ import { ScenarioSummary } from '../../shared/components/ScenarioSummary.js';
  */
 export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
   const { reload, me } = useHub();
-  const [comment, setComment] = useState(''),
+  const [draft, setDraft] = useState<{ comment: string; advice?: ReviewAuditAdvice }>({
+      comment: '',
+    }),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [accepted, setAccepted] = useState(false),
     [warnings, setWarnings] = useState<Record<string, string>>({}),
     [section, setSection] = useState('changes'),
     [decisionOpen, setDecisionOpen] = useState(false),
-    [fileFocus, setFileFocus] = useState<{ path: string }>();
+    [fileFocus, setFileFocus] = useState<ReviewFileFocus>();
+  const { comment, advice } = draft;
+  const receiveAdvice = useCallback((next: ReviewAuditAdvice) => {
+    setDraft((current) => {
+      if (
+        current.advice?.executionId === next.executionId ||
+        (current.advice && current.advice.acceptedAt > next.acceptedAt)
+      )
+        return current;
+      return { comment: current.comment.trim() ? current.comment : next.text, advice: next };
+    });
+  }, []);
+  const cited = !!advice && comment.includes(advice.text);
+  const withAdvice = advice && (comment.trim() ? comment + '\n\n' + advice.text : advice.text);
   const changed = r.diff.filter((f: ChangeFile) => f.status !== 'unchanged');
   const important = r.scan?.findings.filter((f) => f.severity !== 'info') ?? [];
   const infos = r.scan?.findings.filter((f) => f.severity === 'info') ?? [];
@@ -181,6 +197,15 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
     modified: r.diff.filter((f: ChangeFile) => f.status === 'modified').length,
     removed: r.diff.filter((f: ChangeFile) => f.status === 'removed').length,
   };
+  const reviewAssistant = r.can_use_review_agent && (
+    <PublicationReviewAssistant
+      request={r}
+      onEvidence={(path, start, end) => {
+        setSection('changes');
+        setFileFocus({ path, start, end });
+      }}
+    />
+  );
   return (
     <>
       <section className={reviewOverviewStyles}>
@@ -230,6 +255,7 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
           candidate={r.candidate}
           previousLabel="提交时发布"
           candidateLabel="申请发布"
+          compact
         />
         <div className={reviewSummaryGridStyles}>
           <div>
@@ -368,7 +394,6 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
           </button>
         </div>
       </section>
-      <BusinessAgentPanel versionId={r.version_id} title={r.asset.slug} />
       {!!r.proposed_scenarios?.length && (
         <section className={nominationReviewSummaryStyles}>
           <h3>随本次发布审核的场景</h3>
@@ -536,13 +561,16 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
                   </small>
                 </span>
               </div>
-              <button
-                className={cn(btnStyles, btnPrimaryStyles)}
-                onClick={() => setDecisionOpen(true)}
-              >
-                <CheckCheck size={15} />
-                审核决定
-              </button>
+              <div className="flex flex-wrap justify-end gap-2">
+                {reviewAssistant}
+                <button
+                  className={cn(btnStyles, btnPrimaryStyles)}
+                  onClick={() => setDecisionOpen(true)}
+                >
+                  <CheckCheck size={15} />
+                  审核决定
+                </button>
+              </div>
             </div>
             <Overlay
               open={decisionOpen}
@@ -582,6 +610,17 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
                     </p>
                   </div>
                 </div>
+                {r.can_audit_version && (
+                  <ReviewAuditEvidence
+                    request={r}
+                    onAdvice={receiveAdvice}
+                    onEvidence={(path, start, end) => {
+                      setDecisionOpen(false);
+                      setSection('changes');
+                      setFileFocus({ path, start, end });
+                    }}
+                  />
+                )}
                 {important
                   .filter((f) => f.severity === 'warning')
                   .map((f) => (
@@ -620,10 +659,40 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
                   id="review-comment"
                   aria-label="审核意见"
                   value={comment}
-                  onChange={(e) => setComment(e.target.value)}
+                  onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
                   maxLength={4000}
                   placeholder="记录你的判断；如需退回，请说明具体问题和修改建议。"
                 />
+                {r.can_audit_version && advice && (
+                  <div className="space-y-1 text-caption text-muted-ink" aria-live="polite">
+                    {cited ? (
+                      '已引用你采纳的版本审计建议。请核对本次分发范围后再提交决定。'
+                    ) : (
+                      <>
+                        <span>
+                          {comment.trim()
+                            ? '已保留你填写的审核意见。'
+                            : '这份版本审计已有采纳建议。'}
+                        </span>
+                        <p className="whitespace-pre-wrap break-words">{advice.text}</p>
+                        <button
+                          type="button"
+                          className={textBtnStyles}
+                          disabled={!withAdvice || withAdvice.length > 4000}
+                          onClick={() => {
+                            if (withAdvice && withAdvice.length <= 4000)
+                              setDraft({ ...draft, comment: withAdvice });
+                          }}
+                        >
+                          {comment.trim() ? '追加审计建议' : '引用审计建议'}
+                        </button>
+                        {withAdvice && withAdvice.length > 4000 && (
+                          <p>追加后超过 4000 字，请先缩短审核意见。</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
                 {error && <Message error>{error}</Message>}
                 <div className={decisionPanelFooterStyles}>
                   <span>
@@ -690,6 +759,7 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
           </div>
         </section>
       )}
+      {!r.can_decide && reviewAssistant}
     </>
   );
 }

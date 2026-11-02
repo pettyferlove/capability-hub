@@ -58,7 +58,7 @@ import { fileText, PreviewUnavailable } from '../../shared/api/client.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { CodeSkeleton } from '../../shared/components/Skeleton.js';
 import { bytesLabel } from '../../shared/format/labels.js';
-import type { ChangeFile } from './types.js';
+import type { ChangeFile, ReviewFileFocus } from './types.js';
 
 const fileStatusStyles: Record<string, string> = {
   added: addedStyles,
@@ -75,17 +75,18 @@ type Tree = {
 };
 
 /**
- * 默认选中 `SKILL.md`、其次 `server.json`、再退到首个变更文件；`focus` 指向存在变更的文件时
- * 覆盖该默认值，并展开其所在目录把焦点移到预览标题；定位只认 `focus.path`，不存在则不理会。
+ * 默认选中 `SKILL.md`、其次 `server.json`、再退到首个文件。文件定位展开所在目录；
+ * 带行号的引用按候选源文件定位，行号与差异视图的行序无关。
  */
 export function FileWorkbench({
   request: r,
   focus,
 }: {
   request: ReviewResponse;
-  focus?: { path: string };
+  focus?: ReviewFileFocus;
 }) {
   const files: ChangeFile[] = r.diff;
+  const evidenceLine = useRef<HTMLDivElement>(null);
   const treeRef = useRef<HTMLDivElement>(null),
     selectedRef = useRef<HTMLButtonElement>(null),
     previewTitleRef = useRef<HTMLDivElement>(null);
@@ -104,7 +105,7 @@ export function FileWorkbench({
     [error, setError] = useState(''),
     [unavailable, setUnavailable] = useState(false),
     [retry, setRetry] = useState(0),
-    [mode, setMode] = useState('diff'),
+    [mode, setMode] = useState(focus?.start ? 'source' : 'diff'),
     [highlightedPath, setHighlightedPath] = useState(''),
     [wrap, setWrap] = useState(true),
     [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -120,13 +121,15 @@ export function FileWorkbench({
   const selected = files.find((f) => f.path === path);
   const hasOld = !!r.current?.manifest?.files.some((f) => f.path === path),
     hasNext = !!r.candidate.manifest.files.some((f) => f.path === path);
-  const previewKey = r.id + ':' + path;
+  const needsBase = hasOld && (!hasNext || mode === 'diff');
+  const previewKey = r.id + ':' + path + (needsBase ? ':compare' : ':source');
   useEffect(() => {
     const focusPath = focus?.path;
     if (!focusPath || !files.some((f) => f.path === focusPath)) return;
     setPath(focusPath);
     setSearch('');
     setFilter('all');
+    if (focus?.start) setMode('source');
     const parts = focusPath.split('/');
     parts.pop();
     setExpanded((previous) => {
@@ -142,6 +145,7 @@ export function FileWorkbench({
     const frame = requestAnimationFrame(() => {
       const title = previewTitleRef.current;
       if (!title) return;
+      if (focus?.start && evidenceLine.current) return;
       title.focus({ preventScroll: true });
       title.scrollIntoView({
         behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
@@ -156,6 +160,18 @@ export function FileWorkbench({
     };
   }, [focus]);
   useEffect(() => {
+    if (
+      focus?.start &&
+      path === focus.path &&
+      !loading &&
+      loadedPreview === previewKey &&
+      mode === 'source'
+    ) {
+      evidenceLine.current?.focus({ preventScroll: true });
+      evidenceLine.current?.scrollIntoView({ block: 'center' });
+    }
+  }, [focus, path, loading, loadedPreview, previewKey, mode]);
+  useEffect(() => {
     if (!path) return;
     let live = true;
     const controller = new AbortController();
@@ -164,7 +180,7 @@ export function FileWorkbench({
     setUnavailable(false);
     Promise.all([
       hasNext ? fileText(r.version_id, path, true, controller.signal) : Promise.resolve(''),
-      hasOld && r.current
+      needsBase && r.current
         ? fileText(r.current.release.version_id, path, true, controller.signal)
         : Promise.resolve(''),
     ])
@@ -190,7 +206,7 @@ export function FileWorkbench({
       live = false;
       controller.abort();
     };
-  }, [r.id, path, retry]);
+  }, [previewKey, retry]);
   const shown = useMemo(
     () =>
       files.filter(
@@ -295,6 +311,11 @@ export function FileWorkbench({
           .split('\n')
           .map((text, i) => ({ text, before: '', after: String(i + 1), kind: 'context' }));
   const overflow = previewLines.length > 800;
+  const focusStart = focus?.path === path && mode === 'source' ? focus.start : undefined;
+  const offset =
+    focusStart && focusStart > 800
+      ? Math.max(0, Math.min(focusStart - 20, previewLines.length - 800))
+      : 0;
   return (
     <section className={cn(reviewFileWorkbenchStyles, 'scroll-mt-25')} id="review-files">
       <div className={reviewFileToolbarStyles}>
@@ -461,8 +482,20 @@ export function FileWorkbench({
                 aria-label={'内容预览 ' + path}
               >
                 <div className={reviewCodeLinesStyles}>
-                  {previewLines.slice(0, 800).map((line, i) => (
-                    <div key={i} className={cn(reviewCodeLineStyles, `group/${line.kind}`)}>
+                  {previewLines.slice(offset, offset + 800).map((line, i) => (
+                    <div
+                      key={i}
+                      ref={Number(line.after) === focusStart ? evidenceLine : undefined}
+                      tabIndex={Number(line.after) === focusStart ? -1 : undefined}
+                      className={cn(
+                        reviewCodeLineStyles,
+                        `group/${line.kind}`,
+                        focusStart &&
+                          Number(line.after) >= focusStart &&
+                          Number(line.after) <= (focus?.end ?? focusStart) &&
+                          'bg-warning-soft',
+                      )}
+                    >
                       <span className={lineOldStyles}>{line.before}</span>
                       <span className={lineNewStyles}>{line.after}</span>
                       <span className={lineSignStyles}>
@@ -475,7 +508,9 @@ export function FileWorkbench({
               </div>
               {(overflow || (mode === 'diff' && !parts)) && (
                 <div className={filePreviewLimitStyles}>
-                  {overflow ? '当前显示前 800 行，' : '差异计算达到限额，当前展示原文，'}
+                  {overflow
+                    ? `当前显示第 ${offset + 1}–${offset + 800} 行，`
+                    : '差异计算达到限额，当前展示原文，'}
                   请下载完整文件完成所需审查。
                 </div>
               )}

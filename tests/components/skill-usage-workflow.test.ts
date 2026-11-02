@@ -9,6 +9,7 @@ import ManagementPanel from '../../apps/web/src/features/catalog/ManagementPanel
 import { VersionComparison } from '../../apps/web/src/shared/components/VersionComparison.js';
 import { UploadPanel } from '../../apps/web/src/features/publishing/UploadPanel.js';
 import { ReviewDetail } from '../../apps/web/src/features/review/ReviewDetail.js';
+import { FileWorkbench } from '../../apps/web/src/features/review/FileWorkbench.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
 import {
   createTestHub,
@@ -164,11 +165,22 @@ test('审核详情可重复定位 Skill 文件，未声明不推断无需认证'
   review.candidate.manifest.files.push(otherFile);
   review.diff.push({ ...otherFile, status: 'added' });
   context.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === '/api/ai/model-options')
+      return Response.json({
+        default_profile: 'primary',
+        profiles: [{ id: 'primary', label: '模型' }],
+      });
+    if (path.startsWith('/api/ai/executions?'))
+      return Response.json({ items: [], next_cursor: null });
     assert(path.startsWith('/api/management/versions/'));
     return new Response(path.endsWith('AUTH.md') ? '独立认证步骤' : 'Skill 使用说明');
   });
   const user = userEvent.setup();
   const view = render(page(createElement(ReviewDetail, { request: review })));
+  const generate = within(
+    screen.getByRole('region', { name: '发布审核助手' }),
+  ).getByRole<HTMLButtonElement>('button', { name: '生成审核简报' });
+  await waitFor(() => assert(!generate.disabled));
   const usage = screen.getByRole('region', { name: '认证与使用要求' });
   assert(within(usage).getByText('需 API Key'));
   assert.match(usage.textContent ?? '', /不代表没有登录、OAuth/);
@@ -428,4 +440,28 @@ test('维护者可将 AI 新场景改为已有条目，再补充自己的定义�
   assert.deepEqual(submitted?.proposed_scenarios, [
     { name: '数据库迁移演练', description: '验证回退步骤。' },
   ]);
+});
+
+test('简报可定位到第 800 行以后的候选证据，基线文件不可读时仍可核对', async (context) => {
+  const f = await createTestHub(context);
+  const first = await publishSkill(f);
+  const next = await receiveSkill(f, { assetId: first.intake.asset_id, version: '1.0.1' });
+  const request = await submitPublication(f, next);
+  const review = await f.hub.publicationQueries.getReview(f.reviewer, request.id);
+  const lines = Array.from({ length: 1000 }, (_, i) => '候选证据行 ' + (i + 1)).join('\n');
+  context.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path.includes(first.intake.version_id)) return new Response(null, { status: 403 });
+    return new Response(lines);
+  });
+  render(
+    page(
+      createElement(FileWorkbench, {
+        request: review,
+        focus: { path: 'SKILL.md', start: 903, end: 905 },
+      }),
+    ),
+  );
+  await screen.findByText('候选证据行 903');
+  await waitFor(() => assert(document.activeElement?.textContent?.includes('候选证据行 903')));
+  assert(screen.getByText('候选证据行 905'));
 });

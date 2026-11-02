@@ -26,6 +26,7 @@ export const operationLabels: Record<string, string> = {
   assistant: '基础助手',
   'resource-audit': '资源审计',
   'feedback-triage': '反馈研判',
+  'publication-review': '发布审核助手',
   'agent-lab': '多 Agent 协作',
 };
 
@@ -44,6 +45,10 @@ export const operationMeta: Record<string, { Icon: IconComponent; description: s
     Icon: MessageSquare,
     description: '复核一条反馈，定位证据并给出处理建议。',
   },
+  'publication-review': {
+    Icon: ShieldCheck,
+    description: '对照提交时的分发策略和扫描，为审核员生成简报。',
+  },
 };
 
 /**
@@ -52,6 +57,7 @@ export const operationMeta: Record<string, { Icon: IconComponent; description: s
 export const agentLabels: Record<string, { title: string; description: string }> = {
   'resource-audit': { title: '资源审计员', description: '自主查阅 · 逐项核实' },
   'feedback-triage': { title: '反馈研判员', description: '复核观察 · 定位证据' },
+  'publication-review': { title: '发布审核助手', description: '核对申请 · 查阅证据' },
   assessment: { title: '研判报告', description: '整理发现 · 明确检查范围' },
   assistant: { title: '助手', description: '理解问题 · 调用工具' },
   planner: { title: '规划助手', description: '整理依据 · 生成草案' },
@@ -126,6 +132,8 @@ export const toolLabels: Record<string, string> = {
   'search-files': '搜索资源内容',
   'scan-findings': '核对静态检查',
   'compare-release': '比较发布版本',
+  'review-warnings': '核对申请告警',
+  'review-changes': '核对申请变更',
   'read-feedback': '查阅反馈证据',
 };
 const eventLabels: Record<string, string> = {

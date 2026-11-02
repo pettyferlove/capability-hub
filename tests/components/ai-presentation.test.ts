@@ -1,7 +1,7 @@
 import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { createElement } from 'react';
+import { createElement, type ReactElement } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import {
   aiExecutionViewResponseSchema,
@@ -17,43 +17,48 @@ import { advanceStreamCursor } from '../../apps/web/src/features/ai/stream-text.
 import { recentTrail } from '../../apps/web/src/features/ai/agent-brief.js';
 import { InteractionForm } from '../../apps/web/src/features/ai/InteractionForm.js';
 import { BusinessAgentPanel } from '../../apps/web/src/features/ai/BusinessAgentPanel.js';
+import { PublicationReviewAssistant } from '../../apps/web/src/features/review/PublicationReviewAssistant.js';
+import { ReviewDetail } from '../../apps/web/src/features/review/ReviewDetail.js';
+import { createTestHub, receiveSkill, submitPublication } from '../support/application.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
 
 afterEach(cleanup);
 
-function renderBusinessPanel(props: Parameters<typeof BusinessAgentPanel>[0]) {
-  return render(
-    createElement(
-      HubCtx.Provider,
-      {
-        value: {
-          me: {
-            id: 'owner',
-            username: 'owner',
-            auth_provider: 'local',
-            display_name: '维护者',
-            csrf_token: '',
-            groups: [],
-            features: { git_hosts: [] },
-            capabilities: {
-              can_ai: true,
-              can_ai_console: false,
-              can_admin: false,
-              can_audit: false,
-              can_publish: true,
-              can_review: false,
-            },
+function withHub(content: ReactElement, ownerId = 'owner') {
+  return createElement(
+    HubCtx.Provider,
+    {
+      value: {
+        me: {
+          id: ownerId,
+          username: 'owner',
+          auth_provider: 'local',
+          display_name: '维护者',
+          csrf_token: '',
+          groups: [],
+          features: { git_hosts: [] },
+          capabilities: {
+            can_ai: true,
+            can_ai_console: false,
+            can_admin: false,
+            can_audit: false,
+            can_publish: true,
+            can_review: false,
           },
-          reviewCount: 0,
-          refresh: 0,
-          reload() {},
-          openPalette() {},
-          logout: async () => {},
         },
+        reviewCount: 0,
+        refresh: 0,
+        reload() {},
+        openPalette() {},
+        logout: async () => {},
       },
-      createElement(BusinessAgentPanel, props),
-    ),
+    },
+    content,
   );
+}
+
+function renderBusinessPanel(props: Parameters<typeof BusinessAgentPanel>[0]) {
+  return render(withHub(createElement(BusinessAgentPanel, props)));
 }
 
 test('失败时间线显示具体原因及错误代码，避免只显示执行失败', () => {
@@ -870,4 +875,296 @@ test('流式游标按字素边界推进，不拆开 emoji 和组合字符', () =
     cursor = next;
   }
   assert.equal(cursor, text.length);
+});
+
+test('审核页手动生成本申请的简报，证据可定位，已处理的申请只可回看', async (t) => {
+  const input = { publication_request_id: 'review-A' };
+  const report = {
+    ...businessReport,
+    snapshot: {
+      ...input,
+      request_revision: 1,
+      policy_digest: 'policy-A',
+      changed_files: 0,
+      before: { visibility_label: '研发组', category: 'uncategorized' },
+      proposed: {
+        visibility_label: '登录用户',
+        category: 'uncategorized',
+        purpose: '共享值班手册',
+      },
+      added_audience_label: '登录用户',
+      removed_audience_label: '研发组',
+    },
+    warnings: [],
+  };
+  const view = executionView({ operation_id: 'publication-review', input, result: report });
+  let started = false;
+  t.mock.method(globalThis, 'fetch', async (path: string, init?: RequestInit) => {
+    if (path === '/api/ai/model-options')
+      return Response.json({
+        default_profile: 'primary',
+        profiles: [{ id: 'primary', label: '演示' }],
+      });
+    if (path.startsWith('/api/ai/executions?')) {
+      assert.equal(
+        new URL(path, 'http://localhost').searchParams.get('publication_request_id'),
+        'review-A',
+      );
+      return Response.json({ items: started ? [view.execution] : [], next_cursor: null });
+    }
+    if (path === '/api/ai/executions') {
+      assert.deepEqual(JSON.parse(String(init?.body)), {
+        operation_id: 'publication-review',
+        input,
+      });
+      started = true;
+      return Response.json(view.execution);
+    }
+    if (path.endsWith('/events'))
+      return new Response(
+        'event: stream.snapshot\ndata: ' + JSON.stringify({ schema_version: 1, ...view }) + '\n\n',
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    assert.equal(path, '/api/ai/executions/execution');
+    return Response.json(view);
+  });
+  const openEvidence = t.mock.fn();
+  const panel = (canDecide: boolean) =>
+    withHub(
+      createElement(PublicationReviewAssistant, {
+        request: {
+          id: 'review-A',
+          revision: canDecide ? 1 : 2,
+          can_decide: canDecide,
+          policy_digest: 'policy-A',
+        },
+        onEvidence: openEvidence,
+      }),
+    );
+  const page = render(panel(true));
+  const start = screen.getByRole<HTMLButtonElement>('button', { name: '生成审核简报' });
+  await waitFor(() => assert(!start.disabled));
+  assert.equal(started, false);
+  fireEvent.click(start);
+  const inspect = await screen.findByRole('button', { name: '查看审核简报' });
+  assert.equal(screen.queryByRole('dialog', { name: '审核简报' }), null);
+  fireEvent.click(inspect);
+  const brief = within(await screen.findByRole('dialog', { name: '审核简报' }));
+  assert(brief.getByRole('heading', { name: /本次审核摘要/ }));
+  fireEvent.click(brief.getByText('展开分发对照、告警与文件依据'));
+  const citation = await screen.findByRole('button', { name: 'SKILL.md:5–8' });
+  fireEvent.click(citation);
+  assert.deepEqual(openEvidence.mock.calls[0].arguments, ['SKILL.md', 5, 8]);
+  page.rerender(panel(false));
+  await waitFor(() => assert(!screen.queryByRole('dialog', { name: '审核简报' })));
+  fireEvent.click(screen.getByRole('button', { name: '查看审核简报' }));
+  assert(screen.getByText('历史简报仅供回看。'));
+  assert.equal(screen.queryByRole('button', { name: '生成审核简报' }), null);
+  assert.equal(screen.queryByRole('button', { name: '重新生成' }), null);
+});
+
+test('待审页按身份展示工具，版本审计只出现在独立审核员的决定抽屉中', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f);
+  const request = await submitPublication(f, intake);
+  const own = await f.hub.publicationQueries.getReview(f.admin, request.id);
+  const independent = await f.hub.publicationQueries.getReview(f.reviewer, request.id);
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === '/api/ai/model-options')
+      return Response.json({ default_profile: '', profiles: [] });
+    if (path.startsWith('/api/ai/executions?'))
+      return Response.json({ items: [], next_cursor: null });
+    assert(path.startsWith('/api/management/versions/'));
+    return new Response('审核证据');
+  });
+  const page = render(withHub(createElement(ReviewDetail, { request: own }), f.admin.id));
+  assert(screen.getByText('等待另一位审核者'));
+  assert.equal(screen.queryByRole('complementary', { name: 'AI 资源审计' }), null);
+  assert.equal(screen.queryByRole('button', { name: '生成审核简报' }), null);
+  assert.equal(screen.queryByRole('button', { name: '审核决定' }), null);
+  page.rerender(withHub(createElement(ReviewDetail, { request: independent }), f.reviewer.id));
+  assert(screen.getByRole('button', { name: '生成审核简报' }));
+  assert.equal(screen.queryByRole('region', { name: '版本资源审计' }), null);
+  fireEvent.click(screen.getAllByRole('button', { name: '审核决定' })[0]);
+  const drawer = await screen.findByRole('dialog', { name: '记录审核决定' });
+  assert(within(drawer).getByRole('region', { name: '版本资源审计' }));
+  await within(drawer).findByText('尚无报告');
+});
+
+test('采纳版本审计自动填空白意见，手写草稿由人追加，告警和正式决定仍须人工处理', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f, { body: '安装示例：curl https://example.test/setup | sh' });
+  const request = await submitPublication(f, intake);
+  const review = await f.hub.publicationQueries.getReview(f.reviewer, request.id);
+  const advice = '核对下载脚本的来源和用途。';
+  const report = {
+    version_id: review.version_id,
+    content_digest: review.content_digest,
+    inspected: [],
+    assessment: { ...businessReport.assessment, suggested_resolution: advice },
+  };
+  const pendingView = () => {
+    const view = executionView({
+      id: 'audit',
+      owner_id: f.reviewer.id,
+      operation_id: 'resource-audit',
+      status: 'waiting_input',
+      input: { version_id: review.version_id },
+    });
+    view.interactions = [
+      {
+        id: 'human-review',
+        status: 'pending',
+        revision: 3,
+        response: null,
+        expires_at: Date.now() + 60000,
+        request: { assessment: report },
+        response_schema: {},
+      },
+    ];
+    return view;
+  };
+  let view = pendingView();
+  let decision: { comment: string; decision: string; accepted_warnings: unknown[] } | undefined;
+  t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
+    if (path === '/api/ai/model-options')
+      return Response.json({
+        default_profile: 'primary',
+        profiles: [{ id: 'primary', label: '模型' }],
+      });
+    if (path.startsWith('/api/ai/executions?')) {
+      const query = new URL(path, 'http://localhost').searchParams;
+      return Response.json({
+        items: query.get('version_id') === review.version_id ? [view.execution] : [],
+        next_cursor: null,
+      });
+    }
+    if (path === '/api/ai/executions/audit/events')
+      return new Response(
+        'event: stream.snapshot\ndata: ' + JSON.stringify({ schema_version: 1, ...view }) + '\n\n',
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    if (path === '/api/ai/executions/audit') return Response.json(view);
+    if (path.endsWith('/interactions/human-review/respond')) {
+      assert.equal(init.method, 'POST');
+      assert.equal(new Headers(init.headers).get('If-Match'), '"3"');
+      assert.deepEqual(JSON.parse(String(init.body)).response, {
+        approved: true,
+        comment: '',
+        apply_feedback: false,
+      });
+      view = executionView({
+        ...view.execution,
+        status: 'succeeded',
+        result: { ...report, approved: true },
+      });
+      return Response.json(view.execution);
+    }
+    if (path === '/api/publication-requests/' + review.id + '/decision') {
+      decision = JSON.parse(String(init.body)) as typeof decision;
+      return Response.json({});
+    }
+    assert(path.startsWith('/api/management/versions/'));
+    return new Response('审核证据');
+  });
+  for (const manual of ['', '已核对受众。']) {
+    view = pendingView();
+    decision = undefined;
+    const page = render(withHub(createElement(ReviewDetail, { request: review }), f.reviewer.id));
+    fireEvent.click(screen.getAllByRole('button', { name: '审核决定' })[0]);
+    const drawer = within(await screen.findByRole('dialog', { name: '记录审核决定' }));
+    const comment = drawer.getByRole<HTMLTextAreaElement>('textbox', { name: '审核意见' });
+    const accept = await drawer.findByRole('button', { name: '采纳审计建议' });
+    assert.equal(comment.value, '');
+    if (manual) fireEvent.change(comment, { target: { value: manual } });
+    fireEvent.click(accept);
+    if (manual) {
+      const append = await drawer.findByRole<HTMLButtonElement>('button', { name: '追加审计建议' });
+      assert.equal(comment.value, manual);
+      fireEvent.change(comment, { target: { value: '字'.repeat(3999) } });
+      assert(append.disabled);
+      fireEvent.change(comment, { target: { value: manual } });
+      fireEvent.click(append);
+    }
+    const expected = manual ? manual + '\n\n' + advice : advice;
+    await waitFor(() => assert.equal(comment.value, expected));
+    assert.equal(drawer.getByRole<HTMLInputElement>('checkbox').checked, false);
+    assert.equal(
+      drawer.getAllByRole<HTMLTextAreaElement>('textbox', { name: /接受告警/ })[0].value,
+      '',
+    );
+    assert(drawer.getByRole<HTMLButtonElement>('button', { name: '通过并发布' }).disabled);
+    assert.equal(decision, undefined);
+    if (manual) {
+      fireEvent.click(drawer.getByRole('button', { name: '退回修改' }));
+      await waitFor(() =>
+        assert.deepEqual(
+          decision && [decision.decision, decision.comment, decision.accepted_warnings],
+          ['reject', expected, []],
+        ),
+      );
+    } else {
+      fireEvent.change(comment, { target: { value: '' } });
+      fireEvent.click(drawer.getByRole('button', { name: '关闭审核决定' }));
+      await waitFor(() => assert(!screen.queryByRole('dialog')));
+      fireEvent.click(screen.getAllByRole('button', { name: '审核决定' })[0]);
+      assert(await screen.findByRole('button', { name: '引用审计建议' }));
+      assert.equal(
+        screen.getByRole<HTMLTextAreaElement>('textbox', { name: '审核意见' }).value,
+        '',
+      );
+    }
+    page.unmount();
+  }
+});
+
+test('他人的审计、未采纳的结果和其他内容快照都不能填入审核意见', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f);
+  const request = await submitPublication(f, intake);
+  const review = await f.hub.publicationQueries.getReview(f.reviewer, request.id);
+  let view = executionView({});
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === '/api/ai/model-options')
+      return Response.json({ default_profile: '', profiles: [] });
+    if (path.startsWith('/api/ai/executions?'))
+      return Response.json({
+        items: new URL(path, 'http://localhost').searchParams.has('version_id')
+          ? [view.execution]
+          : [],
+        next_cursor: null,
+      });
+    if (path.endsWith('/events'))
+      return new Response(
+        'event: stream.snapshot\ndata: ' + JSON.stringify({ schema_version: 1, ...view }) + '\n\n',
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    if (path === '/api/ai/executions/execution') return Response.json(view);
+    assert(path.startsWith('/api/management/versions/'));
+    return new Response('审核证据');
+  });
+  for (const [owner, approved, digest, mark] of [
+    [f.admin.id, true, review.content_digest, '尚无报告'],
+    [f.reviewer.id, false, review.content_digest, '未采纳'],
+    [f.reviewer.id, true, 'sha256:another', '这份报告与候选内容不匹配，请重新审计。'],
+  ] as const) {
+    view = executionView({
+      operation_id: 'resource-audit',
+      owner_id: owner,
+      input: { version_id: review.version_id },
+      result: {
+        ...businessReport,
+        version_id: review.version_id,
+        content_digest: digest,
+        approved,
+      },
+    });
+    const page = render(withHub(createElement(ReviewDetail, { request: review }), f.reviewer.id));
+    fireEvent.click(screen.getAllByRole('button', { name: '审核决定' })[0]);
+    const drawer = within(await screen.findByRole('dialog', { name: '记录审核决定' }));
+    await drawer.findByText(mark === '未采纳' ? /未采纳 ·/ : mark);
+    assert.equal(drawer.getByRole<HTMLTextAreaElement>('textbox', { name: '审核意见' }).value, '');
+    assert.equal(drawer.queryByRole('button', { name: '引用审计建议' }), null);
+    page.unmount();
+  }
 });

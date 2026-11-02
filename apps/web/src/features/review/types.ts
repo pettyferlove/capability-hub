@@ -4,3 +4,6 @@
  * 服务端新增其它状态时只会被当成「非 unchanged」的显式变更，不会丢失。
  */
 export type ChangeFile = { path: string; status: string; sha256: string; size: number };
+
+/** 引用的起止行属于候选源文件，缺少行号时定位文件标题。 */
+export type ReviewFileFocus = { path: string; start?: number; end?: number };

@@ -381,7 +381,7 @@ export const reviewDecisionDockStyles = cn(
   '[box-shadow:0_4px_24px_var(--shadow-color)] [&_>_div]:flex [&_>_div]:items-center [&_>_div]:gap-[9px]',
   '[&_>_div]:text-brand [&_strong]:block [&_strong]:text-[length:12px] [&_strong]:font-medium',
   '[&_strong]:text-ink [&_small]:block [&_small]:text-[length:11px] [&_small]:text-muted-ink',
-  '[&_small]:mt-[3px] max-[600px]:bottom-2.5 max-[600px]:pt-[11px] max-[600px]:pr-3',
+  '[&_small]:mt-[3px] max-[600px]:flex-wrap max-[600px]:[&>div:last-child]:ml-auto max-[600px]:bottom-2.5 max-[600px]:pt-[11px] max-[600px]:pr-3',
   'max-[600px]:pb-[11px] max-[600px]:pl-3 max-[600px]:gap-[9px]',
   'max-[600px]:[&_strong]:text-[length:11px] max-[600px]:[&_small]:text-[length:9px]',
   "max-[600px]:[&_>_div_>_svg]:hidden [&_[class~='group/btn']]:min-h-9.5",

@@ -16,15 +16,16 @@ export const respondAiInteractionRequestSchema = z.object({ response: json }).st
 
 /**
  * 执行列表查询：`limit` 1–100 默认 30，`cursor` ≤500 字符且不透明；
- * `operation_id` 只接受登记过的两个操作，其余筛选按关联资源 id 精确匹配。
+ * `operation_id` 只接受业务操作，其余筛选按关联目标 id 精确匹配。
  */
 export const listAiExecutionsQuerySchema = z
   .object({
     cursor: z.string().max(500).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(30),
-    operation_id: z.enum(['resource-audit', 'feedback-triage']).optional(),
+    operation_id: z.enum(['resource-audit', 'feedback-triage', 'publication-review']).optional(),
     version_id: z.uuid().optional(),
     feedback_id: z.uuid().optional(),
+    publication_request_id: z.uuid().optional(),
   })
   .strict();
 

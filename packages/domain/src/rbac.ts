@@ -57,7 +57,7 @@ export function hasInAnyScope(p: Principal, permission: string) {
 /**
  * 初始化时写入的内置角色集合。`key` 是稳定标识，改名不影响已有绑定；`admin` 刻意不含 `source:create`
  * 与 `asset:create`/`asset:maintain`，创建类动作留给 `maintainer`，`reader` 权限为空（仅保留登录本身）。
- * 播种时按 `key` 判重，已存在即跳过，所以后续改动不会回灌到运行中的实例。
+ * 角色 ID 由实例持有，已有授权通过该 ID 引用角色。
  */
 export const builtinRoles = [
   {
@@ -88,6 +88,6 @@ export const builtinRoles = [
       'asset:maintain',
     ],
   },
-  { name: '审核者', key: 'reviewer', permissions: ['review:decide'] },
+  { name: '审核者', key: 'reviewer', permissions: ['review:decide', 'ai:execute'] },
   { name: '使用者', key: 'reader', permissions: [] },
 ];

@@ -1,4 +1,5 @@
 import { BusinessAssessment } from './BusinessAssessment.js';
+import { PublicationReviewReport } from './PublicationReviewReport.js';
 import type { AiExecutionViewResponse } from '@capability-hub/contracts';
 import {
   Check,
@@ -30,6 +31,12 @@ import {
  * 列出，后者只以「是否包含审查意见」的提示出现，不声称事实准确性。
  */
 export function ExecutionResult({ view }: { view: AiExecutionViewResponse }) {
+  if (view.execution.operation_id === 'publication-review')
+    return view.execution.result ? (
+      <PublicationReviewReport value={view.execution.result} />
+    ) : (
+      <p className="p-6 text-muted-ink">审核简报将在取证完成后出现。</p>
+    );
   const business = ['resource-audit', 'feedback-triage'].includes(view.execution.operation_id);
   if (business) {
     const report =

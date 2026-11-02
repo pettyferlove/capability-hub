@@ -13,6 +13,7 @@ import type {
   AssetContentService,
   AssetAccessService,
   AgentEvidenceService,
+  PublicationQueryService,
 } from '@capability-hub/application';
 import type { RecordStore } from '@capability-hub/application/ports';
 import { has, hasInAnyScope } from '@capability-hub/domain/rbac';
@@ -21,7 +22,7 @@ import type { Principal } from '@capability-hub/domain/identity';
 import type { VersionRecord } from '@capability-hub/domain/models';
 import type { ServerConfig } from '../config/server-config.js';
 
-const businessOperations = new Set(['resource-audit', 'feedback-triage']);
+const businessOperations = new Set(['resource-audit', 'feedback-triage', 'publication-review']);
 
 function requireAiConsole(principal: Principal, execute = false) {
   if (!has(principal, 'ai:inspect'))
@@ -54,10 +55,31 @@ export class HubAiServices {
     content: AssetContentService,
     config: ServerConfig,
     private readonly evidence: AgentEvidenceService,
+    publications: PublicationQueryService,
   ) {
     const aiStore = createAiStore(store);
     this.recheckResources = async (principal, execution, mode = 'execute') => {
-      if (businessOperations.has(execution.payload.operation_id)) {
+      if (execution.payload.operation_id === 'publication-review') {
+        const input = execution.payload.input;
+        if (
+          !input ||
+          typeof input !== 'object' ||
+          Array.isArray(input) ||
+          typeof input.publication_request_id !== 'string'
+        )
+          throw new AiError('AI_CONFIGURATION', '缺少审核申请');
+        try {
+          await publications.requireAgentAccess(
+            principal,
+            input.publication_request_id,
+            mode === 'execute' ? 'execute' : 'inspect',
+          );
+        } catch (error) {
+          if (error instanceof HubError && error.code === 'REVIEW_STALE')
+            throw new AiError('AI_CONFLICT', '申请已处理或审核上下文已变化');
+          throw error;
+        }
+      } else if (businessOperations.has(execution.payload.operation_id)) {
         const input = execution.payload.input;
         if (
           !input ||
@@ -149,7 +171,7 @@ export class HubAiServices {
     this.runtime = new AiRuntime(
       aiStore,
       new HubAiQueue(store, jobs),
-      createHubAgentRegistry(evidence),
+      createHubAgentRegistry(evidence, publications),
       {
         authorization,
         resources,

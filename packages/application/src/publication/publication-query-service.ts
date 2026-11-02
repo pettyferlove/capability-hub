@@ -3,6 +3,7 @@ import type { PublicationRequestRecord } from '@capability-hub/domain/models';
 import { filterAsync } from '@capability-hub/domain/async';
 import { contentScanRuleset } from '@capability-hub/domain/content';
 import { fail, notFound } from '@capability-hub/domain/errors';
+import { has } from '@capability-hub/domain/rbac';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from '../catalog/asset-access-service.js';
 
@@ -37,29 +38,90 @@ export class PublicationQueryService {
         .map(async (r) => await this.describe(principal, r)),
     );
   }
-  private async describe(principal: Principal, request: PublicationRequestRecord) {
-    if (
-      !(await this.assets.canReview(principal, request)) &&
-      request.submitted_by !== principal.id &&
-      !this.assets.canMaintain(principal, await this.assets.getAsset(request.asset_id))
-    )
-      fail(403, 'FORBIDDEN', '无审核权限');
+  private async reviewContext(principal: Principal, request: PublicationRequestRecord) {
     const a = await this.assets.getAsset(request.asset_id);
     const v = (await this.context.store.get('versions', request.version_id))!;
-    const current = await this.context.store.get('releases', request.base_release_id ?? '');
-    const previous = current ? await this.context.store.get('versions', current.version_id) : null;
     const source = await this.context.store.get('sources', request.policy_source_id);
     const scan = await this.context.store.get('scans', request.scan_run_id);
+    const canReview = await this.assets.canReview(principal, request);
+    const independent =
+      canReview &&
+      request.submitted_by !== principal.id &&
+      (!request.nomination || request.source_consent.actor_id !== principal.id);
+    const available =
+      !!source &&
+      source.state !== 'blocked' &&
+      !source.distribution_revoked_at &&
+      a.lifecycle !== 'blocked' &&
+      v.availability !== 'revoked';
     const contextValid =
       a.current_release_id === request.base_release_id &&
       a.revision === request.asset_revision &&
       source?.revision === request.source_revision &&
-      source?.state !== 'blocked' &&
-      !source?.distribution_revoked_at &&
+      available &&
       a.lifecycle === 'active' &&
-      v.availability !== 'revoked' &&
       scan?.state === 'passed' &&
       scan?.ruleset_version === contentScanRuleset;
+    const canDecide = request.state === 'pending' && independent && contextValid;
+    const assetAi = has(principal, 'ai:execute', this.assets.assetContext(a));
+    return {
+      a,
+      v,
+      scan,
+      canReview,
+      contextValid,
+      canDecide,
+      canAuditVersion: canDecide && assetAi,
+      canUseReviewAgent:
+        independent &&
+        available &&
+        (assetAi ||
+          (request.category === 'scenario' &&
+            request.scenario_ids.length > 0 &&
+            (await this.assets.canReview(principal, request, 'ai:execute')))),
+    };
+  }
+
+  /** 已结束的申请保留历史读取权限，继续执行仍须满足当前审核条件。 */
+  async requireAgentAccess(principal: Principal, id: string, mode: 'execute' | 'inspect') {
+    const request = await this.context.store.get('requests', id);
+    if (!request) notFound();
+    const access = await this.reviewContext(principal, request);
+    if (!access.canUseReviewAgent) fail(403, 'FORBIDDEN', '无权访问此申请的审核简报');
+    if (mode === 'execute' && !access.canDecide)
+      fail(409, 'REVIEW_STALE', '申请已处理或审核上下文已变化');
+    return request;
+  }
+
+  /** 基线、扫描和策略差异从同一申请的存储快照读取。 */
+  async agentEvidence(ownerId: string, id: string) {
+    return this.context.store.tx(async () => {
+      const principal = await this.context.identity.principal(ownerId);
+      const request = await this.requireAgentAccess(principal, id, 'execute');
+      const review = await this.describe(principal, request);
+      const before = review.current?.release.distribution.audience ?? [];
+      const after = review.distribution.audience;
+      const label = (audience: string[]) =>
+        this.assets.formatVisibility({ ...review.distribution, audience });
+      return {
+        ...review,
+        added_audience_label: await label(after.filter((item) => !before.includes(item))),
+        removed_audience_label: await label(before.filter((item) => !after.includes(item))),
+      };
+    });
+  }
+
+  private async describe(principal: Principal, request: PublicationRequestRecord) {
+    const { a, v, scan, canReview, contextValid, canDecide, canAuditVersion, canUseReviewAgent } =
+      await this.reviewContext(principal, request);
+    if (
+      !canReview &&
+      request.submitted_by !== principal.id &&
+      !this.assets.canMaintain(principal, a)
+    )
+      fail(403, 'FORBIDDEN', '无审核权限');
+    const current = await this.context.store.get('releases', request.base_release_id ?? '');
+    const previous = current ? await this.context.store.get('versions', current.version_id) : null;
     const oldFiles = previous?.manifest.files ?? [];
     return {
       ...request,
@@ -81,15 +143,12 @@ export class PublicationQueryService {
             manifest: previous?.manifest,
           }
         : null,
-      scan: await this.context.store.get('scans', request.scan_run_id),
+      scan,
       submitter: (await this.context.store.get('users', request.submitted_by))?.display_name,
       context_valid: contextValid,
-      can_decide:
-        request.state === 'pending' &&
-        request.submitted_by !== principal.id &&
-        (!request.nomination || request.source_consent.actor_id !== principal.id) &&
-        (await this.assets.canReview(principal, request)) &&
-        contextValid,
+      can_decide: canDecide,
+      can_audit_version: canAuditVersion,
+      can_use_review_agent: canUseReviewAgent,
       diff: v.manifest.files
         .map((f) => ({
           path: f.path,

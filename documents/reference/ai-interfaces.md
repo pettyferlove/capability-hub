@@ -19,9 +19,9 @@
 
 ## 业务任务
 
-`resource-audit` 输入 `{version_id}`，`feedback-triage` 输入 `{version_id, feedback_id}`。业务面板按版本或反馈查任务。未指定 `version_id` 和 `feedback_id` 的列表查询要求控制台权限。`items` 仅分页本人任务，空页仍可有 `next_cursor`。按反馈查询的首页另附可读的 `automatic_triage`（执行 DTO 加 `owner_display_name`），不占分页名额。业务权限见 [反馈研判与资源审计](../design/business-agents.md)。
+`resource-audit` 输入 `{version_id}`，`feedback-triage` 输入 `{version_id, feedback_id}`。`publication-review` 输入 `{publication_request_id}`，简报保存在成功执行的 `result`。列表按上述目标 ID 筛选，未指定目标时要求控制台权限。`items` 仅分页本人任务，空页仍可有 `next_cursor`。按反馈查询的首页另附可读的 `automatic_triage`（执行 DTO 加 `owner_display_name`），不占分页名额。业务权限见 [业务 Agent](../design/business-agents.md)。
 
-人工回答为 `{approved, comment?, apply_feedback?}`；写回反馈需要明确采纳与维护权限。交互 revision 只保护回答，业务写回另校验反馈 revision。
+资源审计和反馈研判的人工回答为 `{approved, comment?, apply_feedback?}`；写回反馈需要明确采纳与维护权限。交互 revision 只保护回答，业务写回另校验反馈 revision。
 
 ## SSE 传输
 

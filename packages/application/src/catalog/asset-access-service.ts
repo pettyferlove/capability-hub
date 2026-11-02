@@ -51,8 +51,15 @@ export class AssetAccessService {
    * 审查权限的作用域随请求范围扩大：通用类别、新场景定义、公开/组织或跨组受众要求全局
    * `review:decide`；场景类别要求覆盖全部 `scenario_ids`；其余仅限资产所属团队。
    */
-  async canReview(principal: Principal, request: PublicationRequestRecord) {
+  async canReview(
+    principal: Principal,
+    request: PublicationRequestRecord,
+    additionalPermission?: 'ai:execute',
+  ) {
     const a = await this.getAsset(request.asset_id);
+    const allowed = (scope: Parameters<typeof has>[2] = {}) =>
+      has(principal, 'review:decide', scope) &&
+      (!additionalPermission || has(principal, additionalPermission, scope));
     if (
       request.category === 'general' ||
       !!request.proposed_scenarios?.length ||
@@ -60,15 +67,10 @@ export class AssetAccessService {
       request.distribution.audience.includes('organization') ||
       request.distribution.audience.some((id: string) => id !== `group:${a.owner_group_id}`)
     )
-      return has(principal, 'review:decide');
+      return allowed();
     if (request.category === 'scenario')
-      return (
-        has(principal, 'review:decide') ||
-        request.scenario_ids.every((id: string) =>
-          has(principal, 'review:decide', { scenario: id }),
-        )
-      );
-    return has(principal, 'review:decide', { team: a.owner_group_id });
+      return allowed() || request.scenario_ids.every((id: string) => allowed({ scenario: id }));
+    return allowed({ team: a.owner_group_id });
   }
   /**
    * 候选内容只对维护者或该版本待审请求的审查者可见，否则抛 403/`FORBIDDEN`；

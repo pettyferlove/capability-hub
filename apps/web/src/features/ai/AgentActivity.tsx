@@ -22,7 +22,12 @@ const roles = {
 function roleInfo(id: string) {
   const key = Object.hasOwn(roles, id) ? (id as keyof typeof roles) : 'assistant';
   const role = roles[key];
-  if (id === 'resource-audit' || id === 'feedback-triage' || id === 'assessment')
+  if (
+    id === 'resource-audit' ||
+    id === 'feedback-triage' ||
+    id === 'publication-review' ||
+    id === 'assessment'
+  )
     return {
       ...role,
       ...agentLabels[id],

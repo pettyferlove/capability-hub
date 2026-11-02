@@ -190,6 +190,7 @@ export class HubServices {
       this.content,
       config,
       new AgentEvidenceService(context, this.assetAccess, this.feedback),
+      this.publicationQueries,
     );
   }
 }
