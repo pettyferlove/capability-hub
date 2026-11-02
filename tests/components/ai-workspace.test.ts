@@ -57,7 +57,8 @@ for (const [description, canExecute, consoleAccess] of [
     t.after(() => history.replaceState(null, '', previous));
     const aiRequests: string[] = [];
     t.mock.method(globalThis, 'fetch', async (path: string) => {
-      if (path.startsWith('/api/ai/')) aiRequests.push(path);
+      if (path.startsWith('/api/ai/') || path.startsWith('/api/admin/operations/agents/'))
+        aiRequests.push(path);
       const url = new URL(path, 'http://localhost');
       switch (url.pathname) {
         case '/api/auth/status':
@@ -66,9 +67,9 @@ for (const [description, canExecute, consoleAccess] of [
           return Response.json(workspaceUser(canExecute, consoleAccess));
         case '/api/publication-requests':
           return Response.json({ items: [] });
-        case '/api/ai/catalog':
+        case '/api/admin/operations/agents/catalog':
           return Response.json({ default_profile: '', profiles: [], operations: [] });
-        case '/api/ai/executions':
+        case '/api/admin/operations/agents/executions':
           assert.equal(url.searchParams.get('view'), 'summary');
           return Response.json({
             items: [
@@ -115,7 +116,7 @@ for (const [description, canExecute, consoleAccess] of [
       assert(await records.findByRole('cell', { name: '林工' }));
       assert.equal(
         records.getByRole('link', { name: '下载 other-task 的 markdown' }).getAttribute('href'),
-        '/api/ai/executions/other-task/diagnostics?download=markdown',
+        '/api/admin/operations/agents/executions/other-task/diagnostics?download=markdown',
       );
     } else {
       assert(await screen.findByText('当前账号无权访问运营中心。'));
@@ -155,7 +156,7 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
     occurred_at: execution.created_at,
     data: { step_id: '检查', duration_ms: i },
   }));
-  const path = '/api/ai/executions/' + execution.id + '/diagnostics';
+  const path = '/api/admin/operations/agents/executions/' + execution.id + '/diagnostics';
   const latest = {
     ...view,
     execution: { ...execution, status: 'succeeded', last_seq: 43 },

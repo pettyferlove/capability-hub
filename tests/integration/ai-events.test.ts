@@ -153,7 +153,9 @@ for (const delivery of ['detail', 'events', 'diagnostics'] as const)
         return result;
       });
       const path =
-        `/api/ai/executions/${execution.id}` + (delivery === 'detail' ? '' : '/' + delivery);
+        delivery === 'diagnostics'
+          ? `/api/admin/operations/agents/executions/${execution.id}/diagnostics`
+          : `/api/ai/executions/${execution.id}` + (delivery === 'events' ? '/events' : '');
       const response = fetch(hub.origin + path, {
         headers: {
           Cookie: cookie,

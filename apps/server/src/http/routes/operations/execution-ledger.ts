@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { ExecutionRecord } from '@capability-hub/ai';
-import type { listAiExecutionsQuerySchema } from '@capability-hub/contracts';
+import type { agentExecutionLedgerQuerySchema } from '@capability-hub/contracts';
 import type { Principal } from '@capability-hub/domain/identity';
 import type { HttpContext } from '../../context.js';
 import { canInspect, encodeCursor, type ExecutionCursor } from '../ai-execution-page.js';
@@ -10,7 +10,7 @@ import { executionResponse } from '../ai-views.js';
 export async function executionLedgerPage(
   hub: HttpContext['hub'],
   principal: Principal,
-  query: z.infer<typeof listAiExecutionsQuerySchema>,
+  query: z.infer<typeof agentExecutionLedgerQuerySchema>,
   after?: ExecutionCursor,
 ) {
   const visible: { row: ExecutionRecord; ownerName: string; title: string }[] = [];

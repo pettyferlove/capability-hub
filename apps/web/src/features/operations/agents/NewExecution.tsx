@@ -1,5 +1,5 @@
 /**
- * 新建执行表单：从 `/api/ai/catalog` 得到的操作目录里选 `operation_id` 与模型档案，
+ * 新建执行表单：从运营中心的操作目录里选 `operation_id` 与模型档案，
  * 按该操作的 `input_schema` 收集输入，经 {@link useAiCommand} 向 `/api/ai/executions` 发起创建。
  *
  * 输入字段按 schema 属性推导：`prompt`/`topic` 之一作为主输入置于输入框正文，

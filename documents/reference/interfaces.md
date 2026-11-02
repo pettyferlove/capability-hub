@@ -95,4 +95,4 @@ OAuth 与个人手动令牌的生命周期分开，详见 [身份安全](../desi
 
 ## Agent 执行与业务任务
 
-`/api/ai` 提供操作目录、执行、人工交互与 SSE；详细请求、并发条件和事件协议见 [AI 接口](ai-interfaces.md)。
+`/api/ai` 提供业务历史、任务执行、人工交互与 SSE。`/api/admin/operations/agents` 提供操作目录、跨用户检索及诊断导出。请求和事件协议见 [AI 接口](ai-interfaces.md)。

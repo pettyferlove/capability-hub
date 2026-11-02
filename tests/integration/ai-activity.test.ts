@@ -62,7 +62,7 @@ test('诊断导出跨越活动窗口并标明缺口，交接材料只包含授�
   });
   assert((await runtime.view(row.id)).activity_truncated);
   const client = await signIn(f);
-  const path = '/api/ai/executions/' + row.id + '/diagnostics';
+  const path = '/api/admin/operations/agents/executions/' + row.id + '/diagnostics';
   const response = await client.get(path).query({ download: 'json' }).expect(200);
   const report = aiExecutionDiagnosticsResponseSchema.parse(response.body);
   assert.match(response.headers['content-disposition'], /attachment;.*\.json/);

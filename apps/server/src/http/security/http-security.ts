@@ -28,6 +28,15 @@ export class HttpSecurity {
     if (!raw) return;
     return await this.hub.sessions.find(raw);
   }
+  /** 共用执行和运营检查都要求当前有效的网页登录会话。 */
+  requireWebSession = async (req: Request, _res: Response, next: NextFunction) => {
+    try {
+      if (!(await this.session(req))) fail(401, 'UNAUTHENTICATED', '访问 AI 任务需要登录会话');
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
   /** 目录允许匿名访问；显式 Bearer 必须验证，过期的浏览器会话按匿名处理。 */
   optionalAuthenticate = async (req: Request, res: Response, next: NextFunction) => {
     try {

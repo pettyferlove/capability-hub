@@ -12,8 +12,6 @@ import { idempotencyKey, jsonRoute, withRevision } from '../response.js';
 import { executionResponse, executionView } from './ai-views.js';
 import { streamAiEvents } from './ai-events.js';
 import { canInspect, decodeCursor, encodeCursor } from './ai-execution-page.js';
-import { registerExecutionDiagnosticsRoute } from './operations/execution-diagnostics.js';
-import { executionLedgerPage } from './operations/execution-ledger.js';
 
 function revision(request: Pick<Request, 'get'>) {
   const value = request.get('If-Match');
@@ -25,7 +23,7 @@ function revision(request: Pick<Request, 'get'>) {
 }
 
 /**
- * Agent 执行记录与业务任务。整组先由 `/api/ai` 前置中间件要求登录会话（无会话 401 `UNAUTHENTICATED`），
+ * 业务任务与共用执行接口。整组先由 `/api/ai` 前置中间件要求登录会话（无会话 401 `UNAUTHENTICATED`），
  * 每条路由再用 `hub.ai.principal` 结合执行记录复核归属，越权按 `AI_FORBIDDEN`/`AI_NOT_FOUND` 处理，
  * 因此列表只输出调用者可见的执行。提交、取消、应答都走 `hub.idempotency.execute`：
  * 键来自 `Idempotency-Key`，请求体摘要参与去重，避免重试产生重复执行。
@@ -35,19 +33,7 @@ function revision(request: Pick<Request, 'get'>) {
 export function registerAiRoutes(app: Express, context: HttpContext) {
   const { hub, security } = context;
   const runtime = hub.ai.runtime;
-  app.use('/api/ai', (req, _res, next) => {
-    void security
-      .session(req)
-      .then((session) => {
-        if (!session) fail(401, 'UNAUTHENTICATED', '访问 AI 任务需要登录会话');
-        next();
-      })
-      .catch(next);
-  });
-  app.get(
-    '/api/ai/catalog',
-    jsonRoute((_req, res) => hub.ai.catalog(res.locals.principal)),
-  );
+  app.use('/api/ai', security.requireWebSession);
   app.get(
     '/api/ai/model-options',
     jsonRoute((_req, res) => hub.ai.modelOptions(res.locals.principal)),
@@ -82,12 +68,8 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
     '/api/ai/executions',
     jsonRoute(async (req, res) => {
       const query = listAiExecutionsQuerySchema.parse(req.query);
-      const businessTarget = query.version_id || query.feedback_id || query.publication_request_id;
-      const principal = businessTarget
-        ? await hub.ai.principal(res.locals.principal, undefined, true)
-        : await hub.ai.consolePrincipal(res.locals.principal);
+      const principal = await hub.ai.principal(res.locals.principal, undefined, true);
       const after = decodeCursor(query.cursor);
-      if (!businessTarget) return executionLedgerPage(hub, principal, query, after);
       const rows = await runtime.store.list('ai_executions', {
         owner_id: principal.id,
         status: query.status,
@@ -130,7 +112,6 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
       };
     }),
   );
-  registerExecutionDiagnosticsRoute(app, hub);
   app.get(
     '/api/ai/executions/:id',
     jsonRoute(async (req, res) => {

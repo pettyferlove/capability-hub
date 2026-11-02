@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   aiDiagnosticHandoffResponseSchema,
   aiExecutionDiagnosticsResponseSchema,
+  operationsAgentApi,
   type AiEventResponse,
 } from '@capability-hub/contracts';
 import { useQuery } from '../../../shared/api/use-query.js';
@@ -75,7 +76,7 @@ function HandoffPreview({ path }: { path: string }) {
 
 /** 屏幕固定在读取时的水位，运行产生的新事件由管理员显式刷新。 */
 export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWatermark: number }) {
-  const path = '/api/ai/executions/' + encodeURIComponent(id) + '/diagnostics';
+  const path = operationsAgentApi.diagnostics(id);
   const [refresh, setRefresh] = useState(0);
   const [category, setCategory] = useState('key');
   const [sequence, setSequence] = useState('');

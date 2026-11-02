@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { Express } from 'express';
-import { aiExecutionDiagnosticsResponseSchema } from '@capability-hub/contracts';
+import {
+  aiExecutionDiagnosticsResponseSchema,
+  operationsAgentApi,
+} from '@capability-hub/contracts';
 import type { AiRecordQuery, AiStore } from '@capability-hub/ai/ports';
 import type { AiRecordMap } from '@capability-hub/ai/records';
 import type { Principal } from '@capability-hub/domain/identity';
@@ -118,10 +121,10 @@ function executionDiagnostics(hub: HttpContext['hub'], actor: Principal, id: str
   });
 }
 
-/** 注册在 AI 会话校验之后，快照和导出共用执行检查权限。 */
+/** 诊断快照和导出均复查当前任务的读取权限。 */
 export function registerExecutionDiagnosticsRoute(app: Express, hub: HttpContext['hub']) {
   app.get(
-    '/api/ai/executions/:id/diagnostics',
+    operationsAgentApi.executions + '/:id/diagnostics',
     jsonRoute(async (req, res) => {
       const query = z
         .union([

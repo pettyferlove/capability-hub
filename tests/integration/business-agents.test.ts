@@ -498,7 +498,25 @@ test('反馈仅共享带自动分派标识的研判，协作者只读且两项�
   await colleague.get(path).expect(404);
 });
 
-test('控制台跨用户分页只列可读执行，业务面板仍只列本人的任务', async (t) => {
+test('业务历史必须指定资源，运营检索拒绝业务目标筛选', async (t) => {
+  const f = await createTestHub(t);
+  const admin = await signIn(f);
+  const versionId = randomUUID();
+  for (const query of [
+    {},
+    { view: 'summary' },
+    { q: '测试', version_id: versionId },
+    { version_id: versionId, operation_id: 'assistant' },
+  ])
+    await admin.get('/api/ai/executions').query(query).expect(422);
+  for (const target of ['version_id', 'feedback_id', 'publication_request_id'])
+    await admin
+      .get('/api/admin/operations/agents/executions')
+      .query({ [target]: versionId })
+      .expect(422);
+});
+
+test('运营中心跨用户分页只列可读执行，业务面板仍只列本人的任务', async (t) => {
   const f = await createTestHub(t);
   const intake = await receiveSkill(f);
   const request = await submitPublication(f, intake);
@@ -515,7 +533,7 @@ test('控制台跨用户分页只列可读执行，业务面板仍只列本人�
   await admin.get(`/api/ai/executions/${review.id}`).expect(403);
   const list = async (query: Record<string, string | number>) =>
     aiExecutionListResponseSchema.parse(
-      (await admin.get('/api/ai/executions').query(query).expect(200)).body,
+      (await admin.get('/api/admin/operations/agents/executions').query(query).expect(200)).body,
     );
   const first = await list({ limit: 1 });
   assert.equal(first.items.length, 1);
@@ -530,7 +548,8 @@ test('控制台跨用户分页只列可读执行，业务面板仍只列本人�
       [audit.id, f.reviewer.display_name],
     ]),
   );
-  assert.deepEqual((await list(target)).items, []);
+  const personal = await admin.get('/api/ai/executions').query(target).expect(200);
+  assert.deepEqual(aiExecutionListResponseSchema.parse(personal.body).items, []);
   assert.deepEqual(
     (
       await list({ q: f.reviewer.display_name, operation_id: 'resource-audit', status: 'queued' })
@@ -539,17 +558,29 @@ test('控制台跨用户分页只列可读执行，业务面板仍只列本人�
   );
   assert.deepEqual((await list({ q: review.id })).items, []);
   const summary = aiExecutionLedgerResponseSchema.parse(
-    (await admin.get('/api/ai/executions').query({ view: 'summary', q: '资源审计' }).expect(200))
-      .body,
+    (
+      await admin
+        .get('/api/admin/operations/agents/executions')
+        .query({ view: 'summary', q: '资源审计' })
+        .expect(200)
+    ).body,
   );
   assert.deepEqual(
     summary.items.map((item) => item.id),
     [audit.id],
   );
-  await admin.get(`/api/ai/executions/${audit.id}/diagnostics`).expect(200);
-  await admin.get(`/api/ai/executions/${review.id}/diagnostics?download=markdown`).expect(403);
+  await admin.get(`/api/admin/operations/agents/executions/${audit.id}/diagnostics`).expect(200);
+  await admin
+    .get(`/api/admin/operations/agents/executions/${review.id}/diagnostics?download=markdown`)
+    .expect(403);
   const reviewer = await signIn(f, f.reviewer.username);
-  await reviewer.get(`/api/ai/executions/${audit.id}/diagnostics?download=json`).expect(403);
+  await reviewer
+    .get(`/api/admin/operations/agents/executions/${audit.id}/diagnostics?download=json`)
+    .expect(403);
+  for (const path of ['/api/ai/catalog', `/api/ai/executions/${audit.id}/diagnostics`]) {
+    const removed = await admin.get(path).expect(404);
+    assert.equal(removed.body.error.code, 'NOT_FOUND');
+  }
 });
 
 test('团队维护者的上传自动排队，撤回目标团队授权后公开版本的任务也不可读', async (t) => {
@@ -562,8 +593,8 @@ test('团队维护者的上传自动排队，撤回目标团队授权后公开�
   const { capabilities } = (await client.get('/api/me').expect(200)).body;
   assert.equal(capabilities.can_ai, true);
   assert.equal(capabilities.can_ai_console, false);
-  await client.get('/api/ai/catalog').expect(403);
-  await client.get('/api/ai/executions').expect(403);
+  await client.get('/api/admin/operations/agents/catalog').expect(403);
+  await client.get('/api/admin/operations/agents/executions').expect(403);
   const { default_profile, profiles } = f.hub.ai.runtime.config;
   assert.deepEqual((await client.get('/api/ai/model-options').expect(200)).body, {
     default_profile,
@@ -1146,7 +1177,7 @@ test('审核简报绑定申请的基线和扫描，同版本扩大受众仍有�
   await f.store.insert('scans', { ...scan, id: randomUUID(), findings: [] });
   const client = await signIn(f, f.reviewer.username);
   await client.get('/api/ai/model-options').expect(200);
-  await client.get('/api/ai/catalog').expect(403);
+  await client.get('/api/admin/operations/agents/catalog').expect(403);
   const input = { publication_request_id: next.id };
   const key = randomUUID();
   const submit = () =>

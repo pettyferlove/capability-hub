@@ -83,6 +83,15 @@ test('Bearer 只访问消费接口，不能读取个人管理资料；失效凭�
   await client.get('/api/assets').expect(200);
   assertFailure(await client.get('/api/me/profile'), 403, 'TOKEN_SCOPE');
   assertFailure(await client.get('/api/admin/identity'), 403, 'TOKEN_SCOPE');
+  const guest = httpClient(fixture);
+  for (const path of [
+    '/api/admin/operations/agents/catalog',
+    '/api/admin/operations/agents/executions',
+    '/api/admin/operations/agents/executions/run/diagnostics',
+  ]) {
+    assertFailure(await guest.get(path), 401, 'UNAUTHENTICATED');
+    assertFailure(await client.get(path), 403, 'TOKEN_SCOPE');
+  }
   assertFailure(await client.post('/api/tokens').send({ name: '拒绝写入' }), 403, 'TOKEN_SCOPE');
   await fixture.hub.tokens.revoke(fixture.admin.id, sha256(token.token));
   assertFailure(await client.get('/api/assets'), 401, 'UNAUTHENTICATED');

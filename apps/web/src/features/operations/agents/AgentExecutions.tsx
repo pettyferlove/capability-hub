@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import { aiCatalogResponseSchema, type AiCatalogResponse } from '@capability-hub/contracts';
+import {
+  aiCatalogResponseSchema,
+  operationsAgentApi,
+  type AiCatalogResponse,
+} from '@capability-hub/contracts';
 import { api } from '../../../shared/api/client.js';
 import { useHub } from '../../../shared/context/HubContext.js';
 import { History, Plus } from '../../../shared/icons/lucide.js';
@@ -37,7 +41,7 @@ export function AgentExecutions({ query }: { query: string }) {
     if (!canExecute || listing) return;
     const controller = new AbortController();
     setCatalogError('');
-    void api('/api/ai/catalog', { signal: controller.signal })
+    void api(operationsAgentApi.catalog, { signal: controller.signal })
       .then((data) => {
         if (!controller.signal.aborted) setCatalog(aiCatalogResponseSchema.parse(data));
       })

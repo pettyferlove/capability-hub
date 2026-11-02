@@ -1,4 +1,5 @@
-import type { AiCatalogResponse, AiExecutionResponse } from '../../ai.js';
+import type { AiExecutionResponse } from '../../ai.js';
+import type { AiCatalogResponse } from './agents.js';
 
 interface StorageProbe {
   available: boolean;

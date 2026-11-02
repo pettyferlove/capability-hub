@@ -275,7 +275,8 @@ test('AI 协作演示经 HTTP 完成并行检查、人工确认与成果保存�
   assert.equal(result.body.execution.result.approved, true);
   assert.equal(result.body.artifacts.length, 2);
   const report = aiExecutionDiagnosticsResponseSchema.parse(
-    (await client.get(`/api/ai/executions/${id}/diagnostics`).expect(200)).body,
+    (await client.get(`/api/admin/operations/agents/executions/${id}/diagnostics`).expect(200))
+      .body,
   );
   assert.equal(report.model_calls.length, 3);
   assert(report.model_calls.every((call) => call.status === 'succeeded'));
@@ -358,10 +359,10 @@ test('AI 权限在读取和执行时重新校验，队列中的执行撤权后�
   const hub = await createTestHub(t, { ai: config(provider.url) });
   const owner = await signIn(hub);
   const reader = await signIn(hub, 'reader');
-  await reader.get('/api/ai/catalog').expect(403);
+  await reader.get('/api/admin/operations/agents/catalog').expect(403);
   await reader.get('/api/ai/model-options').expect(403);
   assert.equal((await owner.get('/api/me').expect(200)).body.capabilities.can_ai_console, true);
-  await owner.get('/api/ai/catalog').expect(200);
+  await owner.get('/api/admin/operations/agents/catalog').expect(200);
   const submit = () =>
     owner
       .post('/api/ai/executions')
@@ -414,8 +415,11 @@ test('平台维护者不能发起控制台任务，平台检查授权只开放�
   const client = await signIn(hub, reader.username);
   const capabilities = () => client.get('/api/me').expect(200);
   assert.equal((await capabilities()).body.capabilities.can_ai_console, false);
-  await client.get('/api/ai/catalog').expect(403);
-  await client.get('/api/ai/executions').query({ operation_id: 'resource-audit' }).expect(403);
+  await client.get('/api/admin/operations/agents/catalog').expect(403);
+  await client
+    .get('/api/admin/operations/agents/executions')
+    .query({ operation_id: 'resource-audit' })
+    .expect(403);
   const submit = (operation_id: string, input: Record<string, string>) =>
     client
       .post('/api/ai/executions')
@@ -434,11 +438,35 @@ test('平台维护者不能发起控制台任务，平台检查授权只开放�
   const { can_ai, can_ai_console } = (await capabilities()).body.capabilities;
   assert.equal(can_ai, false);
   assert.equal(can_ai_console, true);
-  await client.get('/api/ai/catalog').expect(200);
-  await client.get('/api/ai/executions').expect(200);
+  await client.get('/api/admin/operations/agents/catalog').expect(200);
+  await client.get('/api/admin/operations/agents/executions').expect(200);
   const row = await hub.hub.ai.runtime.submit(admin.id, 'assistant', { prompt: 'test' });
   await client.get(`/api/ai/executions/${row.id}`).expect(200);
   await submit('assistant', { prompt: 'test' }).expect(403);
+});
+
+test('平台审计权可读运营汇总，不能用来读取 Agent 目录、跨用户检索或诊断', async (t) => {
+  const f = await createTestHub(t);
+  const role = await f.hub.administration.createRole(f.admin, {
+    name: '运营审计',
+    permissions: ['audit:read'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  const auditor = await signIn(f, f.reader.username);
+  await auditor.get('/api/admin/operations').expect(200);
+  for (const path of [
+    '/api/admin/operations/agents/catalog',
+    '/api/admin/operations/agents/executions',
+    '/api/admin/operations/agents/executions/run/diagnostics',
+  ]) {
+    const denied = await auditor.get(path).expect(403);
+    assert.equal(denied.body.error.code, 'AI_FORBIDDEN');
+  }
 });
 
 test('AI 引用资源撤销后详情、列表与事件均不能继续披露派生内容', async (t) => {
@@ -463,14 +491,14 @@ test('AI 引用资源撤销后详情、列表与事件均不能继续披露派�
   await hub.worker.tick();
   await hub.worker.waitForIdle();
   assert.equal((await hub.hub.ai.runtime.get(row.id)).status, 'succeeded');
-  const before = await client.get('/api/ai/executions').expect(200);
+  const before = await client.get('/api/admin/operations/agents/executions').expect(200);
   assert.equal(before.body.items.length, 2);
   const asset = await hub.store.get('assets', publication.intake.asset_id);
   assert(asset);
   await hub.store.put('assets', { ...asset, lifecycle: 'blocked' });
   await client.get(`/api/ai/executions/${row.id}`).expect(403);
   await client.get(`/api/ai/executions/${row.id}/events`).expect(403);
-  const after = await client.get('/api/ai/executions').expect(200);
+  const after = await client.get('/api/admin/operations/agents/executions').expect(200);
   assert.deepEqual(after.body.items, []);
 });
 

@@ -17,5 +17,6 @@ export * from './hub-installation.js';
 export * from './feedback.js';
 export * from './connections.js';
 export * from './ai.js';
+export * from './http/operations/agents.js';
 export * from './http/operations/token-usage.js';
 export * from './http/operations/resource-activity.js';

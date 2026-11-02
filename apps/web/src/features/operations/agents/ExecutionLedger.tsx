@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { aiExecutionLedgerResponseSchema } from '@capability-hub/contracts';
+import { operationsAgentApi, aiExecutionLedgerResponseSchema } from '@capability-hub/contracts';
 import { useQuery } from '../../../shared/api/use-query.js';
 import { SelectField } from '../../../shared/components/SelectField.js';
 import { operationsHref } from '../navigation.js';
@@ -32,7 +32,7 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
   const cursor = cursors.at(-1);
   if (cursor) params.set('cursor', cursor);
   const query = useQuery<unknown>(
-    active ? '/api/ai/executions?' + params.toString() : null,
+    active ? operationsAgentApi.executions + '?' + params.toString() : null,
     refresh,
   );
   const parsed = useMemo(
@@ -161,12 +161,7 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
                             <a
                               key={format}
                               download
-                              href={
-                                '/api/ai/executions/' +
-                                encodeURIComponent(row.id) +
-                                '/diagnostics?download=' +
-                                format
-                              }
+                              href={operationsAgentApi.diagnostics(row.id) + '?download=' + format}
                               aria-label={'下载 ' + row.id + ' 的 ' + format}
                             >
                               {format === 'markdown' ? 'Markdown' : 'JSON'}
