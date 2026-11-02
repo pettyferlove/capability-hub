@@ -37,6 +37,7 @@ function renderBusinessPanel(props: Parameters<typeof BusinessAgentPanel>[0]) {
             features: { git_hosts: [] },
             capabilities: {
               can_ai: true,
+              can_ai_console: false,
               can_admin: false,
               can_audit: false,
               can_publish: true,
@@ -124,11 +125,10 @@ test('状态条接收实时活动，快速采纳复用人工意见，失败可�
       };
       return Response.json({});
     }
-    if (path === '/api/ai/catalog')
+    if (path === '/api/ai/model-options')
       return Response.json({
         default_profile: 'primary',
-        profiles: [{ id: 'primary', label: '模型', format: 'openai', model: 'fixture' }],
-        operations: [],
+        profiles: [{ id: 'primary', label: '模型' }],
       });
     if (path.startsWith('/api/ai/executions?'))
       return Response.json({ items: [view.execution], next_cursor: null });
@@ -336,8 +336,8 @@ test('维护者从反馈详情打开同事的自动研判能看负责人和报�
   ];
   t.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
     assert.equal(options.method ?? 'GET', 'GET');
-    if (path === '/api/ai/catalog')
-      return Response.json({ default_profile: '', profiles: [], operations: [] });
+    if (path === '/api/ai/model-options')
+      return Response.json({ default_profile: '', profiles: [] });
     if (path.startsWith('/api/ai/executions?'))
       return Response.json({
         items: [],

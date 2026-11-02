@@ -186,6 +186,7 @@ function feedbackPage(canAi = false) {
           groups: [],
           capabilities: {
             can_ai: canAi,
+            can_ai_console: false,
             can_admin: false,
             can_publish: false,
             can_review: false,
@@ -311,11 +312,10 @@ test('已采纳研判填入空白草稿，保留手工修改，尚未保存时�
     if (path.includes('/feedback?page=')) return Response.json({ items: [record], total: 1 });
     if (path === '/api/feedback/' + record.id) return Response.json(record);
     if (path.endsWith('/versions')) return Response.json([]);
-    if (path === '/api/ai/catalog')
+    if (path === '/api/ai/model-options')
       return Response.json({
         default_profile: 'primary',
-        profiles: [{ id: 'primary', label: '模型', format: 'openai', model: 'fixture' }],
-        operations: [],
+        profiles: [{ id: 'primary', label: '模型' }],
       });
     if (path.includes('/ai/executions?'))
       return Response.json({ items: [execution], next_cursor: null });

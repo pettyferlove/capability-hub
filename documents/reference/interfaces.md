@@ -85,6 +85,6 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 
 OAuth 与个人手动令牌的生命周期分开，详见 [身份安全](../design/identity-security.md#agent-oauth-连接)。
 
-## AI 工作台
+## AI 控制台与业务任务
 
 `/api/ai` 提供操作目录、执行、人工交互与 SSE；详细请求、并发条件和事件协议见 [AI 接口](ai-interfaces.md)。

@@ -346,24 +346,86 @@ test('AI 权限在读取和执行时重新校验，队列中的执行撤权后�
   const owner = await signIn(hub);
   const reader = await signIn(hub, 'reader');
   await reader.get('/api/ai/catalog').expect(403);
-  const result = await owner
-    .post('/api/ai/executions')
-    .set('Idempotency-Key', 'revoke')
-    .send({ operation_id: 'assistant', input: { prompt: 'test' } })
-    .expect(201);
+  await reader.get('/api/ai/model-options').expect(403);
+  assert.equal((await owner.get('/api/me').expect(200)).body.capabilities.can_ai_console, true);
+  await owner.get('/api/ai/catalog').expect(200);
+  const submit = () =>
+    owner
+      .post('/api/ai/executions')
+      .set('Idempotency-Key', 'revoke')
+      .send({ operation_id: 'assistant', input: { prompt: 'test' } });
+  const result = await submit().expect(201);
   await reader.get(`/api/ai/executions/${String(result.body.id)}`).expect(403);
   const role = await hub.store.find('roles', 'key', 'admin');
   assert(role);
   await hub.store.put('roles', {
     ...role,
-    permissions: role.permissions.filter((permission) => !permission.startsWith('ai:')),
+    permissions: role.permissions.filter((permission) => permission !== 'ai:inspect'),
   });
+  await submit().expect(403);
+  await owner.get(`/api/ai/executions/${String(result.body.id)}`).expect(403);
+  await owner.get(`/api/ai/executions/${String(result.body.id)}/events`).expect(403);
   await hub.worker.tick();
   await hub.worker.waitForIdle();
   const row = await hub.hub.ai.runtime.get(String(result.body.id));
   assert.equal(row.status, 'failed');
   assert.equal(row.payload.error?.code, 'AI_FORBIDDEN');
   assert.equal(provider.requests.length, 0);
+});
+
+test('平台维护者不能发起控制台任务，平台检查授权只开放读取', async (t) => {
+  const hub = await createTestHub(t, { ai: config() });
+  const maintainerRole = await hub.store.find('roles', 'key', 'maintainer');
+  assert(maintainerRole);
+  const {
+    hub: { administration },
+    admin,
+    reader,
+  } = hub;
+  const grant = await administration.grantRole(admin, {
+    principal_id: reader.id,
+    role_id: maintainerRole.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  const inspect = await administration.createRole(admin, {
+    name: 'AI 检查',
+    permissions: ['ai:inspect'],
+  });
+  await administration.grantRole(admin, {
+    principal_id: reader.id,
+    role_id: inspect.id,
+    scope_type: 'team',
+    scope_id: hub.teamId,
+  });
+  const client = await signIn(hub, reader.username);
+  const capabilities = () => client.get('/api/me').expect(200);
+  assert.equal((await capabilities()).body.capabilities.can_ai_console, false);
+  await client.get('/api/ai/catalog').expect(403);
+  await client.get('/api/ai/executions').query({ operation_id: 'resource-audit' }).expect(403);
+  const submit = (operation_id: string, input: Record<string, string>) =>
+    client
+      .post('/api/ai/executions')
+      .set('Idempotency-Key', operation_id)
+      .send({ operation_id, input });
+  await submit('assistant', { prompt: 'test' }).expect(403);
+  await submit('agent-lab', { topic: 'test' }).expect(403);
+
+  await administration.removeGrant(admin, 'role_bindings', grant.id);
+  await administration.grantRole(admin, {
+    principal_id: reader.id,
+    role_id: inspect.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  const { can_ai, can_ai_console } = (await capabilities()).body.capabilities;
+  assert.equal(can_ai, false);
+  assert.equal(can_ai_console, true);
+  await client.get('/api/ai/catalog').expect(200);
+  await client.get('/api/ai/executions').expect(200);
+  const row = await hub.hub.ai.runtime.submit(admin.id, 'assistant', { prompt: 'test' });
+  await client.get(`/api/ai/executions/${row.id}`).expect(200);
+  await submit('assistant', { prompt: 'test' }).expect(403);
 });
 
 test('AI 引用资源撤销后详情、列表与事件均不能继续披露派生内容', async (t) => {

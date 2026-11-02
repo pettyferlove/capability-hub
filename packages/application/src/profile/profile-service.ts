@@ -49,6 +49,7 @@ export class ProfileService {
         .map(({ id, name }) => ({ id, name })),
       capabilities: {
         can_ai: hasInAnyScope(principal, 'ai:execute'),
+        can_ai_console: has(principal, 'ai:inspect'),
         can_admin: has(principal, 'identity:manage'),
         can_audit: has(principal, 'audit:read'),
         can_manage_assets: has(principal, 'asset:lifecycle'),

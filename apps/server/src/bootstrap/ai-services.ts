@@ -23,6 +23,13 @@ import type { ServerConfig } from '../config/server-config.js';
 
 const businessOperations = new Set(['resource-audit', 'feedback-triage']);
 
+function requireAiConsole(principal: Principal, execute = false) {
+  if (!has(principal, 'ai:inspect'))
+    throw new AiError('AI_FORBIDDEN', '当前账号无权访问 AI 控制台');
+  if (execute && !has(principal, 'ai:execute'))
+    throw new AiError('AI_FORBIDDEN', '当前账号无权执行平台级 AI 操作');
+}
+
 function automaticTriageKey(feedbackId: string) {
   return `feedback-triage:auto:${feedbackId}`;
 }
@@ -50,7 +57,6 @@ export class HubAiServices {
   ) {
     const aiStore = createAiStore(store);
     this.recheckResources = async (principal, execution, mode = 'execute') => {
-      let scope: ReturnType<AssetAccessService['assetContext']> | undefined;
       if (businessOperations.has(execution.payload.operation_id)) {
         const input = execution.payload.input;
         if (
@@ -61,7 +67,6 @@ export class HubAiServices {
         )
           throw new AiError('AI_CONFIGURATION', '业务目标不完整');
         const { asset } = await evidence.version(principal.id, input.version_id, false);
-        scope = access.assetContext(asset);
         if (execution.payload.operation_id === 'feedback-triage') {
           if (typeof input.feedback_id !== 'string')
             throw new AiError('AI_CONFIGURATION', '反馈目标不完整');
@@ -71,12 +76,14 @@ export class HubAiServices {
           if (mode === 'shared-feedback' && !feedback.can_manage)
             throw new AiError('AI_FORBIDDEN', '无权查看该反馈的共享研判');
         }
+        if (
+          !has(principal, 'ai:execute', access.assetContext(asset)) &&
+          !(mode === 'inspect' && has(principal, 'ai:inspect'))
+        )
+          throw new AiError('AI_FORBIDDEN', '当前账号无权在此范围执行 AI 操作');
+      } else {
+        requireAiConsole(principal, mode !== 'inspect');
       }
-      if (
-        !has(principal, 'ai:execute', scope) &&
-        !(mode === 'inspect' && has(principal, 'ai:inspect'))
-      )
-        throw new AiError('AI_FORBIDDEN', '当前账号无权在此范围执行 AI 操作');
       for (const artifact of await aiStore.list('ai_artifacts', {
         execution_id: execution.id,
         limit: 1000,
@@ -157,12 +164,31 @@ export class HubAiServices {
       config.ai,
     );
   }
-  async catalog(principal: Principal) {
+  async consolePrincipal(principal: Principal) {
+    const fresh = await this.identity.principal(principal.id);
+    requireAiConsole(fresh);
+    return fresh;
+  }
+
+  async submissionPrincipal(principal: Principal, operationId: string) {
     const fresh = await this.principal(principal);
+    if (!businessOperations.has(operationId)) requireAiConsole(fresh, true);
+    return fresh;
+  }
+
+  async catalog(principal: Principal) {
+    const fresh = await this.consolePrincipal(principal);
     const catalog = this.runtime.catalog();
-    if (!has(fresh, 'ai:execute'))
+    if (!hasInAnyScope(fresh, 'ai:execute')) catalog.operations = [];
+    else if (!has(fresh, 'ai:execute'))
       catalog.operations = catalog.operations.filter((item) => businessOperations.has(item.id));
     return catalog;
+  }
+
+  async modelOptions(principal: Principal) {
+    await this.principal(principal);
+    const { default_profile, profiles } = this.runtime.config;
+    return { default_profile, profiles: profiles.map(({ id, label }) => ({ id, label })) };
   }
 
   async autoTriage(version: VersionRecord, feedbackId: string) {
@@ -290,7 +316,7 @@ export class HubAiServices {
   async principal(principal: Principal, execution?: ExecutionRecord, inspect = false) {
     const fresh = await this.identity.principal(principal.id);
     if (!hasInAnyScope(fresh, 'ai:execute') && !(inspect && has(fresh, 'ai:inspect')))
-      throw new AiError('AI_FORBIDDEN', '当前账号无权访问 AI 工作台');
+      throw new AiError('AI_FORBIDDEN', '当前账号无权访问 AI 任务');
     if (execution && execution.owner_id !== fresh.id && !(inspect && has(fresh, 'ai:inspect'))) {
       if (inspect && (await this.canReadSharedTriage(fresh, execution))) return fresh;
       throw new AiError('AI_NOT_FOUND', 'AI 执行不存在');

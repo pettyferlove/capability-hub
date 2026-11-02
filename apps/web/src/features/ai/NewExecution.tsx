@@ -69,18 +69,15 @@ const examples: Record<string, { title: string; prompt: string }[]> = {
 };
 
 /**
- * 新建表单：切换任务类型会重置输入为对应 schema 的初始值；无可用模型档案或无 `canExecute` 时
+ * 新建表单：切换任务类型会重置输入为对应 schema 的初始值；无可用模型档案或操作时
  * 提交按钮禁用，创建成功后把新执行 id 交给 `onCreated`，由页面跳转到详情。
  * 在输入框内按 ⌘/Ctrl + Enter 等同提交，仍经过表单原生校验。
  */
 export function NewExecution({
   catalog,
-  canExecute,
   onCreated,
 }: {
   catalog: AiCatalogResponse;
-  /** 是否持有 `can_ai`；为假时仅浏览，无法提交。 */
-  canExecute: boolean;
   /** 创建成功后回传执行 id，页面据此导航到 `?execution=`。 */
   onCreated: (id: string) => void;
 }) {
@@ -102,9 +99,9 @@ export function NewExecution({
       ? 'topic'
       : undefined;
   const advanced = fields.filter((key) => key !== primary && key !== 'require_approval');
-  const ready = !!profile && !!definition && canExecute;
+  const ready = !!profile && !!definition;
   const submit = async () => {
-    if (busy) return;
+    if (busy || !ready) return;
     setBusy(true);
     setError('');
     try {

@@ -33,6 +33,7 @@ function page(child: ReactNode) {
           groups: [{ id: 'team', name: '工程团队' }],
           capabilities: {
             can_ai: false,
+            can_ai_console: false,
             can_admin: false,
             can_audit: false,
             can_publish: true,

@@ -15,6 +15,7 @@ export interface MeResponse {
   /** 由角色与作用域推导的能力开关，不等同于 RBAC 权限名。 */
   capabilities: {
     can_ai: boolean;
+    can_ai_console: boolean;
     can_admin: boolean;
     can_audit: boolean;
     can_manage_assets?: boolean;

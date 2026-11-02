@@ -22,7 +22,7 @@ function revision(request: Pick<Request, 'get'>) {
 }
 
 /**
- * AI 工作台。整组先由 `/api/ai` 前置中间件要求登录会话（无会话 401 `UNAUTHENTICATED`），
+ * AI 控制台与业务任务。整组先由 `/api/ai` 前置中间件要求登录会话（无会话 401 `UNAUTHENTICATED`），
  * 每条路由再用 `hub.ai.principal` 结合执行记录复核归属，越权按 `AI_FORBIDDEN`/`AI_NOT_FOUND` 处理，
  * 因此列表只输出调用者可见的执行。提交、取消、应答都走 `hub.idempotency.execute`：
  * 键来自 `Idempotency-Key`，请求体摘要参与去重，避免重试产生重复执行。
@@ -36,7 +36,7 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
     void security
       .session(req)
       .then((session) => {
-        if (!session) fail(401, 'UNAUTHENTICATED', 'AI 工作台需要登录会话');
+        if (!session) fail(401, 'UNAUTHENTICATED', '访问 AI 任务需要登录会话');
         next();
       })
       .catch(next);
@@ -45,11 +45,15 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
     '/api/ai/catalog',
     jsonRoute((_req, res) => hub.ai.catalog(res.locals.principal)),
   );
+  app.get(
+    '/api/ai/model-options',
+    jsonRoute((_req, res) => hub.ai.modelOptions(res.locals.principal)),
+  );
   app.post(
     '/api/ai/executions',
     jsonRoute(async (req, res) => {
       const input = submitAiExecutionRequestSchema.parse(req.body);
-      const principal = await hub.ai.principal(res.locals.principal);
+      const principal = await hub.ai.submissionPrincipal(res.locals.principal, input.operation_id);
       const result = await hub.idempotency.execute(
         principal,
         'ai.execute',
@@ -72,8 +76,11 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
   app.get(
     '/api/ai/executions',
     jsonRoute(async (req, res) => {
-      const principal = await hub.ai.principal(res.locals.principal);
       const query = listAiExecutionsQuerySchema.parse(req.query);
+      const principal =
+        query.version_id || query.feedback_id
+          ? await hub.ai.principal(res.locals.principal, undefined, true)
+          : await hub.ai.consolePrincipal(res.locals.principal);
       let after: { position: number; id: string } | undefined;
       if (query.cursor) {
         let data: unknown;

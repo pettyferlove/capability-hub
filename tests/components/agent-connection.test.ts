@@ -27,6 +27,7 @@ test('接入页切换 Agent 后同时更新 MCP 配置、CLI 客户端和 Skill 
       groups: [],
       capabilities: {
         can_ai: false,
+        can_ai_console: false,
         can_admin: false,
         can_audit: false,
         can_publish: false,

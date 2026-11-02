@@ -8,6 +8,7 @@ import {
 } from './styles.js';
 import { dangerTextStyles, noticeErrorStyles } from '../shared/styles/recipes.js';
 import {
+  Bot,
   ChevronDown,
   KeyRound,
   LogOut,
@@ -64,6 +65,12 @@ export function AvatarMenu() {
               <MenuItem href="/account?tab=identity" textValue="团队与权限">
                 <Settings2 size={16} />
                 <span>团队与权限</span>
+              </MenuItem>
+            )}
+            {me?.capabilities.can_ai_console && (
+              <MenuItem href="/ai" textValue="AI 控制台">
+                <Bot size={16} />
+                <span>AI 控制台</span>
               </MenuItem>
             )}
             <Separator />

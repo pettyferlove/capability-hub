@@ -36,7 +36,7 @@ Compose 专用变量包括 CAPABILITY_HUB_IMAGE、POSTGRES_IMAGE、MINIO_IMAGE�
 
 ## AI 配置
 
-`CAPABILITY_HUB_AI_CONFIG` 指向 UTF-8 JSON 文件，相对路径基于工作区根目录；未设置时模型列表为空，AI 工作台不能发起执行。复制仓库根目录的 [ai.config.example.json](../../ai.config.example.json) 到 `.data/ai-config.json`，按实际服务调整 API 前缀、model 和 `credential_ref`，再配置：
+`CAPABILITY_HUB_AI_CONFIG` 指向 UTF-8 JSON 文件，相对路径基于工作区根目录。未设置时模型列表为空，无法发起 AI 任务。复制仓库根目录的 [ai.config.example.json](../../ai.config.example.json) 到 `.data/ai-config.json`，按实际服务调整 API 前缀、model 和 `credential_ref`。
 
 ```dotenv
 CAPABILITY_HUB_AI_CONFIG=.data/ai-config.json

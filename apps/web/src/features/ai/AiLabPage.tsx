@@ -1,10 +1,10 @@
 /**
- * AI 工作台页面：左侧任务记录（游标分页 + 本地筛选），右侧按 `?execution=` 切换执行详情，
- * 无选中执行时展示 {@link NewExecution} 新建表单。
+ * AI 控制台页面：左侧任务记录（游标分页 + 本地筛选），右侧按 `?execution=` 切换执行详情，
+ * 有执行权限且未选中任务时展示 {@link NewExecution} 新建表单。
  *
  * 数据来源：`/api/ai/catalog` 与 `/api/ai/executions`（游标分页，翻页结果按执行 id 去重合并），
  * 已选执行的实时进度由 {@link useAiExecution} 的 SSE 事件流维护；
- * 契约 schema 来自 `@capability-hub/contracts`。`can_ai` 缺失时仅提示，不阻断历史浏览。
+ * 契约 schema 来自 `@capability-hub/contracts`。只读账号可以通过记录或链接查看任务。
  */
 import { useEffect, useState } from 'react';
 import {
@@ -70,6 +70,7 @@ const historyTones: Record<AiExecutionResponse['status'], string> = {
  */
 export default function AiLabPage({ query }: { query: string }) {
   const { me } = useHub();
+  const canExecute = !!me?.capabilities.can_ai;
   const selected = new URLSearchParams(query).get('execution') ?? '';
   const [catalog, setCatalog] = useState<AiCatalogResponse>();
   const [history, setHistory] = useState<AiExecutionResponse[]>([]);
@@ -84,6 +85,7 @@ export default function AiLabPage({ query }: { query: string }) {
   const execution = useAiExecution(selected, refresh);
   const currentView = execution.view?.execution.id === selected ? execution.view : undefined;
   useEffect(() => {
+    if (!canExecute) return;
     const controller = new AbortController();
     void api('/api/ai/catalog', { signal: controller.signal })
       .then((data) => setCatalog(aiCatalogResponseSchema.parse(data)))
@@ -92,7 +94,7 @@ export default function AiLabPage({ query }: { query: string }) {
           setError(failure instanceof Error ? failure.message : '加载失败');
       });
     return () => controller.abort();
-  }, []);
+  }, [canExecute]);
   useEffect(() => {
     const controller = new AbortController();
     void api('/api/ai/executions', { signal: controller.signal })
@@ -157,9 +159,9 @@ export default function AiLabPage({ query }: { query: string }) {
   return (
     <div className={fillStyles}>
       <PageHead
-        eyebrow="EXPLORE, COLLABORATE, DECIDE"
-        title="AI 工作台"
-        description="体验 Agent 的实时输出、工具调用与多角色协作，参与关键决策。"
+        eyebrow="AI CONSOLE"
+        title="AI 控制台"
+        description="查看自己的任务记录、执行进度和待确认事项。"
         action={
           <button
             type="button"
@@ -173,11 +175,6 @@ export default function AiLabPage({ query }: { query: string }) {
           </button>
         }
       />
-      {!me?.capabilities.can_ai && (
-        <p role="alert" className="mb-3 text-danger">
-          当前账号没有 AI 执行权限。
-        </p>
-      )}
       <div className={workspaceStyles}>
         <aside
           id="ai-history"
@@ -195,14 +192,16 @@ export default function AiLabPage({ query }: { query: string }) {
                 {cursor ? '+' : ''}
               </span>
             </div>
-            <button
-              type="button"
-              className={cn(btnStyles, btnPrimaryStyles, 'w-full')}
-              onClick={newTask}
-            >
-              <Plus size={15} />
-              新建任务
-            </button>
+            {canExecute && (
+              <button
+                type="button"
+                className={cn(btnStyles, btnPrimaryStyles, 'w-full')}
+                onClick={newTask}
+              >
+                <Plus size={15} />
+                新建任务
+              </button>
+            )}
             <label className="relative">
               <span className="sr-only">筛选已加载的任务</span>
               <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-ink">
@@ -308,9 +307,7 @@ export default function AiLabPage({ query }: { query: string }) {
                 <span className="mx-auto mb-3 grid size-11 place-items-center rounded-2xl bg-paper ring-1 ring-inset ring-[color:var(--line)]">
                   <Workflow size={20} className="opacity-70" />
                 </span>
-                <p className="font-medium text-ink">
-                  {filter ? '没有匹配的任务' : '从第一个任务开始'}
-                </p>
+                <p className="font-medium text-ink">{filter ? '没有匹配的任务' : '暂无任务记录'}</p>
                 <p className="mt-1 text-caption">
                   {filter
                     ? '试试其他关键词，或加载更早记录。'
@@ -354,15 +351,15 @@ export default function AiLabPage({ query }: { query: string }) {
               {error || execution.error}
             </p>
           )}
-          {!selected && catalog && (
-            <NewExecution
-              key={draft}
-              catalog={catalog}
-              canExecute={!!me?.capabilities.can_ai}
-              onCreated={openExecution}
-            />
+          {!selected && !canExecute && (
+            <p role="status" className="m-auto p-6 text-center text-muted-ink">
+              当前账号具有只读权限，可从任务记录或执行链接查看详情。
+            </p>
           )}
-          {((!selected && !catalog && !error) ||
+          {!selected && catalog && canExecute && (
+            <NewExecution key={draft} catalog={catalog} onCreated={openExecution} />
+          )}
+          {((!selected && canExecute && !catalog && !error) ||
             (selected && !currentView && !execution.error)) && (
             <div
               role="status"
@@ -378,7 +375,11 @@ export default function AiLabPage({ query }: { query: string }) {
             <ExecutionPanel
               key={selected}
               view={currentView}
-              canManage={me?.id === currentView.execution.owner_id && !!me.capabilities.can_ai}
+              canManage={
+                me?.id === currentView.execution.owner_id &&
+                canExecute &&
+                !!catalog?.operations.some((item) => item.id === currentView.execution.operation_id)
+              }
               connection={execution.connection}
               onRefresh={() => setRefresh((value) => value + 1)}
             />

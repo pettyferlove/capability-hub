@@ -36,12 +36,11 @@ const navigation = [
   { id: 'publish', label: '发布', icon: UploadCloud },
   { id: 'review', label: '审核', icon: ShieldCheck },
   { id: 'connect', label: '接入 Agent', icon: Bot },
-  { id: 'ai', label: 'AI 工作台', icon: Bot },
 ] as const;
 
 /**
  * 顶栏：品牌、主导航、命令面板入口、主题与账号入口。
- * 导航项按登录状态与能力裁剪（未登录只留目录与接入，无 AI 能力则隐藏 AI 工作台），
+ * 导航项按登录状态裁剪（未登录只留目录与接入），
  * 因此传入的 `page` 可能对应一个当前不可见的导航项。
  */
 export function AppHeader({
@@ -94,7 +93,6 @@ export function AppHeader({
         <nav className={headerNavStyles} aria-label="主导航">
           {navigation
             .filter((item) => me || item.id === 'discover' || item.id === 'connect')
-            .filter((item) => item.id !== 'ai' || me?.capabilities.can_ai)
             .map((item) => (
               <a
                 key={item.id}

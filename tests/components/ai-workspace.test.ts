@@ -2,13 +2,85 @@ import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { createElement, useState } from 'react';
-import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  within,
+} from '@testing-library/react';
+import { userEvent } from '@testing-library/user-event';
 import { aiExecutionViewResponseSchema, aiEventResponseSchema } from '@capability-hub/contracts';
+import type { MeResponse } from '@capability-hub/contracts/http';
+import App from '../../apps/web/src/app/App.js';
 import { applyAiEvent, useAiExecution } from '../../apps/web/src/features/ai/use-ai-execution.js';
 import { useAiCommand } from '../../apps/web/src/features/ai/use-ai-command.js';
 import { SchemaFields, initialValues } from '../../apps/web/src/features/ai/SchemaFields.js';
 
 afterEach(cleanup);
+
+for (const [description, canExecute, consoleAccess] of [
+  ['向维护者隐藏并拒绝执行深链', true, false],
+  ['通过个人菜单访问', true, true],
+  ['向只有检查权限的账号提供只读界面', false, true],
+] as const)
+  test(`AI 控制台${description}`, async (t) => {
+    const previous = location.href;
+    history.replaceState(null, '', consoleAccess ? '/ai' : '/ai?execution=private');
+    t.after(() => history.replaceState(null, '', previous));
+    const aiRequests: string[] = [];
+    t.mock.method(globalThis, 'fetch', async (path: string) => {
+      if (path.startsWith('/api/ai/')) aiRequests.push(path);
+      switch (path) {
+        case '/api/auth/status':
+          return Response.json({ initialized: true });
+        case '/api/me':
+          return Response.json({
+            id: 'owner',
+            display_name: '用户',
+            username: 'owner',
+            auth_provider: 'local',
+            groups: [],
+            features: { git_hosts: [] },
+            csrf_token: '',
+            capabilities: {
+              can_ai: canExecute,
+              can_ai_console: consoleAccess,
+              can_admin: false,
+              can_audit: false,
+              can_publish: canExecute,
+              can_review: false,
+            },
+          } satisfies MeResponse);
+        case '/api/publication-requests':
+          return Response.json({ items: [] });
+        case '/api/ai/catalog':
+          return Response.json({ default_profile: '', profiles: [], operations: [] });
+        case '/api/ai/executions':
+          return Response.json({ items: [], next_cursor: null });
+        default:
+          throw new Error('意外请求 ' + path);
+      }
+    });
+    render(createElement(App));
+    if (consoleAccess && canExecute) {
+      assert(await screen.findByRole('button', { name: '新建任务' }));
+    } else if (consoleAccess) {
+      assert(await screen.findByText('当前账号具有只读权限，可从任务记录或执行链接查看详情。'));
+      assert.equal(screen.queryByRole('button', { name: '新建任务' }), null);
+    } else {
+      assert(await screen.findByText('当前账号无权访问 AI 控制台。'));
+      assert.deepEqual(aiRequests, []);
+    }
+    assert.equal(document.querySelector('nav a[href="/ai"]'), null);
+    await userEvent.setup().click(screen.getByRole('button', { name: '个人菜单' }));
+    const menu = await screen.findByRole('menu');
+    const item = within(menu).queryByRole('menuitem', { name: 'AI 控制台' });
+    assert.equal(item?.getAttribute('href') ?? null, consoleAccess ? '/ai' : null);
+  });
+
 test('AI UI 按块和 UTF-16 偏移应用增量，去重并拒绝跨执行与缺口', () => {
   const now = new Date().toISOString();
   const view = aiExecutionViewResponseSchema.parse({

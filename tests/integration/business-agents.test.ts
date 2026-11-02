@@ -6,7 +6,6 @@ import { test } from 'node:test';
 import { AgentEvidenceService } from '@capability-hub/application';
 import { AiError } from '@capability-hub/ai';
 import {
-  aiCatalogResponseSchema,
   aiExecutionListResponseSchema,
   assetFeedbackRequestSchema,
 } from '@capability-hub/contracts';
@@ -304,12 +303,12 @@ test('反馈仅共享带自动分派标识的研判，协作者只读且两项�
   const privateRun = await runtime.submit(f.admin.id, 'feedback-triage', target);
   const ownRun = await runtime.submit(f.reviewer.id, 'feedback-triage', target);
   const colleague = await signIn(f, f.reviewer.username);
-  const list = async (client: typeof colleague, query = {}) =>
+  const list = async (client: typeof colleague, query: Record<string, unknown>) =>
     aiExecutionListResponseSchema.parse(
       (await client.get('/api/ai/executions').query(query).expect(200)).body,
     );
   const path = `/api/ai/executions/${automatic.id}`;
-  const personal = await list(colleague);
+  const personal = await list(colleague, { version_id: intake.version_id });
   assert.deepEqual(
     personal.items.map((item) => item.id),
     [ownRun.id],
@@ -390,14 +389,16 @@ test('团队维护者的上传自动排队，撤回目标团队授权后公开�
   const asUploader = { ...f, admin: uploader };
   const intake = await receiveSkill(asUploader);
   const client = await signIn(f, uploader.username);
-  assert.equal((await client.get('/api/me').expect(200)).body.capabilities.can_ai, true);
-  const catalog = aiCatalogResponseSchema.parse(
-    (await client.get('/api/ai/catalog').expect(200)).body,
-  );
-  assert.deepEqual(catalog.operations.map((item) => item.id).sort(), [
-    'feedback-triage',
-    'resource-audit',
-  ]);
+  const { capabilities } = (await client.get('/api/me').expect(200)).body;
+  assert.equal(capabilities.can_ai, true);
+  assert.equal(capabilities.can_ai_console, false);
+  await client.get('/api/ai/catalog').expect(403);
+  await client.get('/api/ai/executions').expect(403);
+  const { default_profile, profiles } = f.hub.ai.runtime.config;
+  assert.deepEqual((await client.get('/api/ai/model-options').expect(200)).body, {
+    default_profile,
+    profiles: profiles.map(({ id, label }) => ({ id, label })),
+  });
   const list = async () =>
     aiExecutionListResponseSchema.parse(
       (await client.get('/api/ai/executions').query({ version_id: intake.version_id }).expect(200))

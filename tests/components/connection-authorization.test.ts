@@ -18,6 +18,7 @@ const state: HubState = {
     groups: [],
     capabilities: {
       can_ai: false,
+      can_ai_console: false,
       can_admin: false,
       can_audit: false,
       can_publish: false,

@@ -15,10 +15,10 @@ import {
   type CSSProperties,
 } from 'react';
 import {
-  aiCatalogResponseSchema,
+  aiModelOptionsResponseSchema,
   aiExecutionListResponseSchema,
   aiExecutionResponseSchema,
-  type AiCatalogResponse,
+  type AiModelOptionsResponse,
   type AiExecutionListResponse,
   type AiExecutionResponse,
 } from '@capability-hub/contracts';
@@ -100,7 +100,7 @@ function BusinessWorkspace({
   }, [onCompleted]);
   const command = useAiCommand();
   const operation = feedbackId ? 'feedback-triage' : 'resource-audit';
-  const [catalog, setCatalog] = useState<AiCatalogResponse>();
+  const [models, setModels] = useState<AiModelOptionsResponse>();
   const [profile, setProfile] = useState('');
   const [history, setHistory] = useState<AiExecutionResponse[]>([]);
   const [automaticOwner, setAutomaticOwner] = useState('');
@@ -116,10 +116,10 @@ function BusinessWorkspace({
     void (async () => {
       try {
         setError('');
-        const config = aiCatalogResponseSchema.parse(
-          await api('/api/ai/catalog', { signal: controller.signal }),
+        const config = aiModelOptionsResponseSchema.parse(
+          await api('/api/ai/model-options', { signal: controller.signal }),
         );
-        setCatalog(config);
+        setModels(config);
         setProfile((value) =>
           config.profiles.some((item) => item.id === value) ? value : config.default_profile,
         );
@@ -256,7 +256,7 @@ function BusinessWorkspace({
           }}
           title={shared ? '共享自动研判（只读）' : feedbackId ? '反馈研判' : '资源审计'}
           readOnly={shared}
-          emptyLabel={!catalog ? '正在连接' : !profile ? '尚未配置模型' : '尚未发起'}
+          emptyLabel={!models ? '正在连接' : !profile ? '尚未配置模型' : '尚未发起'}
           error={error || execution.error}
           open={open}
           docked={!!beside}
@@ -339,7 +339,7 @@ function BusinessWorkspace({
               )}
               <div className="min-w-36 flex-1">
                 <SelectField aria-label="研判模型" value={profile} onValueChange={setProfile}>
-                  {catalog?.profiles.map((item) => (
+                  {models?.profiles.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.label}
                     </option>
@@ -392,9 +392,9 @@ function BusinessWorkspace({
               <p className="max-w-md leading-relaxed text-muted-ink">
                 工具活动和分析会实时显示；你可以收起面板，继续填写发布申请。
               </p>
-              {!catalog ? (
+              {!models ? (
                 <p role="status">正在加载模型配置…</p>
-              ) : !catalog.profiles.length ? (
+              ) : !models.profiles.length ? (
                 <p>尚未配置 AI 模型，请联系管理员。</p>
               ) : (
                 !selected && (

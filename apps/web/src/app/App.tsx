@@ -7,7 +7,7 @@ import { cn } from '../shared/styles/cn.js';
 import { bootErrorStyles, skipLinkStyles, mainShellStyles, appFooterStyles } from './styles.js';
 import { pageContentStyles } from '../shared/styles/recipes.js';
 import type { ReviewResponse } from '@capability-hub/contracts/http';
-import { Toast } from '@heroui/react';
+import { Toast } from '@heroui/react/toast';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import Login from '../features/auth/LoginPage.js';
 import Discover from '../features/catalog/DiscoverPage.js';
@@ -39,7 +39,7 @@ const pagePlaceholders = {
   connect: { title: '安装与接入', variant: 'connect' },
   account: { title: '个人中心', variant: 'profile' },
   login: { title: '登录', variant: 'profile' },
-  ai: { title: 'AI 工作台', variant: 'cards' },
+  ai: { title: 'AI 控制台', variant: 'cards' },
 } as const;
 
 /**
@@ -165,7 +165,12 @@ export default function App() {
                 {view.page === 'review' && <Review query={view.query} />}
                 {view.page === 'connect' && <Connect routeQuery={view.query} />}
                 {view.page === 'account' && <Account query={view.query} />}
-                {view.page === 'ai' && <AiLab query={view.query} />}
+                {view.page === 'ai' &&
+                  (me?.capabilities.can_ai_console ? (
+                    <AiLab query={view.query} />
+                  ) : (
+                    <ErrorState message="当前账号无权访问 AI 控制台。" />
+                  ))}
               </div>
             </Suspense>
           </PageBoundary>

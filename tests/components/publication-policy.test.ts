@@ -25,6 +25,7 @@ const state: HubState = {
     features: { git_hosts: [] },
     capabilities: {
       can_ai: false,
+      can_ai_console: false,
       can_admin: false,
       can_audit: false,
       can_publish: true,

@@ -1,10 +1,11 @@
 # AI HTTP 与 SSE
 
-所有 `/api/ai` 接口要求登录会话，写入还需 CSRF 和 `Idempotency-Key`。不接受 API token 代替工作台会话。所有权、`ai:execute`/`ai:inspect` 与当前资源权限由宿主实时检查。数据 Schema 位于 `packages/contracts/src/ai.ts`。
+所有 `/api/ai` 接口要求网页登录会话，写入还需 CSRF 和 `Idempotency-Key`。宿主实时检查任务归属与资源权限。数据 Schema 位于 `packages/contracts/src/ai.ts`。
 
 | 方法与路径                                                        | 输入/结果                                                                                  |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| GET `/api/ai/catalog`                                             | 可用操作的输入/输出/人工回答 Schema，模型 ID/标签/协议/model，省略 URL 和凭据              |
+| GET `/api/ai/catalog`                                             | 控制台目录，需平台级 `ai:inspect`。返回操作 Schema 和模型 ID、标签、协议、model            |
+| GET `/api/ai/model-options`                                       | 业务面板的模型选项，需 `ai:execute`。仅返回默认模型档案 ID 及各档案的 ID、标签             |
 | POST `/api/ai/executions`                                         | `{operation_id, model_profile?, input}` → 201 执行 DTO、ETag                               |
 | GET `/api/ai/executions?limit=30&cursor=…`                        | 当前用户的可读执行，按创建时间和 ID 倒序，`items` / `next_cursor`                          |
 | GET `/api/ai/executions/:id`                                      | `{execution, interactions, artifacts, activity, activity_truncated, watermark}`、执行 ETag |
@@ -12,13 +13,13 @@
 | POST `/api/ai/executions/:id/interactions/:interactionId/respond` | `{response}`、`If-Match: "<交互 revision>"` → 更新后的执行                                 |
 | GET `/api/ai/executions/:id/events`                               | SSE，可用 `Last-Event-ID` 或 `cursor` 查询参数续传，header 优先                            |
 
-执行状态、用量、消息块、输入/结果、错误、期限与 revision 均通过显式 DTO 投影。人工回答的 If-Match 是交互修订，不是执行修订；缺失为 428，陈旧为 412，状态冲突为 409，字段错误为 422。重复同一幂等请求返回同一结果，不再生成继续作业。工作台在请求内容和修订不变时保留失败请求的幂等键，避免响应丢失后的重试重复创建任务或继续作业；修改内容或确认成功后使用新键。
+执行 DTO 包含状态、用量、消息块、输入/结果、错误、期限与 revision。人工回答的 If-Match 使用交互修订。缺失为 428，陈旧为 412，状态冲突为 409，字段错误为 422。请求内容和修订相同时，客户端重试沿用幂等键，服务端返回同一结果。修改内容或确认成功后使用新键。
 
 `activity` 与执行投影在同一事务读取，是同一执行、operator audience、水位以内的持久事件 envelope，按 seq 升序排列。查询先排除 `message.delta`、`message.completed`、`usage.updated` 和 `execution.completed`，再取最近 1000 条，文本流不会挤掉工具调用。`activity_truncated` 表示更早的活动已省略；消息全文、完成状态、用量与结果由 `execution` 提供，完整人工回答由 `interactions` 提供。客户端校验归属、排序、事件类型和水位；接收后续 SSE 时仅将相同类型的事件加入活动列表并保持上限。活动快照不会改变 seq 或重放游标规则。
 
 ## 业务任务
 
-`resource-audit` 输入 `{version_id}`，`feedback-triage` 输入 `{version_id, feedback_id}`。列表可按操作、版本和反馈过滤。`items` 和游标仅分页本人任务，空页仍可有 `next_cursor`。按 `feedback_id` 查询的首页另附当前维护者可读的 `automatic_triage`（执行 DTO 加 `owner_display_name`），该字段不占分页名额。业务权限见 [反馈研判与资源审计](../design/business-agents.md)。
+`resource-audit` 输入 `{version_id}`，`feedback-triage` 输入 `{version_id, feedback_id}`。业务面板按版本或反馈查任务。未指定 `version_id` 和 `feedback_id` 的列表查询要求控制台权限。`items` 仅分页本人任务，空页仍可有 `next_cursor`。按反馈查询的首页另附可读的 `automatic_triage`（执行 DTO 加 `owner_display_name`），不占分页名额。业务权限见 [反馈研判与资源审计](../design/business-agents.md)。
 
 人工回答为 `{approved, comment?, apply_feedback?}`；写回反馈需要明确采纳与维护权限。交互 revision 只保护回答，业务写回另校验反馈 revision。
 

@@ -127,39 +127,36 @@ export const aiArtifactResponseSchema = z
   .object({ id, name: z.string(), media_type: z.string(), content: json, digest: z.string() })
   .strict();
 
+const modelOption = z.object({ id, label: z.string() }).strict();
+
+/** 业务研判只选择模型档案，协议、模型名与操作定义属于控制台目录。 */
+export const aiModelOptionsResponseSchema = z
+  .object({ default_profile: z.string(), profiles: z.array(modelOption) })
+  .strict();
+
 /**
  * 能力目录：`default_profile` 必须指向 `profiles` 之一；每个操作的 `input_schema`/`output_schema`
  * 与 `digest` 一起构成可执行契约，`interactions` 描述该操作可能发起的交互及其回答 schema。
  */
-export const aiCatalogResponseSchema = z
-  .object({
-    default_profile: z.string(),
-    profiles: z.array(
-      z
-        .object({
-          id,
-          label: z.string(),
-          format: z.enum(['openai', 'anthropic']),
-          model: z.string(),
-        })
-        .strict(),
-    ),
-    operations: z.array(
-      z
-        .object({
-          id,
-          version: z.string(),
-          title: z.string(),
-          description: z.string(),
-          input_schema: json,
-          output_schema: json,
-          interactions: z.record(z.string(), json),
-          digest: z.string(),
-        })
-        .strict(),
-    ),
-  })
-  .strict();
+export const aiCatalogResponseSchema = aiModelOptionsResponseSchema.extend({
+  profiles: z.array(
+    modelOption.extend({ format: z.enum(['openai', 'anthropic']), model: z.string() }),
+  ),
+  operations: z.array(
+    z
+      .object({
+        id,
+        version: z.string(),
+        title: z.string(),
+        description: z.string(),
+        input_schema: json,
+        output_schema: json,
+        interactions: z.record(z.string(), json),
+        digest: z.string(),
+      })
+      .strict(),
+  ),
+});
 
 /** `items` 分页列出本人任务；按反馈查询时，首页另附当前维护者可读的自动研判。 */
 export const aiExecutionListResponseSchema = z
@@ -339,6 +336,9 @@ export type AiExecutionListResponse = z.infer<typeof aiExecutionListResponseSche
 
 /** {@link aiCatalogResponseSchema} 的输出侧类型。 */
 export type AiCatalogResponse = z.infer<typeof aiCatalogResponseSchema>;
+
+/** {@link aiModelOptionsResponseSchema} 的输出侧类型。 */
+export type AiModelOptionsResponse = z.infer<typeof aiModelOptionsResponseSchema>;
 
 /** {@link aiEventResponseSchema} 的输出侧类型，用于 SSE 单条事件。 */
 export type AiEventResponse = z.infer<typeof aiEventResponseSchema>;
