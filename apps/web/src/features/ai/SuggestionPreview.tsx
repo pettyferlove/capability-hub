@@ -1,5 +1,6 @@
 import type { PublicationSuggestion } from '@capability-hub/contracts';
 import { categoryLabels } from './publication-suggestion.js';
+import { ScenarioSummary } from '../../shared/components/ScenarioSummary.js';
 
 /**
  * 发布建议的只读预览：分类、关键词与用途，不接受编辑；写入表单由调用方负责。
@@ -14,6 +15,8 @@ export function SuggestionPreview({ fields }: { fields: PublicationSuggestion })
         <h3 className="font-semibold">建议发布信息</h3>
         <span className="text-caption text-brand">分类 · {categoryLabels[fields.category]}</span>
       </div>
+      {fields.category === 'scenario' && <ScenarioSummary policy={fields} />}
+      {fields.scenario_reason && <p>{fields.scenario_reason}</p>}
       <div className="flex flex-wrap gap-1.5">
         {fields.keywords.map((word) => (
           <span

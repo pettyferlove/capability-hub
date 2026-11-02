@@ -1,8 +1,14 @@
+/** 维护者提交、随首次发布审核的场景定义。 */
+export interface ScenarioDefinition {
+  name: string;
+  description: string;
+}
+
 /**
  * 资源的分发策略，随发布请求与发布记录一起冻结并参与 `policy_digest`，所以字段顺序与取值都会影响摘要。
  */
 export interface Policy {
-  /** `scenario` 与 `scenario_ids` 必须同时成立：分类为 `scenario` ⇔ 场景列表非空。 */
+  /** 场景分类至少选择一个有效场景或随发布申请提出一个新定义。 */
   category: 'general' | 'scenario' | 'uncategorized';
   /** 适用场景 id，最多 20 条且不可重复；引用对象必须仍处于启用状态。 */
   scenario_ids: string[];

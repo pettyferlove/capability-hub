@@ -26,15 +26,30 @@ export const evidenceSchema = z
   .strict();
 
 /**
- * 发布申请草稿建议。`category` 为 `scenario` 当且仅当 `scenario_ids` 非空，且每个 ID 都必须
- * 出现在本次 `publication_scenarios` 工具的返回里；不满足即拒绝，不做自动纠正。
- * 这只是建议，不代替人工声明所有权或发布批准。
+ * 场景建议只能引用本次查到的 ID；缺少匹配时可以提供待审名称与说明。
  */
 export const publicationSuggestion = z
   .object({
     category: z.enum(['general', 'scenario', 'uncategorized']),
     /** 已登记的有效场景 ID，去重后最多 20 个。 */
     scenario_ids: z.array(z.uuid()).max(20),
+    proposed_scenarios: z
+      .array(
+        z.strictObject({
+          name: z.string().trim().min(1).max(80),
+          description: z.string().trim().min(1).max(2000),
+        }),
+      )
+      .max(20)
+      .optional()
+      .describe('已查阅场景且缺少匹配时填写，只起草可复用的业务任务'),
+    scenario_reason: z
+      .string()
+      .trim()
+      .min(1)
+      .max(300)
+      .optional()
+      .describe('一句话解释选用已有场景或提出新场景的依据'),
     /**
      * 检索关键词；上限比提示的 3–8 条宽，落盘前只保留前 8 条，避免数量略超就重写整份报告。
      * 保留首次出现的写法，重复项由模型侧自行去除。

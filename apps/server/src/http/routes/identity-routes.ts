@@ -2,7 +2,7 @@ import { auditLogQuerySchema } from '@capability-hub/contracts';
 import type { Express } from 'express';
 import { operations } from '../../observability/operations.js';
 import type { HttpContext } from '../context.js';
-import { jsonRoute as send } from '../response.js';
+import { idempotencyKey, jsonRoute as send, withRevision } from '../response.js';
 
 /**
  * 管理面。整组挂在 `/api` 前缀下，先经 `security.authenticate` 要求会话或 Bearer，写操作再过 CSRF；
@@ -101,5 +101,24 @@ export function registerIdentityRoutes(app: Express, { hub, metrics, worker }: H
   app.post(
     '/api/admin/scenarios',
     send(async (req, res) => administration.createScenario(res.locals.principal, req.body)),
+  );
+  app.get(
+    '/api/admin/scenarios',
+    send(async (_req, res) => administration.listScenarios(res.locals.principal)),
+  );
+  app.patch(
+    '/api/admin/scenarios/:id',
+    send(async (req, res) =>
+      withRevision(
+        res,
+        await administration.updateScenario(
+          res.locals.principal,
+          String(req.params.id),
+          req.body,
+          req.get('If-Match'),
+          idempotencyKey(req),
+        ),
+      ),
+    ),
   );
 }

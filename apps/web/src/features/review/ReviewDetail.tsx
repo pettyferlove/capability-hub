@@ -93,6 +93,7 @@ import type { ChangeFile } from './types.js';
 import { shortVersion } from './version-label.js';
 import { audienceChange } from './audience-change.js';
 import { ApiKeyBadge } from '../catalog/ApiKeyBadge.js';
+import { ScenarioSummary } from '../../shared/components/ScenarioSummary.js';
 
 /**
  * 通过是终态：必须勾选审查确认、为每条 `warning` 级发现填写接受理由，且扫描已 `passed`；
@@ -117,14 +118,14 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
     : 'initial';
   const widened = change === 'expanded';
   const warningMissing = important.some((f) => f.severity === 'warning' && !warnings[f.id]?.trim());
-  async function withdrawNomination() {
+  async function withdrawRequest() {
     setBusy(true);
     setError('');
     try {
       await mutate(
         `/api/publication-requests/${r.id}/cancel`,
         {
-          reason: '提名者主动撤回通用提名',
+          reason: r.nomination ? '提名者主动撤回通用提名' : '维护者撤回场景发布申请',
         },
         'POST',
         r.revision,
@@ -368,6 +369,15 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
         </div>
       </section>
       <BusinessAgentPanel versionId={r.version_id} title={r.asset.slug} />
+      {!!r.proposed_scenarios?.length && (
+        <section className={nominationReviewSummaryStyles}>
+          <h3>随本次发布审核的场景</h3>
+          <ScenarioSummary policy={r} />
+          {r.state === 'pending' && (
+            <p className={subtleStyles}>批准发布后，新定义将登记到共享场景列表。</p>
+          )}
+        </section>
+      )}
       {r.nomination && (
         <section className={nominationReviewSummaryStyles}>
           <h3>通用提名理由</h3>
@@ -463,6 +473,9 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
         >
           <h3>本次共享目的</h3>
           <p>{r.source_consent.purpose}</p>
+          {r.category === 'scenario' && !r.proposed_scenarios?.length && (
+            <ScenarioSummary policy={r} />
+          )}
           <div className={policyFactsStyles}>
             <span>
               目标分类<strong>{categoryLabel(r.category)}</strong>
@@ -654,14 +667,14 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
                     ? '内容、来源或策略上下文已变化，请刷新并重新提交申请。'
                     : '当前账号的审核权限不覆盖此申请。'}
               </p>
-              {r.nomination && r.submitted_by === me?.id && (
+              {(r.nomination || r.category === 'scenario') && r.submitted_by === me?.id && (
                 <button
                   type="button"
                   className={textBtnStyles}
                   disabled={busy}
-                  onClick={withdrawNomination}
+                  onClick={withdrawRequest}
                 >
-                  撤回提名
+                  {r.nomination ? '撤回提名' : '撤回申请'}
                 </button>
               )}
               {error && <Message error>{error}</Message>}

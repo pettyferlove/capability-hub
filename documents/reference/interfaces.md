@@ -22,6 +22,8 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 
 需要修订的修改携带 If-Match，幂等用例携带 Idempotency-Key。Cookie 写入还需 CSRF。
 
+`POST /api/publication-requests` 的 `scenario_ids` 引用已登记场景，`proposed_scenarios` 可选，每项含 `name` 和 `description`。含新定义的申请需要平台审核。管理员从 `GET /api/admin/scenarios` 读取词条和修订，以 `PATCH /api/admin/scenarios/:id` 编辑（`edit`）、合并（`merge` 和 `target_id`）或停用（`disable`）。合并使已有发布可按目标场景检索，历史快照与角色绑定保留原 ID。
+
 `POST /auth/login` 接受 `username`、`password` 和 `provider`。来源为 `local` 或 `ldap`，省略时仅验证本地密码。实例未启用 LDAP 时，选择 `ldap` 返回 403 `LDAP_DISABLED`。当前账号和管理台用户记录均以 `auth_provider` 标明来源。
 
 `GET /api/admin/operations` 需要 `audit:read`。快照包含实例与存储探测、Agent 注册信息及保留执行的状态计数。近 30 天的趋势按北京时间创建日和当前状态汇总，成功率为完成数除以完成、失败和超时之和。无分母时留空。HTTP P95 显示本进程请求耗时桶的界限。刷新不调用模型。

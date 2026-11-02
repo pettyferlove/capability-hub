@@ -43,7 +43,7 @@ const investigationRules = `${guardrails}
 4. 调查结束时输出调查记录，它是整理报告的唯一素材。用小标题分节，不写成一整段：总体结论与风险理由；逐条发现（标题、严重度、事实或推断、证据「文件:起止行」、建议动作）；未验证事项与缺失证据；处理建议。`;
 
 const auditInvestigation = `
-5. 同时调查资源用途：调查记录另写「用途与检索词」一节，说明适用对象、核心能力和 3–8 个候选检索关键词。场景分类必须先查 publication_scenarios，只引用已登记的有效 ID。`;
+5. 调查记录另写「用途与检索词」，说明适用对象、核心能力和 3–8 个候选检索词。场景分类先查 publication_scenarios，按任务和说明匹配，必要时换同义词或浏览列表。已有合适场景就引用返回的 ID（例如 GitLab 合并请求审查归入代码评审，GitLab 用作关键词）。确实缺少匹配才起草可复用的业务名称及一句适用说明，避免写入私有项目、客户或凭据信息。`;
 
 const reportRules = `${guardrails}
 整理要求：
@@ -55,13 +55,13 @@ const reportRules = `${guardrails}
 6. 各字段的长度与排版遵循 Schema 字段说明；标为纯文本的字段会原样显示 Markdown 符号。`;
 
 const auditReport = `
-7. publication_suggestion 必须填写。category 为 general、scenario 或 uncategorized；仅 scenario 可填写非空的已登记 scenario_ids，其余为空。purpose 不代替人声明所有权、授权或发布批准。
+7. publication_suggestion 必须填写。category 为 general、scenario 或 uncategorized。scenario 至少选择一项：scenario_ids 只填查到的有效 ID；proposed_scenarios 只填查重后仍缺少的名称和说明，不编造 ID。scenario_reason 简述为何复用或新增。其他分类的两份列表为空。purpose 仅说明资源用途。
 8. keywords 给 3–8 个，按重要性排序，排在前面的优先展示在资源卡片上。优先级：产品或平台专名（中文官方名，必要时补官方英文名）→ 核心任务能力 → 必须对接的协议、格式或技术栈 → 典型场景。
 9. 检索按子串匹配，资源名称、描述和场景名已参与检索：关键词之间不得互相包含（「GitHub Actions」已覆盖「GitHub」），同一概念只写一种说法，不与资源名称或已选场景名同义，不重复资源已声明的 applies_to.keywords。
 10. 不使用单独的泛词（文档、工具、效率、AI、在线、智能）、营销词、动作句、功能清单复述、URL 或域名、版本号。`;
 
 /**
- * 注册资源审计（`resource-audit`，v4）与反馈研判（`feedback-triage`，v3）两个操作。流程固定为
+ * 注册资源审计（`resource-audit`，v5）与反馈研判（`feedback-triage`，v3）两个操作。流程固定为
  * 「调查 → 人工确认 → 记录」三段，任何一段都不能跳过：
  * - 调查阶段必须实际读过入口文件（Skill 的 `SKILL.md`、MCP 的 `server.json`），反馈研判还必须
  *   读过目标反馈，否则以 `AI_OUTPUT_INVALID` 失败；
@@ -89,7 +89,7 @@ export function registerBusinessOperations(
     const resultSchema = businessResult.extend({ assessment: reportSchema });
     registry.register({
       id: kind,
-      version: kind === 'resource-audit' ? '4' : '3',
+      version: kind === 'resource-audit' ? '5' : '3',
       title: kind === 'resource-audit' ? '资源审计' : '反馈研判',
       description: '自主查阅固定版本证据，形成可追溯建议并等待人工确认。',
       input,
@@ -148,10 +148,15 @@ export function registerBusinessOperations(
                     : undefined,
                 );
                 const ids = suggestion.scenario_ids;
+                const names = (suggestion.proposed_scenarios ?? []).map((item) => item.name);
+                const count = ids.length + names.length;
                 if (
-                  (suggestion.category === 'scenario') !== ids.length > 0 ||
+                  (suggestion.category === 'scenario') !== count > 0 ||
+                  count > 20 ||
+                  new Set(names).size !== names.length ||
+                  names.some((name) => !evidence.catalogNames || evidence.catalogNames.has(name)) ||
                   new Set(ids).size !== ids.length ||
-                  (ids.length && !ids.every((id) => evidence.scenarios.has(id)))
+                  ids.some((id) => !evidence.scenarios.has(id))
                 )
                   throw new AiError('AI_OUTPUT_INVALID', '发布建议引用了无效场景，不能填入申请');
                 Object.assign(assessment, {

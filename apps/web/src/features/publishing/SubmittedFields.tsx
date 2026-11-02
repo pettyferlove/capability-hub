@@ -1,5 +1,10 @@
 import type { PublicationRequestResponse } from '@capability-hub/contracts/http';
-import { categoryLabels, type AuditSuggestion } from '../ai/publication-suggestion.js';
+import {
+  categoryLabels,
+  sameClassification,
+  type AuditSuggestion,
+} from '../ai/publication-suggestion.js';
+import { ScenarioSummary } from '../../shared/components/ScenarioSummary.js';
 import { FieldSuggestion } from './FieldSuggestion.js';
 
 /**
@@ -26,15 +31,16 @@ export function SubmittedFields({
         <div>
           <dt className="text-caption text-muted-ink">分类</dt>
           <dd>{categoryLabels[publication.category]}</dd>
+          {publication.category === 'scenario' && (
+            <dd>
+              <ScenarioSummary policy={publication} />
+            </dd>
+          )}
           {fields && (
             <FieldSuggestion
               label="分类"
               values={[categoryLabels[fields.category]]}
-              matched={
-                publication.category === fields.category &&
-                publication.scenario_ids.length === fields.scenario_ids.length &&
-                fields.scenario_ids.every((id) => publication.scenario_ids.includes(id))
-              }
+              matched={sameClassification(publication, fields)}
               pending={suggestion?.pending}
             />
           )}

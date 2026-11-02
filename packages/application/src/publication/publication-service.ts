@@ -1,6 +1,6 @@
 import { contentScanRuleset } from '@capability-hub/domain/content';
 import type { Finding } from '@capability-hub/domain/content';
-import type { Policy } from '@capability-hub/domain/policy';
+import type { Policy, ScenarioDefinition } from '@capability-hub/domain/policy';
 import type { Principal } from '@capability-hub/domain/identity';
 import type {
   SubmitPublicationCommand,
@@ -38,15 +38,17 @@ export class PublicationService {
   ) {}
   /**
    * 提交与批准共用的策略自洽校验，只读不写；任一规则不满足即抛 422 并中止后续冻结。
-   * 分类与场景必须互为充要（`scenario` ⇔ 非空且不超过 20 个、不可重复），受众 1–100 条
+   * 场景分类的有效 ID 与新定义合计 1–20 个，ID 和定义名称分别去重，受众 1–100 条
    * 不可重复，`public` 与 `organization` 只能独占，分发模式只能是 `approved_audience`。
    * 场景、组、用户逐条回查存储并要求仍 active，因此是异步校验，不能只在请求入口做一次。
    */
-  async validatePolicy(value: Policy) {
+  async validatePolicy(value: Policy, definitions: ScenarioDefinition[] = []) {
+    const count = value.scenario_ids.length + definitions.length;
     if (
-      (value.category === 'scenario') !== !!value.scenario_ids.length ||
+      (value.category === 'scenario') !== count > 0 ||
       new Set(value.scenario_ids).size !== value.scenario_ids.length ||
-      value.scenario_ids.length > 20
+      new Set(definitions.map((item) => item.name)).size !== definitions.length ||
+      count > 20
     )
       fail(422, 'INVALID_POLICY', '场景分类与适用场景不匹配');
     const audience = value.distribution.audience;
@@ -69,6 +71,46 @@ export class PublicationService {
       if (!(await this.context.store.get(type === 'group' ? 'groups' : 'users', uuid))?.active)
         fail(422, 'INVALID_AUDIENCE', '受众不存在或已停用');
     }
+  }
+  /** 提交时冻结未登记的定义。批准时在同一写事务中复用完全一致的定义或登记新场景。 */
+  private async resolveScenarios(
+    policy: Policy,
+    definitions: ScenarioDefinition[] = [],
+    approval?: { requestId: string; reviewerId: string },
+  ) {
+    const ids = new Set(policy.scenario_ids);
+    const proposed: ScenarioDefinition[] = [];
+    for (const definition of definitions) {
+      const existing = await this.context.store.find('scenarios', 'name', definition.name);
+      if (existing) {
+        if (!existing.active || existing.description !== definition.description)
+          fail(
+            409,
+            'SCENARIO_CONFLICT',
+            `场景「${definition.name}」已登记，请核对现有定义后重新提交`,
+          );
+        ids.add(existing.id);
+      } else if (approval) {
+        const scenario = await this.context.store.insert('scenarios', {
+          id: randomUUID(),
+          ...definition,
+          active: true,
+          revision: 1,
+        });
+        ids.add(scenario.id);
+        await this.context.store.audit(approval.reviewerId, 'scenario.created', scenario.id, '', {
+          request_id: approval.requestId,
+        });
+      } else {
+        proposed.push(definition);
+      }
+    }
+    return {
+      scenario_ids: [...ids].sort(utf8Compare),
+      ...(proposed.length
+        ? { proposed_scenarios: proposed.sort((a, b) => utf8Compare(a.name, b.name)) }
+        : {}),
+    };
   }
   /**
    * 复核接收记录与服务端版本是否同源，并确认来源的分发授权未被 block 或撤销，
@@ -143,7 +185,7 @@ export class PublicationService {
         if (!v) notFound();
         const a = await this.assets.getAsset(v.asset_id);
         this.assets.requireMaintenance(principal, a);
-        await this.validatePolicy(b);
+        await this.validatePolicy(b, b.proposed_scenarios);
         const intake = await this.context.store.get('intakes', b.source_intake_id);
         if (!intake) notFound();
         const source = await this.verifyEvidence(
@@ -187,7 +229,7 @@ export class PublicationService {
           source_intake_id: intake.id,
           content_digest: v.content_digest,
           category: b.category,
-          scenario_ids: [...b.scenario_ids].sort(utf8Compare),
+          ...(await this.resolveScenarios(b, b.proposed_scenarios)),
           distribution: { ...b.distribution, audience: consent.audience },
           applies_to: b.applies_to,
           policy_source_id: source.id,
@@ -372,7 +414,7 @@ export class PublicationService {
           await this.context.store.audit(p.id, 'publication.rejected', id, b.comment);
           return result;
         }
-        await this.validatePolicy(r);
+        await this.validatePolicy(r, r.proposed_scenarios);
         const a = await this.assets.getAsset(r.asset_id);
         const v = (await this.context.store.get('versions', r.version_id))!;
         const intake = (await this.context.store.get('intakes', r.source_intake_id))!;
@@ -436,7 +478,12 @@ export class PublicationService {
           request_id: r.id,
           release_seq: seq,
           category: r.category,
-          scenario_ids: r.scenario_ids,
+          scenario_ids: (
+            await this.resolveScenarios(r, r.proposed_scenarios, {
+              requestId: r.id,
+              reviewerId: p.id,
+            })
+          ).scenario_ids,
           distribution: r.distribution,
           applies_to: r.applies_to,
           ...(a.kind === 'skill' ? { requires_api_key: r.requires_api_key === true } : {}),

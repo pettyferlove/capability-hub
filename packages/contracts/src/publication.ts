@@ -1,11 +1,26 @@
 import { z } from 'zod';
-import { distributionPolicySchema } from './policy.js';
+import { distributionPolicySchema, type Policy } from './policy.js';
 import {
   applicabilitySchema,
   assetCategorySchema,
   keywordsSchema,
   uuidSchema,
 } from './primitives.js';
+
+const proposedScenariosSchema = z
+  .array(
+    z.strictObject({
+      name: z.string().trim().min(1).max(80),
+      description: z.string().trim().min(1).max(2000),
+    }),
+  )
+  .max(20);
+
+/** 新场景没有客户端指定的 ID，名称与说明一并冻结供审核。 */
+export type ScenarioDefinition = z.infer<typeof proposedScenariosSchema>[number];
+
+/** 新定义仅适用于发布申请，来源绑定和正式发布引用已登记场景。 */
+export type PublicationDraftPolicy = Policy & { proposed_scenarios?: ScenarioDefinition[] };
 
 /**
  * 提交发布申请：`base_release_id` 记录提交时刻的当前发布版本，审核前若已变化则拒绝（409）；
@@ -16,7 +31,8 @@ export const submitPublicationRequestSchema = z
     source_intake_id: uuidSchema,
     version_id: uuidSchema,
     category: assetCategorySchema,
-    scenario_ids: z.array(uuidSchema),
+    scenario_ids: z.array(uuidSchema).max(20),
+    proposed_scenarios: proposedScenariosSchema.optional(),
     distribution: distributionPolicySchema,
     applies_to: applicabilitySchema,
     requires_api_key: z.boolean().optional(),
@@ -71,21 +87,29 @@ export type PublicationDecisionRequest = z.input<typeof publicationDecisionReque
 
 /**
  * 发布策略建议（供界面预填）：关键词不得为空，且场景列表与分类一致——
- * `scenario` 至少一个场景，其余分类必须为空。
+ * `scenario` 至少一个已有场景或新定义，其余分类必须为空。
  */
 export const publicationSuggestionSchema = z
   .object({
     category: assetCategorySchema,
     scenario_ids: z.array(uuidSchema).max(20),
+    proposed_scenarios: proposedScenariosSchema.optional(),
     keywords: keywordsSchema,
+    scenario_reason: z.string().trim().min(1).max(300).optional(),
     purpose: z.string().trim().min(1).max(2000),
   })
   .strict()
-  .refine(
-    (value) =>
+  .refine((value) => {
+    const definitions = value.proposed_scenarios ?? [];
+    const count = value.scenario_ids.length + definitions.length;
+    return (
       value.keywords.length > 0 &&
-      (value.category === 'scenario') === value.scenario_ids.length > 0,
-  );
+      count <= 20 &&
+      (value.category === 'scenario') === count > 0 &&
+      new Set(value.scenario_ids).size === value.scenario_ids.length &&
+      new Set(definitions.map((item) => item.name)).size === definitions.length
+    );
+  });
 
 /** {@link publicationSuggestionSchema} 的输出侧类型。 */
 export type PublicationSuggestion = z.infer<typeof publicationSuggestionSchema>;

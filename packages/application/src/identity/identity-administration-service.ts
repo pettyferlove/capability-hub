@@ -1,4 +1,5 @@
 import type { Principal } from '@capability-hub/domain/identity';
+import { canonical, digest } from '@capability-hub/domain/canonical';
 import type { RecordStore } from '../ports/index.js';
 import { fail } from '@capability-hub/domain/errors';
 import { someAsync } from '@capability-hub/domain/async';
@@ -6,6 +7,7 @@ import { builtinRoles, PERMISSIONS } from '@capability-hub/domain/rbac';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { matchRevision } from '../shared/revision.js';
+import type { IdempotencyService } from '../shared/idempotency-service.js';
 import { toUserSummary } from './identity-mapper.js';
 import type { PasswordHasher } from '../ports/index.js';
 import type { IdentityService } from './identity-service.js';
@@ -21,6 +23,7 @@ export class IdentityAdministrationService {
     private readonly identity: IdentityService,
     private readonly sessions: SessionService,
     private readonly passwords: PasswordHasher,
+    private readonly idempotency: IdempotencyService,
   ) {}
   /**
    * 补齐内置角色：按稳定的 `key` 判存，已存在的角色跳过而不覆盖，
@@ -149,10 +152,76 @@ export class IdentityAdministrationService {
         id: randomUUID(),
         ...input,
         active: true,
+        revision: 1,
       });
       await this.store.audit(principal.id, 'scenario.created', scenario.id);
       return scenario;
     });
+  }
+  async listScenarios(principal: Principal) {
+    this.identity.require(principal, 'identity:manage');
+    return (await this.store.all('scenarios')).map((s) => ({ ...s, revision: s.revision ?? 1 }));
+  }
+  async updateScenario(
+    principal: Principal,
+    id: string,
+    body: unknown,
+    etag: string | undefined,
+    key: string | undefined,
+  ) {
+    this.identity.require(principal, 'identity:manage');
+    const input = z
+      .discriminatedUnion('action', [
+        z.strictObject({
+          action: z.literal('edit'),
+          name: z.string().trim().min(1).max(80),
+          description: z.string().trim().max(2000),
+        }),
+        z.strictObject({ action: z.literal('merge'), target_id: z.uuid() }),
+        z.strictObject({ action: z.literal('disable') }),
+      ])
+      .parse(body);
+    return this.idempotency.execute(
+      principal,
+      'scenario/' + id,
+      key,
+      digest(canonical({ input, etag: etag ?? null })),
+      async () => {
+        const scenario = await this.store.get('scenarios', id);
+        if (!scenario) fail(404, 'NOT_FOUND', '场景不存在');
+        const revision = scenario.revision ?? 1;
+        matchRevision({ revision }, etag);
+        if (!scenario.active) fail(409, 'SCENARIO_INACTIVE', '该场景已经停用或合并');
+        const next = { ...scenario, revision: revision + 1 };
+        if (input.action === 'edit') {
+          const existing = await this.store.find('scenarios', 'name', input.name);
+          if (existing && existing.id !== id) fail(409, 'SCENARIO_CONFLICT', '场景名称已存在');
+          next.name = input.name;
+          next.description = input.description;
+        } else {
+          if (input.action === 'merge') {
+            if (
+              input.target_id === id ||
+              !(await this.store.get('scenarios', input.target_id))?.active
+            )
+              fail(422, 'INVALID_SCENARIO', '请选择另一个启用中的目标场景');
+            next.merged_into = input.target_id;
+          }
+          next.active = false;
+        }
+        await this.store.put('scenarios', next);
+        const action = {
+          edit: 'scenario.edited',
+          merge: 'scenario.merged',
+          disable: 'scenario.disabled',
+        }[input.action];
+        await this.store.audit(principal.id, action, id, '', {
+          previous_name: scenario.name,
+          ...(next.merged_into ? { target_id: next.merged_into } : {}),
+        });
+        return next;
+      },
+    );
   }
   /**
    * 新建自定义角色：权限只能取自 {@link PERMISSIONS}，数量不超过权限总数，落库时 `builtin: false`。
@@ -204,6 +273,8 @@ export class IdentityAdministrationService {
         fail(422, 'INVALID_BINDING', '角色或主体不存在');
       if (b.scope_type === 'platform' && b.scope_id !== '')
         fail(422, 'INVALID_SCOPE', '平台作用域不接受资源 ID');
+      if (b.scope_type === 'scenario' && !(await this.store.get('scenarios', b.scope_id))?.active)
+        fail(422, 'INVALID_SCOPE', '场景未启用');
       if (
         b.scope_type !== 'platform' &&
         !(await this.store.get(

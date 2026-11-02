@@ -52,6 +52,7 @@ export interface IntakeResponse extends IntakeDetails {
   current_version: ManagementAssetResponse['current_version'];
   asset_lifecycle: ManagementAssetResponse['lifecycle'];
   asset_lifecycle_reason: string;
+  can_maintain: boolean;
   can_view_catalog: boolean;
   version?: VersionSnapshotResponse | null;
   scan?: ScanResponse | null;

@@ -151,7 +151,7 @@ export class CatalogService {
     const revision = await this.context.store.revision();
     if (this.catalogCache?.revision === revision) return this.catalogCache.rows;
     const rows: CatalogEntry[] = [];
-    const scenarios = await this.context.store.all('scenarios');
+    const scenarios = new Map((await this.context.store.all('scenarios')).map((s) => [s.id, s]));
     for (const a of await this.context.store.all('assets')) {
       if (!a.current_release_id || a.lifecycle !== 'active') continue;
       const r = await this.context.store.get('releases', a.current_release_id),
@@ -173,14 +173,19 @@ export class CatalogService {
         continue;
       const hints = r.applies_to;
       const tags = Object.values(hints).flat().map(String);
-      const labels = r.scenario_ids.map(
-        (id: string) => scenarios.find((s) => s.id === id)?.name ?? '',
-      );
+      // 合并链只扩展目录筛选，发布快照和审核授权始终引用原 ID。
+      const scenarioIds = new Set(r.scenario_ids);
+      for (const id of scenarioIds) {
+        const target = scenarios.get(id)?.merged_into;
+        if (target) scenarioIds.add(target);
+      }
+      const labels = [...scenarioIds].map((id) => scenarios.get(id)?.name ?? '');
       rows.push({
         asset: a,
         version: v,
         release: r,
         resolved,
+        scenarioIds,
         tags,
         normalizedTags: [...tags, ...labels].map((t) => t.normalize('NFKC').toLowerCase()),
         description: v.metadata.description.normalize('NFKC').toLowerCase(),
@@ -225,7 +230,7 @@ export class CatalogService {
    */
   private async listScenariosSnapshot(p: Principal | null) {
     const visibleIds = new Set(
-      (await this.visibleCatalog(p)).flatMap((row) => row.release.scenario_ids),
+      (await this.visibleCatalog(p)).flatMap((row) => [...row.scenarioIds]),
     );
     return (await this.context.store.all('scenarios')).filter(
       (s) => s.active && (p || visibleIds.has(s.id)),
@@ -262,7 +267,7 @@ export class CatalogService {
     for (const row of await this.visibleCatalog(p)) {
       if (query.kind && row.asset.kind !== query.kind) continue;
       if (query.category && row.release.category !== query.category) continue;
-      if (query.scenario_id && !row.release.scenario_ids.includes(query.scenario_id)) continue;
+      if (query.scenario_id && !row.scenarioIds.has(query.scenario_id)) continue;
       const ageDays = Math.max(0, (Date.now() - Date.parse(row.release.published_at)) / 86400000);
       const freshness = 2 ** (-ageDays / 30);
       const unique = new Map(
@@ -340,7 +345,7 @@ export class CatalogService {
     for (const row of await this.visibleCatalog(p)) {
       const { asset: a, version: v, release: r, tags, normalizedTags, description: desc } = row;
       if (q.kind && a.kind !== q.kind) continue;
-      if (q.scenario_id && !r.scenario_ids.includes(q.scenario_id)) continue;
+      if (q.scenario_id && !row.scenarioIds.has(q.scenario_id)) continue;
       let score = 0;
       let matched = 0;
       const reasons: string[] = [];
@@ -469,6 +474,7 @@ interface CatalogEntry {
   version: VersionRecord;
   release: ReleaseRecord;
   resolved: ReleaseRecord;
+  scenarioIds: Set<string>;
   tags: string[];
   normalizedTags: string[];
   description: string;

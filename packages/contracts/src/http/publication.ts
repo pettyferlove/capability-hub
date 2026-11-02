@@ -1,5 +1,5 @@
 import type { Applicability, Manifest } from '../content.js';
-import type { SourceConsent } from '../publication.js';
+import type { PublicationDraftPolicy, SourceConsent } from '../publication.js';
 import type { Policy } from '../policy.js';
 import type { ManagementAssetResponse, VersionSnapshotResponse } from './catalog.js';
 import type { ScanResponse } from './intake.js';
@@ -8,7 +8,7 @@ import type { ScanResponse } from './intake.js';
  * 发布申请，出现在审核队列、审核详情与导入详情；内嵌的发布策略字段来自提交时的冻结快照，
  * 因此即使用户后续改了策略也不会变。`policy_digest` 是审核时需回传的摘要。
  */
-export interface PublicationRequestResponse extends Policy {
+export interface PublicationRequestResponse extends PublicationDraftPolicy {
   requires_api_key?: boolean;
   id: string;
   revision: number;

@@ -1,11 +1,12 @@
 import type { Applicability } from '@capability-hub/domain/content';
-import type { Policy } from '@capability-hub/domain/policy';
+import type { Policy, ScenarioDefinition } from '@capability-hub/domain/policy';
 
 /**
  * 提交发布的输入，来自 HTTP 的 JSON body（`submitPublicationRequestSchema` 解析）；
  * 服务端会把它连同来源同意、扫描证据一起冻结成规范 JSON，之后的审核只针对该快照。
  */
 export interface SubmitPublicationCommand extends Policy {
+  proposed_scenarios?: ScenarioDefinition[];
   /** 提供内容证据的接收记录，必须与 `version_id` 的资产、摘要一致，否则 409/`INTAKE_MISMATCH`。 */
   source_intake_id: string;
   version_id: string;

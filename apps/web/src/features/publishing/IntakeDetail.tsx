@@ -9,7 +9,11 @@ import { SubmittedFields } from './SubmittedFields.js';
 import { PublicationFooter, type PublicationNotice } from './PublicationFooter.js';
 import { DraftReceipt, type DraftChange } from './DraftReceipt.js';
 import type { ReviewOrigin } from '../ai/quick-review.js';
-import { categoryLabels, type AuditSuggestion } from '../ai/publication-suggestion.js';
+import {
+  categoryLabels,
+  sameClassification,
+  type AuditSuggestion,
+} from '../ai/publication-suggestion.js';
 import { PageTabs } from '../../shared/components/PageTabs.js';
 import { VersionComparison } from '../../shared/components/VersionComparison.js';
 import { intakeDetailStyles, intakeSnapshotStyles, intakePublishedStyles } from './styles.js';
@@ -24,7 +28,7 @@ import {
 import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { PublicationPolicyFields } from './PublicationPolicyFields.js';
-import type { Policy } from '@capability-hub/contracts';
+import type { PublicationDraftPolicy } from '@capability-hub/contracts';
 import type { IntakeResponse } from '@capability-hub/contracts/http';
 import { ArrowRight, ShieldCheck } from '../../shared/icons/lucide.js';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type SubmitEvent } from 'react';
@@ -40,6 +44,15 @@ import type { IntakeConnection } from './use-intake-detail.js';
 import { IntakeScan } from './IntakeScan.js';
 import { KeywordField } from '../../shared/components/KeywordField.js';
 import { SkillApiKeyField } from '../../shared/components/SkillApiKeyField.js';
+
+function draftPolicy(intake: IntakeResponse): PublicationDraftPolicy {
+  const previous = intake.publication;
+  if (previous?.proposed_scenarios?.length && previous.state !== 'approved') {
+    const { category, scenario_ids, proposed_scenarios, distribution } = previous;
+    return { category, scenario_ids, proposed_scenarios, distribution };
+  }
+  return intake.proposed_policy;
+}
 
 /**
  * 详情工作台：仅当校验通过、规则集未过期且未处于待审核时可编辑（已发布需点重新申请），
@@ -67,7 +80,7 @@ export function IntakeDetail({
   const [requiresApiKey, setRequiresApiKey] = useState(
     i.publication?.requires_api_key ?? i.proposed_requires_api_key,
   );
-  const [value, setValue] = useState<Policy>(i.proposed_policy),
+  const [value, setValue] = useState<PublicationDraftPolicy>(() => draftPolicy(i)),
     [appliesTo, setAppliesTo] = useState(i.proposed_applies_to),
     [purpose, setPurpose] = useState(''),
     [busy, setBusy] = useState(false),
@@ -75,7 +88,8 @@ export function IntakeDetail({
     [submitted, setSubmitted] = useState(''),
     [reapplying, setReapplying] = useState(false);
   useEffect(() => {
-    setValue(i.proposed_policy);
+    const policy = draftPolicy(i);
+    setValue(policy);
     setAppliesTo(i.publication?.applies_to ?? i.proposed_applies_to);
     setRequiresApiKey(i.publication?.requires_api_key ?? i.proposed_requires_api_key);
     setSubmitted('');
@@ -84,7 +98,7 @@ export function IntakeDetail({
     setPurpose(i.publication?.source_consent.purpose ?? '');
     applied.current = '';
     edited.current = {
-      category: i.proposed_policy.category !== 'uncategorized',
+      category: policy.category !== 'uncategorized',
       keywords: false,
       purpose: !!i.publication?.source_consent.purpose,
     };
@@ -102,6 +116,7 @@ export function IntakeDetail({
       ? suggestion
       : undefined;
   const editable =
+    i.can_maintain &&
     !inactive &&
     i.state === 'ready' &&
     i.ruleset_current &&
@@ -126,7 +141,11 @@ export function IntakeDetail({
   }, [jump]);
   const notices: PublicationNotice[] = [];
   if (editable) {
-    if (value.category === 'scenario' && !value.scenario_ids.length)
+    if (
+      value.category === 'scenario' &&
+      !value.scenario_ids.length &&
+      !value.proposed_scenarios?.length
+    )
       notices.push({ target: 'scenarios', evidence: false, text: '场景分类还缺少适用场景' });
     if (!value.distribution.audience.length)
       notices.push({ target: 'audience', evidence: false, text: '请指定至少一个受众' });
@@ -158,12 +177,15 @@ export function IntakeDetail({
     const seen = new Set(existing.map((word) => word.toLowerCase()));
     const additions = fields.keywords.filter((word) => !seen.has(word.toLowerCase()));
     const keywords = [...existing, ...additions].slice(0, 20);
-    const changedCategory =
-      value.category !== fields.category ||
-      [...value.scenario_ids].sort().join() !== [...fields.scenario_ids].sort().join();
+    const changedCategory = !sameClassification(value, fields);
     const changedKeywords = JSON.stringify(existing) !== JSON.stringify(keywords);
     if (writeCategory)
-      setValue({ ...value, category: fields.category, scenario_ids: fields.scenario_ids });
+      setValue({
+        ...value,
+        category: fields.category,
+        scenario_ids: fields.scenario_ids,
+        proposed_scenarios: fields.proposed_scenarios,
+      });
     if (writeKeywords) setAppliesTo({ ...appliesTo, keywords });
     if (writePurpose) setPurpose(fields.purpose);
     const changes: DraftChange[] = [
@@ -218,15 +240,14 @@ export function IntakeDetail({
     const fields = proposal.fields;
     const keywords = new Set((appliesTo.keywords ?? []).map((term) => term.toLowerCase()));
     const missing = fields.keywords.filter((term) => !keywords.has(term.toLowerCase()));
-    const categoriesMatch =
-      value.category === fields.category &&
-      value.scenario_ids.length === fields.scenario_ids.length &&
-      fields.scenario_ids.every((id) => value.scenario_ids.includes(id));
     const config = {
       category: {
         label: '分类',
-        values: [categoryLabels[fields.category]],
-        matched: categoriesMatch,
+        values: [
+          categoryLabels[fields.category],
+          ...(fields.proposed_scenarios ?? []).map((item) => item.name),
+        ],
+        matched: sameClassification(value, fields),
       },
       keywords: {
         label: '关键词',
@@ -458,14 +479,22 @@ export function IntakeDetail({
               ) : (
                 <p className={subtleStyles}>当前发布不可访问，可从资产维护查看版本记录。</p>
               )}
-              <button
-                className={textBtnStyles}
-                disabled={!i.ruleset_current}
-                onClick={() => setReapplying(true)}
-              >
-                重新申请分发
-              </button>
+              {i.can_maintain && (
+                <button
+                  className={textBtnStyles}
+                  disabled={!i.ruleset_current}
+                  onClick={() => {
+                    setValue(i.proposed_policy);
+                    edited.current.category = i.proposed_policy.category !== 'uncategorized';
+                    setReapplying(true);
+                  }}
+                >
+                  重新申请分发
+                </button>
+              )}
             </div>
+          ) : !i.can_maintain ? (
+            <Message>发布申请由该资产的维护者填写。</Message>
           ) : (
             <form id={formId} onSubmit={submit} className={formStackStyles}>
               {source &&
@@ -498,7 +527,8 @@ export function IntakeDetail({
                   onChange={(next) => {
                     if (
                       next.category !== value.category ||
-                      next.scenario_ids !== value.scenario_ids
+                      next.scenario_ids !== value.scenario_ids ||
+                      next.proposed_scenarios !== value.proposed_scenarios
                     )
                       edited.current.category = true;
                     setValue(next);

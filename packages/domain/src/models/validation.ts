@@ -387,6 +387,15 @@ const schemas = {
   requests: z.strictObject({
     ...versioned,
     ...policy,
+    proposed_scenarios: z
+      .array(
+        z.strictObject({
+          name: z.string().min(1).max(80),
+          description: z.string().min(1).max(2000),
+        }),
+      )
+      .max(20)
+      .optional(),
     nomination: z.strictObject({ release_id: id, reason: text }).optional(),
     applies_to: applicability,
     requires_api_key: z.boolean().optional(),
@@ -475,7 +484,14 @@ const schemas = {
     response: z.unknown(),
     expires_at: integer,
   }),
-  scenarios: z.strictObject({ ...base, name: text, description: text, active: z.boolean() }),
+  scenarios: z.strictObject({
+    ...base,
+    name: text,
+    description: text,
+    active: z.boolean(),
+    revision: revision.optional(),
+    merged_into: id.optional(),
+  }),
   git_credentials: z.strictObject({
     ...versioned,
     user_id: id,

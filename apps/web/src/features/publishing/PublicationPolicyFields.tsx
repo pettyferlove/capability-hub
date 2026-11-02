@@ -2,9 +2,8 @@ import type { ReactNode } from 'react';
 import { audienceIcons, classificationIcons } from '../../shared/components/select-icons.js';
 import { policyFieldsStyles } from './styles.js';
 import { chipsStyles, checkLabelStyles } from '../../shared/styles/recipes.js';
-import type { Policy } from '@capability-hub/contracts';
-import type { ScenarioResponse } from '@capability-hub/contracts/http';
-import { useQuery } from '../../shared/api/use-query.js';
+import type { PublicationDraftPolicy } from '@capability-hub/contracts';
+import { PublicationScenarioFields } from './PublicationScenarioFields.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { Message } from '../../shared/components/Message.js';
@@ -18,17 +17,12 @@ export function PublicationPolicyFields({
   onChange,
   categoryHint,
 }: {
-  value: Policy;
+  value: PublicationDraftPolicy;
   categoryHint?: ReactNode;
-  onChange: (v: Policy) => void;
+  onChange: (v: PublicationDraftPolicy) => void;
 }) {
   const { me } = useHub();
-  const {
-    data: scenarios,
-    error: scenarioError,
-    loading: scenariosLoading,
-  } = useQuery<ScenarioResponse[]>('/api/scenarios');
-  const update = (v: Partial<Policy>) => onChange({ ...value, ...v });
+  const update = (v: Partial<PublicationDraftPolicy>) => onChange({ ...value, ...v });
   const audience = value.distribution.audience;
   const audienceMode = audience.includes('public')
     ? 'public'
@@ -50,7 +44,11 @@ export function PublicationPolicyFields({
             optionIcons={classificationIcons}
             value={value.category}
             onValueChange={(nextValue) =>
-              update({ category: nextValue as Policy['category'], scenario_ids: [] })
+              update({
+                category: nextValue as PublicationDraftPolicy['category'],
+                scenario_ids: [],
+                proposed_scenarios: undefined,
+              })
             }
           >
             <option value="uncategorized">未分类</option>
@@ -61,32 +59,7 @@ export function PublicationPolicyFields({
         {categoryHint}
       </div>
       {value.category === 'scenario' && (
-        <fieldset data-review-target="scenarios" tabIndex={-1}>
-          <legend>适用场景</legend>
-          {scenarioError && <Message error>{scenarioError}</Message>}
-          {scenariosLoading && <small>正在读取场景…</small>}
-          {!scenariosLoading && !scenarioError && !scenarios?.length && (
-            <small>请管理员先在账号管理中登记场景。</small>
-          )}
-          <div className={chipsStyles}>
-            {scenarios?.map((s) => (
-              <label className={checkLabelStyles} key={s.id}>
-                <input
-                  type="checkbox"
-                  checked={value.scenario_ids.includes(s.id)}
-                  onChange={(e) =>
-                    update({
-                      scenario_ids: e.target.checked
-                        ? [...value.scenario_ids, s.id]
-                        : value.scenario_ids.filter((id: string) => id !== s.id),
-                    })
-                  }
-                />
-                <span>{s.name}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        <PublicationScenarioFields value={value} onChange={update} />
       )}
       <label>
         可见范围

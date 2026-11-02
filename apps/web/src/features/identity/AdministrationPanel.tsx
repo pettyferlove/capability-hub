@@ -39,7 +39,7 @@ import {
 import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import type { IdentitySnapshotResponse, PublicUserResponse } from '@capability-hub/contracts/http';
-import type { ScenarioResponse } from '@capability-hub/contracts/http';
+import type { ManagedScenarioResponse } from '@capability-hub/contracts/http';
 import { Plus, ShieldCheck, Trash2 } from '../../shared/icons/lucide.js';
 import { AppIcon } from '../../shared/icons/AppIcon.js';
 import usersRoundIcon from '@iconify-icons/lucide/users-round';
@@ -71,13 +71,14 @@ export function AdministrationPanel({ tab }: { tab: string }) {
   );
   const [dialog, setDialog] = useState<IdentityEditorKind | ''>(''),
     [activeUser, setActiveUser] = useState<IdentityEditorRecord>(),
+    [activeScenario, setActiveScenario] = useState<ManagedScenarioResponse>(),
     [message, setMessage] = useState(''),
     [failure, setFailure] = useState(false);
   const {
     data: scenarios,
     error: scenarioError,
     loading: scenariosLoading,
-  } = useQuery<ScenarioResponse[]>('/api/scenarios', refresh);
+  } = useQuery<ManagedScenarioResponse[]>('/api/admin/scenarios', refresh);
   async function remove(path: string) {
     try {
       await api(path, { method: 'DELETE' });
@@ -339,7 +340,29 @@ export function AdministrationPanel({ tab }: { tab: string }) {
                         <p className="mt-1 whitespace-pre-wrap text-caption leading-relaxed text-muted-ink">
                           {s.description || '尚未填写场景说明'}
                         </p>
+                        {!s.active && (
+                          <small>
+                            {s.merged_into
+                              ? '已合并至 ' +
+                                (scenarios.find((item) => item.id === s.merged_into)?.name ??
+                                  s.merged_into)
+                              : '已停用'}
+                          </small>
+                        )}
                       </div>
+                      {s.active && (
+                        <button
+                          type="button"
+                          className={cn(textBtnStyles, 'ml-auto shrink-0')}
+                          aria-label={'管理场景「' + s.name + '」'}
+                          onClick={() => {
+                            setActiveScenario(s);
+                            setDialog('edit-scenario');
+                          }}
+                        >
+                          管理
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -480,11 +503,16 @@ export function AdministrationPanel({ tab }: { tab: string }) {
             kind={dialog}
             data={data}
             scenarios={scenarios ?? []}
+            scenario={activeScenario}
             user={activeUser}
             onClose={() => setDialog('')}
             onSaved={() => {
               setDialog('');
-              setMessage('已保存，权限变更已生效。');
+              setMessage(
+                dialog === 'scenario' || dialog === 'edit-scenario'
+                  ? '业务场景已保存。'
+                  : '已保存，权限变更已生效。',
+              );
               setFailure(false);
               reload();
             }}

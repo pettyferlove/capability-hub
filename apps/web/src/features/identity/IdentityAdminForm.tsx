@@ -13,7 +13,7 @@ import type {
   ManagementAssetResponse,
   SourceResponse,
 } from '@capability-hub/contracts/http';
-import type { ScenarioResponse } from '@capability-hub/contracts/http';
+import type { ManagedScenarioResponse } from '@capability-hub/contracts/http';
 import { useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { formFields } from '../../shared/api/form-fields.js';
@@ -27,21 +27,22 @@ import { accountLoginLabel } from '../../shared/format/labels.js';
 
 /**
  * 账号、团队、角色、绑定与场景共用的编辑表单：`kind` 同时决定提交路径、字段集合与标题，
- * 且每类形态只提交自己的字段。`reset` 与 `edit-role` 必须带 `user`（缺失直接抛错），
- * 这两类写操作额外回传 `user.revision` 做乐观并发校验；其余形态均为新建语义。
+ * 且每类形态只提交自己的字段。修改已有账号、角色或场景时回传所选记录的 revision。
  */
 export function IdentityAdminForm({
   kind,
   data,
   user,
   scenarios,
+  scenario,
   onClose,
   onSaved,
 }: {
   kind: IdentityEditorKind;
   data: IdentitySnapshotResponse;
   user?: IdentityEditorRecord;
-  scenarios: ScenarioResponse[];
+  scenarios: ManagedScenarioResponse[];
+  scenario?: ManagedScenarioResponse;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -50,7 +51,8 @@ export function IdentityAdminForm({
     [permissions, setPermissions] = useState<string[]>(
       kind === 'edit-role' ? (user?.permissions ?? []) : [],
     ),
-    [scope, setScope] = useState('platform');
+    [scope, setScope] = useState('platform'),
+    [scenarioAction, setScenarioAction] = useState('edit');
   const { data: sources } = useQuery<SourceResponse[]>('/api/sources');
   const { data: assets } = useQuery<ManagementAssetResponse[]>('/api/management/assets');
   async function submit(e: SubmitEvent<HTMLFormElement>) {
@@ -84,7 +86,15 @@ export function IdentityAdminForm({
           'PATCH',
           user!.revision,
         );
-      else if (kind === 'role') await mutate('/api/admin/roles', { ...b, permissions });
+      else if (kind === 'edit-scenario') {
+        if (!scenario) throw new Error('请选择要管理的场景');
+        await mutate(
+          '/api/admin/scenarios/' + scenario.id,
+          { action: scenarioAction, ...b },
+          'PATCH',
+          scenario.revision,
+        );
+      } else if (kind === 'role') await mutate('/api/admin/roles', { ...b, permissions });
       else if (kind === 'binding')
         await mutate('/api/admin/bindings', {
           ...b,
@@ -118,6 +128,7 @@ export function IdentityAdminForm({
       binding: '授予角色',
       membership: '添加团队成员',
       scenario: '登记业务场景',
+      'edit-scenario': '管理场景 · ' + scenario?.name,
       reset: '重置 ' + user?.display_name + ' 的密码',
     } as Record<string, string>
   )[kind];
@@ -184,28 +195,63 @@ export function IdentityAdminForm({
             <Message>重置后该账号需重新登录网页，CLI/MCP 访问令牌保持有效。</Message>
           </>
         )}
-        {['group', 'role', 'edit-role', 'scenario'].includes(kind) && (
+        {kind === 'edit-scenario' && (
+          <label>
+            场景操作
+            <SelectField value={scenarioAction} onValueChange={setScenarioAction}>
+              <option value="edit">编辑名称与说明</option>
+              <option value="merge">合并到其他场景</option>
+              <option value="disable">停用场景</option>
+            </SelectField>
+          </label>
+        )}
+        {(['group', 'role', 'edit-role', 'scenario'].includes(kind) ||
+          (kind === 'edit-scenario' && scenarioAction === 'edit')) && (
           <label>
             名称
             <InputField
               icon="tag"
               name="name"
-              defaultValue={kind === 'edit-role' ? user?.name : ''}
+              defaultValue={
+                kind === 'edit-role' ? user?.name : kind === 'edit-scenario' ? scenario?.name : ''
+              }
               required
               maxLength={80}
               placeholder={kind === 'scenario' ? '例如：检索团队文档' : '例如：平台工程组'}
             />
           </label>
         )}
-        {kind === 'scenario' && (
+        {(kind === 'scenario' || (kind === 'edit-scenario' && scenarioAction === 'edit')) && (
           <label>
             场景说明
             <textarea
               name="description"
+              defaultValue={kind === 'edit-scenario' ? scenario?.description : ''}
               maxLength={2000}
               placeholder="描述该场景的适用团队与典型任务…"
             />
           </label>
+        )}
+        {kind === 'edit-scenario' && scenarioAction === 'merge' && (
+          <>
+            <label>
+              合并目标
+              <SelectField name="target_id" required>
+                <option value="">请选择场景</option>
+                {scenarios
+                  .filter((s) => s.active && s.id !== scenario?.id)
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+              </SelectField>
+            </label>
+            <Message>已有发布可通过目标场景检索。历史发布和审核授权保留原场景 ID。</Message>
+          </>
+        )}
+        {kind === 'edit-scenario' && scenarioAction === 'disable' && (
+          <Message>停用后，后续申请需要选择其他有效场景。已发布资产仍按原受众分发。</Message>
         )}
         {kind === 'membership' && (
           <>
@@ -300,7 +346,7 @@ export function IdentityAdminForm({
                   {(scope === 'team'
                     ? data.groups
                     : scope === 'scenario'
-                      ? scenarios
+                      ? scenarios.filter((s) => s.active)
                       : scope === 'source'
                         ? (sources ?? [])
                         : (assets ?? [])
@@ -315,7 +361,13 @@ export function IdentityAdminForm({
           </>
         )}
         {error && <Message error>{error}</Message>}
-        <Submit busy={busy}>保存</Submit>
+        <Submit busy={busy}>
+          {kind === 'edit-scenario' && scenarioAction === 'merge'
+            ? '确认合并'
+            : kind === 'edit-scenario' && scenarioAction === 'disable'
+              ? '确认停用'
+              : '保存'}
+        </Submit>
       </form>
     </>
   );
@@ -340,4 +392,12 @@ export interface IdentityEditorRecord {
  * `scenario` 登记业务场景；每种形态对应一条独立的写接口，不共享提交载荷。
  */
 export type IdentityEditorKind =
-  'user' | 'reset' | 'group' | 'role' | 'edit-role' | 'binding' | 'membership' | 'scenario';
+  | 'user'
+  | 'reset'
+  | 'group'
+  | 'role'
+  | 'edit-role'
+  | 'binding'
+  | 'membership'
+  | 'scenario'
+  | 'edit-scenario';

@@ -72,14 +72,14 @@ export class AgentEvidenceService {
   }
 
   /**
-   * 可发布的场景清单，仅返回启用场景的 id 与 name，不含任何资源相关内容；
+   * 可发布的场景清单，包含启用场景的名称与用途说明；
    * 仍要传版本 id 以复用门禁，从而不向无权主体暴露场景表。
    */
   async publicationScenarios(ownerId: string, versionId: string) {
     await this.version(ownerId, versionId);
     return (await this.context.store.all('scenarios'))
       .filter((s) => s.active)
-      .map(({ id, name }) => ({ id, name }));
+      .map(({ id, name, description }) => ({ id, name, description }));
   }
 
   /**

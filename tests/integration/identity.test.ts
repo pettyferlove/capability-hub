@@ -9,13 +9,137 @@ import { ScryptPasswordHasher } from '@capability-hub/infrastructure/security';
 import {
   createTestApplication,
   createTestHub,
+  receiveSkill,
   testPassword,
   type TestHub,
 } from '../support/application.js';
 import { deferred } from '../support/store.js';
+import { signIn } from '../support/http.js';
 
 const code = (value: string) => (error: unknown) =>
   error instanceof HubError && error.code === value;
+
+test('场景管理员合并词条后按目标检索，历史发布和场景审核权仍引用原 ID', async (context) => {
+  const f = await createTestHub(context);
+  const old = await f.store.insert('scenarios', {
+    id: randomUUID(),
+    name: '合并请求检查',
+    description: '',
+    active: true,
+  });
+  const target = await f.hub.administration.createScenario(f.admin, { name: '代码评审' });
+  const role = (await f.store.find('roles', 'key', 'reviewer'))!;
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'scenario',
+    scope_id: old.id,
+  });
+  const user = await f.hub.identity.principal(f.reader.id);
+  const intake = await receiveSkill(f);
+  const body = {
+    source_intake_id: intake.id,
+    version_id: intake.version_id,
+    base_release_id: null,
+    category: 'scenario' as const,
+    scenario_ids: [old.id],
+    distribution: { mode: 'approved_audience' as const, audience: ['public'] },
+    applies_to: { keywords: ['代码规范'] },
+    purpose: '共享评审流程',
+  };
+  const request = await f.hub.publications.submit(f.admin, body, randomUUID());
+  await f.hub.publications.decide(
+    f.reviewer,
+    request.id,
+    {
+      decision: 'approve',
+      policy_digest: request.policy_digest,
+      comment: '',
+      accepted_warnings: [],
+    },
+    '"1"',
+    randomUUID(),
+  );
+  const release = (await f.store.all('releases'))[0];
+  const client = await signIn(f);
+  const readOnly = await signIn(f, 'reader');
+  const path = '/api/admin/scenarios/' + old.id;
+  const merge = { action: 'merge', target_id: target.id };
+  await readOnly
+    .patch(path)
+    .set('If-Match', '"1"')
+    .set('Idempotency-Key', randomUUID())
+    .send(merge)
+    .expect(403);
+  const edit = { action: 'edit', name: '合并审查', description: '评审提交改动' };
+  await client
+    .patch(path)
+    .set('If-Match', '"1"')
+    .set('Idempotency-Key', randomUUID())
+    .send(edit)
+    .expect('ETag', '"2"')
+    .expect(200);
+  await client
+    .patch(path)
+    .set('If-Match', '"1"')
+    .set('Idempotency-Key', randomUUID())
+    .send(merge)
+    .expect(412);
+  const key = randomUUID();
+  for (let i = 0; i < 2; i++)
+    await client
+      .patch(path)
+      .set('If-Match', '"2"')
+      .set('Idempotency-Key', key)
+      .send(merge)
+      .expect('ETag', '"3"')
+      .expect(200);
+  assert.deepEqual(await f.store.get('releases', release.id), release);
+  assert.deepEqual(
+    (await f.hub.catalog.listScenarios(null)).map((s) => s.id),
+    [target.id],
+  );
+  assert.equal((await f.hub.catalog.search(null, { scenario_id: target.id })).total, 1);
+  assert.equal(
+    (await f.hub.catalog.suggestKeywords(null, { scenario_id: target.id })).items[0].keyword,
+    '代码规范',
+  );
+  const next = await f.hub.publications.submit(
+    f.admin,
+    {
+      ...body,
+      base_release_id: release.id,
+      scenario_ids: [target.id],
+      distribution: { mode: 'approved_audience', audience: ['group:' + f.teamId] },
+    },
+    randomUUID(),
+  );
+  assert.equal(await f.hub.assetAccess.canReview(user, next), false);
+  await client
+    .patch('/api/admin/scenarios/' + target.id)
+    .set('If-Match', '"1"')
+    .set('Idempotency-Key', randomUUID())
+    .send({ action: 'disable' })
+    .expect(200);
+  await assert.rejects(
+    () =>
+      f.hub.publications.decide(
+        f.reviewer,
+        next.id,
+        {
+          decision: 'approve',
+          policy_digest: next.policy_digest,
+          comment: '',
+          accepted_warnings: [],
+        },
+        '"1"',
+        randomUUID(),
+      ),
+    code('INVALID_SCENARIO'),
+  );
+  assert.deepEqual(await f.hub.catalog.listScenarios(null), []);
+  assert.equal((await f.hub.catalog.search(null, {})).total, 1);
+});
 
 function directoryLogin(hub: TestHub['hub'], authenticator: DirectoryAuthenticator) {
   return new AuthenticationService(

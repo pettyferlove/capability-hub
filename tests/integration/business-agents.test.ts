@@ -91,6 +91,58 @@ async function grantMaintainer(f: TestHub, principalId: string, teamId = f.teamI
   });
 }
 
+test('AI 只能在查询词表后起草未登记的场景，人工采纳只回填草稿', async (t) => {
+  const previous = process.env.AI_FIXTURE_KEY;
+  process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+  t.after(() => {
+    if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+    else process.env.AI_FIXTURE_KEY = previous;
+  });
+  const definition = { name: '代码评审', description: '审查提交的功能和测试。' };
+  const fields = {
+    ...publicationSuggestion,
+    category: 'scenario',
+    proposed_scenarios: [definition],
+    scenario_reason: '词表中缺少代码评审任务。',
+  };
+  for (const { lookup, exists, valid } of [
+    { lookup: false, exists: false, valid: false },
+    { lookup: true, exists: true, valid: false },
+    { lookup: true, exists: false, valid: true },
+  ]) {
+    const provider = await fixture('openai', 'tools', false, {
+      ...script,
+      turns: lookup
+        ? [...script.turns, { name: 'publication_scenarios', input: { query: '未命中' } }]
+        : script.turns,
+      json: JSON.stringify({ ...assessment, publication_suggestion: fields }),
+    });
+    t.after(provider.close);
+    const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
+    if (exists) await f.hub.administration.createScenario(f.admin, definition);
+    await receiveSkill(f);
+    const execution = await run(f);
+    if (!valid) {
+      assert.equal(execution.status, 'failed');
+      assert.equal(execution.payload.error?.code, 'AI_OUTPUT_INVALID');
+      continue;
+    }
+    assert.equal(execution.status, 'waiting_input', JSON.stringify(execution.payload.error));
+    const [interaction] = (await f.hub.ai.runtime.view(execution.id)).interactions;
+    await f.hub.ai.runtime.respond(
+      execution.id,
+      interaction.id,
+      f.admin.id,
+      interaction.payload.revision,
+      { approved: true },
+    );
+    const accepted = acceptedSuggestion(executionResponse(await run(f)));
+    assert.deepEqual(accepted?.fields, fields);
+    assert.deepEqual(await f.hub.catalog.listScenarios(f.admin), []);
+    assert.deepEqual(await f.store.all('requests'), []);
+  }
+});
+
 test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报告，发布申请保持待审', async (t) => {
   const scenarioId = randomUUID();
   const suggested = { ...publicationSuggestion, category: 'scenario', scenario_ids: [scenarioId] };

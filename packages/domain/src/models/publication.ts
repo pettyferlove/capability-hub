@@ -1,5 +1,5 @@
 import type { Applicability } from '../content.js';
-import type { Policy, SourceConsent } from '../policy.js';
+import type { Policy, ScenarioDefinition, SourceConsent } from '../policy.js';
 import type { IsoDateTime, VersionedRecord } from './base.js';
 
 /**
@@ -7,6 +7,7 @@ import type { IsoDateTime, VersionedRecord } from './base.js';
  * 审核期间任一环节变化都会把申请标记为 `stale` 而不是静默沿用。
  */
 export interface PublicationRequestRecord extends VersionedRecord, Policy {
+  proposed_scenarios?: ScenarioDefinition[];
   requires_api_key?: boolean;
   /** 提名已发布版本时的补充说明；被提名者与提名者不能是同一人，需要他人批准。 */
   nomination?: { release_id: string; reason: string };

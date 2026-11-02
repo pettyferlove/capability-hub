@@ -218,6 +218,7 @@ export class IntakeQueryService {
         : null,
       asset_lifecycle: asset.lifecycle,
       asset_lifecycle_reason: asset.deprecation_reason ?? '',
+      can_maintain: this.assets.canMaintain(principal, asset),
       can_view_catalog: await this.assets.canViewCatalog(principal, asset),
       retryable: !intake.binding_id && (intake.retryable ?? false),
       version: version ? toVersionSnapshot(version) : null,

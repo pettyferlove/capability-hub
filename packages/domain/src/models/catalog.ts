@@ -102,6 +102,9 @@ export interface ScenarioRecord {
   name: string;
   description: string;
   active: boolean;
+  revision?: number;
+  /** 合并只影响目录检索，新申请和角色授权仍使用明确的场景 ID。 */
+  merged_into?: string;
 }
 
 /**

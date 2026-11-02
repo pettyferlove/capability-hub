@@ -3,6 +3,12 @@ import type { AgentInvocation, OperationContext } from '@capability-hub/ai';
 import { z } from 'zod';
 import type { evidenceSchema } from './schemas.js';
 
+interface BusinessEvidence {
+  feedbackRead: boolean;
+  catalogNames?: Set<string>;
+  scenarios: Map<string, string>;
+}
+
 /**
  * 为业务 agent 装配只读证据工具。所有工具都只读固定版本，不连接远端、不执行资源内的指令；
  * 每次调用都经 {@link OperationContext.tool} 触发 `authorize('tool', id)` 并在同一执行写入
@@ -24,9 +30,12 @@ export function businessTools(
 ): {
   tools: NonNullable<AgentInvocation['tools']>;
   inspected: z.infer<typeof evidenceSchema>[];
-  evidence: { feedbackRead: boolean; scenarios: Map<string, string> };
+  evidence: BusinessEvidence;
 } {
-  const evidence = { feedbackRead: false, scenarios: new Map<string, string>() };
+  const evidence: BusinessEvidence = {
+    feedbackRead: false,
+    scenarios: new Map<string, string>(),
+  };
   const inspected: z.infer<typeof evidenceSchema>[] = [];
   const tool = <I extends z.ZodType>(
     id: string,
@@ -48,7 +57,7 @@ export function businessTools(
     ...(!feedbackId && {
       publication_scenarios: tool(
         'publication-scenarios',
-        '按名称搜索或分页查看已登记的有效场景。推荐场景分类时使用返回的 ID。',
+        '按名称或说明搜索已登记场景。优先复用同类业务任务，引用返回的 ID。',
         z
           .object({
             query: z.string().max(128).default(''),
@@ -56,10 +65,14 @@ export function businessTools(
           })
           .strict(),
         async ({ query, offset }) => {
-          const available = (await service.publicationScenarios(context.ownerId, versionId)).filter(
-            (s) => s.name.toLowerCase().includes(query.toLowerCase()),
+          const catalog = await service.publicationScenarios(context.ownerId, versionId);
+          const available = catalog.filter((s) =>
+            (s.name + ' ' + s.description).toLowerCase().includes(query.toLowerCase()),
           );
-          const items = available.slice(offset, offset + 30);
+          const items = available
+            .slice(offset, offset + 30)
+            .map((s) => ({ ...s, description: s.description.slice(0, 160) }));
+          evidence.catalogNames = new Set(catalog.map((s) => s.name));
           for (const item of items) evidence.scenarios.set(item.id, item.name);
           return {
             items,

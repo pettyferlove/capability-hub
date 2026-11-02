@@ -96,11 +96,13 @@ export class HubServices {
           }
         : undefined,
     );
+    this.idempotency = new IdempotencyService(store, this.identity);
     this.administration = new IdentityAdministrationService(
       store,
       this.identity,
       this.sessions,
       passwords,
+      this.idempotency,
     );
     this.tokens = new TokenService(store, this.identity);
     this.oauth = new OAuthService(store, this.identity, config.publicUrl);
@@ -126,7 +128,6 @@ export class HubServices {
       new SignedCatalogCursorCodec(config.secret),
     );
     this.content = new AssetContentService(context, this.assetAccess);
-    this.idempotency = new IdempotencyService(store, this.identity);
     this.mcpKeys = new McpSharedKeyService(
       context,
       this.assetAccess,

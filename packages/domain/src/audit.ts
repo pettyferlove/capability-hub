@@ -163,6 +163,9 @@ export const auditDefinitions: Record<string, AuditDefinition> = {
   'intake.failed': { label: '内容扫描失败', category: 'source', subject: 'intake', failure: true },
   'intake.rescan_requested': { label: '请求重新扫描', category: 'source', subject: 'intake' },
   'scenario.created': { label: '登记适用场景', category: 'publication', subject: 'scenario' },
+  'scenario.edited': { label: '编辑适用场景', category: 'publication', subject: 'scenario' },
+  'scenario.merged': { label: '合并适用场景', category: 'publication', subject: 'scenario' },
+  'scenario.disabled': { label: '停用适用场景', category: 'publication', subject: 'scenario' },
   'backup.completed': { label: '完成数据备份', category: 'operations', subject: 'instance' },
 };
 

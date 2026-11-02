@@ -3,11 +3,30 @@ import {
   type AiExecutionResponse,
   type AiExecutionViewResponse,
   type PublicationSuggestion,
+  type PublicationDraftPolicy,
 } from '@capability-hub/contracts';
 import { jsonObject, type Json } from './presentation.js';
 
 /** 分类文案，键必须覆盖契约 `PublicationSuggestion.category` 的取值；它不承担缺省回退。 */
 export const categoryLabels = { general: '通用', scenario: '场景', uncategorized: '未分类' };
+
+/** 顺序不影响建议匹配，维护者改写了场景说明则视为不同定义。 */
+export function sameClassification(
+  left: Pick<PublicationDraftPolicy, 'category' | 'scenario_ids' | 'proposed_scenarios'>,
+  right: PublicationSuggestion,
+) {
+  const proposals = left.proposed_scenarios ?? [];
+  const suggested = right.proposed_scenarios ?? [];
+  return (
+    left.category === right.category &&
+    left.scenario_ids.length === right.scenario_ids.length &&
+    right.scenario_ids.every((id) => left.scenario_ids.includes(id)) &&
+    proposals.length === suggested.length &&
+    suggested.every((item) =>
+      proposals.some((p) => p.name === item.name && p.description === item.description),
+    )
+  );
+}
 
 /** 审计报告里需要人工留意的一条发现，`evidence` 是路径加成行号区间的人类可读引用。 */
 export interface AuditNotice {

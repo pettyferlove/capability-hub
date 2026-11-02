@@ -162,3 +162,9 @@ export interface ScenarioResponse {
   description: string;
   active: boolean;
 }
+
+/** 管理台也返回停用词条、合并目标与编辑使用的修订号。 */
+export interface ManagedScenarioResponse extends ScenarioResponse {
+  revision: number;
+  merged_into?: string;
+}

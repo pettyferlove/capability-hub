@@ -372,3 +372,60 @@ test('采纳结果仅填同版本草稿，保留先前输入，显式替换后�
     base_release_id: intake.current_release_id,
   });
 });
+
+test('维护者可将 AI 新场景改为已有条目，再补充自己的定义后提交', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f);
+  const existing = {
+    id: '00000000-0000-4000-8000-000000000001',
+    name: '代码评审',
+    description: '审查合并请求',
+    active: true,
+  };
+  const fields = {
+    category: 'scenario' as const,
+    scenario_ids: [],
+    proposed_scenarios: [{ name: '合并请求审查', description: '审查待合并的改动。' }],
+    keywords: ['GitLab'],
+    purpose: '团队共享评审流程',
+  };
+  let submitted: Record<string, unknown> | undefined;
+  t.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path === '/api/scenarios') return Response.json([existing]);
+    assert.equal(path, '/api/publication-requests');
+    submitted = JSON.parse(String(options.body)) as Record<string, unknown>;
+    return Response.json({ id: 'request' });
+  });
+  const user = userEvent.setup();
+  render(
+    page(
+      createElement(IntakeDetail, {
+        intake,
+        suggestion: {
+          fields,
+          versionId: intake.version_id,
+          digest: intake.content_digest!,
+          executionId: 'audit',
+        },
+      }),
+    ),
+  );
+  const draft = await screen.findByRole('textbox', { name: '新场景名称' });
+  assert.equal((draft as HTMLInputElement).value, '合并请求审查');
+  await user.clear(draft);
+  await user.type(draft, existing.name);
+  await user.click(await screen.findByRole('button', { name: '使用已有场景「代码评审」' }));
+  assert.equal(
+    (screen.getByRole('checkbox', { name: existing.name }) as HTMLInputElement).checked,
+    true,
+  );
+  await user.click(screen.getByRole('button', { name: '添加新场景' }));
+  await user.type(screen.getByRole('textbox', { name: '新场景名称' }), '数据库迁移演练');
+  await user.type(screen.getByRole('textbox', { name: '适用说明' }), '验证回退步骤。');
+  await user.click(screen.getByRole('button', { name: '确认内容并提交审核' }));
+  await screen.findByRole('link', { name: '查看审核' });
+  assert.deepEqual(submitted?.scenario_ids, [existing.id]);
+  assert.deepEqual(submitted?.proposed_scenarios, [
+    { name: '数据库迁移演练', description: '验证回退步骤。' },
+  ]);
+});

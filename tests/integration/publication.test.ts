@@ -3,13 +3,16 @@ import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import type { PublicationDecisionCommand } from '@capability-hub/application';
 import { publicationDecisionRequestSchema } from '@capability-hub/contracts';
+import type { ScenarioDefinition } from '@capability-hub/contracts';
 import { HubError } from '@capability-hub/domain/errors';
 import {
   createTestHub,
   publishSkill,
   receiveSkill,
   submitPublication,
+  testPassword,
 } from '../support/application.js';
+import { signIn } from '../support/http.js';
 
 const errorCode = (code: string) => (error: unknown) =>
   error instanceof HubError && error.code === code;
@@ -24,6 +27,206 @@ function approval(
     accepted_warnings: [],
   };
 }
+
+const newScene = { name: '数据库迁移演练', description: '验证迁移脚本及回退流程。' };
+
+function scenarioSubmission(
+  intake: Awaited<ReturnType<typeof receiveSkill>>,
+  team: string,
+  definitions: ScenarioDefinition[] = [newScene],
+) {
+  return {
+    source_intake_id: intake.id,
+    version_id: intake.version_id,
+    base_release_id: null,
+    category: 'scenario' as const,
+    scenario_ids: [],
+    proposed_scenarios: definitions,
+    distribution: { mode: 'approved_audience' as const, audience: ['group:' + team] },
+    applies_to: {},
+    purpose: '共享团队迁移演练流程',
+  };
+}
+
+test('维护者可随发布定义场景，含新定义的申请只允许独立平台审核', async (context) => {
+  const f = await createTestHub(context);
+  const intake = await receiveSkill(f);
+  const registered = await f.hub.administration.createScenario(f.admin, { name: '发布检查' });
+  const body = { ...scenarioSubmission(intake, f.teamId), scenario_ids: [registered.id] };
+  const client = await signIn(f, 'reader');
+  const submit = () =>
+    client.post('/api/publication-requests').set('Idempotency-Key', randomUUID()).send(body);
+  await submit().expect(403);
+  const role = (await f.store.find('roles', 'key', 'maintainer'))!;
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'team',
+    scope_id: f.teamId,
+  });
+  await client.post('/api/admin/scenarios').send(newScene).expect(403);
+  const posted = await submit().expect(201);
+  const request = (await f.store.get('requests', String(posted.body.id)))!;
+  assert.deepEqual(request.proposed_scenarios, [newScene]);
+  assert.deepEqual(JSON.parse(request.canonical_policy_json).proposed_scenarios, [newScene]);
+  assert.deepEqual(
+    (await f.hub.catalog.listScenarios(f.reader)).map((s) => s.id),
+    [registered.id],
+  );
+  const reviewRole = (await f.store.find('roles', 'key', 'reviewer'))!;
+  const scoped = await f.hub.administration.createUser(f.admin, {
+    username: 'scene-reviewer',
+    password: testPassword,
+    display_name: '场景审核者',
+    group_ids: [],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: scoped.id,
+    role_id: reviewRole.id,
+    scope_type: 'scenario',
+    scope_id: registered.id,
+  });
+  const scopedReviewer = await f.hub.identity.principal(scoped.id);
+  const version = (await f.store.get('versions', intake.version_id))!;
+  await assert.rejects(
+    () => f.hub.assetAccess.requireCandidateAccess(scopedReviewer, version),
+    errorCode('FORBIDDEN'),
+  );
+  await assert.rejects(
+    () => f.hub.publicationQueries.getReview(scopedReviewer, request.id),
+    errorCode('FORBIDDEN'),
+  );
+  await assert.rejects(
+    () =>
+      f.hub.publications.decide(scopedReviewer, request.id, approval(request), '"1"', randomUUID()),
+    errorCode('FORBIDDEN'),
+  );
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: reviewRole.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  const submitter = await f.hub.identity.principal(f.reader.id);
+  await assert.rejects(
+    () => f.hub.publications.decide(submitter, request.id, approval(request), '"1"', randomUUID()),
+    errorCode('SELF_REVIEW'),
+  );
+  const key = randomUUID();
+  for (let i = 0; i < 2; i++)
+    await f.hub.publications.decide(f.reviewer, request.id, approval(request), '"1"', key);
+  const scenario = (await f.store.find('scenarios', 'name', newScene.name))!;
+  const release = (await f.store.all('releases'))[0];
+  assert.deepEqual(new Set(release.scenario_ids), new Set([registered.id, scenario.id]));
+  assert.equal(release.policy_digest, request.policy_digest);
+  assert.equal((await f.hub.catalog.search(null, { scenario_id: scenario.id })).total, 0);
+  assert.equal((await f.hub.catalog.search(f.admin, { scenario_id: scenario.id })).total, 1);
+  assert.equal((await f.store.where('role_bindings', 'scope_id', scenario.id)).length, 0);
+});
+
+test('已有同名同说明的定义在提交时复用 ID，可由对应场景审核者决定', async (context) => {
+  const f = await createTestHub(context);
+  const existing = await f.hub.administration.createScenario(f.admin, newScene);
+  const role = (await f.store.find('roles', 'key', 'reviewer'))!;
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'scenario',
+    scope_id: existing.id,
+  });
+  const intake = await receiveSkill(f);
+  const request = await f.hub.publications.submit(
+    f.admin,
+    scenarioSubmission(intake, f.teamId),
+    randomUUID(),
+  );
+  assert.deepEqual(request.scenario_ids, [existing.id]);
+  assert.equal(request.proposed_scenarios, undefined);
+  const reviewer = await f.hub.identity.principal(f.reader.id);
+  const result = await f.hub.publications.decide(
+    reviewer,
+    request.id,
+    approval(request),
+    '"1"',
+    randomUUID(),
+  );
+  assert.equal(result.state, 'approved');
+  assert.equal((await f.store.all('scenarios')).length, 1);
+});
+
+test('并发批准复用相同定义；同名异义失败时整份申请不发布', async (context) => {
+  const f = await createTestHub(context);
+  const requests = [];
+  for (const [i, definitions] of [
+    [newScene],
+    [newScene],
+    [
+      { name: 'A', description: '另一场景' },
+      { ...newScene, description: '不同用途' },
+    ],
+  ].entries()) {
+    const intake = await receiveSkill(f, { slug: 'migration-' + i });
+    requests.push(
+      await f.hub.publications.submit(
+        f.admin,
+        scenarioSubmission(intake, f.teamId, definitions),
+        randomUUID(),
+      ),
+    );
+  }
+  await Promise.all(
+    requests
+      .slice(0, 2)
+      .map((r) => f.hub.publications.decide(f.reviewer, r.id, approval(r), '"1"', randomUUID())),
+  );
+  const conflicting = requests[2];
+  await assert.rejects(
+    () =>
+      f.hub.publications.decide(
+        f.reviewer,
+        conflicting.id,
+        approval(conflicting),
+        '"1"',
+        randomUUID(),
+      ),
+    errorCode('SCENARIO_CONFLICT'),
+  );
+  const scenarios = await f.store.all('scenarios');
+  assert.equal(scenarios.length, 1);
+  const releases = await f.store.all('releases');
+  assert.equal(releases.length, 2);
+  for (const release of releases) assert.deepEqual(release.scenario_ids, [scenarios[0].id]);
+  assert.equal((await f.store.get('requests', conflicting.id))?.state, 'pending');
+});
+
+test('拒绝、撤回及校验失败不会向目录登记场景', async (context) => {
+  const f = await createTestHub(context);
+  const body = scenarioSubmission(await receiveSkill(f), f.teamId);
+  const client = await signIn(f);
+  for (const patch of [
+    { category: 'general' },
+    { proposed_scenarios: [newScene, newScene] },
+    { proposed_scenarios: [{ ...newScene, description: ' ' }] },
+    { proposed_scenarios: [{ ...newScene, id: randomUUID() }] },
+    { scenario_ids: Array.from({ length: 20 }, () => randomUUID()) },
+  ])
+    await client
+      .post('/api/publication-requests')
+      .set('Idempotency-Key', randomUUID())
+      .send({ ...body, ...patch })
+      .expect(422);
+  const rejected = await f.hub.publications.submit(f.admin, body, randomUUID());
+  await f.hub.publications.decide(
+    f.reviewer,
+    rejected.id,
+    { ...approval(rejected), decision: 'reject', comment: '调整场景描述' },
+    '"1"',
+    randomUUID(),
+  );
+  const cancelled = await f.hub.publications.submit(f.admin, body, randomUUID());
+  await f.hub.publications.cancel(f.admin, cancelled.id, { reason: '撤回重填' }, '"1"');
+  assert.deepEqual(await f.hub.catalog.listScenarios(f.admin), []);
+});
 
 test('未发布内容只能审查，公开发布后匿名用户才能读取固定版本', async (context) => {
   const fixture = await createTestHub(context);

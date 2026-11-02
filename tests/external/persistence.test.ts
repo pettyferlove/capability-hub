@@ -4,8 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { openRecordStore, snapshotStore, restoreStore } from '@capability-hub/infrastructure/store';
 import { MinioBlobStore } from '@capability-hub/infrastructure/content';
 import { HubError } from '@capability-hub/domain/errors';
+import type { PublicationRequestRecord } from '@capability-hub/domain/models';
 import type { OperationsResponse } from '@capability-hub/contracts/http';
-import { createTestHub, publishSkill } from '../support/application.js';
+import { createTestHub, publishSkill, receiveSkill } from '../support/application.js';
 import { frameworkConfig } from '../support/ai-framework.js';
 import { signIn } from '../support/http.js';
 import { externalDatabase, externalBucket } from '../support/external.js';
@@ -94,6 +95,70 @@ test('MinIO 使用受限应用账号写入与复读校验，匿名不能读取�
   } finally {
     await blobs.close();
     await resource.close();
+  }
+});
+
+test('PostgreSQL 并发审批冻结的同名场景定义只登记一个共享 ID', async (context) => {
+  const database = await externalDatabase();
+  const f = await createTestHub(context, {
+    database: { driver: 'postgresql', url: database.url, poolSize: 4 },
+  });
+  try {
+    const definition = { name: '依赖审查', description: '确认依赖升级范围。' };
+    const requests: PublicationRequestRecord[] = [];
+    for (const slug of ['review-dependencies', 'review-upgrades']) {
+      const intake = await receiveSkill(f, { slug });
+      requests.push(
+        await f.hub.publications.submit(
+          f.admin,
+          {
+            source_intake_id: intake.id,
+            version_id: intake.version_id,
+            category: 'scenario',
+            scenario_ids: [],
+            proposed_scenarios: [definition],
+            distribution: intake.proposed_policy.distribution,
+            applies_to: {},
+            purpose: '审查依赖升级',
+            base_release_id: null,
+          },
+          randomUUID(),
+        ),
+      );
+    }
+    await assert.rejects(
+      () =>
+        f.store.put('requests', {
+          ...requests[0],
+          proposed_scenarios: [{ ...definition, description: '其他用途' }],
+        }),
+      /immutable/,
+    );
+    assert.deepEqual(await f.hub.catalog.listScenarios(f.admin), []);
+    await Promise.all(
+      requests.map((r) =>
+        f.hub.publications.decide(
+          f.reviewer,
+          r.id,
+          {
+            decision: 'approve',
+            policy_digest: r.policy_digest,
+            comment: '',
+            accepted_warnings: [],
+          },
+          '"1"',
+          randomUUID(),
+        ),
+      ),
+    );
+    const scenarios = await f.store.all('scenarios');
+    assert.equal(scenarios.length, 1);
+    const releases = await f.store.all('releases');
+    assert.equal(releases.length, 2);
+    for (const r of releases) assert.deepEqual(r.scenario_ids, [scenarios[0].id]);
+  } finally {
+    await f.close();
+    await database.close();
   }
 });
 

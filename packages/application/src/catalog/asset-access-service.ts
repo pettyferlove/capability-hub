@@ -48,13 +48,14 @@ export class AssetAccessService {
     this.identity.require(principal, 'source:manage', { team: s.owner_group_id, source: s.id });
   }
   /**
-   * 审查权限的作用域随请求范围扩大：通用类别、含公开/组织受众或跨组受众时要求全局
+   * 审查权限的作用域随请求范围扩大：通用类别、新场景定义、公开/组织或跨组受众要求全局
    * `review:decide`；场景类别要求覆盖全部 `scenario_ids`；其余仅限资产所属团队。
    */
   async canReview(principal: Principal, request: PublicationRequestRecord) {
     const a = await this.getAsset(request.asset_id);
     if (
       request.category === 'general' ||
+      !!request.proposed_scenarios?.length ||
       request.distribution.audience.includes('public') ||
       request.distribution.audience.includes('organization') ||
       request.distribution.audience.some((id: string) => id !== `group:${a.owner_group_id}`)
