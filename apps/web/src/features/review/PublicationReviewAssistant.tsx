@@ -10,15 +10,10 @@ import type { ReviewResponse } from '@capability-hub/contracts/http';
 import { api, ApiError } from '../../shared/api/client.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { useHub } from '../../shared/context/HubContext.js';
-import {
-  ArrowRight,
-  FileText,
-  LoaderCircle,
-  RefreshCw,
-  Sparkles,
-} from '../../shared/icons/lucide.js';
+import { ArrowRight, Check, FileText, RefreshCw, Search } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import { iconBtnStyles, textBtnStyles } from '../../shared/styles/recipes.js';
+import { AgentSignal } from '../ai/AgentSignal.js';
 import { useAiCommand } from '../ai/use-ai-command.js';
 import { useAiExecution } from '../ai/use-ai-execution.js';
 import { jsonObject } from '../ai/presentation.js';
@@ -27,62 +22,61 @@ import { reviewBriefSignal } from './review-brief.js';
 type Task = AiExecutionResponse;
 
 const tones = {
-  neutral: 'bg-page text-muted-ink',
-  brand: 'bg-brand-soft text-brand',
-  warning: 'bg-warning-soft text-warning',
-  danger: 'bg-danger-soft text-danger',
-  success: 'bg-success-soft text-success',
-};
+  neutral: { color: 'text-muted-ink', mark: 'idle' },
+  brand: { color: 'text-brand', mark: 'working' },
+  warning: { color: 'text-warning', mark: 'caution' },
+  danger: { color: 'text-danger', mark: 'caution' },
+  success: { color: 'text-success', mark: 'complete' },
+} as const;
 
 const actionStyles = cn(
   textBtnStyles,
   'group/dock-action h-8 gap-1 rounded-md px-1.5 py-0 text-label leading-none hover:bg-brand-soft disabled:opacity-50',
 );
 
-function ReviewMark({
-  phase,
-  status,
-}: {
-  phase?: 'investigate' | 'assessment';
-  status?: Task['status'];
-}) {
-  const Icon = status === 'queued' ? LoaderCircle : status === 'succeeded' ? FileText : Sparkles;
+const reviewPhases = [
+  { id: 'investigate', label: '核对证据', Icon: Search },
+  { id: 'assessment', label: '整理简报', Icon: FileText },
+] as const;
+
+function ReviewPhaseTrack({ phase }: { phase: (typeof reviewPhases)[number]['id'] }) {
   return (
-    <span
-      aria-hidden="true"
-      className="grid size-9 shrink-0 place-items-center rounded-[10px] border border-brand/15 bg-brand-soft text-brand max-[600px]:size-7"
-    >
-      {phase === 'investigate' ? (
-        <span className="relative grid size-5 grid-cols-3 grid-rows-3 gap-0.5">
-          {Array.from({ length: 9 }, (_, i) => (
-            <i key={i} className="rounded-[1px] bg-brand/30" />
-          ))}
-          <i className="absolute -inset-x-px top-px h-0.5 rounded-full bg-brand motion-safe:animate-[review-scan_1.15s_ease-in-out_infinite_alternate]" />
-        </span>
-      ) : phase === 'assessment' ? (
-        <span className="grid w-5 gap-[3px]">
-          {['w-full', 'w-3/4', 'w-5/6'].map((width, i) => (
-            <i
-              key={width}
-              style={{ animationDelay: i * -240 + 'ms' }}
-              className={cn(
-                'h-[3px] origin-left rounded-full bg-brand motion-safe:animate-[review-compose_1.4s_ease-in-out_infinite]',
-                width,
-              )}
-            />
-          ))}
-        </span>
-      ) : (
-        <Icon
-          size={17}
-          className={
-            status === 'queued'
-              ? 'motion-safe:animate-spin'
-              : 'motion-safe:animate-[popover-in_220ms_ease-out_both]'
-          }
-        />
-      )}
-    </span>
+    <div className="@container/review-track min-w-0 flex-1">
+      <ol
+        aria-label="审核研判阶段"
+        className="mx-auto hidden max-w-60 grid-cols-2 gap-3 px-3 text-caption @min-[12rem]/review-track:grid"
+      >
+        {reviewPhases.map(({ id, label, Icon }) => {
+          const current = id === phase;
+          const complete = !current && id === 'investigate';
+          const StageIcon = complete ? Check : Icon;
+          return (
+            <li
+              key={id}
+              aria-current={current ? 'step' : undefined}
+              className="flex flex-col gap-1.5 text-muted-ink aria-[current=step]:font-medium aria-[current=step]:text-brand"
+            >
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <StageIcon size={13} />
+                {label}
+              </span>
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'relative h-0.5 overflow-hidden rounded-full bg-line',
+                  current && 'bg-brand/20',
+                  complete && 'bg-brand/60',
+                )}
+              >
+                {current && (
+                  <span className="absolute inset-y-0 left-0 w-1/2 rounded-full bg-brand motion-safe:animate-[agent-sweep_2s_ease-in-out_infinite] motion-reduce:w-full" />
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
@@ -224,6 +218,7 @@ export function PublicationReviewAssistant({
       (!task && (models.error || (noModel && '尚未配置模型，可继续人工审核。'))) ||
       signal.text;
   const label = readError ? '状态待刷新' : signal.label;
+  const tone = tones[readError ? 'warning' : signal.tone];
   const source = signal.evidence;
   const rerun = task?.status === 'succeeded';
   const action = running ? '取消研判' : rerun ? '重新研判' : task ? '重试研判' : '生成审核简报';
@@ -231,38 +226,44 @@ export function PublicationReviewAssistant({
     <section
       aria-label="发布审核助手"
       className={cn(
-        'relative flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5',
-        !request.can_decide && 'rounded-xl border border-separator bg-paper px-4 py-2.5',
+        'flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5',
+        request.can_decide
+          ? 'flex-[1_1_21rem]'
+          : 'rounded-xl border border-separator bg-paper px-4 py-2.5',
       )}
     >
-      <div className="flex min-w-0 flex-[1_1_14rem] items-center gap-2.5 max-[600px]:gap-1.5">
-        <ReviewMark phase={signal.phase} status={task?.status} />
+      <div className="flex min-w-0 flex-[1_1_13rem] items-center">
+        <span aria-hidden="true" className={cn('mr-2.5 shrink-0', tone.color)}>
+          <AgentSignal
+            signal={request.can_decide && task?.status === 'waiting_input' ? 'waiting' : tone.mark}
+            glyph={signal.phase === 'assessment' ? 'report' : signal.phase ? 'search' : 'think'}
+            risk={signal.tone === 'danger' ? 'high' : undefined}
+          />
+        </span>
         <div role="status" aria-atomic="true" className="min-w-0 space-y-0.5">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <strong className="inline-flex h-5 items-center text-label font-semibold leading-none text-ink">
-              发布审核助手
-            </strong>
+            <strong className="text-body font-semibold leading-5 text-ink">发布审核助手</strong>
             <span
-              key={label}
               className={cn(
-                'inline-flex h-4.5 items-center gap-1 rounded-full px-1.5 text-caption font-medium leading-none motion-safe:animate-[popover-in_220ms_ease-out_both]',
-                tones[readError ? 'warning' : signal.tone],
+                'whitespace-nowrap rounded-full bg-current/8 px-2 py-0.5 text-caption font-medium leading-4',
+                tone.color,
               )}
             >
-              <i aria-hidden="true" className="size-1.5 rounded-full bg-current" />
               {label}
             </span>
           </div>
           <p
             key={hint}
+            title={hint}
             className="line-clamp-2 break-words text-caption leading-4 text-muted-ink motion-safe:animate-[popover-in_220ms_ease-out_both]"
           >
             {hint}
           </p>
         </div>
+        {signal.phase && <ReviewPhaseTrack phase={signal.phase} />}
       </div>
       {(request.can_decide || needsRefresh) && (
-        <div className="flex max-w-full flex-wrap items-center gap-x-1 max-[600px]:pl-[34px]">
+        <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-x-1">
           {source && (
             <button
               type="button"
@@ -287,7 +288,11 @@ export function PublicationReviewAssistant({
                 type="button"
                 aria-label={action}
                 title={noModel && !running ? '尚未配置模型' : action}
-                className={rerun ? cn(iconBtnStyles, 'group/dock-action size-8') : actionStyles}
+                className={
+                  rerun
+                    ? cn(iconBtnStyles, 'group/dock-action size-8')
+                    : cn(actionStyles, running && 'text-muted-ink hover:text-brand')
+                }
                 disabled={busy || (!running && !canStart)}
                 onClick={() => {
                   void update();
@@ -311,21 +316,6 @@ export function PublicationReviewAssistant({
             )
           )}
         </div>
-      )}
-      {request.can_decide && (signal.phase || task?.status === 'queued') && (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 -bottom-1.5 h-[3px] overflow-hidden rounded-full bg-brand/10"
-        >
-          <i
-            className={cn(
-              'absolute inset-y-0 left-0 w-1/2 rounded-full bg-linear-to-r from-transparent via-brand/60 to-brand',
-              signal.phase === 'assessment'
-                ? 'motion-safe:animate-[agent-sweep_1.45s_ease-in-out_infinite] motion-reduce:left-1/2'
-                : 'motion-safe:animate-[agent-sweep_2s_ease-in-out_infinite]',
-            )}
-          />
-        </span>
       )}
     </section>
   );

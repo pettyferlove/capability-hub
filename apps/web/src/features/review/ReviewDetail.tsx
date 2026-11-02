@@ -40,6 +40,7 @@ import {
   policyComparisonStyles,
   digestPanelStyles,
   reviewDecisionDockStyles,
+  tagAmberStyles,
   reviewDecisionSheetHeaderStyles,
   reviewDecisionPanelStyles,
   reviewDecisionSheetBodyStyles,
@@ -565,35 +566,29 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
                   </span>
                 </div>
               )}
-              <span
-                className={cn(
-                  'flex shrink-0 items-center',
-                  r.can_use_review_agent && 'border-l border-separator pl-2.5',
+              <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
+                {r.can_use_review_agent && warningMissing && (
+                  <span
+                    id="review-dock-warning"
+                    className={cn(tagStyles, tagAmberStyles, 'whitespace-nowrap')}
+                  >
+                    <AlertTriangle size={12} />
+                    告警待说明
+                  </span>
                 )}
-              >
                 <button
                   type="button"
-                  aria-label="审核决定"
+                  aria-haspopup="dialog"
                   aria-describedby={
                     r.can_use_review_agent && warningMissing ? 'review-dock-warning' : undefined
                   }
-                  className={cn(btnStyles, btnPrimaryStyles, 'items-center whitespace-nowrap')}
+                  className={cn(btnStyles, btnPrimaryStyles, 'shrink-0')}
                   onClick={() => setDecisionOpen(true)}
                 >
                   <CheckCheck size={15} />
-                  <span className="flex flex-col items-start justify-center gap-0.5 leading-4">
-                    审核决定
-                    {r.can_use_review_agent && warningMissing && (
-                      <small
-                        id="review-dock-warning"
-                        className="text-caption font-normal leading-none"
-                      >
-                        告警待说明
-                      </small>
-                    )}
-                  </span>
+                  审核决定
                 </button>
-              </span>
+              </div>
             </div>
             <Overlay
               open={decisionOpen}

@@ -1033,6 +1033,7 @@ test('审核底栏跟随取证和整理阶段，可直接取消并重新研判',
     stream.close();
   });
   await screen.findByText('已排队');
+  assert.equal(screen.queryByRole('list', { name: '审核研判阶段' }), null);
   view = executionView({ ...view.execution, status: 'running', revision: 4 });
   const encoder = new TextEncoder();
   await act(async () => {
@@ -1043,6 +1044,8 @@ test('审核底栏跟随取证和整理阶段，可直接取消并重新研判',
     );
   });
   await screen.findByText('查阅依据');
+  const phases = within(screen.getByRole('list', { name: '审核研判阶段' }));
+  assert.equal(phases.getByRole('listitem', { current: 'step' }).textContent, '核对证据');
   const activity = aiEventResponseSchema.parse({
     schema_version: 1,
     execution_id: view.execution.id,
@@ -1065,10 +1068,12 @@ test('审核底栏跟随取证和整理阶段，可直接取消并重新研判',
     stream.enqueue(encoder.encode('event: step.started\ndata: ' + JSON.stringify(step) + '\n\n'));
   });
   await screen.findByText('整理结论');
+  assert.equal(phases.getByRole('listitem', { current: 'step' }).textContent, '整理简报');
   assert.equal(screen.queryByRole('button', { name: '生成审核简报' }), null);
   assert.equal(screen.queryByRole('dialog'), null);
   fireEvent.click(screen.getByRole('button', { name: '取消研判' }));
   await screen.findByText('已取消');
+  assert.equal(screen.queryByRole('list', { name: '审核研判阶段' }), null);
   fireEvent.click(screen.getByRole('button', { name: '重试研判' }));
   await screen.findByText('这个外部调用是否获得授权？');
   fireEvent.click(screen.getByRole('button', { name: '核对依据' }));
@@ -1253,7 +1258,12 @@ test('采纳版本审计自动填空白意见，手写草稿由人追加，告�
     view = pendingView();
     decision = undefined;
     const page = render(withHub(createElement(ReviewDetail, { request: review }), f.reviewer.id));
-    fireEvent.click(screen.getAllByRole('button', { name: '审核决定' })[0]);
+    const openDecision = screen.getByRole('button', {
+      name: '审核决定',
+      description: '告警待说明',
+    });
+    assert.equal(openDecision.textContent?.trim(), '审核决定');
+    fireEvent.click(openDecision);
     const drawer = within(await screen.findByRole('dialog', { name: '记录审核决定' }));
     const comment = drawer.getByRole<HTMLTextAreaElement>('textbox', { name: '审核意见' });
     const accept = await drawer.findByRole('button', { name: '采纳审计建议' });
