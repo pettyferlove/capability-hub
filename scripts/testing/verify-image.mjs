@@ -24,11 +24,12 @@ for (const key of ['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS_VERIFY', 'DOCKER
   delete environment[key];
 const program = `
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { get } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { hubClientSkillName, hubClientSkillPath } from '@capability-hub/contracts';
 import { scanIsolated } from '@capability-hub/infrastructure/scanning';
+import { OpenSshKeyInspector } from '@capability-hub/infrastructure/security';
 import { openRecordStore } from '@capability-hub/infrastructure/store';
 import { createAiStore, HubAiQueue } from '@capability-hub/infrastructure/ai';
 import { AiRuntime, OperationRegistry, aiConfigurationSchema } from '@capability-hub/ai';
@@ -37,6 +38,13 @@ import { JobQueue } from '@capability-hub/application';
 import { z } from 'zod';
 assert.equal(process.getuid(), 1000);
 assert.throws(() => import.meta.resolve('tsx'));
+const key = '/tmp/image-ssh-key';
+const passphrase = 'image-test-passphrase';
+execFileSync('/usr/bin/ssh-keygen', ['-q', '-t', 'ed25519', '-N', passphrase, '-f', key]);
+const ssh = new OpenSshKeyInspector();
+const sshInput = { privateKey: await readFile(key, 'utf8'), passphrase, hostKey: (await readFile(key + '.pub', 'utf8')).trim() };
+assert.match((await ssh.inspect(sshInput)).fingerprint, /^SHA256:/);
+await assert.rejects(() => ssh.inspect({ ...sshInput, passphrase: 'incorrect' }), { code: 'SSH_KEY_INVALID' });
 for (const dialect of ['sqlite', 'postgresql']) {
   const root = import.meta.resolve('@capability-hub/infrastructure/store');
   assert(JSON.parse(await readFile(new URL('./persistence/' + dialect + '/migrations/meta/_journal.json', root), 'utf8')).entries.length > 0);

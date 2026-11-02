@@ -15,8 +15,9 @@ import type {
   GitDestination,
   GitSnapshot,
 } from '@capability-hub/application/ports';
+import { basicGitCredentials } from './basic-credentials.js';
 import { isRestrictedGitAddress } from './network-policy.js';
-import { sshAskpass } from '../security/ssh-askpass.js';
+import { sshAskpassPath } from '../security/ssh-askpass.js';
 
 /** {@link GitRepository} 端口的运行配置；域名与私网例外均由管理员配置，不在请求里传入。 */
 export interface GitRepositoryOptions {
@@ -39,7 +40,7 @@ const shellQuote = (v: string) => "'" + v.replaceAll("'", "'\\''") + "'";
  *
  * 硬性约束：单条 git 命令 45 秒超时（504 `GIT_TIMEOUT`，标记为可重试）、stdout 上限 110 MiB
  * （413 `GIT_SIZE`）、stderr 只保留前 4 KiB 用于归类错误。禁用 hooks、重定向跟随、
- * credential helper、系统/全局配置与非 SSH/HTTPS 协议；SSH 侧固定 known_hosts，
+ * 外部 credential helper、系统/全局配置与非 SSH/HTTPS 协议；SSH 侧固定 known_hosts，
  * 关闭 agent 与 ProxyJump。不重试——失败直接抛 502，由上层决定是否再次调度。
  */
 export class GitRepositoryAdapter implements GitRepository {
@@ -155,21 +156,17 @@ export class GitRepositoryAdapter implements GitRepository {
         else if (code === 0) resolve(Buffer.concat(chunks));
         else {
           const text = Buffer.concat(errors).toString();
+          const authError =
+            /(?:returned error:|HTTP(?:\/[\d.]+)?)\s+(?:401|403)\b|Authentication failed|HTTP Basic: Access denied|could not read (?:Username|Password)|Permission denied|Host key verification failed/i.test(
+              text,
+            );
           reject(
             new HubError(
               502,
-              /401|403|Authentication|could not read Username|Permission denied|Host key verification failed/i.test(
-                text,
-              )
-                ? 'GIT_AUTH_ERROR'
-                : 'GIT_FETCH_FAILED',
-              /401|403|Authentication|could not read Username|Permission denied|Host key verification failed/i.test(
-                text,
-              )
-                ? '来源认证失败，请更新凭据引用'
-                : 'Git 操作失败，请确认仓库和分支',
+              authError ? 'GIT_AUTH_ERROR' : 'GIT_FETCH_FAILED',
+              authError ? '来源认证失败，请更新凭据引用' : 'Git 操作失败，请确认仓库和分支',
               {},
-              !/401|403|Authentication|Permission denied|Host key verification failed/i.test(text),
+              !authError,
             ),
           );
         }
@@ -193,6 +190,7 @@ export class GitRepositoryAdapter implements GitRepository {
     await this.branch(source.branch);
     const dir = await mkdtemp(join(tmpdir(), 'capability-hub-git-'));
     const env: Record<string, string> = {};
+    const credentialHelpers = ['-c', 'credential.helper='];
     let personalRevision: number | undefined;
     try {
       if (source.credential_ref) {
@@ -209,20 +207,13 @@ export class GitRepositoryAdapter implements GitRepository {
             env.GIT_CONFIG_KEY_0 = `http.https://${destination.host}/.extraHeader`;
             env.GIT_CONFIG_VALUE_0 = 'Authorization: Bearer ' + c.secret;
           } else {
-            const askpass = join(dir, 'git-askpass');
-            await writeFile(
-              askpass,
-              '#!/bin/sh\ncase "$1" in *sername*) printf "%s\\n" "$CAPABILITY_GIT_USERNAME" ;; *) printf "%s\\n" "$CAPABILITY_GIT_TOKEN" ;; esac\n',
-              { mode: 0o700 },
-            );
-            env.GIT_ASKPASS = askpass;
-            env.CAPABILITY_GIT_USERNAME = c.username;
-            env.CAPABILITY_GIT_TOKEN = c.secret;
+            const basic = basicGitCredentials(destination.host, c.username, c.secret);
+            credentialHelpers.push('-c', basic.config);
+            Object.assign(env, basic.env);
           }
         } else {
           const key = join(dir, 'identity'),
             known = join(dir, 'known-hosts'),
-            askpass = join(dir, 'ssh-askpass'),
             pass = join(dir, 'passphrase');
           const alias =
             destination.port === 22
@@ -233,8 +224,7 @@ export class GitRepositoryAdapter implements GitRepository {
           });
           await writeFile(known, alias + ' ' + c.host_key + '\n', { mode: 0o600 });
           await writeFile(pass, c.passphrase, { mode: 0o600 });
-          await writeFile(askpass, sshAskpass, { mode: 0o700 });
-          env.SSH_ASKPASS = askpass;
+          env.SSH_ASKPASS = sshAskpassPath;
           env.SSH_ASKPASS_REQUIRE = 'force';
           env.DISPLAY = 'capability-hub';
           env.CAPABILITY_SSH_PASSPHRASE_FILE = pass;
@@ -296,8 +286,7 @@ export class GitRepositoryAdapter implements GitRepository {
         'http.followRedirects=false',
         '-c',
         `http.curloptResolve=${destination.host}:443:${isIP(destination.address) === 6 ? '[' + destination.address + ']' : destination.address}`,
-        '-c',
-        'credential.helper=',
+        ...credentialHelpers,
         '-c',
         'core.attributesFile=/dev/null',
       ];

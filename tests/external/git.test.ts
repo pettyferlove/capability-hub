@@ -15,7 +15,7 @@ async function repository(hostKey?: string, revision = 1) {
       username: 'git',
       auth_method: 'basic',
       secret: await readFile(externalVariable('CAPABILITY_HUB_TEST_GIT_KEY'), 'utf8'),
-      passphrase: '',
+      passphrase: externalVariable('CAPABILITY_HUB_TEST_GIT_PASSPHRASE'),
       host_key: hostKey ?? externalVariable('CAPABILITY_HUB_TEST_GIT_HOST_KEY'),
       revision: 1,
     }),
@@ -70,6 +70,14 @@ test('真实 Git 对象中的非法 UTF-8 路径被拒绝，不替换为其他�
   }
 });
 
+test('分支名中的 401 不会让已认证的 Git 仓库误报凭据失效', async () => {
+  const { git, url } = await repository();
+  await assert.rejects(
+    () => git.snapshot({ canonical_url: url, branch: 'release-401', credential_ref: 'fixture' }),
+    (error: unknown) => error instanceof HubError && error.code === 'GIT_FETCH_FAILED',
+  );
+});
+
 test('SSH 主机公钥不匹配和同步期间撤换凭据均使拉取失败', async () => {
   const key = externalVariable('CAPABILITY_HUB_TEST_GIT_HOST_KEY').split(' ');
   const changed = key[1].slice(0, -4) + 'AAAA';
@@ -77,7 +85,8 @@ test('SSH 主机公钥不匹配和同步期间撤换凭据均使拉取失败', a
   await assert.rejects(
     () =>
       wrong.git.snapshot({ canonical_url: wrong.url, branch: 'main', credential_ref: 'fixture' }),
-    (error: unknown) => error instanceof HubError && error.code === 'GIT_AUTH_ERROR',
+    (error: unknown) =>
+      error instanceof HubError && error.code === 'GIT_AUTH_ERROR' && !error.retryable,
   );
   const revoked = await repository(undefined, 2);
   await assert.rejects(
@@ -104,6 +113,7 @@ test('真实 Git 来源逐目标处理，重复同步复用证据；撤销凭据
     host: '127.0.0.1',
     username: 'git',
     secret: await readFile(externalVariable('CAPABILITY_HUB_TEST_GIT_KEY'), 'utf8'),
+    passphrase: externalVariable('CAPABILITY_HUB_TEST_GIT_PASSPHRASE'),
     host_key: externalVariable('CAPABILITY_HUB_TEST_GIT_HOST_KEY').split(' ').slice(0, 2).join(' '),
   });
   const policy = {

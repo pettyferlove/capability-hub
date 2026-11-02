@@ -38,8 +38,14 @@ export class IntakeProcessor {
    * `last_intake_id`、审计 `intake.<state>`（无差别记录 `requested_by`），并 await
    * `onReady` 通知——它位于同一事务内，失败会连带回滚提交。
    * @param provided - 调用方已持有的规范化文件；省略时回退读取 `intake.payload_ref` 快照
+   * @param checkSourceCredential - 在版本写入事务内复核 Git 快照绑定的凭据修订
    */
-  async process(intake: IntakeRecord, job: JobRecord, provided?: ContentFile[]) {
+  async process(
+    intake: IntakeRecord,
+    job: JobRecord,
+    provided?: ContentFile[],
+    checkSourceCredential?: () => Promise<void>,
+  ) {
     const a = await this.assets.getAsset(intake.asset_id);
     intake = await this.jobs.withLease(job, async () => {
       return await this.context.store.put('intakes', {
@@ -82,6 +88,7 @@ export class IntakeProcessor {
       })),
     );
     return await this.jobs.withLease(job, async () => {
+      await checkSourceCredential?.();
       const current = await this.assets.getAsset(a.id);
       if (current.lifecycle === 'blocked') fail(409, 'ASSET_BLOCKED', '资产已封禁');
       const source = (await this.context.store.get('sources', intake.source_id))!;

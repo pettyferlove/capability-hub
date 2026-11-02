@@ -37,7 +37,7 @@ const base = z
       .trim()
       .min(1)
       .max(80)
-      .regex(/^[a-zA-Z0-9_.@-]+$/)
+      .regex(/^[a-zA-Z0-9_.@+-]+$/)
       .default('git'),
     auth_method: z.enum(['basic', 'bearer']).default('basic'),
     secret: z.string().min(8).max(32768),

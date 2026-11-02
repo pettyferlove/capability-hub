@@ -30,7 +30,7 @@ BlobMaintenance 的枚举和删除能力仅用于明确的维护工具。回收�
 
 job.kind 与 input 为判别联合，intake/rescan/source_sync/ai_execution 各有准确输入。作业领取递增 lease_epoch；续租和最终写回核对拥有者、代次、截止时间及取消状态。过期执行者不能复活租约或覆盖接替者结果。
 
-Worker 在同一事务中统计有效租约，按 run_after 领取有空位的作业。AI 与内容任务共用[并发上限](../reference/configuration.md)，同库 Worker 应使用相同配置。AI 恢复规则见 [AI 框架](ai-framework.md)。queued/running 可请求取消，取消完成后未结束的接收一并终止。来源约每五分钟轮询，同一来源复用已有排队或运行批次。只复用固定提交、配置及扫描规则均一致的确定接收证据。临时失败由下次同步重新处理，各目标扫描结果见 targets。
+Worker 按 run_after 和事务内的有效租约领取作业。AI 与内容任务共用[并发上限](../reference/configuration.md)，同库 Worker 应使用相同配置。AI 恢复规则见 [AI 框架](ai-framework.md)。取消作业或接管中断的 Git 同步时，终止旧批次未完成的接收。来源约每五分钟轮询，同一来源、同一配置修订才复用在途批次。固定提交、配置及扫描规则一致时可复用确定的接收结果；凭据失效和临时失败由下次同步重读，逐目标结果见 targets。
 
 未知扫描或存储故障按服务端可重试错误处理，不改判为用户内容格式错误。重试进入等待状态，来源配置失效使作业与接收一并取消，终态记录完成时间。
 

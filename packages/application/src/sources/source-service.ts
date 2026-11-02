@@ -37,15 +37,14 @@ export class SourceService {
   private async getSourceRecord(id: string): Promise<GitSourceRecord> {
     const source = await this.store.get('sources', id);
     if (!source || source.kind !== 'git') notFound();
-    return source;
+    return source.distribution_revoked_at ? { ...source, state: 'blocked' } : source;
   }
   /**
    * 返回来源详情与未退役目标（附资产 `slug`、`kind`）；要求 `source:manage`
    * （`team` = 来源所有者团队，`source` = 来源 id），非 Git 来源或不存在 → 404。
    */
   async get(principal: Principal, id: string) {
-    const source = await this.store.get('sources', id);
-    if (!source || source.kind !== 'git') notFound();
+    const source = await this.getSourceRecord(id);
     this.assets.requireSourceManagement(principal, source);
     return {
       ...source,
@@ -229,6 +228,8 @@ export class SourceService {
       const source = await this.getSourceRecord(id);
       this.assets.requireSourceManagement(await this.context.identity.principal(p.id), source);
       matchRevision(source, etag);
+      if (b.state && source.state === 'blocked')
+        fail(409, 'SOURCE_BLOCKED', '已封锁的来源不能切换同步状态');
       if (destination)
         await this.validateCredential(p, b.credential_ref, destination, source.credential_ref);
       if (b.targets) await this.validateTargets(b.targets);
@@ -357,7 +358,7 @@ export class SourceService {
    * 来源暂停/封锁 → 409 `SOURCE_NOT_ACTIVE`，无启用目标 → 409 `NO_TARGETS`。整体经
    * {@link IdempotencyService} 包裹（route `source-sync/<id>`，摘要含 source id 与
    * revision，缺 key → 400 `IDEMPOTENCY_REQUIRED`），事务内复核 revision（变化 →
-   * 409 `SOURCE_CONFIG_CHANGED`）；已有 `queued`/`running` 的 `source_sync` 作业时
+   * 409 `SOURCE_CONFIG_CHANGED`）；当前修订已有可用的 `queued`/`running` 作业时
    * 直接复用其 id（单飞，不重复入队），否则入队并写审计 `source.sync_requested`。
    */
   async sync(principal: Principal, id: string, key: string | undefined) {
@@ -383,6 +384,8 @@ export class SourceService {
           (j) =>
             j.kind === 'source_sync' &&
             j.aggregate_id === id &&
+            j.input.source_revision === current.revision &&
+            !j.cancel_requested &&
             ['running', 'queued'].includes(j.state),
         );
         if (active) return { job_id: active.id, source_revision: source.revision };

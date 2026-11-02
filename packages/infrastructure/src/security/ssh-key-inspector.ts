@@ -6,7 +6,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { sshAskpass } from './ssh-askpass.js';
+import { sshAskpassPath } from './ssh-askpass.js';
 
 const execute = promisify(execFile);
 
@@ -24,13 +24,12 @@ export class OpenSshKeyInspector implements SshKeyInspector {
         : input.privateKey + '\n';
       await writeFile(join(directory, 'key'), privateKey, { mode: 0o600 });
       await writeFile(join(directory, 'passphrase'), input.passphrase, { mode: 0o600 });
-      await writeFile(join(directory, 'askpass'), sshAskpass, { mode: 0o700 });
       await writeFile(join(directory, 'host.pub'), input.hostKey + '\n', { mode: 0o600 });
       const env = {
         PATH: '/usr/bin:/bin',
         HOME: directory,
         DISPLAY: 'capability-hub',
-        SSH_ASKPASS: join(directory, 'askpass'),
+        SSH_ASKPASS: sshAskpassPath,
         SSH_ASKPASS_REQUIRE: 'force',
         CAPABILITY_SSH_PASSPHRASE_FILE: join(directory, 'passphrase'),
       };

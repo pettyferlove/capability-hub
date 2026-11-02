@@ -1,10 +1,56 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import { HubError } from '@capability-hub/domain/errors';
+import { basicGitCredentials } from '../../packages/infrastructure/src/git/basic-credentials.js';
 import { createTestHub } from '../support/application.js';
 
 const code = (expected: string) => (error: unknown) =>
   error instanceof HubError && error.code === expected;
+
+test('GitLab 部署令牌在无法执行 askpass 时仍可读取，且只向指定 HTTPS 主机提供', async (context) => {
+  const host = 'git.example.test';
+  const fixture = await createTestHub(context, { gitHosts: [host] });
+  const username = 'gitlab+deploy-token-42';
+  const token = "fixture-'$`";
+  const saved = await fixture.hub.credentials.save(fixture.admin, {
+    name: '部署令牌',
+    kind: 'token',
+    auth_method: 'basic',
+    host,
+    username,
+    secret: token,
+  });
+  const credential = await fixture.hub.credentials.resolve(saved.id, host, 'https');
+  const basic = basicGitCredentials(host, credential.username, credential.secret);
+  const fill = (protocol: string, target: string) =>
+    spawnSync(
+      '/usr/bin/git',
+      ['-c', 'credential.helper=', '-c', basic.config, 'credential', 'fill'],
+      {
+        cwd: tmpdir(),
+        env: {
+          PATH: process.env.PATH,
+          GIT_CONFIG_GLOBAL: '/dev/null',
+          GIT_CONFIG_NOSYSTEM: '1',
+          GIT_TERMINAL_PROMPT: '0',
+          GIT_ASKPASS: '/usr/bin/false',
+          ...basic.env,
+        },
+        input: `protocol=${protocol}\nhost=${target}\n\n`,
+        encoding: 'utf8',
+      },
+    );
+  const allowed = fill('https', host);
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.ok(allowed.stdout.split('\n').includes(`username=${username}`));
+  assert.ok(allowed.stdout.split('\n').includes(`password=${token}`));
+  for (const denied of [fill('http', host), fill('https', 'other.example.test')]) {
+    assert.notEqual(denied.status, 0);
+    assert.ok(!denied.stdout.includes(token));
+  }
+});
 
 test('Git 凭据仅供所属账号选择，轮换使用修订约束，撤销移除密文且不能恢复', async (context) => {
   const fixture = await createTestHub(context);

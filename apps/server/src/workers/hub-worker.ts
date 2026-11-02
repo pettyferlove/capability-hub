@@ -184,7 +184,11 @@ export class HubWorker {
   }
   private async pollSources() {
     for (const s of (await this.hub.store.all('sources')).filter(
-      (s) => s.kind === 'git' && s.state === 'active' && s.next_poll_at <= Date.now(),
+      (s) =>
+        s.kind === 'git' &&
+        s.state === 'active' &&
+        !s.distribution_revoked_at &&
+        s.next_poll_at <= Date.now(),
     )) {
       const owner = (
         await Promise.all(
@@ -202,13 +206,17 @@ export class HubWorker {
       });
       if (owner)
         try {
-          await this.sources.sync(owner, s.id, 'poll-' + Math.floor(Date.now() / 300000));
+          await this.sources.sync(
+            owner,
+            s.id,
+            `poll-${s.revision}-${Math.floor(Date.now() / 300000)}`,
+          );
         } catch (error) {
           this.hub.logs.logger.warn({ event: 'source.poll_failed', source_id: s.id, err: error });
         }
       await this.hub.store.tx(async () => {
         const latest = await this.hub.store.get('sources', s.id);
-        if (latest?.kind === 'git')
+        if (latest?.kind === 'git' && latest.revision === s.revision)
           await this.hub.store.put('sources', { ...latest, next_poll_at: Date.now() + 300000 });
       });
     }

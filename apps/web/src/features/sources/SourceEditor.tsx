@@ -120,7 +120,12 @@ export function SourceEditor({
       await mutate(
         source ? '/api/sources/' + source.id : '/api/sources',
         source
-          ? { branch, credential_ref: credential || null, state, targets: cleaned }
+          ? {
+              branch,
+              credential_ref: credential || null,
+              ...(source.state === 'blocked' ? {} : { state }),
+              targets: cleaned,
+            }
           : {
               repository_url: url,
               provider: 'generic-git',
@@ -232,7 +237,7 @@ export function SourceEditor({
             )}
         </label>
         {credentialError && <Message error>{credentialError}</Message>}
-        {source && (
+        {source && source.state !== 'blocked' && (
           <label>
             同步状态
             <SelectField

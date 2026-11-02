@@ -59,9 +59,14 @@ const compose = [
 environment.CAPABILITY_HUB_LDAP_PORT = '';
 environment.CAPABILITY_HUB_TEST_PASSWORD = randomBytes(24).toString('hex');
 environment.CAPABILITY_HUB_TEST_GIT_PUBLIC_KEY = key + '.pub';
+environment.CAPABILITY_HUB_TEST_GIT_PASSPHRASE = randomBytes(16).toString('hex');
 environment.CAPABILITY_HUB_TEST_APP_SECRET = randomBytes(24).toString('hex');
 try {
-  await run('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', key], environment);
+  await run(
+    'ssh-keygen',
+    ['-q', '-t', 'ed25519', '-N', environment.CAPABILITY_HUB_TEST_GIT_PASSPHRASE, '-f', key],
+    environment,
+  );
   await run(
     'docker',
     [...compose, 'up', '-d', '--build', '--wait', '--wait-timeout', '60'],

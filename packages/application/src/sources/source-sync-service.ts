@@ -9,6 +9,19 @@ import type { GitRepository } from '../ports/index.js';
 import type { JobQueue } from '../jobs/job-queue.js';
 import type { IntakeProcessor } from '../intake/intake-processor.js';
 
+const gitAuthenticationErrors = new Set([
+  'GIT_AUTH_ERROR',
+  'CREDENTIAL_UNAVAILABLE',
+  'CREDENTIAL_MISMATCH',
+  'CREDENTIAL_DECRYPTION',
+  'SSH_CREDENTIAL_REQUIRED',
+]);
+
+/** 凭据状态决定本次读取是否有效，不能作为提交内容的失败证据复用。 */
+function invalidatesGitSnapshot(code: string | null | undefined) {
+  return code === 'CREDENTIAL_CHANGED' || gitAuthenticationErrors.has(code ?? '');
+}
+
 /** 固定 Git 提交、凭据修订和租约后，逐目标生成接收证据。 */
 export class SourceSyncService {
   constructor(
@@ -27,25 +40,52 @@ export class SourceSyncService {
     if (!source || source.kind !== 'git') notFound();
     return source;
   }
+  /** 当前租约还未创建接收；同一作业的未完成记录属于前一次尝试。 */
+  private async cancelInterruptedIntakes(job: Extract<JobRecord, { kind: 'source_sync' }>) {
+    await this.jobs.withLease(job, async () => {
+      for (const intake of await this.store.where('intakes', 'source_id', job.aggregate_id)) {
+        if (
+          !intake.source_sync_job_id ||
+          !['received', 'fetching', 'scanning'].includes(intake.state)
+        )
+          continue;
+        if (intake.source_sync_job_id !== job.id) {
+          const owner = await this.store.get('jobs', intake.source_sync_job_id);
+          if (owner?.state === 'running' || owner?.state === 'queued') continue;
+        }
+        await this.store.put('intakes', {
+          ...intake,
+          state: 'cancelled',
+          phase: '已取消',
+          error_code: 'LEASE_LOST',
+          error_message: '前次同步已中断',
+          finished_at: new Date().toISOString(),
+          retryable: false,
+        });
+      }
+    });
+  }
   /**
    * 执行 `source_sync` 作业：固定 Git 提交与凭据修订后，对冻结时启用的每个目标
    * 生成接收证据。可安全重试——同提交、同来源 revision、同规则集（
-   * `contentScanRuleset`）且已终结的 intake 会直接复用（`reused: true`），不重复
+   * `contentScanRuleset`）的成功接收或确定的内容失败可复用（`reused: true`），不重复
    * 生成版本。所有写入都经 {@link JobQueue.withLease} 在「租约校验 + 事务」内完成，
    * 租约丢失 → 409 `LEASE_LOST`。前置条件不满足 → 409 `SOURCE_CONFIG_CHANGED`
    * （来源暂停/封锁或 revision 与作业输入不符）或 409 `JOB_INPUT_INVALID`（缺
    * `requested_by`）；同步途中凭据 revision 与 snapshot 不一致 → 409
-   * `CREDENTIAL_CHANGED`。单目标异常本地化为 `failed`（`SOURCE_CONFIG_CHANGED` 记为
-   * `cancelled`），其余目标继续；成功时来源置 `active`、写 `last_success_at`、清
-   * `last_error_code` 并延后 5 分钟轮询，同时按 `TARGET_MISSING` 维护资产
+   * `CREDENTIAL_CHANGED`。凭据失效终止当前批次；内容失败按目标记录，其余目标继续。
+   * 凭据恢复后先将来源置 `active` 再接收目标。批次完成写
+   * `last_success_at`、清 `last_error_code` 并延后 5 分钟轮询，同时按 `TARGET_MISSING` 维护资产
    * `source_missing_at`。外层错误才把来源标记失败：认证类错误置 `auth_error`，其余
    * 只记 `last_error_code`；错误一律重新抛出，`snapshot` 在 finally 中关闭。
    */
   async process(job: Extract<JobRecord, { kind: 'source_sync' }>) {
+    await this.cancelInterruptedIntakes(job);
     const source = await this.getSourceRecord(job.aggregate_id);
     if (
       source.state === 'paused' ||
       source.state === 'blocked' ||
+      source.distribution_revoked_at ||
       source.revision !== job.input.source_revision
     )
       fail(409, 'SOURCE_CONFIG_CHANGED', '来源配置已变化');
@@ -77,6 +117,7 @@ export class SourceSyncService {
             : latest.generation + 1;
         await this.store.put('sources', {
           ...latest,
+          ...(latest.state === 'auth_error' ? { state: 'active', last_error_code: null } : {}),
           generation: gen,
           last_observed_commit: commit,
           last_observed_revision: source.revision,
@@ -95,6 +136,7 @@ export class SourceSyncService {
             i.origin_commit === commit &&
             i.processing_ruleset === contentScanRuleset &&
             ['ready', 'failed'].includes(i.state) &&
+            !invalidatesGitSnapshot(i.error_code) &&
             !i.retryable,
         );
         if (repeated) {
@@ -135,7 +177,7 @@ export class SourceSyncService {
         try {
           const files = await snapshot.read(binding.path, a.kind);
           await checkCredential();
-          const result = await this.processor.process(intake, job, files);
+          const result = await this.processor.process(intake, job, files, checkCredential);
           results.push({
             id: binding.id,
             binding_id: binding.id,
@@ -155,7 +197,9 @@ export class SourceSyncService {
                   {},
                   true,
                 );
-          const state = error.code === 'SOURCE_CONFIG_CHANGED' ? 'cancelled' : 'failed';
+          const snapshotInvalid = invalidatesGitSnapshot(error.code);
+          const state =
+            snapshotInvalid || error.code === 'SOURCE_CONFIG_CHANGED' ? 'cancelled' : 'failed';
           await this.jobs.withLease(job, async () => {
             await this.store.put('intakes', {
               ...(await this.store.get('intakes', intake.id))!,
@@ -167,6 +211,7 @@ export class SourceSyncService {
               finished_at: new Date().toISOString(),
             });
           });
+          if (snapshotInvalid) throw error;
           results.push({
             id: binding.id,
             binding_id: binding.id,
@@ -216,15 +261,7 @@ export class SourceSyncService {
         if (current.revision === source.revision)
           await this.store.put('sources', {
             ...current,
-            ...([
-              'GIT_AUTH_ERROR',
-              'CREDENTIAL_UNAVAILABLE',
-              'CREDENTIAL_MISMATCH',
-              'CREDENTIAL_DECRYPTION',
-              'SSH_CREDENTIAL_REQUIRED',
-            ].includes(error.code)
-              ? { state: 'auth_error' }
-              : {}),
+            ...(gitAuthenticationErrors.has(error.code) ? { state: 'auth_error' } : {}),
             last_error_code: error.code ?? 'GIT_FETCH_FAILED',
             next_poll_at: Date.now() + 300000,
           });
