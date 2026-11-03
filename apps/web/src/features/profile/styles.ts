@@ -1,7 +1,5 @@
 import { cn } from '../../shared/styles/cn.js';
 
-export const connectedAgentsStyles = 'mt-7 mr-0 mb-7 ml-0';
-
 export const avatarPalettePickerStyles = cn(
   'min-w-0 pt-0 pr-0 pb-0 pl-0 mt-0 mr-0 mb-0 ml-0 border-0 [&_legend]:pt-0 [&_legend]:pr-0',
   '[&_legend]:pb-0 [&_legend]:pl-0 [&_legend]:mb-2.5 [&_legend]:text-ink [&_legend]:text-body',
@@ -33,16 +31,6 @@ export const avatarPaletteOptionStyles = cn(
   '[&:has(input:focus-visible)]:[outline-offset:3px]',
   "max-[400px]:[&_>_[class~='group/user-avatar']]:w-8",
   "max-[400px]:[&_>_[class~='group/user-avatar']]:h-8",
-);
-
-export const tokenListStyles = cn(
-  'group/token-list [&_>_div]:flex [&_>_div]:items-center [&_>_div]:gap-2.5 [&_>_div]:pt-[15px]',
-  '[&_>_div]:pr-0 [&_>_div]:pb-[15px] [&_>_div]:pl-0 [&_>_div]:border-b [&_>_div]:[border-bottom-style:solid] [&_>_div]:border-b-[color:var(--line)]',
-  '[&_>_div_>_span:nth-child(2)]:flex-1 [&_>_div_>_span:nth-child(2)]:min-w-0',
-  '[&_>_div:last-child]:border-b-0 [&_>_div_>_svg]:shrink-0 [&_strong]:block',
-  '[&_strong]:text-body [&_strong]:[overflow-wrap:anywhere] [&_small]:block [&_small]:text-muted-ink',
-  "[&_small]:text-caption [&_>_div_>_[class~='group/text-btn']]:shrink-0",
-  "[&_>_div_>_[class~='group/tag']]:shrink-0",
 );
 
 export const credentialFormStyles = cn(

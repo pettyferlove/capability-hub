@@ -17,6 +17,7 @@
     "@iconify-icons/devicon-plain": "^2.0.8",
     "@iconify-icons/lucide": "^2.0.25",
     "@iconify-icons/simple-icons": "^2.0.8",
+    "@iconify-icons/thesvg-color": "2.0.21",
     "@iconify/react": "^6.0.3",
     "@internationalized/date": "^3.12.4",
     "clsx": "^2.1.1",

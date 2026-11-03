@@ -59,7 +59,7 @@ export function hubInstallationGuide(origin: string, publishedSkillUrl?: string)
     '只在需要接入时合并 capability-hub 条目，保留其他设置。',
     '',
     '## 3. 引导用户完成授权',
-    `由客户端发起 OAuth 浏览器授权，默认只授权搜索和使用。需要分享 Skill、推荐或反馈时，从 ${base}/connect?permission=contribute 选择当前客户端与范围，追加授权并刷新工具。没有账号或所需权限时，联系此 Hub 的管理员获取访问资格。`,
+    `由客户端发起 OAuth 浏览器授权，默认只授权搜索和使用。需要分享 Skill、推荐或反馈时，在 ${base}/connect?permission=contribute 获取当前客户端的接入指令，从客户端重新发起授权，确认贡献权限后刷新工具。没有账号或所需权限时，联系此 Hub 的管理员获取访问资格。`,
     '原生 OAuth 优先；不支持时使用部署方提供的接入助手，由助手保存凭据并配置本地桥接。不要索取、搜索、读取或回显秘密值，不把真实令牌写入对话、分享链接或项目仓库。',
     '授权未完成时可以准备配置，但必须明确说明尚未连接。手动令牌仅作为高级入口。',
     '',

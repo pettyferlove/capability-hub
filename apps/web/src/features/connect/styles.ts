@@ -1,4 +1,5 @@
 import { cn } from '../../shared/styles/cn.js';
+import { checkLabelStyles } from '../../shared/styles/recipes.js';
 
 export const agentExperienceStyles =
   'min-w-0 min-h-130 [contain:size] max-[799px]:min-h-0 max-[799px]:[contain:none]';
@@ -171,8 +172,50 @@ export const connectToolboxStyles = cn(
   "[[class~='group/connect-layout--guest']_>_&]:[grid-row:2]",
 );
 
-export const connectionPermissionStyles =
-  'pt-4.5 pr-4.5 pb-4.5 pl-4.5 rounded-[12px] bg-brand-soft';
+export const consentCardStyles = cn(
+  'grid min-w-0 overflow-hidden rounded-2xl border border-line bg-paper shadow-[var(--shadow)]',
+  'md:grid-cols-[minmax(0,0.35fr)_minmax(0,0.65fr)] md:grid-rows-[1fr_auto] [overflow-wrap:anywhere]',
+);
+
+export const consentPaneStyles =
+  'grid min-w-0 gap-5 p-5 sm:p-6 md:row-span-2 md:grid-rows-subgrid lg:p-8';
+
+export const consentIdentityStyles = cn(
+  consentPaneStyles,
+  'relative isolate border-b border-line bg-[color-mix(in_srgb,var(--brand-soft)_45%,var(--paper))] md:border-e md:border-b-0',
+  'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:-z-10 before:h-36 before:opacity-40',
+  'before:[background-image:radial-gradient(var(--dot)_1px,transparent_1px)] before:[background-size:14px_14px]',
+  'before:[mask-image:linear-gradient(155deg,var(--mask-solid),transparent_75%)]',
+);
+
+export const consentFooterStyles = 'flex min-w-0 items-center gap-3 border-t border-line pt-4';
+
+export const consentPermissionRowStyles = cn(
+  'grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto_18px] items-center gap-x-2 gap-y-1 px-3 py-3.5',
+  'sm:grid-cols-[2.25rem_minmax(0,1fr)_auto_18px] sm:gap-x-3 sm:px-4',
+);
+
+export const consentPermissionIconStyles =
+  'col-start-1 row-span-2 row-start-1 grid aspect-square w-full place-items-center rounded-lg';
+
+export const consentChoiceRowStyles = cn(
+  checkLabelStyles,
+  consentPermissionRowStyles,
+  'rounded-none border-t border-line',
+  "[&_>_input[type='checkbox']]:[margin-block-start:0]",
+);
+
+export const consentDetailsStyles = cn(
+  'group/details min-w-0 rounded-xl bg-page',
+  'details-content:grid details-content:grid-rows-[0fr] open:details-content:grid-rows-[1fr]',
+  'details-content:transition-[grid-template-rows,content-visibility] details-content:transition-discrete',
+  'details-content:duration-240 details-content:ease-out motion-reduce:details-content:transition-none',
+);
+
+export const consentDetailToggleStyles = cn(
+  'grid min-w-0 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 rounded-xl px-3 py-3',
+  'hover:bg-brand-soft sm:px-4 [&::-webkit-details-marker]:hidden motion-safe:transition-colors',
+);
 
 export const connectAccessStyles = cn(
   'flex flex-col gap-[var(--space-4)] min-w-0 [&_>_h2]:mt-0 [&_>_h2]:mr-0 [&_>_h2]:mb-0',

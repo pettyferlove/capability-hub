@@ -6,8 +6,19 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { cleanup, render, screen } from '@testing-library/react';
 import { FileWarning, LoaderCircle, Search } from '../../apps/web/src/shared/icons/lucide.js';
 import { clientIcons } from '../../apps/web/src/shared/components/client-icons.js';
+import { connectionClient } from '../../apps/web/src/shared/icons/ConnectionClientIcon.js';
 
 afterEach(cleanup);
+
+test('连接图标识别完整客户端名与接入助手名称，未知和近似名称使用占位', () => {
+  for (const name of ['claude-code', 'Claude Code', 'Claude Code · 接入助手']) {
+    assert.equal(connectionClient(name), 'claude-code');
+  }
+  assert.equal(connectionClient('GitHub Copilot CLI · 接入助手'), 'copilot-cli');
+  for (const name of ['oh-my-pi', 'Claude Code 自定义客户端', 'constructor']) {
+    assert.equal(connectionClient(name), undefined);
+  }
+});
 
 test('离线图标首屏输出 SVG，保留按钮名称、尺寸和动画类，不增加布局包装', () => {
   const markup = renderToStaticMarkup(

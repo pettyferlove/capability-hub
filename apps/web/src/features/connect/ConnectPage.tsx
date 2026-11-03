@@ -43,7 +43,7 @@ import { useQuery } from '../../shared/api/use-query.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { ListSkeleton } from '../../shared/components/Skeleton.js';
 import { useState } from 'react';
-import { ArrowRight, Link, ShieldCheck } from '../../shared/icons/lucide.js';
+import { ArrowRight, ChevronRight, Link, Plug, ShieldCheck } from '../../shared/icons/lucide.js';
 import { AgentClientSelect } from '../../shared/components/AgentClientSelect.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { CopyButton } from '../../shared/components/CopyButton.js';
@@ -72,6 +72,26 @@ export default function ConnectPage({ routeQuery = location.search }: { routeQue
   const authorization = query.get('authorization');
   const code = query.get('code');
   const approving = !!authorization || !!code;
+  if (authorization && me) {
+    return (
+      <div className="mx-auto w-full max-w-5xl">
+        <nav aria-label="面包屑" className="mb-4 flex items-center gap-2 text-label text-muted-ink">
+          <a
+            className="inline-flex min-h-8 items-center gap-2 rounded-md text-inherit hover:text-brand"
+            href="/connect"
+          >
+            <Plug size={15} />
+            接入 Agent
+          </a>
+          <ChevronRight size={13} />
+          <span aria-current="page" className="font-medium text-ink">
+            确认连接
+          </span>
+        </nav>
+        <ConnectionAuthorization key={authorization} requestId={authorization} />
+      </div>
+    );
+  }
   return (
     <>
       <PageHead
@@ -84,12 +104,8 @@ export default function ConnectPage({ routeQuery = location.search }: { routeQue
         }
       />
       {approving ? (
-        me ? (
-          authorization ? (
-            <ConnectionAuthorization key={authorization} requestId={authorization} />
-          ) : (
-            <CliApproval initialCode={code!} />
-          )
+        me && code ? (
+          <CliApproval initialCode={code} />
         ) : (
           <section className={cn(panelStyles, formStackStyles, connectionAuthorizationStyles)}>
             <h2>登录后继续授权</h2>

@@ -34,7 +34,7 @@ description: 接入 Capability Hub，查找并使用团队共享的 Skill 和 MC
 
 ## 向 Hub 贡献
 
-提交 Skill、登记推荐和上报反馈都需要贡献权限。如果当前连接缺少所需工具，引导用户到该实例的 `/connect?permission=contribute` 追加授权并刷新工具。能看见工具仍需具备对应的账号权限。
+提交 Skill、登记推荐和上报反馈都需要贡献权限。缺少所需工具时，可从该实例的 `/connect?permission=contribute` 获取接入指令。在当前客户端重新发起授权，确认贡献权限后刷新工具。操作仍受账号权限限制。
 
 ### 把本地 Skill 分享给团队
 

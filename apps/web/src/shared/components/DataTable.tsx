@@ -5,6 +5,7 @@ import {
   tableWrapStyles,
   tableEmptyStyles,
 } from '../styles/recipes.js';
+import { cn } from '../styles/cn.js';
 import { Search } from '../icons/lucide.js';
 import {
   Children,
@@ -59,7 +60,12 @@ export function DataTable({
   const rows = Children.toArray(body?.props.children).filter(isValidElement),
     filtered = rows.filter((r) => plain(r).toLowerCase().includes(query.trim().toLowerCase()));
   return (
-    <div className={dataTableStyles}>
+    <div
+      className={cn(
+        dataTableStyles,
+        filtered.length === 0 && 'max-[760px]:[&_table]:min-w-0 max-[360px]:[&_th]:px-2',
+      )}
+    >
       <div className={tableToolbarStyles}>
         <span>
           {label}

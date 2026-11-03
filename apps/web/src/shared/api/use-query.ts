@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from './client.js';
+import { api, ApiError } from './client.js';
 
 interface Resource<T> {
   path: string;
@@ -10,6 +10,7 @@ interface QueryRequest {
   refresh: number;
   status: 'pending' | 'success' | 'error';
   error?: string;
+  errorCode?: string;
 }
 interface QueryOptions {
   /** 集合筛选可保留更新前的结果；实体详情不得复用其他实体的数据。 */
@@ -38,6 +39,7 @@ export function queryView<T>(
   return {
     data: hasData ? resource?.data : undefined,
     error: matches ? (request?.error ?? '') : '',
+    errorCode: matches ? request?.errorCode : undefined,
     loading: pending,
     refreshing: hasData && pending,
     isPreviousData,
@@ -74,6 +76,7 @@ export function useQuery<T>(path: string | null, refresh = 0, options: QueryOpti
           refresh,
           status: 'error',
           error: error instanceof Error ? error.message : '请求失败，请稍后重试',
+          errorCode: error instanceof ApiError ? error.code : undefined,
         });
       });
     return () => controller.abort();
