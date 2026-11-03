@@ -87,7 +87,7 @@ import {
   UsersRound,
   X,
 } from '../../shared/icons/lucide.js';
-import { AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '../../shared/api/use-query.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
@@ -221,7 +221,8 @@ export default function DiscoverPage() {
               )}
             </span>
           </div>
-          <div
+          <motion.div
+            layoutScroll
             className={quickSearchStyles}
             aria-label="动态推荐关键词"
             aria-busy={suggestionsLoading}
@@ -265,7 +266,7 @@ export default function DiscoverPage() {
                 </CatalogMotionItem>
               )}
             </AnimatePresence>
-          </div>
+          </motion.div>
         </div>
         <div className={heroArtStyles} aria-hidden="true">
           <svg className={orbitLineStyles} viewBox="0 0 240 140">
@@ -480,6 +481,9 @@ function AssetCard({ asset, searching }: { asset: AssetResponse; searching: bool
         <ArrowUpRight size={16} className={cardArrowStyles} />
       </div>
       <p>{asset.description}</p>
+      {searching && asset.match_reasons?.length ? (
+        <small className={matchReasonStyles}>{asset.match_reasons.join(' · ')}</small>
+      ) : null}
       <div className={cn(chipsStyles, assetCardTagsStyles)}>
         {release.has_scripts && <ScriptBadge />}
         {asset.kind === 'skill' && asset.requires_api_key && <ApiKeyBadge />}
@@ -489,9 +493,6 @@ function AssetCard({ asset, searching }: { asset: AssetResponse; searching: bool
           </span>
         ))}
       </div>
-      {searching && asset.match_reasons?.length ? (
-        <small className={matchReasonStyles}>{asset.match_reasons.join(' · ')}</small>
-      ) : null}
       <div className={assetCardFootStyles}>
         {!!asset.community.recommendation_count && (
           <span className={cardRecommendationsStyles} title="此资源获得的用户推荐">

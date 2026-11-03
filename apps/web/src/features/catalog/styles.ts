@@ -149,7 +149,7 @@ export const managementToolsStyles =
 
 export const discoverStyles = 'group/discover';
 
-export const discoverHeroStyles = 'relative isolate flex overflow-hidden pb-4';
+export const discoverHeroStyles = 'relative isolate flex overflow-hidden pb-2';
 
 export const heroDotsStyles = cn(
   'absolute top-0 right-0 bottom-0 left-0 z-[-2] opacity-[var(--hero-dot-opacity)]',
@@ -199,15 +199,18 @@ export const catalogSearchClearStyles = cn(
   'hover:text-brand',
 );
 
+/** 可视高度容纳两行关键词（窄屏三行）和入场位移。 */
 export const quickSearchStyles = cn(
-  'relative flex items-center flex-wrap gap-x-[9px] gap-y-2 max-w-162.5 mt-3.5 text-[length:11px]',
-  'text-muted-ink min-h-7 whitespace-nowrap [&_>_*]:shrink-0 max-[600px]:gap-x-1.5',
-  'max-[600px]:gap-y-1.5 max-[600px]:text-[length:11px]',
+  'relative flex h-18 max-w-162.5 flex-wrap content-start items-center gap-x-[9px] gap-y-2',
+  'overflow-x-hidden overflow-y-auto [scrollbar-width:thin] [scrollbar-gutter:stable]',
+  'mt-3.5 text-[length:11px] text-muted-ink max-[600px]:h-26 max-[600px]:gap-1.5',
   "[[class~='group/discover']_&]:mt-[11px]",
 );
 
 export const quickSearchItemStyles = cn(
-  'inline-flex items-center [&_>_button]:flex [&_>_button]:items-center [&_>_button]:gap-[7px]',
+  'inline-flex max-w-full shrink-0 items-center [&_>_button]:flex [&_>_button]:max-w-full',
+  '[&_>_button]:items-center [&_>_button]:gap-[7px] [&_>_button]:[overflow-wrap:anywhere]',
+  '[&_>_button:focus-visible]:-outline-offset-2 [&_svg]:shrink-0',
   '[&_>_button]:border [&_>_button]:border-solid [&_>_button]:border-[color:var(--line)] [&_>_button]:bg-paper [&_>_button]:text-muted-ink',
   '[&_>_button]:pt-[3px] [&_>_button]:pr-[9px] [&_>_button]:pb-[3px] [&_>_button]:pl-[9px]',
   '[&_>_button]:rounded-[5px] [&_>_button]:text-[length:11px] [&_>_button:hover]:text-brand',
@@ -345,7 +348,7 @@ export const assetVersionStyles =
   'inline-flex min-w-0 max-w-full items-center gap-1 font-mono [&>svg]:shrink-0';
 
 export const assetCardTagsStyles = cn(
-  "items-start mb-3.5 empty:hidden [&_[class~='group/tag']]:max-w-full",
+  "mt-auto mb-3.5 items-start empty:mb-0 [&_[class~='group/tag']]:max-w-full",
   "[&_[class~='group/tag']]:[overflow-wrap:anywhere]",
 );
 
@@ -356,7 +359,7 @@ export const matchReasonStyles = cn(
 
 export const assetCardFootStyles = cn(
   'flex items-center gap-1.5 text-[length:11px] text-muted-ink border-t [border-top-style:solid] border-t-[color:var(--line)]',
-  'pt-3 mt-auto',
+  'pt-3',
 );
 
 export const cardRecommendationsStyles =
