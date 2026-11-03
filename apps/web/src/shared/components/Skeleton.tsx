@@ -41,7 +41,6 @@ import {
   skeletonPageStyles,
   formStackStyles,
   skeletonPublishStyles,
-  connectLayoutStyles,
 } from '../styles/recipes.js';
 import { cn } from '../styles/cn.js';
 import type { CSSProperties, ReactNode } from 'react';
@@ -469,13 +468,9 @@ export function PageSkeleton({
       ) : variant === 'table' ? (
         <TableSkeleton label={'正在加载' + title + '…'} />
       ) : variant === 'connect' ? (
-        <div className={connectLayoutStyles}>
-          <div className={skeletonCardStyles}>
-            <CodeSkeleton label="正在加载接入配置…" />
-          </div>
-          <div className={skeletonCardStyles}>
-            <ListSkeleton label="正在加载接入说明…" rows={5} />
-          </div>
+        <div className={skeletonCardStyles}>
+          <FormPlaceholder fields={2} action={false} />
+          <CodeSkeleton label="正在加载接入配置…" />
         </div>
       ) : (
         <CardGridSkeleton label={'正在加载' + title + '…'} />

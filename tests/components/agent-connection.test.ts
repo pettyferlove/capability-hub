@@ -2,12 +2,33 @@ import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { createElement } from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
+import { hubTools } from '@capability-hub/contracts';
 import ConnectPage from '../../apps/web/src/features/connect/ConnectPage.js';
+import { HubToolbox } from '../../apps/web/src/features/connect/HubToolbox.js';
 import { HubCtx, type HubState } from '../../apps/web/src/shared/context/HubContext.js';
 
 afterEach(cleanup);
+
+test('工具清单按需打开，按所需授权分组，关闭后可从原入口继续', async () => {
+  const user = userEvent.setup();
+  render(createElement(HubToolbox));
+  const trigger = screen.getByRole('button', { name: '查看 MCP 工具' });
+  assert.equal(screen.queryByText('search_skills'), null);
+  await user.click(trigger);
+  const sheet = within(await screen.findByRole('dialog', { name: 'Hub MCP 工具' }));
+  const basic = within(sheet.getByRole('region', { name: '搜索和使用' }));
+  const contribution = within(sheet.getByRole('region', { name: '分享、推荐与反馈' }));
+  for (const tool of hubTools) {
+    const group = tool.action === 'contribute' ? contribution : basic;
+    assert(group.getByText(tool.name));
+  }
+  assert.equal(sheet.getAllByRole('listitem').length, hubTools.length);
+  await user.keyboard('{Escape}');
+  await waitFor(() => assert(!screen.queryByRole('dialog'), '工具清单应已关闭'));
+  await waitFor(() => assert(document.activeElement === trigger, '关闭后应恢复到查看工具的按钮'));
+});
 
 test('接入页切换 Agent 后同时更新 MCP 配置、CLI 客户端和 Skill 目录', async (context) => {
   history.replaceState(null, '', '/connect');

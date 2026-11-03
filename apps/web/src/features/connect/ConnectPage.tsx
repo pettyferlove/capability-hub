@@ -13,7 +13,6 @@ import {
   btnStyles,
   btnPrimaryStyles,
   connectLayoutStyles,
-  panelHeadingStyles,
   stepNumberStyles,
   subtleStyles,
   codewrapStyles,
@@ -23,12 +22,10 @@ import {
 import {
   connectionAuthorizationStyles,
   connectOverviewStyles,
-  connectEntryStyles,
   connectionMethodsStyles,
   connectionMethodStyles,
   isActiveStyles,
   connectionStepsStyles,
-  connectToolboxStyles,
 } from './styles.js';
 import { cn } from '../../shared/styles/cn.js';
 import {
@@ -210,35 +207,35 @@ function HubConnection() {
   return (
     <div className={connectLayoutStyles}>
       <section
-        className={cn(
-          panelStyles,
-          connectEntryStyles,
-          formStackStyles,
-          'scroll-mt-28 max-[600px]:scroll-mt-24',
-        )}
+        className={cn(panelStyles, formStackStyles, 'scroll-mt-28 max-[600px]:scroll-mt-24')}
         id="hub-connection"
       >
-        <div className={panelHeadingStyles}>
+        <header className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
           <span className={stepNumberStyles}>
             <Link size={20} />
           </span>
           <div>
             <h2>连接 Hub MCP</h2>
-            <p>复制指令给 Agent，让它准备配置，再由你确认授权。</p>
+            <p className={cn(subtleStyles, 'mt-1')}>
+              复制指令给 Agent，让它准备配置，再由你确认授权。
+            </p>
           </div>
+          <HubToolbox />
+        </header>
+        <div className="grid min-w-0 gap-[var(--space-4)] sm:grid-cols-2">
+          <AgentClientSelect value={client} onChange={setClient} />
+          <label>
+            MCP 配置范围
+            <SelectField
+              optionIcons={configurationScopeIcons}
+              value={scope}
+              onValueChange={(value) => setScope(agentConfigurationScopeSchema.parse(value))}
+            >
+              <option value="project">仅当前项目</option>
+              <option value="user">我的所有项目</option>
+            </SelectField>
+          </label>
         </div>
-        <AgentClientSelect value={client} onChange={setClient} />
-        <label>
-          MCP 配置范围
-          <SelectField
-            optionIcons={configurationScopeIcons}
-            value={scope}
-            onValueChange={(value) => setScope(agentConfigurationScopeSchema.parse(value))}
-          >
-            <option value="project">仅当前项目</option>
-            <option value="user">我的所有项目</option>
-          </SelectField>
-        </label>
         <label className={checkLabelStyles}>
           <input
             type="checkbox"
@@ -353,9 +350,6 @@ function HubConnection() {
           />
         </details>
       </section>
-      <aside className={connectToolboxStyles}>
-        <HubToolbox />
-      </aside>
     </div>
   );
 }

@@ -133,16 +133,6 @@ export const connectOverviewStyles = cn(
   'max-[799px]:grid-cols-[minmax(0,_1fr)]',
 );
 
-export const connectEntryStyles = cn(
-  'group/connect-entry [grid-column:1] [grid-row:1] max-[960px]:[grid-column:1]',
-  "max-[960px]:[grid-row:1] [[class~='group/connect-layout--guest']_>_&]:flex-row",
-  "[[class~='group/connect-layout--guest']_>_&]:items-center",
-  "[[class~='group/connect-layout--guest']_>_&]:justify-between",
-  "[[class~='group/connect-layout--guest']_>_&]:flex-wrap",
-  "max-[640px]:[[class~='group/connect-layout--guest']_>_&]:flex-col",
-  "max-[640px]:[[class~='group/connect-layout--guest']_>_&]:items-stretch",
-);
-
 export const connectionMethodsStyles =
   'grid grid-cols-[repeat(2,_minmax(0,_1fr))] gap-3 max-[600px]:grid-cols-[1fr]';
 
@@ -160,16 +150,6 @@ export const isActiveStyles = 'group/is-active';
 export const connectionStepsStyles = cn(
   '[&_span]:text-muted-ink [&_span]:text-caption [&_span]:block [&_span]:mt-2 grid',
   'grid-cols-[repeat(3,_minmax(0,_1fr))] gap-4.5 pl-6 max-[600px]:grid-cols-[1fr]',
-);
-
-export const connectToolboxStyles = cn(
-  "[[class~='group/connect-layout']_>_&]:min-w-0",
-  "[[class~='group/connect-layout']_>_&]:[grid-column:2]",
-  "[[class~='group/connect-layout']_>_&]:[grid-row:1]",
-  "max-[960px]:[[class~='group/connect-layout']_>_&]:[grid-column:1]",
-  "max-[960px]:[[class~='group/connect-layout']_>_&]:[grid-row:2]",
-  "[[class~='group/connect-layout--guest']_>_&]:[grid-column:1_/_-1]",
-  "[[class~='group/connect-layout--guest']_>_&]:[grid-row:2]",
 );
 
 export const consentCardStyles = cn(
@@ -288,62 +268,6 @@ export const accessMethodActionStyles = cn(
   'group/access-method-action grid gap-[var(--space-3)] mt-auto [&_p]:min-h-9.5 [&_p]:text-caption',
   "[&_p]:leading-[1.75] [&_p]:text-muted-ink [&_[class~='group/btn']]:justify-center",
   "[&_[class~='group/btn']]:whitespace-normal",
-);
-
-export const toolboxStyles = cn(
-  'group/toolbox border border-solid border-[color:var(--line)] rounded-[17px] bg-paper pt-[var(--panel-space)]',
-  'pr-[var(--panel-space)] pb-[var(--panel-space)] pl-[var(--panel-space)]',
-  '[&_>_h3]:text-[length:21px] max-[850px]:mt-0 max-[600px]:pt-5.5 max-[600px]:pr-5.5',
-  'max-[600px]:pb-5.5 max-[600px]:pl-5.5 max-[600px]:[&_>_h3]:text-[length:21px] max-[760px]:pt-5',
-  'max-[760px]:pr-5 max-[760px]:pb-5 max-[760px]:pl-5',
-  "[[class~='group/connect-layout--guest']_&]:grid",
-  "[[class~='group/connect-layout--guest']_&]:grid-cols-[repeat(3,_minmax(0,_1fr))]",
-  "[[class~='group/connect-layout--guest']_&]:gap-x-[var(--space-5)]",
-  "max-[1000px]:[[class~='group/connect-layout--guest']_&]:grid-cols-[repeat(2,_minmax(0,_1fr))]",
-  "max-[640px]:[[class~='group/connect-layout--guest']_&]:grid-cols-[minmax(0,_1fr)]",
-  "[&_>_[class~='group/subtle']]:text-label [&_>_[class~='group/subtle']]:mt-3",
-  "[&_>_[class~='group/subtle']]:mr-0 [&_>_[class~='group/subtle']]:mb-[25px]",
-  "[&_>_[class~='group/subtle']]:ml-0 [&_>_[class~='group/subtle']]:leading-[1.8]",
-);
-
-export const toolboxHeadingStyles = cn(
-  "flex gap-3 items-center mb-4 [[class~='group/toolbox']_&_h3]:text-[length:17px]",
-  "[[class~='group/toolbox']_&_h3]:leading-[1.5] [[class~='group/toolbox']_&_p]:text-[length:11px]",
-  "[[class~='group/toolbox']_&_p]:mt-[5px]",
-  "[[class~='group/connect-layout--guest']_&]:[grid-column:1_/_-1]",
-);
-
-export const asideIconStyles = cn(
-  'inline-flex items-center justify-center w-13 h-13 bg-brand-soft text-brand rounded-[15px] mb-4.5',
-  "[[class~='group/toolbox']_&]:w-10 [[class~='group/toolbox']_&]:h-10",
-  "[[class~='group/toolbox']_&]:rounded-[11px] [[class~='group/toolbox']_&]:mt-0",
-  "[[class~='group/toolbox']_&]:mr-0 [[class~='group/toolbox']_&]:mb-0",
-  "[[class~='group/toolbox']_&]:ml-0 [[class~='group/toolbox']_&]:shrink-0",
-);
-
-export const toolItemStyles = cn(
-  'flex items-start gap-3 pt-[17px] pr-0 pb-[17px] pl-0 border-t [border-top-style:solid] border-t-[color:var(--line)]',
-  '[&_>_span]:text-muted-ink [&_>_span]:flex [&_>_span]:pt-[7px] [&_>_span]:pr-[7px] [&_>_span]:pb-[7px]',
-  '[&_>_span]:pl-[7px] [&_>_span]:bg-page [&_>_span]:rounded-[8px] [&_>_div]:min-w-0',
-  '[&_strong]:text-[length:11px] [&_p]:text-[length:12px] [&_p]:text-muted-ink [&_p]:leading-[1.65]',
-  '[&_p]:mt-[5px] max-[850px]:inline-flex max-[850px]:w-[50%] max-[850px]:[vertical-align:top]',
-  'max-[850px]:pr-[15px] max-[600px]:w-full max-[600px]:pt-[15px] max-[600px]:pr-0',
-  "max-[600px]:pb-[15px] max-[600px]:pl-0 [[class~='group/toolbox']_&]:flex",
-  "[[class~='group/toolbox']_&]:w-auto [[class~='group/toolbox']_&]:pt-3",
-  "[[class~='group/toolbox']_&]:pr-0 [[class~='group/toolbox']_&]:pb-3",
-  "[[class~='group/toolbox']_&]:pl-0 [[class~='group/toolbox']_&]:gap-2.5",
-  "[[class~='group/toolbox']_&_strong]:text-body [[class~='group/toolbox']_&_strong]:font-medium",
-  "[[class~='group/toolbox']_&_p]:text-body [[class~='group/toolbox']_&_p]:leading-[1.65]",
-);
-
-export const toolPermissionStyles = 'block text-muted-ink mt-[var(--space-1)] text-caption';
-
-export const asideNoteStyles = cn(
-  'text-[length:12px] text-muted-ink pt-5 mt-5.5 border-t [border-top-style:solid] border-t-[color:var(--line)] leading-[1.7]',
-  "flex items-start gap-3 [[class~='group/toolbox']_&]:text-[length:11px]",
-  "[[class~='group/toolbox']_&]:leading-[1.7] [[class~='group/toolbox']_&]:pt-4",
-  "[[class~='group/toolbox']_&]:mt-0 [&_>_svg]:[flex:0_0_18px] [&_>_svg]:mt-[3px]",
-  "[[class~='group/connect-layout--guest']_&]:[grid-column:1_/_-1]",
 );
 
 export const hubShareTriggerStyles = cn(

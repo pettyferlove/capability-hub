@@ -45,7 +45,6 @@ export const btnStyles = cn(
   '[&:not(:disabled)]:[transition:background-color_var(--duration-fast),_border-color_var(--duration-fast),_box-shadow_var(--duration-fast),_transform_var(--duration-fast)]',
   'motion-reduce:[&:not(:disabled):active]:[transform:none] disabled:opacity-[0.5]',
   'disabled:cursor-not-allowed',
-  "[[class~='group/connect-layout--guest']_[class~='group/connect-entry']_>_&]:shrink-0",
 );
 
 export const btnPrimaryStyles = cn(
@@ -244,12 +243,7 @@ export const installationRouteStyles = cn(
   '[&_>_:not(summary)]:my-[12px_0]',
 );
 
-export const connectLayoutStyles = cn(
-  'group/connect-layout grid grid-cols-[minmax(0,_1fr)_minmax(0,_360px)] gap-[var(--section-gap)]',
-  'items-start max-[1100px]:grid-cols-[minmax(0,_1fr)_300px] max-[850px]:grid-cols-[1fr]',
-  'max-[1000px]:grid-cols-[minmax(0,_1fr)_minmax(0,_300px)] max-[960px]:grid-cols-[minmax(0,_1fr)]',
-  "[&[class~='group/connect-layout--guest']]:grid-cols-[minmax(0,_1fr)]",
-);
+export const connectLayoutStyles = 'group/connect-layout min-w-0';
 
 export const panelHeadingStyles = cn(
   'group/panel-heading flex items-start gap-[var(--space-3)] mb-[var(--space-4)] [&_h2]:text-section',
@@ -257,8 +251,6 @@ export const panelHeadingStyles = cn(
   '[&_p]:leading-[1.65] max-[600px]:gap-2.5 max-[600px]:mb-[21px]',
   'max-[600px]:[&_h2]:text-[length:17px] max-[600px]:[&_p]:text-[length:11px] [&_>_div]:min-w-0',
   "[[class~='group/connect-layout']_&]:mb-0 max-[760px]:[&_h2]:text-[length:17px]",
-  "[[class~='group/connect-layout--guest']_&]:[flex:1_1_300px]",
-  "max-[640px]:[[class~='group/connect-layout--guest']_&]:basis-auto",
 );
 
 export const stepNumberStyles = cn(
