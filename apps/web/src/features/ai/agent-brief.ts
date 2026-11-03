@@ -16,7 +16,7 @@ import {
   type IconComponent,
 } from '../../shared/icons/lucide.js';
 import { activityItems } from './activity.js';
-import { eventLabel, jsonObject, toolLabels } from './presentation.js';
+import { eventLabel, jsonObject, stepLabels, toolLabels } from './presentation.js';
 
 type Status = AiExecutionResponse['status'];
 
@@ -111,8 +111,11 @@ export interface BriefAction {
 export function liveAction(view: AiExecutionViewResponse): BriefAction {
   const activity = activityItems(view).at(-1);
   const step = [...view.activity].reverse().find((e) => e.type.startsWith('step.'));
+  const stepId = step?.data.step_id;
+  if (stepId === 'publication-suggestion' || stepId === 'repair-output')
+    return { key: stepId, label: stepLabels[stepId], Icon: ScrollText, glyph: 'report' };
   if (
-    step?.data.step_id === 'assessment' ||
+    stepId === 'assessment' ||
     (activity?.kind === 'message' && activity.block.message_id.startsWith('assessment:'))
   )
     return { key: 'assessment', label: '整理研判报告', Icon: ScrollText, glyph: 'report' };

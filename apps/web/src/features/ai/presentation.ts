@@ -109,10 +109,12 @@ export function proposalOf(value: Json | undefined) {
     : undefined;
 }
 
-const stepLabels: Record<string, string> = {
+/** 实时动作和事件列表共用步骤名称，未登记的步骤在事件中显示原 ID。 */
+export const stepLabels: Record<string, string> = {
   answer: '助手回答',
   investigate: '查阅证据与研判',
   assessment: '整理研判报告',
+  'publication-suggestion': '整理发布建议',
   'repair-output': '重新整理报告格式',
   'human-review': '人工确认',
   'record-assessment': '记录处理结果',

@@ -79,6 +79,33 @@ export const aiExecutionLedgerResponseSchema = z
   })
   .strict();
 
+const elapsedMs = z.number().int().nonnegative();
+const callDiagnosticsSchema = z.strictObject({
+  agent_id: id,
+  step: z.strictObject({ id, start_seq: z.number().int().positive() }).optional(),
+  model: id,
+  format: z.enum(['openai', 'anthropic']),
+  request_timeout_ms: z.number().int().positive(),
+  max_output_tokens: z.number().int().positive(),
+  transport: z
+    .strictObject({
+      http_status: z.number().int().min(100).max(599).optional(),
+      headers_ms: elapsedMs.optional(),
+      first_output_ms: elapsedMs.optional(),
+      last_output_ms: elapsedMs.optional(),
+      received_bytes: z.number().int().nonnegative(),
+      text_chars: z.number().int().nonnegative(),
+      finish_reason: z
+        .enum(['stop', 'length', 'tool_call', 'content_filter', 'context_limit', 'other'])
+        .optional(),
+      terminal_received: z.boolean(),
+      request_timed_out: z.boolean(),
+      input_tokens_reported: z.boolean(),
+      output_tokens_reported: z.boolean(),
+    })
+    .optional(),
+});
+
 /** 单次执行的诊断快照。事件按 seq 排列，缺失区间以闭区间表示。 */
 export const aiExecutionDiagnosticsResponseSchema = z
   .object({
@@ -111,6 +138,7 @@ export const aiExecutionDiagnosticsResponseSchema = z
           status: z.enum(['pending', 'succeeded', 'failed', 'unknown']),
           attempt: z.number().int().nonnegative(),
           profile: id,
+          diagnostics: callDiagnosticsSchema,
           input_tokens: z.number().nonnegative(),
           output_tokens: z.number().nonnegative(),
           duration_ms: z.number().nonnegative(),

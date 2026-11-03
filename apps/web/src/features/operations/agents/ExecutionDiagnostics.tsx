@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   aiDiagnosticHandoffResponseSchema,
   aiExecutionDiagnosticsResponseSchema,
@@ -17,6 +17,7 @@ import { cn } from '../../../shared/styles/cn.js';
 import { btnStyles, dataTableStyles, tableWrapStyles } from '../../../shared/styles/recipes.js';
 import { eventLabel } from '../../ai/presentation.js';
 import { codeStyles, controlStyles, disclosureStyles } from '../../ai/styles.js';
+import { ModelCallRow } from './ModelCallRow.js';
 
 const categories = {
   key: '关键事件',
@@ -26,12 +27,6 @@ const categories = {
   tool: '工具',
   interaction: '人工交互',
   message: '消息',
-};
-const callStatus = {
-  pending: '待结算',
-  succeeded: '已成功',
-  failed: '失败',
-  unknown: '用量待核实',
 };
 const pageSize = 40;
 
@@ -92,6 +87,7 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
   const [refresh, setRefresh] = useState(0);
   const [category, setCategory] = useState('key');
   const [sequence, setSequence] = useState('');
+  const sequenceInput = useRef<HTMLInputElement>(null);
   const [page, setPage] = useState(0);
   const [handoff, setHandoff] = useState(false);
   const query = useQuery<unknown>(path, refresh);
@@ -225,6 +221,7 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
                 </h3>
                 <div className="flex flex-wrap gap-2">
                   <input
+                    ref={sequenceInput}
                     type="search"
                     aria-label="定位事件序号"
                     placeholder="定位事件序号"
@@ -325,11 +322,11 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
                         <tr>
                           {[
                             '调用 / 档案',
-                            '调度',
+                            '调度 / 步骤',
                             '状态',
                             '耗时',
                             '输入 / 输出 token',
-                            '错误码',
+                            '调用诊断',
                           ].map((label) => (
                             <th scope="col" key={label}>
                               {label}
@@ -339,31 +336,15 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
                       </thead>
                       <tbody>
                         {report.model_calls.map((call) => (
-                          <tr key={call.id}>
-                            <td>
-                              {call.profile}
-                              <small className="block font-mono">{call.id}</small>
-                              <time
-                                className="block text-caption text-muted-ink"
-                                dateTime={call.started_at}
-                                title={call.started_at}
-                              >
-                                {new Date(call.started_at).toLocaleTimeString()}
-                              </time>
-                            </td>
-                            <td>{call.attempt}</td>
-                            <td>{callStatus[call.status]}</td>
-                            <td>
-                              {call.status === 'pending' ||
-                              (call.status === 'unknown' && !call.duration_ms)
-                                ? '—'
-                                : call.duration_ms + ' ms'}
-                            </td>
-                            <td>
-                              {call.input_tokens} / {call.output_tokens}
-                            </td>
-                            <td>{call.error_code ?? '—'}</td>
-                          </tr>
+                          <ModelCallRow
+                            key={call.id}
+                            call={call}
+                            locate={(seq) => {
+                              setSequence(String(seq));
+                              setPage(0);
+                              sequenceInput.current?.focus();
+                            }}
+                          />
                         ))}
                       </tbody>
                     </table>

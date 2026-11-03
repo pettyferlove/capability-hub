@@ -30,14 +30,28 @@ export const evidenceSchema = z
  */
 export const publicationSuggestion = z
   .object({
-    category: z.enum(['general', 'scenario', 'uncategorized']),
+    category: z
+      .enum(['general', 'scenario', 'uncategorized'])
+      .describe(
+        '具体工作选 scenario，有依据表明可服务多类工作且无单一核心任务时选 general，用途依据不足选 uncategorized',
+      ),
     /** 已登记的有效场景 ID，去重后最多 20 个。 */
     scenario_ids: z.array(z.uuid()).max(20),
     proposed_scenarios: z
       .array(
         z.strictObject({
-          name: z.string().trim().min(1).max(80),
-          description: z.string().trim().min(1).max(2000),
+          name: z
+            .string()
+            .trim()
+            .min(1)
+            .max(80)
+            .describe('可独立用作筛选项的中文名词短语，通常 4–8 个汉字，必要的专名可更长'),
+          description: z
+            .string()
+            .trim()
+            .min(1)
+            .max(2000)
+            .describe('用一句短句界定同类工作共有的目标或归入条件，省略单个资产的操作和格式细节'),
         }),
       )
       .max(20)

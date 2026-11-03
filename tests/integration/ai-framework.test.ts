@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { z } from 'zod';
 import { AiError } from '@capability-hub/ai';
+import { executionView } from '../../apps/server/src/http/routes/ai-views.js';
 import { ScopedMemoryStorage, ScopedWorkflowsStorage } from '@capability-hub/ai/storage';
 import { purgeAiHistory } from '@capability-hub/infrastructure/ai';
 import { fixture } from '../support/ai-provider.js';
@@ -82,8 +83,104 @@ for (const format of ['openai', 'anthropic'] as const)
     });
     assert(!JSON.stringify(snapshots).includes('private-model-output'));
     assert.equal(provider.requests.length, 2);
+    const repair = executionView(await hub.runtime.view(submitted.id)).activity.find(
+      (item) => item.type === 'step.started' && item.data.step_id === 'repair-output',
+    );
+    assert.equal(repair?.data.repair_reason, 'invalid_fields');
     assert(!JSON.stringify(provider.requests[1].body).includes('private-model-output'));
     assert(!result.payload.message_text.includes('private-model-output'));
+  });
+
+for (const format of ['openai', 'anthropic'] as const)
+  for (const stop of ['length', 'stop', 'content_filter'] as const)
+    test(`AI ${format} 按停止原因处理没有完整对象的报告：${stop}`, async (t) => {
+      const provider = await fixture(format, 'json', false, {
+        turns: [],
+        text: stop === 'stop' ? ' ' : { text: ' ', stop },
+        json: '{"count":7}',
+      });
+      t.after(provider.close);
+      const hub = await frameworkFixture(t, frameworkConfig(provider.url, format), (context) =>
+        context.structured(
+          { id: 'report', instructions: 'Return JSON.', prompt: 'Summarize the report.' },
+          z.strictObject({ count: z.number().int() }),
+        ),
+      );
+      const submitted = await hub.runtime.submit(hub.admin.id, 'framework-test', {});
+      await hub.run();
+      const view = executionView(await hub.runtime.view(submitted.id));
+      const calls = await hub.runtime.store.list('ai_calls', {
+        execution_id: submitted.id,
+        limit: 10,
+      });
+      const first = calls.find((call) => call.position === 1)?.payload.diagnostics;
+      assert.equal(
+        first?.transport?.finish_reason,
+        stop === 'content_filter' ? 'content_filter' : stop,
+      );
+      if (stop === 'content_filter') {
+        assert.equal(view.execution.status, 'failed');
+        assert.equal(view.execution.error?.code, 'AI_OUTPUT_INVALID');
+        assert.equal(view.execution.usage.requests, 1);
+      } else {
+        assert.equal(view.execution.status, 'succeeded', JSON.stringify(view.execution.error));
+        assert.deepEqual(view.execution.result, { count: 7 });
+        const repair = view.activity.find(
+          (item) => item.type === 'step.started' && item.data.step_id === 'repair-output',
+        );
+        assert.equal(
+          repair?.data.repair_reason,
+          stop === 'length' ? 'output_limit' : 'incomplete_output',
+        );
+        const next = calls.find((call) => call.position === 2)?.payload.diagnostics;
+        assert.equal(next?.agent_id, 'report');
+        assert.deepEqual(next?.step, { id: 'repair-output', start_seq: repair?.seq });
+      }
+    });
+
+for (const format of ['openai', 'anthropic'] as const)
+  test(`AI ${format} 请求超时时保留响应头和输出进度，未返回的用量仍为未知`, async (t) => {
+    for (const gate of ['before-headers', 'before-output', true] as const) {
+      const provider = await fixture(format, 'text', gate);
+      t.after(provider.close);
+      const config = frameworkConfig(provider.url, format);
+      config.profiles[0].request_timeout_ms = 1000;
+      const hub = await frameworkFixture(t, config, (context) =>
+        context.step('prepare', () =>
+          context.agent({
+            id: 'writer',
+            instructions: 'Answer briefly.',
+            prompt: 'Describe the task.',
+          }),
+        ),
+      );
+      const submitted = await hub.runtime.submit(hub.admin.id, 'framework-test', {});
+      await hub.run();
+      const result = await hub.runtime.get(submitted.id);
+      assert.equal(result.payload.error?.message, '模型请求超时');
+      assert.equal(result.payload.usage.unknown_requests, 1);
+      const [call] = await hub.runtime.store.list('ai_calls', {
+        execution_id: submitted.id,
+        limit: 1,
+      });
+      const transport = call.payload.diagnostics.transport;
+      assert(transport);
+      assert.equal(call.payload.diagnostics.request_timeout_ms, 1000);
+      assert.equal(transport.request_timed_out, true);
+      assert.equal(transport.http_status, gate === 'before-headers' ? undefined : 200);
+      assert.equal(transport.headers_ms !== undefined, gate !== 'before-headers');
+      assert.equal(transport.received_bytes > 0, gate !== 'before-headers');
+      assert.equal(transport.first_output_ms !== undefined, gate === true);
+      assert.equal(transport.last_output_ms !== undefined, gate === true);
+      assert.equal(transport.text_chars, gate === true ? 3 : 0);
+      assert.equal(transport.terminal_received, false);
+      assert.equal(transport.finish_reason, undefined);
+      assert.equal(
+        transport.input_tokens_reported,
+        format === 'anthropic' && gate !== 'before-headers',
+      );
+      assert.equal(transport.output_tokens_reported, false);
+    }
   });
 
 for (const format of ['openai', 'anthropic'] as const)

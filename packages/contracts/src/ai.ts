@@ -191,7 +191,12 @@ const eventDataSchemas = {
   'execution.cancelled': z.object({}).strict(),
   'execution.timed_out': z.object({ error: eventError }).strict(),
   'execution.retry_scheduled': z.object({ reason: z.literal('interrupted') }).strict(),
-  'step.started': z.object({ step_id: id }).strict(),
+  'step.started': z
+    .object({
+      step_id: id,
+      repair_reason: z.enum(['invalid_fields', 'incomplete_output', 'output_limit']).optional(),
+    })
+    .strict(),
   'step.completed': z.object({ step_id: id, duration_ms: z.number().nonnegative() }).strict(),
   'step.failed': z.object({ step_id: id, code: z.string() }).strict(),
   'message.started': z.object({ message_id: id, block_id: id, format: z.literal('text') }).strict(),

@@ -3,10 +3,11 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { randomUUID } from 'node:crypto';
 import type { AiAuthorization, CredentialResolver } from '../core/ports.js';
 import type { AiConfiguration, ModelProfile } from '../core/config.js';
-import type { AiRecordMap } from '../core/records.js';
+import type { AiRecordMap, ModelCallDiagnostics } from '../core/records.js';
 import { AiError } from '../core/errors.js';
 import { type ExecutionScope } from '../execution/scope.js';
 import { type AiEventService } from '../execution/events.js';
+import { observeModelFrame } from './provider-diagnostics.js';
 
 type EndpointModel = ReturnType<ReturnType<typeof createOpenAICompatible>>;
 
@@ -23,6 +24,7 @@ export class ManagedProvider {
     private readonly credentials: CredentialResolver,
     private readonly config: AiConfiguration,
     readonly profile: ModelProfile,
+    private readonly agentId: string,
   ) {}
   assertSuccess() {
     if (this.failure) throw this.failure;
@@ -47,7 +49,7 @@ export class ManagedProvider {
         )
       : createAnthropic(options)(this.profile.model);
   }
-  private async reserve(): Promise<AiRecordMap['ai_calls']> {
+  private async reserve(diagnostics: ModelCallDiagnostics): Promise<AiRecordMap['ai_calls']> {
     const owner = this.scope.current().owner_id;
     return this.scope.write(async (execution) => {
       await this.authorization.authorize(owner, 'execute', execution);
@@ -66,6 +68,7 @@ export class ManagedProvider {
         payload: {
           attempt: execution.payload.attempt,
           profile: this.profile.id,
+          diagnostics,
           input_tokens: 0,
           output_tokens: 0,
           error_code: null,
@@ -104,19 +107,35 @@ export class ManagedProvider {
   }
   // Mastra 会在部分错误下自行重试。首个传输失败中止本轮作用域，重试只由宿主队列决定。
   private readonly fetch: typeof fetch = async (input, init) => {
-    const controller = this.scope.current().controller;
+    const { controller, step } = this.scope.current();
     controller.signal.throwIfAborted();
+    const diagnostics: ModelCallDiagnostics = {
+      agent_id: this.agentId,
+      ...(step && { step }),
+      model: this.profile.model,
+      format: this.profile.format,
+      request_timeout_ms: this.profile.request_timeout_ms,
+      max_output_tokens: this.profile.max_output_tokens,
+    };
     let call: AiRecordMap['ai_calls'];
     try {
-      call = await this.reserve();
+      call = await this.reserve(diagnostics);
     } catch (error) {
       return this.fail(
         error instanceof AiError ? error : new AiError('AI_INTERNAL', '模型请求预留失败'),
       );
     }
     const usage = { input: 0, output: 0, known: false };
-    let inputKnown = false;
-    let outputKnown = false;
+    const transport: NonNullable<ModelCallDiagnostics['transport']> = {
+      received_bytes: 0,
+      text_chars: 0,
+      terminal_received: false,
+      request_timed_out: false,
+      input_tokens_reported: false,
+      output_tokens_reported: false,
+    };
+    const started = performance.now();
+    const elapsed = () => Math.round(performance.now() - started);
     const timeout = AbortSignal.timeout(this.profile.request_timeout_ms);
     const signal = AbortSignal.any([
       controller.signal,
@@ -124,6 +143,7 @@ export class ManagedProvider {
       ...(init?.signal ? [init.signal] : []),
     ]);
     const settle = async (error?: AiError) => {
+      call.payload.diagnostics = { ...diagnostics, transport };
       try {
         await this.settle(call, { ...usage, known: usage.known && !error }, error);
       } catch (cause) {
@@ -131,8 +151,18 @@ export class ManagedProvider {
         // 已失去租约时由新执行者将 pending 请求收敛为 unknown，旧执行者不能补写。
       }
     };
+    const connectionFailure = (message: string) => {
+      transport.request_timed_out = timeout.aborted && signal.reason === timeout.reason;
+      return new AiError(
+        'AI_PROVIDER_FAILED',
+        transport.request_timed_out ? '模型请求超时' : message,
+        true,
+      );
+    };
     try {
       const response = await fetch(input, { ...init, redirect: 'error', signal });
+      transport.headers_ms = elapsed();
+      transport.http_status = response.status;
       if (!response.ok) {
         await response.body?.cancel();
         throw new AiError(
@@ -147,7 +177,6 @@ export class ManagedProvider {
       }
       const decoder = new TextDecoder();
       let buffer = '';
-      let complete = false;
       const reader = response.body.getReader();
       const inspect = (frame: string) => {
         const data = frame
@@ -156,14 +185,16 @@ export class ManagedProvider {
           .map((line) => line.slice(5).trimStart())
           .join('\n');
         if (this.profile.format === 'openai' && data.trim() === '[DONE]') {
-          complete = true;
+          transport.terminal_received = true;
           return;
         }
         if (!data) return;
         const parsed: unknown = JSON.parse(data);
         if (!parsed || typeof parsed !== 'object') return;
         const item = parsed as Record<string, unknown>;
-        if (this.profile.format === 'anthropic' && item.type === 'message_stop') complete = true;
+        observeModelFrame(transport, this.profile.format, item, elapsed());
+        if (this.profile.format === 'anthropic' && item.type === 'message_stop')
+          transport.terminal_received = true;
         const message =
           item.message && typeof item.message === 'object'
             ? (item.message as Record<string, unknown>)
@@ -191,7 +222,7 @@ export class ManagedProvider {
           inputTokens >= 0
         ) {
           usage.input = inputTokens;
-          inputKnown = true;
+          transport.input_tokens_reported = true;
         }
         if (
           typeof outputTokens === 'number' &&
@@ -199,9 +230,9 @@ export class ManagedProvider {
           outputTokens >= 0
         ) {
           usage.output = outputTokens;
-          outputKnown = true;
+          transport.output_tokens_reported = true;
         }
-        usage.known = inputKnown && outputKnown;
+        usage.known = transport.input_tokens_reported && transport.output_tokens_reported;
       };
       const body = new ReadableStream<Uint8Array>({
         pull: async (sink) => {
@@ -210,13 +241,14 @@ export class ManagedProvider {
             if (chunk.done) {
               buffer += decoder.decode();
               if (buffer.trim()) inspect(buffer);
-              if (!complete)
+              if (!transport.terminal_received)
                 throw new AiError('AI_STREAM_INCOMPLETE', '模型流在终止帧之前结束', true);
               await settle();
               sink.close();
               reader.releaseLock();
               return;
             }
+            transport.received_bytes += chunk.value.byteLength;
             buffer += decoder.decode(chunk.value, { stream: true });
             if (buffer.length > 262144)
               throw new AiError('AI_STREAM_INCOMPLETE', '模型事件帧超过限制');
@@ -225,14 +257,7 @@ export class ManagedProvider {
             for (const frame of frames) inspect(frame);
             sink.enqueue(chunk.value);
           } catch (error) {
-            const failure =
-              error instanceof AiError
-                ? error
-                : new AiError(
-                    'AI_PROVIDER_FAILED',
-                    timeout.aborted ? '模型请求超时' : '模型连接中断',
-                    true,
-                  );
+            const failure = error instanceof AiError ? error : connectionFailure('模型连接中断');
             await settle(failure);
             this.failure ??= failure;
             controller.abort(failure);
@@ -251,14 +276,7 @@ export class ManagedProvider {
         headers: response.headers,
       });
     } catch (error) {
-      const failure =
-        error instanceof AiError
-          ? error
-          : new AiError(
-              'AI_PROVIDER_FAILED',
-              timeout.aborted ? '模型请求超时' : '模型端点连接失败',
-              true,
-            );
+      const failure = error instanceof AiError ? error : connectionFailure('模型端点连接失败');
       await settle(failure);
       return this.fail(failure);
     }

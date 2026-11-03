@@ -221,11 +221,11 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
     execution_id: execution.id,
     audience: 'operator',
     seq: i + 1,
-    type: 'step.completed',
+    type: i === 41 ? 'step.started' : 'step.completed',
     attempt: 1,
     continuation: 0,
     occurred_at: execution.created_at,
-    data: { step_id: '检查', duration_ms: i },
+    data: i === 41 ? { step_id: '检查' } : { step_id: '检查', duration_ms: i },
   }));
   const path = '/api/admin/operations/agents/executions/' + execution.id + '/diagnostics';
   const latest = {
@@ -273,7 +273,40 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
         model_digest: 'm',
       },
       events,
-      model_calls: [],
+      model_calls: [
+        {
+          id: 'stream-call',
+          started_at: execution.created_at,
+          updated_at: execution.created_at,
+          status: 'failed',
+          attempt: 1,
+          profile: 'fixture',
+          input_tokens: 7,
+          output_tokens: 0,
+          duration_ms: 1000,
+          error_code: 'AI_PROVIDER_FAILED',
+          diagnostics: {
+            agent_id: 'writer',
+            step: { id: '检查', start_seq: 42 },
+            model: 'test-model',
+            format: 'anthropic',
+            request_timeout_ms: 1000,
+            max_output_tokens: 4096,
+            transport: {
+              http_status: 200,
+              headers_ms: 2,
+              first_output_ms: 10,
+              last_output_ms: 351,
+              received_bytes: 1400,
+              text_chars: 18,
+              request_timed_out: true,
+              terminal_received: false,
+              input_tokens_reported: true,
+              output_tokens_reported: false,
+            },
+          },
+        },
+      ],
       traces: [],
       interactions: [],
       effects: [],
@@ -299,6 +332,16 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
   assert.equal(screen.queryByText('#42'), null);
   await userEvent.setup().type(screen.getByRole('searchbox', { name: '定位事件序号' }), '42');
   assert(await screen.findByText('#42'));
+  assert.equal(screen.queryByText('#1'), null);
+  const calls = within(screen.getByRole('region', { name: '模型请求' }));
+  assert(calls.getByText('7 / —'));
+  await userEvent.setup().click(calls.getByText('收到模型输出后超时'));
+  assert(calls.getByText(/首个输出 10 ms · 最后输出 351 ms/));
+  const search = screen.getByRole('searchbox', { name: '定位事件序号' });
+  await userEvent.setup().clear(search);
+  await userEvent.setup().click(calls.getByRole('button', { name: '检查 · #42' }));
+  assert.equal(document.activeElement, search);
+  assert(screen.getByText('#42'));
   assert.equal(screen.queryByText('#1'), null);
   await userEvent.setup().click(screen.getByRole('button', { name: '预览并复制交接文本' }));
   assert(await screen.findByText('正在准备交接文本…'));

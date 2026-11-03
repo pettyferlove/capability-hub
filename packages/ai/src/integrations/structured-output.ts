@@ -1,6 +1,6 @@
 import { MastraError } from '@mastra/core/error';
 import type { z } from 'zod';
-import { AiError, aiFailure } from '../core/errors.js';
+import { AiError } from '../core/errors.js';
 
 // 只传递校验位置和规则；不把模型原文、SDK 异常或资源内容写入错误及重试指令。
 
@@ -10,6 +10,7 @@ import { AiError, aiFailure } from '../core/errors.js';
  */
 export class ReportFormatError extends AiError {
   constructor(
+    readonly reason: 'invalid_fields' | 'incomplete_output' | 'output_limit',
     message: string,
     readonly hint: string,
   ) {
@@ -74,7 +75,7 @@ function validate<T extends z.ZodType>(schema: T, candidate: unknown): z.infer<T
       );
     })
     .join('; ');
-  throw new ReportFormatError('模型结构化结果的字段或类型不符合约定', hint);
+  throw new ReportFormatError('invalid_fields', '模型结构化结果的字段或类型不符合约定', hint);
 }
 
 /**
@@ -83,14 +84,13 @@ function validate<T extends z.ZodType>(schema: T, candidate: unknown): z.infer<T
  * 恢复策略刻意保守：只在 Schema 明确报出 `invalid_type` 的字段上，把「类型无歧义的 JSON 文本」
  * 还原成数字/布尔/数组/对象（不补字段、不丢字段、不猜枚举），随后重校验。
  * `read` 抛出的 MastraError 中，`STRUCTURED_OUTPUT_SCHEMA_VALIDATION_FAILED` 会取回原文（上限
- * 256000 字符）再判定；`OBJECT_UNDEFINED`/`TRUNCATED` 直接转成 {@link ReportFormatError}；
- * 其余 MastraError 原样抛出，不做兜底。
- * 失败时抛 {@link ReportFormatError}，`hint` 只含字段路径与 issue code（最多 8 条），
- * 不回传模型原文、SDK 异常或资源内容。
+ * 256000 字符）再判定。按模型停止原因区分输出用尽、内容过滤与未生成对象；
+ * 修复提示只含固定指令或校验规则，不回传模型原文。
  */
 export async function readStructured<T extends z.ZodType>(
   read: () => Promise<unknown>,
   schema: T,
+  finishReason: string | undefined,
 ): Promise<z.infer<T>> {
   let candidate: unknown;
   try {
@@ -101,11 +101,26 @@ export async function readStructured<T extends z.ZodType>(
       const raw = error.details?.value;
       candidate = typeof raw === 'string' && raw.length <= 256000 ? decode(raw) : undefined;
     } else if (
-      error.id === 'STRUCTURED_OUTPUT_OBJECT_UNDEFINED' ||
-      error.id === 'STRUCTURED_OUTPUT_TRUNCATED'
-    ) {
-      throw new ReportFormatError(aiFailure(error).message, '只输出简洁、完整的 JSON。');
-    } else throw error;
+      error.id !== 'STRUCTURED_OUTPUT_OBJECT_UNDEFINED' &&
+      error.id !== 'STRUCTURED_OUTPUT_TRUNCATED'
+    )
+      throw error;
+    const stopped = error.details?.finishReason;
+    if (stopped === 'length' || stopped === 'content-filter') finishReason = stopped;
   }
+  if (finishReason === 'length')
+    throw new ReportFormatError(
+      'output_limit',
+      '模型结构化结果因输出长度限制被截断',
+      '上次已用完输出额度。直接写紧凑 JSON，合并重复说明并保留必要事实。不要复述原文、展示推导或添加排版空白。',
+    );
+  if (finishReason === 'content-filter')
+    throw new AiError('AI_OUTPUT_INVALID', '模型服务因内容过滤停止输出');
+  if (candidate === undefined)
+    throw new ReportFormatError(
+      'incomplete_output',
+      '模型未生成完整的结构化结果',
+      '只输出完整 JSON。',
+    );
   return validate(schema, candidate);
 }

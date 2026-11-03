@@ -177,6 +177,30 @@ for (const format of ['openai', 'anthropic'] as const) {
     if (format === 'openai')
       assert.deepEqual(provider.requests[0]?.body.stream_options, { include_usage: true });
     const activity = aiExecutionViewResponseSchema.parse(result.body).activity;
+    const diagnosticsPath = `/api/admin/operations/agents/executions/${id}/diagnostics`;
+    const report = aiExecutionDiagnosticsResponseSchema.parse(
+      (await client.get(diagnosticsPath).expect(200)).body,
+    );
+    const step = activity.find(
+      (event) => event.type === 'step.started' && event.data.step_id === 'answer',
+    );
+    assert(step);
+    for (const call of report.model_calls) {
+      const observed = call.diagnostics;
+      assert(observed.transport);
+      assert.deepEqual(observed.step, { id: 'answer', start_seq: step.seq });
+      assert.equal(observed.agent_id, 'assistant');
+      assert.equal(observed.model, 'fixture-model');
+      assert.equal(observed.format, format);
+      assert.equal(observed.max_output_tokens, 4096);
+      assert.equal(observed.transport.terminal_received, true);
+      assert.equal(observed.transport.output_tokens_reported, true);
+      assert.equal(observed.transport.request_timed_out, false);
+    }
+    assert.deepEqual(
+      report.model_calls.map((call) => call.diagnostics.transport?.finish_reason),
+      ['tool_call', 'stop'],
+    );
     const started = activity.find((event) => event.type === 'tool.started');
     const completed = activity.find((event) => event.type === 'tool.completed');
     assert(started && completed, '历史视图应保留完整工具生命周期');
@@ -280,6 +304,18 @@ test('AI 协作演示经 HTTP 完成并行检查、人工确认与成果保存�
   );
   assert.equal(report.model_calls.length, 3);
   assert(report.model_calls.every((call) => call.status === 'succeeded'));
+  for (const [stepId, agentId] of [
+    ['draft', 'planner'],
+    ['clarity', 'editor'],
+    ['risk', 'reviewer'],
+  ]) {
+    const step = report.events.find(
+      (event) => event.type === 'step.started' && event.data.step_id === stepId,
+    );
+    assert(step);
+    const call = report.model_calls.find((item) => item.diagnostics.agent_id === agentId);
+    assert.deepEqual(call?.diagnostics.step, { id: stepId, start_seq: step.seq });
+  }
   assert(report.traces.length > 0);
   assert.equal(report.interactions[0].responded_by, hub.admin.id);
   assert(report.events.some((event) => event.type === 'message.delta'));

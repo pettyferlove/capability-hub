@@ -16,7 +16,7 @@ import { ExecutionResult } from '../../apps/web/src/features/ai/ExecutionResult.
 import { ActivityFeed } from '../../apps/web/src/features/ai/ActivityFeed.js';
 import { activityItems, businessPhase } from '../../apps/web/src/features/ai/activity.js';
 import { advanceStreamCursor } from '../../apps/web/src/features/ai/stream-text.js';
-import { recentTrail } from '../../apps/web/src/features/ai/agent-brief.js';
+import { liveAction, recentTrail } from '../../apps/web/src/features/ai/agent-brief.js';
 import { InteractionForm } from '../../apps/web/src/features/ai/InteractionForm.js';
 import { NewExecution } from '../../apps/web/src/features/operations/agents/NewExecution.js';
 import { BusinessAgentPanel } from '../../apps/web/src/features/ai/BusinessAgentPanel.js';
@@ -864,6 +864,21 @@ test('研判阶段由步骤与人工交互推断，只进不退，中断时停�
     view.activity = activity as typeof view.activity;
     view.interactions = interactions as typeof view.interactions;
     assert.deepEqual(businessPhase(view), { index, halted }, name);
+  }
+});
+
+test('发布建议和格式修复进行时优先展示报告动作', () => {
+  const view = executionView({ operation_id: 'resource-audit', status: 'running' });
+  for (const [step, label] of [
+    ['publication-suggestion', '整理发布建议'],
+    ['repair-output', '重新整理报告格式'],
+  ]) {
+    view.activity = [
+      activityEvent(1, 'tool.completed', { tool_id: 'read-file', invocation_id: 'read' }),
+      activityEvent(2, 'step.started', { step_id: step }),
+    ];
+    assert.equal(businessPhase(view).index, 1);
+    assert.equal(liveAction(view).label, label);
   }
 });
 

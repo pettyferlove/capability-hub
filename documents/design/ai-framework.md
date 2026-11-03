@@ -60,7 +60,7 @@ Mastra 公共构造函数从 `@capability-hub/ai/mastra` 导出。定义通过 `
 
 ## 模型与资源边界
 
-结构化输出通过 Mastra 的 `jsonPromptInjection: 'system'` 向模型发送完整 JSON Schema。模型客户端按 Schema 将无歧义的字符串还原为整数、布尔值、JSON 数组或对象，并重新严格校验。仍不匹配、没有生成对象或输出截断时，无工具且不使用记忆的格式化步骤最多再请求一次，使用原调查资料、字段位置和规则，不重跑调查。纠正请求受权限、预算、超时和租约约束。两次均未通过时不保存业务报告，也不进入人工采纳。字段校验失败、缺失结果和输出截断映射为 `AI_OUTPUT_INVALID`；错误说明保留原因分类，不透传 SDK 校验详情或原始结果。步骤失败时保留已捕获的安全 AI 错误，未知原生失败使用通用错误。
+Mastra 通过 `jsonPromptInjection: 'system'` 发送完整 JSON Schema。客户端还原类型无歧义的整数、布尔值、JSON 数组或对象后严格校验。无工具、无记忆的格式化步骤最多纠正一次，沿用本步资料并记录原因。字段不符时提示位置与规则，达到输出上限时要求压缩重复内容，没有完整对象时要求完整 JSON。服务端内容过滤直接结束。纠正请求仍受权限、预算、超时和租约约束。格式校验最终失败返回 `AI_OUTPUT_INVALID`，不保存业务报告或进入人工采纳。错误与修复提示均不透传模型原文。
 
 只支持两种协议：`openai` 使用 Chat Completions，`anthropic` 使用 Messages；均由官方 AI SDK provider 生成请求。配置地址是 API 前缀，不能包含最终操作路径、用户信息、查询或 fragment。HTTP 需要 `allow_http=true`。凭据仅在发送请求时通过环境变量名解析，不存入配置、快照或 SSE。
 
@@ -120,6 +120,6 @@ SQLite 与 PostgreSQL 均使用独立 AI 表、约束和索引，通过新增 Dr
 
 备份包含全部 AI 表，并保持快照、交互、效果和事件一致。恢复后须使用相同操作版本、模型配置和凭据；未结算的外部调用不视为成功。框架不保存凭据和模型内部推理。保留清理见 [备份、恢复与维护](../operations/recovery.md)。
 
-诊断导出使用执行时记录的版本、事件、耗时和用量，资源证据仅含引用及摘要。可选 `AiTelemetry` 只接收安全属性，其异常不影响执行结果。
+诊断导出区分 HTTP 响应、模型输出和协议终止帧。心跳与用量帧不计作输出，文本、推理和工具增量可标记首末输出时间。接收字节包含 SSE 封装，正文字数按 UTF-16 码元计。进程中断留下的未结算请求只保留已落库的配置和步骤。资源证据仅含引用及摘要，外部 `AiTelemetry` 异常不影响执行结果。
 
 HTTP 与 SSE 契约见 [AI 接口](../reference/ai-interfaces.md)，部署配置见 [配置](../reference/configuration.md)，真实模型验收见 [测试策略](../development/testing.md#ai-框架验收)。原生 API 行为参考 [Mastra 工作流](https://mastra.ai/docs/workflows/overview) 与 [流式输出](https://mastra.ai/docs/guides/streaming)，实际版本以锁文件为准。

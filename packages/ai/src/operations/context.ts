@@ -98,12 +98,24 @@ export class OperationContext {
     );
     await this.scope.write(() => Promise.resolve(undefined));
   }
-  async step<T>(name: string, work: () => Promise<T>): Promise<T> {
+  async step<T>(
+    name: string,
+    work: () => Promise<T>,
+    repairReason?: ReportFormatError['reason'],
+  ): Promise<T> {
     await this.authorize('execute');
     const started = Date.now();
-    await this.events.emit('step.started', { step_id: name });
+    const event = await this.scope.write((execution) =>
+      this.events.append(execution, 'step.started', {
+        step_id: name,
+        ...(repairReason && { repair_reason: repairReason }),
+      }),
+    );
     try {
-      const output = await work();
+      const output = await this.scope.run(
+        { ...this.scope.current(), step: { id: name, start_seq: event.payload.seq } },
+        work,
+      );
       await this.authorize('execute');
       await this.events.emit('step.completed', {
         step_id: name,
@@ -180,7 +192,7 @@ export class OperationContext {
     const run = async (invocation: AgentInvocation) => {
       const object = await this.invoke(
         invocation,
-        (_text, read) => readStructured(read, schema),
+        (_text, read, finishReason) => readStructured(read, schema, finishReason),
         schema,
       );
       asJson(object);
@@ -193,22 +205,28 @@ export class OperationContext {
         !(error instanceof ReportFormatError) ||
         options.memory ||
         Object.keys(options.tools ?? {}).length
-      )
-        throw error;
-      return this.step('repair-output', () =>
-        run({
-          ...options,
-          instructions:
-            options.instructions +
-            '\n上一份报告未通过格式校验。请根据原始资料和 Schema 重新生成，仅输出完整 JSON，不补造证据。校验提示：' +
-            error.hint,
-        }),
+      ) {
+        const failure = aiFailure(error);
+        this.failure ??= failure;
+        throw failure;
+      }
+      return this.step(
+        'repair-output',
+        () =>
+          run({
+            ...options,
+            instructions:
+              options.instructions +
+              '\n请仅根据本次资料和 Schema 修正输出，不补造证据。' +
+              error.hint,
+          }),
+        error.reason,
       );
     }
   }
   private async invoke<T>(
     options: AgentInvocation,
-    finish: (text: string, read: () => Promise<unknown>) => Promise<T> | T,
+    finish: (text: string, read: () => Promise<unknown>, finishReason?: string) => Promise<T> | T,
     schema?: z.ZodType,
   ) {
     await this.authorize('execute');
@@ -224,6 +242,7 @@ export class OperationContext {
       this.dependencies.credentials,
       this.config,
       this.profile,
+      options.id,
     );
     const agent = new Agent({
       id: options.id,
@@ -278,7 +297,11 @@ export class OperationContext {
       const text = await stream.text;
       if (!schema && !text.trim()) throw new AiError('AI_OUTPUT_INVALID', '模型未返回有效内容');
       await this.authorize('execute');
-      return await finish(text, async () => stream.object);
+      return await finish(
+        text,
+        async () => stream.object,
+        schema ? await stream.finishReason : undefined,
+      );
     } catch (error) {
       provider.assertSuccess();
       throw aiFailure(error);

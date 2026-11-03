@@ -43,7 +43,7 @@ export function registerBusinessOperations(
     const resultSchema = businessResult.extend({ assessment: reportSchema });
     registry.register({
       id: kind,
-      version: kind === 'resource-audit' ? '6' : '4',
+      version: kind === 'resource-audit' ? '8' : '4',
       title: kind === 'resource-audit' ? '资源审计' : '反馈研判',
       description: '自主查阅固定版本证据，形成可追溯建议并等待人工确认。',
       input,
@@ -80,19 +80,20 @@ export function registerBusinessOperations(
                 throw new AiError('AI_OUTPUT_INVALID', '研判未读取资源入口文件，不能形成审计结论');
               if (target.feedback_id && !evidence.feedbackRead)
                 throw new AiError('AI_OUTPUT_INVALID', '研判未读取反馈证据');
-              const audit = kind === 'resource-audit';
               const readRanges = mergeReadRanges(inspected);
+              const material = {
+                resource: overview.slug,
+                version: overview.version_label,
+                investigation: investigation.text,
+              };
               const assessment = await context.step('assessment', () =>
                 context.structured(
                   {
                     id: 'assessment',
                     instructions: prompts.report,
                     prompt: JSON.stringify({
-                      resource: overview.slug,
-                      version: overview.version_label,
-                      investigation: investigation.text,
+                      ...material,
                       inspected: readRanges,
-                      ...(audit && { scenarios: [...evidence.scenarios] }),
                       ...(feedback && {
                         reported_feedback: {
                           kind: feedback.kind,
@@ -107,14 +108,20 @@ export function registerBusinessOperations(
                       }),
                     }),
                   },
-                  reportSchema,
+                  assessmentSchema,
                 ),
               );
-              if (audit) {
-                const suggestion = publicationSuggestion.parse(
-                  'publication_suggestion' in assessment
-                    ? assessment.publication_suggestion
-                    : undefined,
+              validateCitations(assessment.findings, readRanges);
+              if (kind === 'resource-audit') {
+                const suggestion = await context.step('publication-suggestion', () =>
+                  context.structured(
+                    {
+                      id: 'publication-suggestion',
+                      instructions: resourceAuditPrompts.suggestion,
+                      prompt: JSON.stringify({ ...material, scenarios: [...evidence.scenarios] }),
+                    },
+                    publicationSuggestion,
+                  ),
                 );
                 const ids = suggestion.scenario_ids;
                 const names = (suggestion.proposed_scenarios ?? []).map((item) => item.name);
@@ -135,7 +142,6 @@ export function registerBusinessOperations(
                   },
                 });
               }
-              validateCitations(assessment.findings, readRanges);
               const coverage = `实际读取 ${new Set(inspected.map((item) => item.path)).size}/${overview.file_count} 个文件；行号范围之外的内容未纳入本次读取证据。`;
               assessment.limitations = assessment.limitations.slice(0, 28);
               assessment.limitations.push(coverage);

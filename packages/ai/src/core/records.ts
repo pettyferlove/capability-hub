@@ -235,6 +235,36 @@ export const memoryRecordSchema = z
   .object({ ...base, payload: z.object({ value: jsonSchema }).strict() })
   .strict();
 
+const elapsedMs = z.number().int().nonnegative();
+const callDiagnosticsSchema = z.strictObject({
+  agent_id: id,
+  step: z.strictObject({ id, start_seq: z.number().int().positive() }).optional(),
+  model: id,
+  format: z.enum(['openai', 'anthropic']),
+  request_timeout_ms: z.number().int().positive(),
+  max_output_tokens: z.number().int().positive(),
+  transport: z
+    .strictObject({
+      http_status: z.number().int().min(100).max(599).optional(),
+      headers_ms: elapsedMs.optional(),
+      first_output_ms: elapsedMs.optional(),
+      last_output_ms: elapsedMs.optional(),
+      received_bytes: z.number().int().nonnegative(),
+      text_chars: z.number().int().nonnegative(),
+      finish_reason: z
+        .enum(['stop', 'length', 'tool_call', 'content_filter', 'context_limit', 'other'])
+        .optional(),
+      terminal_received: z.boolean(),
+      request_timed_out: z.boolean(),
+      input_tokens_reported: z.boolean(),
+      output_tokens_reported: z.boolean(),
+    })
+    .optional(),
+});
+
+/** 请求发起时固定配置与步骤，传输观测仅在本次请求实际结算时写入。 */
+export type ModelCallDiagnostics = z.infer<typeof callDiagnosticsSchema>;
+
 /**
  * 单次 provider 请求的用量与结果。`pending` 表示已预留但未结算；进程崩溃后启动阶段会把残留的
  * `pending` 一律改判为 `unknown` 并计入 `unknown_requests`——网络请求可能已经发生，不能假定未计费。
@@ -247,6 +277,7 @@ export const callRecordSchema = z
       .object({
         attempt: z.number().int().nonnegative(),
         profile: id,
+        diagnostics: callDiagnosticsSchema,
         input_tokens: z.number().nonnegative(),
         output_tokens: z.number().nonnegative(),
         error_code: z.string().nullable(),

@@ -110,6 +110,7 @@ export function businessPhase(view: AiExecutionViewResponse): { index: number; h
   const steps: Record<string, number> = {
     investigate: 0,
     assessment: 1,
+    'publication-suggestion': 1,
     'repair-output': 1,
     'record-assessment': 3,
   };

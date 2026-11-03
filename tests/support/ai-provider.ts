@@ -14,19 +14,21 @@ export type Format = 'openai' | 'anthropic';
 /** 响应模式：`tools` 先回一次工具调用再回文本，其余分别对应纯文本、JSON、限流与截断。 */
 export type Mode = 'tools' | 'text' | 'json' | 'rate-limit' | 'truncated';
 
+type FixtureReply = string | { text: string; stop: 'length' | 'content_filter' };
+
 /**
- * 起一个本地假模型服务并返回其地址与观测句柄。`gated` 为真时首个 delta 会挂起直到
- * `release()`，用于测流式取消与超时；`script` 用固定回合覆盖默认行为。
+ * 起一个本地假模型服务。可在响应头前、正文前或首个正文增量后（`true`）挂起直到释放。
+ * `script` 用固定回合覆盖默认行为。
  * 服务监听随机端口，返回的 `close()` 必须调用，否则测试进程不会退出。
  */
 export async function fixture(
   format: Format,
   mode: Mode = 'tools',
-  gated = false,
+  gated: boolean | 'before-headers' | 'before-output' = false,
   script?: {
     turns: { name: string; input: Record<string, unknown>; text?: string }[];
-    text: string;
-    json: string;
+    text: FixtureReply;
+    json: string | FixtureReply[];
   },
 ) {
   const requests: { path: string; body: Record<string, unknown>; authenticated: boolean }[] = [];
@@ -49,6 +51,7 @@ export async function fixture(
             : req.headers['x-api-key'] === 'ai-fixture-key' && !!req.headers['anthropic-version'],
       });
       res.on('close', () => disconnected.resolve());
+      if (gated === 'before-headers') await release.promise;
       if (mode === 'rate-limit') {
         res.writeHead(429, { 'content-type': 'application/json' });
         res.end(
@@ -61,13 +64,21 @@ export async function fixture(
       }
       const planned = script?.turns[requests.length - 1];
       const toolTurn = script ? !!planned : mode === 'tools' && requests.length === 1;
-      const text = script
-        ? requests.length > script.turns.length + 1
-          ? script.json
-          : script.text
-        : mode === 'json'
-          ? '{"verdict":"ok","count":7}'
-          : 'AI 流式输出 42';
+      let reply: FixtureReply = mode === 'json' ? '{"verdict":"ok","count":7}' : 'AI 流式输出 42';
+      if (script) {
+        const reportTurn = requests.length - script.turns.length - 2;
+        reply = script.text;
+        if (reportTurn >= 0) {
+          const report = typeof script.json === 'string' ? script.json : script.json[reportTurn];
+          if (report === undefined) throw new Error('模型响应脚本已用尽');
+          reply = report;
+        }
+      }
+      const text = typeof reply === 'string' ? reply : reply.text;
+      const stop = typeof reply === 'string' ? 'stop' : reply.stop;
+      const messageStop = { length: 'max_tokens', content_filter: 'refusal', stop: 'end_turn' }[
+        stop
+      ];
       if (!body.stream) {
         res.writeHead(200, { 'content-type': 'application/json' });
         const tools = Array.isArray(body.tools) ? body.tools : [];
@@ -84,7 +95,7 @@ export async function fixture(
                     {
                       index: 0,
                       message: { role: 'assistant', content: text },
-                      finish_reason: 'stop',
+                      finish_reason: stop,
                     },
                   ],
                   usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
@@ -104,7 +115,7 @@ export async function fixture(
                         },
                       ]
                     : [{ type: 'text', text }],
-                  stop_reason: tool ? 'tool_use' : 'end_turn',
+                  stop_reason: tool ? 'tool_use' : messageStop,
                   stop_sequence: null,
                   usage: { input_tokens: 10, output_tokens: 8 },
                 },
@@ -124,6 +135,7 @@ export async function fixture(
             choices: [{ index: 0, delta, finish_reason }],
           });
         chunk({ role: 'assistant', content: '' });
+        if (gated === 'before-output') await release.promise;
         if (toolTurn) {
           if (planned?.text) chunk({ content: planned.text });
           chunk({
@@ -150,7 +162,7 @@ export async function fixture(
             return;
           }
           chunk({ content: text.slice(3) });
-          chunk({}, 'stop');
+          chunk({}, stop);
         }
         data(res, {
           id: 'chatcmpl-ai',
@@ -174,6 +186,7 @@ export async function fixture(
             usage: { input_tokens: 10, output_tokens: 0 },
           },
         });
+        if (gated === 'before-output') await release.promise;
         if (toolTurn) {
           if (planned?.text) {
             event(res, 'content_block_start', {
@@ -229,7 +242,7 @@ export async function fixture(
         }
         event(res, 'content_block_stop', { index: toolTurn && planned?.text ? 1 : 0 });
         event(res, 'message_delta', {
-          delta: { stop_reason: toolTurn ? 'tool_use' : 'end_turn', stop_sequence: null },
+          delta: { stop_reason: toolTurn ? 'tool_use' : messageStop, stop_sequence: null },
           usage: { output_tokens: 8 },
         });
         event(res, 'message_stop', {});

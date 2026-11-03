@@ -8,6 +8,7 @@ import { signIn } from './http.js';
 /** 同一组跨时区边界、跨执行和部分用量样本供两种数据库核对。 */
 export async function assertProjectTokenUsage(fixture: TestHub) {
   const runtime = fixture.hub.ai.runtime;
+  const { model, format, request_timeout_ms, max_output_tokens } = runtime.config.profiles[0];
   const base = await runtime.submit(fixture.admin.id, 'assistant', { prompt: '测试私有任务正文' });
   const id = randomUUID();
   const other = await runtime.store.insert('ai_executions', {
@@ -27,8 +28,8 @@ export async function assertProjectTokenUsage(fixture: TestHub) {
     at: string,
     profile: string,
     status: AiRecordMap['ai_calls']['status'],
-    input: number,
-    output: number,
+    input?: number,
+    output?: number,
   ) {
     await runtime.store.insert('ai_calls', {
       id: randomUUID(),
@@ -42,8 +43,25 @@ export async function assertProjectTokenUsage(fixture: TestHub) {
       payload: {
         profile,
         attempt: 1,
-        input_tokens: input,
-        output_tokens: output,
+        diagnostics: {
+          agent_id: 'fixture-agent',
+          model,
+          format,
+          request_timeout_ms,
+          max_output_tokens,
+          ...(status !== 'pending' && {
+            transport: {
+              received_bytes: 128,
+              text_chars: 0,
+              terminal_received: status === 'succeeded',
+              request_timed_out: false,
+              input_tokens_reported: input !== undefined,
+              output_tokens_reported: output !== undefined,
+            },
+          }),
+        },
+        input_tokens: input ?? 0,
+        output_tokens: output ?? 0,
         duration_ms: 1,
         error_code: null,
       },
@@ -54,8 +72,8 @@ export async function assertProjectTokenUsage(fixture: TestHub) {
   await call(other, '2026-10-31T16:00:00.000Z', 'retired', 'succeeded', 20, 5);
   await call(base, '2026-11-01T16:00:00.000Z', 'fixture', 'succeeded', 30, 7);
   await call(other, '2026-11-02T06:00:00.000Z', 'retired', 'failed', 9, 2);
-  await call(base, '2026-11-02T06:10:00.000Z', 'fixture', 'unknown', 3, 0);
-  await call(base, '2026-11-02T06:30:00.000Z', 'fixture', 'pending', 0, 0);
+  await call(base, '2026-11-02T06:10:00.000Z', 'fixture', 'unknown', 3);
+  await call(base, '2026-11-02T06:30:00.000Z', 'fixture', 'pending');
   await call(base, '2026-11-02T06:30:00.001Z', 'future-profile', 'succeeded', 12000, 11000);
   const admin = await signIn(fixture);
   const get = async (period?: TokenUsagePeriod) => {

@@ -35,7 +35,6 @@ const publicationSuggestion = {
   purpose: '供维护者检查异常输入。',
 };
 const assessment = {
-  publication_suggestion: publicationSuggestion,
   summary: '入口文档需要明确异常输入行为。',
   risk: 'medium',
   findings: [
@@ -50,6 +49,9 @@ const assessment = {
   limitations: ['未执行资源脚本。'],
   suggested_resolution: '核实异常输入处理并补充说明。',
 };
+type AuditReport = typeof assessment & { publication_suggestion: typeof publicationSuggestion };
+const feedbackJson = JSON.stringify(assessment);
+const suggestionJson = JSON.stringify(publicationSuggestion);
 const script = {
   turns: [
     { name: 'resource_overview', input: {} },
@@ -59,13 +61,8 @@ const script = {
     { name: 'compare_release', input: {} },
   ],
   text: '已检查 SKILL.md 第 1–3 行，建议补充异常输入说明；未执行脚本。',
-  json: JSON.stringify(assessment),
+  json: [feedbackJson, suggestionJson],
 };
-const feedbackJson = JSON.stringify(
-  Object.fromEntries(
-    Object.entries(assessment).filter(([key]) => key !== 'publication_suggestion'),
-  ),
-);
 async function run(f: TestHub) {
   const job = await f.hub.jobs.claim('business-test', ['ai_execution']);
   assert(job);
@@ -117,7 +114,7 @@ test('AI 只能在查询词表后起草未登记的场景，人工采纳只回�
       turns: lookup
         ? [...script.turns, { name: 'publication_scenarios', input: { query: '未命中' } }]
         : script.turns,
-      json: JSON.stringify({ ...assessment, publication_suggestion: fields }),
+      json: [feedbackJson, JSON.stringify(fields)],
     });
     t.after(provider.close);
     const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
@@ -151,7 +148,7 @@ test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报�
   const provider = await fixture('openai', 'tools', false, {
     ...script,
     turns: [...script.turns, { name: 'publication_scenarios', input: { query: '工程' } }],
-    json: JSON.stringify({ ...assessment, publication_suggestion: suggested }),
+    json: [feedbackJson, JSON.stringify(suggested)],
   });
   t.after(provider.close);
   const previous = process.env.AI_FIXTURE_KEY;
@@ -193,6 +190,7 @@ test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报�
     ),
   );
   assert(view.artifacts.some((item) => item.payload.name === 'assessment'));
+  const requestsBeforeResume = provider.requests.length;
   const interaction = view.interactions[0];
   await f.hub.ai.runtime.respond(
     waiting.id,
@@ -204,7 +202,7 @@ test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报�
   const done = await run(f);
   assert.equal(done.status, 'succeeded', JSON.stringify(done.payload.error));
   assert.deepEqual(
-    (done.payload.result as { assessment: typeof assessment }).assessment.publication_suggestion,
+    (done.payload.result as { assessment: AuditReport }).assessment.publication_suggestion,
     suggested,
   );
   assert.deepEqual(acceptedSuggestion(executionResponse(done)), {
@@ -222,7 +220,7 @@ test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报�
   });
   assert.equal((await f.store.get('requests', request.id))?.state, 'pending');
   assert.equal((await f.store.all('releases')).length, 0);
-  assert.equal(provider.requests.length, 8, '人工恢复不重复调用模型');
+  assert.equal(provider.requests.length, requestsBeforeResume, '人工恢复不重复调用模型');
 });
 
 test('反馈提交自动排队且幂等，采纳后仅写入处理中，效果回执与业务写入共同提交', async (t) => {
@@ -821,15 +819,18 @@ test('分页读取的相邻区间可连续引用，跨越未读行的引用仍�
             }))
           : [turn],
       ),
-      json: JSON.stringify({
-        ...assessment,
-        findings: [
-          {
-            ...assessment.findings[0],
-            evidence: [{ path: 'SKILL.md', start_line: 1, end_line: endLine }],
-          },
-        ],
-      }),
+      json: [
+        JSON.stringify({
+          ...assessment,
+          findings: [
+            {
+              ...assessment.findings[0],
+              evidence: [{ path: 'SKILL.md', start_line: 1, end_line: endLine }],
+            },
+          ],
+        }),
+        suggestionJson,
+      ],
     });
     t.after(provider.close);
     const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
@@ -844,10 +845,7 @@ test('模型给出超量关键词时按序只保留前 8 个，不因数量拒�
   const keywords = Array.from({ length: 10 }, (_, index) => `检索词${index + 1}`);
   const provider = await fixture('openai', 'tools', false, {
     ...script,
-    json: JSON.stringify({
-      ...assessment,
-      publication_suggestion: { ...publicationSuggestion, keywords },
-    }),
+    json: [feedbackJson, JSON.stringify({ ...publicationSuggestion, keywords })],
   });
   t.after(provider.close);
   const previous = process.env.AI_FIXTURE_KEY;
@@ -865,10 +863,45 @@ test('模型给出超量关键词时按序只保留前 8 个，不因数量拒�
   );
   assert(artifact);
   assert.deepEqual(
-    (artifact.payload.content as { assessment: typeof assessment }).assessment
-      .publication_suggestion.keywords,
+    (artifact.payload.content as { assessment: AuditReport }).assessment.publication_suggestion
+      .keywords,
     keywords.slice(0, 8),
   );
+});
+
+test('发布建议达到输出上限时只修复建议，采纳项保留已校验的审计发现', async (t) => {
+  const provider = await fixture('openai', 'tools', false, {
+    turns: [{ name: 'read_file', input: { path: 'SKILL.md' } }],
+    text: script.text,
+    json: [feedbackJson, { text: '{"purpose":"partial-output', stop: 'length' }, suggestionJson],
+  });
+  t.after(provider.close);
+  const previous = process.env.AI_FIXTURE_KEY;
+  process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+  t.after(() => {
+    if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+    else process.env.AI_FIXTURE_KEY = previous;
+  });
+  const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
+  await receiveSkill(f);
+  const waiting = await run(f);
+  assert.equal(waiting.status, 'waiting_input', JSON.stringify(waiting.payload.error));
+  const view = await f.hub.ai.runtime.view(waiting.id);
+  const artifact = view.artifacts.find((item) => item.payload.name === 'assessment');
+  assert(artifact);
+  const report = (artifact.payload.content as { assessment: AuditReport }).assessment;
+  assert.deepEqual(report.findings, assessment.findings);
+  assert.deepEqual(report.publication_suggestion, publicationSuggestion);
+  const repairs = view.activity.filter(
+    (item) => item.payload.data.step_id === 'repair-output' && item.payload.type === 'step.started',
+  );
+  assert.deepEqual(
+    repairs.map((item) => item.payload.data.repair_reason),
+    ['output_limit'],
+  );
+  const repairRequest = JSON.stringify(provider.requests.at(-1)?.body);
+  assert(!repairRequest.includes('suggested_resolution'));
+  assert(!repairRequest.includes('partial-output'));
 });
 
 test('MCP 审计按需读取 server.json 和声明工具，明确静态边界并允许不采纳', async (t) => {
@@ -888,7 +921,7 @@ test('MCP 审计按需读取 server.json 和声明工具，明确静态边界并
       { name: 'mcp_declarations', input: {} },
     ],
     text: '已检查 server.json；远端工具能力尚未验证。',
-    json: JSON.stringify(report),
+    json: [JSON.stringify(report), suggestionJson],
   });
   t.after(provider.close);
   const previous = process.env.AI_FIXTURE_KEY;
@@ -1016,7 +1049,7 @@ test('Skill 引用文件由工具分段读取，超过十轮调用仍可完成�
   const provider = await fixture('openai', 'tools', false, {
     turns,
     text: '已按入口引用分段检查 guide.md。',
-    json: JSON.stringify(report),
+    json: [JSON.stringify(report), suggestionJson],
   });
   t.after(provider.close);
   const previous = process.env.AI_FIXTURE_KEY;

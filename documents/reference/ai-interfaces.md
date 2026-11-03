@@ -17,7 +17,7 @@
 
 执行 DTO 包含状态、用量、消息块、输入/结果、错误、期限与 revision。人工回答的 If-Match 使用交互修订。缺失为 428，陈旧为 412，状态冲突为 409，字段错误为 422。请求内容和修订相同时，客户端重试沿用幂等键，服务端返回同一结果。修改内容或确认成功后使用新键。
 
-运营列表的 `q` 可匹配任务标题、执行 ID、Agent、负责人或错误码。诊断快照包含定义版本与摘要、模型摘要、截至 `watermark` 的全部 operator 事件、模型调用、步骤耗时、人工决定、效果回执、资源引用和可见成果。`event_gaps` 以闭区间标出缺失序号。Markdown 合并文本增量，保留流程事件序号；`view=handoff` 返回可复制的 `{markdown, watermark}`。每次读取重新授权并采集快照。
+运营列表的 `q` 匹配标题、执行 ID、Agent、负责人或错误码。诊断快照汇集版本、截至 `watermark` 的 operator 事件、调用、耗时、决定、回执和成果，`event_gaps` 标出缺失的闭区间。每次调用在预留时将模型、协议和限额写入 `diagnostics`，步骤内的调用以 `step.start_seq` 关联开始事件。结算时附 `transport`，记录从请求发出到响应头、首末输出的毫秒数、停止原因及用量是否收到。Markdown 合并文本增量并保留事件号，`view=handoff` 返回 `{markdown, watermark}`。读取时重新授权。
 
 `activity` 与执行投影在同一事务读取，是同一执行、operator audience、水位以内的持久事件 envelope，按 seq 升序排列。查询先排除 `message.delta`、`message.completed`、`usage.updated` 和 `execution.completed`，再取最近 1000 条，文本流不会挤掉工具调用。`activity_truncated` 表示更早的活动已省略；消息全文、完成状态、用量与结果由 `execution` 提供，完整人工回答由 `interactions` 提供。客户端校验归属、排序、事件类型和水位；接收后续 SSE 时仅将相同类型的事件加入活动列表并保持上限。活动快照不会改变 seq 或重放游标规则。
 
@@ -71,7 +71,7 @@
 | execution.completed                                               | `{result}`                                                         |
 | execution.failed / execution.timed_out                            | `{error:{code,message,retryable}}`                                 |
 | execution.retry_scheduled                                         | `{reason:"interrupted"}`                                           |
-| step.started                                                      | `{step_id}`                                                        |
+| step.started                                                      | `{step_id}`，格式修复可附 `repair_reason`                          |
 | step.completed                                                    | `{step_id,duration_ms}`                                            |
 | step.failed                                                       | `{step_id,code}`                                                   |
 | message.started                                                   | `{message_id,block_id,format:"text"}`                              |

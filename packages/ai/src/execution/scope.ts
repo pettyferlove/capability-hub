@@ -13,6 +13,7 @@ export interface RunScope {
   owner_id: string;
   definition_digest: string;
   controller: AbortController;
+  step?: { id: string; start_seq: number };
 }
 
 /**
