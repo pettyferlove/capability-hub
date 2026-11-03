@@ -92,6 +92,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '../../shared/api/use-query.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Glyph } from '../../shared/components/Glyph.js';
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
+import { isGeneratedGitVersion } from '../../shared/format/version-label.js';
 import { Segmented } from '../../shared/components/Segmented.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { CardGridSkeleton } from '../../shared/components/Skeleton.js';
@@ -388,6 +390,7 @@ export default function DiscoverPage() {
                   key={'asset:' + a.asset_id}
                   className={assetGridItemStyles}
                   index={index}
+                  animateLayout={false}
                 >
                   <AssetCard asset={a} searching={!!q} />
                 </CatalogMotionItem>
@@ -423,7 +426,7 @@ export default function DiscoverPage() {
 function AssetCard({ asset, searching }: { asset: AssetResponse; searching: boolean }) {
   const release = asset.current_release;
   const version = release.version_label;
-  const isGit = version.startsWith('git.');
+  const isGit = isGeneratedGitVersion(version);
   const VersionIcon = isGit ? GitCommitHorizontal : Tag;
   const audience = release.distribution.audience;
   const isPublic = audience.includes('public');
@@ -467,8 +470,10 @@ function AssetCard({ asset, searching }: { asset: AssetResponse; searching: bool
             </span>
             <span className={assetVersionStyles} title={version}>
               <VersionIcon size={13} />
-              <span className="sr-only">{isGit ? 'Git 提交 ' : '版本 '}</span>
-              <span className="truncate">{isGit ? version.slice(4, 11) : `v${version}`}</span>
+              <span className="sr-only">版本 </span>
+              <span className="truncate">
+                {isGit ? <VersionLabel value={version} /> : `v${version}`}
+              </span>
             </span>
           </div>
         </div>

@@ -16,6 +16,7 @@ import {
 } from '../ai/publication-suggestion.js';
 import { PageTabs } from '../../shared/components/PageTabs.js';
 import { VersionComparison } from '../../shared/components/VersionComparison.js';
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
 import { intakeDetailStyles, intakeSnapshotStyles, intakePublishedStyles } from './styles.js';
 import {
   tagStyles,
@@ -409,13 +410,17 @@ export function IntakeDetail({
           <details className={intakeSnapshotStyles}>
             <summary>
               <ShieldCheck size={14} />
-              <strong>{i.version.version_label}</strong>
+              <strong>
+                <VersionLabel value={i.version.version_label} />
+              </strong>
               <span>
                 {i.version.manifest.files.length} 个文件 ·{' '}
                 {bytesLabel(i.version.manifest.files.reduce((sum, f) => sum + f.size, 0))}
               </span>
             </summary>
             <div>
+              <span>完整版本标识</span>
+              <code>{i.version.version_label}</code>
               <span>固定内容快照</span>
               <code>{i.version.content_digest}</code>
             </div>

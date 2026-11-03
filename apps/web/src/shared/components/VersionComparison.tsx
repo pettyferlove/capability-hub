@@ -2,6 +2,7 @@ import type { ManagementAssetResponse } from '@capability-hub/contracts/http';
 import { ArrowRight } from '../icons/lucide.js';
 import { cn } from '../styles/cn.js';
 import { Glyph } from './Glyph.js';
+import { VersionLabel } from './VersionLabel.js';
 
 type Snapshot = NonNullable<ManagementAssetResponse['current_version']>;
 
@@ -107,8 +108,8 @@ function SnapshotView({
             diffWith={diffWith}
           />
           <div className={compact ? 'flex min-w-0 flex-wrap items-baseline gap-x-2' : 'contents'}>
-            <strong className="font-mono break-all" title={snapshot.version_label}>
-              {snapshot.version_label}
+            <strong className="font-mono break-all">
+              <VersionLabel value={snapshot.version_label} />
             </strong>
             <code className="text-muted-ink text-caption" title={snapshot.content_digest}>
               {snapshot.content_digest.replace(/^sha256:/, '').slice(0, 8)}

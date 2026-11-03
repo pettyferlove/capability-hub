@@ -5,8 +5,8 @@ import { contentTransition, softSpring } from '../../shared/motion/transitions.j
 /** 退场期间保留视觉节点，但立即移出键盘与指针交互。 */
 export const CatalogMotionItem = forwardRef<
   HTMLDivElement,
-  { children: ReactNode; className: string; index?: number }
->(function CatalogMotionItem({ children, className, index = 0 }, ref) {
+  { children: ReactNode; className: string; index?: number; animateLayout?: boolean }
+>(function CatalogMotionItem({ children, className, index = 0, animateLayout = true }, ref) {
   const present = useIsPresent();
   const reduceMotion = useReducedMotion();
   return (
@@ -15,7 +15,7 @@ export const CatalogMotionItem = forwardRef<
       className={className}
       inert={!present}
       aria-hidden={present ? undefined : true}
-      layout={reduceMotion ? false : 'position'}
+      layout={reduceMotion || !animateLayout ? false : 'position'}
       initial={reduceMotion ? false : { opacity: 0, y: 10 }}
       animate={{
         opacity: 1,

@@ -3,6 +3,8 @@
  * 单个资产在抽屉里操作版本、来源与反馈；生命周期与迁移请求带 `revision` 做并发校验，
  * 回退与吊销只提交 `reason`，失败时回显错误文案。
  */
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
+import { shortVersion } from '../../shared/format/version-label.js';
 import { Glyph } from '../../shared/components/Glyph.js';
 import { PageTabs } from '../../shared/components/PageTabs.js';
 import { InputField } from '../../shared/components/InputField.js';
@@ -142,7 +144,7 @@ export default function ManagementPanel() {
               <p className={subtleStyles}>
                 当前发布{' '}
                 <strong className="text-ink font-mono">
-                  {a.current_version?.version_label ?? '尚未发布'}
+                  <VersionLabel value={a.current_version?.version_label ?? '尚未发布'} />
                 </strong>
                 {a.current_release && <> · 第 {a.current_release.release_seq} 次发布</>}
               </p>
@@ -155,7 +157,7 @@ export default function ManagementPanel() {
                       className={textBtnStyles}
                       href={pageHref('review', { request: request.id })}
                     >
-                      {request.version_label}
+                      <VersionLabel value={request.version_label} />
                       <ArrowRight size={13} />
                     </a>
                   ))}
@@ -166,7 +168,10 @@ export default function ManagementPanel() {
                   className={textBtnStyles}
                   href={pageHref('publish', { intake: a.latest_intake.id })}
                 >
-                  最近接收 {a.latest_intake.version_label} · {stateLabel(a.latest_intake.state)}
+                  <span>
+                    最近接收 <VersionLabel value={a.latest_intake.version_label} /> ·{' '}
+                    {stateLabel(a.latest_intake.state)}
+                  </span>
                   <ArrowRight size={13} />
                 </a>
               )}
@@ -345,7 +350,8 @@ function Controls({
           {tab === 'versions' ? (
             <>
               <p className={subtleStyles}>
-                当前发布：{a.current_version?.version_label ?? '尚未发布'}
+                当前发布：
+                <VersionLabel value={a.current_version?.version_label ?? '尚未发布'} />
                 。回退历史内容仍需人工审核。
               </p>
               {versionsError ? (
@@ -363,7 +369,9 @@ function Controls({
                     <div key={v.version_id}>
                       <Glyph kind={a.kind} seed={v.content_digest} size={40} />
                       <div>
-                        <strong>{v.version_label}</strong>
+                        <strong>
+                          <VersionLabel value={v.version_label} />
+                        </strong>
                         <small>
                           {v.availability === 'revoked'
                             ? '已撤销'
@@ -473,7 +481,7 @@ function Controls({
                         )
                         .map((v) => (
                           <option key={v.version_id} value={v.version_id}>
-                            {v.version_label} · {v.availability}
+                            {shortVersion(v.version_label, true)} · {v.availability}
                           </option>
                         ))}
                     </SelectField>

@@ -1,3 +1,5 @@
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
+import { shortVersion } from '../../shared/format/version-label.js';
 import { jsonObject } from '../ai/presentation.js';
 import { BusinessAgentPanel } from '../ai/BusinessAgentPanel.js';
 import { feedbackStatusIcons } from '../../shared/components/select-icons.js';
@@ -62,7 +64,7 @@ export function FeedbackDetail({
     <article className={feedbackDetailStyles} aria-label={'反馈详情：' + f.title}>
       <h4>{f.title}</h4>
       <p className={subtleStyles}>
-        {feedbackKinds[f.kind]} · {f.version_label}
+        {feedbackKinds[f.kind]} · <VersionLabel value={f.version_label} />
         {f.blocking ? ' · 阻塞任务' : ''}
       </p>
       <p className={subtleStyles}>
@@ -83,7 +85,11 @@ export function FeedbackDetail({
         <p className="whitespace-pre-wrap">
           {f.resolution || (f.updated_by ? '本次未填写处理说明。' : '尚无处理记录。')}
         </p>
-        {f.fixed_version_label && <p>修复版本 · {f.fixed_version_label}</p>}
+        {f.fixed_version_label && (
+          <p>
+            修复版本 · <VersionLabel value={f.fixed_version_label} />
+          </p>
+        )}
         {f.updated_by && <p className={subtleStyles}>更新于 {dateLabel(f.updated_at)}</p>}
         {suggestion && (
           <button
@@ -248,7 +254,7 @@ function FeedbackResolution({
               <option value="">不关联版本</option>
               {versions?.map((version) => (
                 <option key={version.version_id} value={version.version_id}>
-                  {version.version_label}
+                  {shortVersion(version.version_label, true)}
                 </option>
               ))}
             </SelectField>

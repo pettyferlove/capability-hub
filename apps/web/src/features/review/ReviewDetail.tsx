@@ -92,7 +92,8 @@ import { useHub } from '../../shared/context/HubContext.js';
 import { categoryLabel, dateLabel, stateLabel } from '../../shared/format/labels.js';
 import { FileWorkbench } from './FileWorkbench.js';
 import type { ChangeFile, ReviewFileFocus } from './types.js';
-import { shortVersion } from './version-label.js';
+import { shortVersion } from '../../shared/format/version-label.js';
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
 import { audienceChange } from './audience-change.js';
 import { ApiKeyBadge } from '../catalog/ApiKeyBadge.js';
 import { ScenarioSummary } from '../../shared/components/ScenarioSummary.js';
@@ -623,8 +624,8 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
                   <div>
                     <h3>{r.asset.slug}</h3>
                     <p>
-                      {r.candidate.version_label} · {r.visibility_label} · {changed.length}{' '}
-                      个文件变化
+                      <VersionLabel value={r.candidate.version_label} /> · {r.visibility_label} ·{' '}
+                      {changed.length} 个文件变化
                     </p>
                   </div>
                 </div>

@@ -5,6 +5,7 @@ import { createElement, type ReactNode } from 'react';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { IntakeDetail } from '../../apps/web/src/features/publishing/IntakeDetail.js';
+import { IntakeHistoryRow } from '../../apps/web/src/features/publishing/IntakeHistoryRow.js';
 import { AssetCommunity } from '../../apps/web/src/features/catalog/AssetCommunity.js';
 import DiscoverPage from '../../apps/web/src/features/catalog/DiscoverPage.js';
 import ManagementPanel from '../../apps/web/src/features/catalog/ManagementPanel.js';
@@ -223,6 +224,70 @@ test('审核详情可重复定位 Skill 文件，未声明不推断无需认证'
     within(screen.getByRole('region', { name: '认证与使用要求' })).getByText(/未声明需要 API Key/),
   );
   assert.equal(screen.queryByText('无需 API Key'), null);
+});
+
+test('接收记录隐藏自动 Git 标签，详情缩写且保留完整快照标识', async (context) => {
+  const f = await createTestHub(context);
+  const intake = await receiveSkill(f);
+  assert(intake.version);
+  const label =
+    'git.7e1ca32e3252699a6344675b54cbd6ba0e5d803e.s88c84e92-7566-411e-993e-a257754af657.r1';
+  const item = {
+    id: intake.id,
+    asset_id: intake.asset_id,
+    asset_slug: intake.asset_slug,
+    kind: 'skill' as const,
+    version_label: label,
+    created_at: intake.created_at,
+    status: 'ready' as const,
+    phase: intake.phase,
+    source_kind: 'git' as const,
+    content_digest: intake.content_digest!,
+    file_count: 1,
+    error_message: null,
+  };
+  let selected = '';
+  const onSelect = (id: string) => {
+    selected = id;
+  };
+  const view = render(createElement(IntakeHistoryRow, { item, onSelect }));
+  assert.equal(screen.queryByText(label), null);
+  assert(!screen.getByRole('button').getAttribute('aria-label')?.includes(label));
+  assert(screen.getByText('Git 同步'));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button'));
+  assert.equal(selected, intake.id);
+  view.rerender(
+    createElement(IntakeHistoryRow, {
+      item: { ...item, version_label: '1.2.3', source_kind: 'upload' },
+      onSelect,
+    }),
+  );
+  assert(screen.getByText('1.2.3'));
+  view.unmount();
+  context.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === '/api/scenarios') return Response.json([]);
+    assert.fail('Unexpected fetch: ' + path);
+  });
+  render(
+    page(
+      createElement(IntakeDetail, {
+        intake: {
+          ...intake,
+          version_label: label,
+          version: { ...intake.version, version_label: label },
+        },
+      }),
+    ),
+  );
+  await user.click(screen.getByRole('tab', { name: '01 校验与证据' }));
+  const progress = screen.getByRole('region', { name: '处理进度' });
+  assert(within(progress).getByText('Git 7e1ca32e · r1'));
+  assert.equal(within(progress).queryByText(label), null);
+  assert.equal(within(progress).getByText('Git 7e1ca32e · r1').getAttribute('title'), label);
+  await user.click(screen.getByText('Git 7e1ca32e · r1', { selector: 'summary span[title]' }));
+  assert(screen.getByText('完整版本标识'));
+  assert(screen.getByText(label, { selector: 'code' }));
 });
 
 test('维护资产显示版本与审核入口，更新链接预选原资产', async (context) => {

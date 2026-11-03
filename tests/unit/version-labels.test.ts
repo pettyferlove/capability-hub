@@ -6,6 +6,29 @@ import {
   isFixedVersionLabel,
 } from '@capability-hub/contracts';
 import { createVersionPlan } from '../../packages/application/src/intake/version-plan.js';
+import {
+  isGeneratedGitVersion,
+  shortVersion,
+} from '../../apps/web/src/shared/format/version-label.js';
+
+test('页面仅缩写自动 Git 标签，保留配置修订并在选择版本时区分来源', () => {
+  const source = '88c84e92-7566-411e-993e-a257754af657';
+  for (const commit of ['7e1ca32e' + 'a'.repeat(32), '7e1ca32e' + 'b'.repeat(56)]) {
+    const label = `git.${commit}.s${source}.r12`;
+    assert.equal(isGeneratedGitVersion(label), true);
+    assert.equal(shortVersion(label), 'Git 7e1ca32e · r12');
+    assert.equal(shortVersion(label, true), 'Git 7e1ca32e · s88c84e92 · r12');
+    assert.notEqual(shortVersion(label), shortVersion(label.replace('.r12', '.r13')));
+    assert.notEqual(
+      shortVersion(label, true),
+      shortVersion(label.replace(source, 'a8c84e92-7566-411e-993e-a257754af657'), true),
+    );
+  }
+  for (const label of ['', '1.2.3-beta.1+build.001', 'git.release', 'git.7e1ca32e.ssource.r1']) {
+    assert.equal(isGeneratedGitVersion(label), false, label);
+    assert.equal(shortVersion(label), label);
+  }
+});
 
 test('固定版本号遵循 SemVer 的数字、预发布和构建标识语法', () => {
   for (const label of ['0.0.0', '1.2.3', '1.2.3-0.alpha-1+build.001'])

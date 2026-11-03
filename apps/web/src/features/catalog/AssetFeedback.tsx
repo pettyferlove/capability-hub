@@ -1,3 +1,4 @@
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
 import { feedbackStatusIcons } from '../../shared/components/select-icons.js';
 import { assetCommunityStyles, communityHeadingStyles, communityActionsStyles } from './styles.js';
 import {
@@ -196,7 +197,8 @@ export function AssetFeedback({ assetId, versionId }: { assetId: string; version
                                 </span>
                                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-ink">
                                   <span>
-                                    {feedbackKinds[feedback.kind]} · {feedback.version_label}
+                                    {feedbackKinds[feedback.kind]} ·{' '}
+                                    <VersionLabel value={feedback.version_label} />
                                   </span>
                                   {feedback.blocking && (
                                     <span className="text-warning">阻塞任务</span>

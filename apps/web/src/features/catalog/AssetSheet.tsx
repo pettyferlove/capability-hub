@@ -3,6 +3,7 @@
  * 维护动作走 `PATCH /api/assets/{asset_id}/lifecycle` 与 `POST /api/versions/{version_id}/revoke`，
  * 成功后 `reload()` 刷新详情；权限不足时接口报错，未登录会追加登录入口。
  */
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
 import { managementIcons } from '../../shared/components/select-icons.js';
 import {
   detailIdentityStyles,
@@ -105,7 +106,9 @@ export default function AssetSheet({ slug }: { slug: string }) {
                   {a.kind.toUpperCase()}
                 </span>
                 <h2>{a.slug}</h2>
-                <p className={cn(monoStyles, subtleStyles)}>{a.current_release.version_label}</p>
+                <p className={cn(monoStyles, subtleStyles)}>
+                  <VersionLabel value={a.current_release.version_label} />
+                </p>
               </div>
             </div>
             <div className={detailDescriptionWrapStyles}>

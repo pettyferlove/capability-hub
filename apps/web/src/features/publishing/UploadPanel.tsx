@@ -3,6 +3,7 @@
  * 已有资产；版本建议来自 `/api/management/assets/{id}/version-plan`。重复提交复用同一
  * `Idempotency-Key`，版本计划过期（`VERSION_SUGGESTION_STALE`）时刷新建议并要求用户重新确认。
  */
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
 import { browserUuid } from '@capability-hub/logging/browser';
 import { InputField } from '../../shared/components/InputField.js';
 import { versionPlanIcons } from '../../shared/components/select-icons.js';
@@ -440,8 +441,8 @@ export function UploadPanel({
                 <Message>
                   正在更新 <strong>{selectedAsset.slug}</strong> ·{' '}
                   {selectedAsset.kind.toUpperCase()}。 当前发布{' '}
-                  {selectedAsset.current_version?.version_label ?? '尚无'} → 本次{' '}
-                  {releaseVersion || '待确认'}。 校验和审核通过前，当前发布保持不变。
+                  <VersionLabel value={selectedAsset.current_version?.version_label ?? '尚无'} /> →
+                  本次 {releaseVersion || '待确认'}。 校验和审核通过前，当前发布保持不变。
                 </Message>
               )}
               {(target === 'new' || assetId) && (

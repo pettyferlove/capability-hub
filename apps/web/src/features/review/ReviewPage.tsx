@@ -2,7 +2,7 @@
  * 发布审核工作台：按状态拉取 `/api/publication-requests?state=`，左侧队列、右侧详情。
  * 选中项由 URL 的 `state`/`request` 决定，非法状态回落到 `pending`（见 `reviewLocation`）。
  */
-import { shortVersion } from './version-label.js';
+import { shortVersion } from '../../shared/format/version-label.js';
 import { Glyph } from '../../shared/components/Glyph.js';
 import {
   reviewPageStyles,
@@ -142,7 +142,12 @@ export default function ReviewPage({ query = location.search }: { query?: string
                       <strong className="break-all">{r.asset.slug}</strong>
                     </div>
                     <div className={inboxMetadataStyles}>
-                      <span className={cn(inboxVersionStyles, 'min-w-0 break-all')}>
+                      <span
+                        className={cn(inboxVersionStyles, 'min-w-0 break-all')}
+                        title={[r.current?.version_label, r.candidate.version_label]
+                          .filter(Boolean)
+                          .join(' → ')}
+                      >
                         {r.current?.version_label
                           ? `${shortVersion(r.current.version_label)} → `
                           : '首次发布 · '}

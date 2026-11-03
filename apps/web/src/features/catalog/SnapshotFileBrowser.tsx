@@ -1,3 +1,4 @@
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
 import {
   detailFileWorkspaceStyles,
   detailFileExplorerStyles,
@@ -203,7 +204,9 @@ export function SnapshotFileBrowser({
         </div>
         <div className={detailFileProofStyles}>
           <span>{bytesLabel(asset.files.find((file) => file.path === path)?.size ?? 0)}</span>
-          <span>固定版本 {asset.current_release.version_label}</span>
+          <span>
+            固定版本 <VersionLabel value={asset.current_release.version_label} />
+          </span>
         </div>
       </div>
     </section>

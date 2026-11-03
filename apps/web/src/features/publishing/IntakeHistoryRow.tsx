@@ -27,6 +27,7 @@ import {
 } from '../../shared/icons/lucide.js';
 import { Glyph } from '../../shared/components/Glyph.js';
 import { dateLabel } from '../../shared/format/labels.js';
+import { isGeneratedGitVersion } from '../../shared/format/version-label.js';
 
 /** 接收记录列表与状态筛选共用的中文文案，键为接口返回的 `status` 原值，缺键即视为未知状态。 */
 export const statusLabels: Record<string, string> = {
@@ -67,13 +68,14 @@ export function IntakeHistoryRow({
           ? Ban
           : Clock3;
   const SourceIcon = item.source_kind === 'git' ? GitBranch : UploadCloud;
+  const version = isGeneratedGitVersion(item.version_label) ? '' : item.version_label;
   return (
     <button
       type="button"
       className={cn(intakeHistoryRowStyles, active ? activeStyles : '')}
       data-status={item.status}
       onClick={() => onSelect(item.id)}
-      aria-label={`${item.asset_slug} ${item.version_label} · ${statusLabels[item.status]} · ${dateLabel(item.created_at)}`}
+      aria-label={`${item.asset_slug}${version ? ` ${version}` : ''} · ${statusLabels[item.status]} · ${dateLabel(item.created_at)}`}
     >
       <span
         className={intakeContentGlyphStyles}
@@ -93,7 +95,7 @@ export function IntakeHistoryRow({
           <span className={intakeKindStyles}>{item.kind === 'skill' ? 'Skill' : 'MCP'}</span>
         </span>
         <span className={intakeHistoryMetaStyles}>
-          <span className={monoStyles}>{item.version_label}</span>
+          {version && <span className={monoStyles}>{version}</span>}
           <span>
             <SourceIcon size={12} />
             {item.source_kind === 'git' ? 'Git 同步' : '文件上传'}

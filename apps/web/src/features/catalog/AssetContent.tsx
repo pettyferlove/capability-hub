@@ -3,6 +3,8 @@
  * 依赖 `GET /api/assets/{slug}/versions` 与 {@link useSnapshotFile} 读取当前版本文件；
  * 历史位置由 {@link detailNavigation} 维护，滚动位置与焦点在切换时按 key 恢复。
  */
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
+import { shortVersion } from '../../shared/format/version-label.js';
 import { AssetFeedback } from './AssetFeedback.js';
 import {
   assetContentStyles,
@@ -296,7 +298,9 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
                 <div key={version.version_id}>
                   <History size={17} />
                   <div>
-                    <strong className={monoStyles}>{version.version_label}</strong>
+                    <strong className={monoStyles}>
+                      <VersionLabel value={version.version_label} />
+                    </strong>
                     <small>
                       {dateLabel(version.created_at)}
                       {version.availability ? ` · ${stateLabel(version.availability)}` : ''}
@@ -306,7 +310,7 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
                     <span className={cn(tagStyles, tagTealStyles)}>当前版本</span>
                   )}
                   <a
-                    aria-label={'下载版本 ' + version.version_label}
+                    aria-label={'下载版本 ' + shortVersion(version.version_label, true)}
                     className={iconBtnStyles}
                     href={`/api/versions/${version.version_id}/archive`}
                   >

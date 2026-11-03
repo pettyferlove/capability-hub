@@ -1,3 +1,4 @@
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
 import {
   assetCommunityStyles,
   communityActionsStyles,
@@ -143,7 +144,9 @@ export function AssetCommunity({ asset }: { asset: AssetResponse }) {
         >
           <p className={subtleStyles}>
             本次提名版本：
-            <strong className="break-all">{asset.current_release.version_label}</strong>
+            <strong className="break-all">
+              <VersionLabel value={asset.current_release.version_label} />
+            </strong>
           </p>
           <div className="grid gap-2">
             <label>

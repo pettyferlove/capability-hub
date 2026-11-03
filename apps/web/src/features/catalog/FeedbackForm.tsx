@@ -1,3 +1,4 @@
+import { shortVersion } from '../../shared/format/version-label.js';
 import { browserUuid } from '@capability-hub/logging/browser';
 import { InputField } from '../../shared/components/InputField.js';
 import { feedbackKindIcons } from '../../shared/components/select-icons.js';
@@ -108,7 +109,7 @@ export function FeedbackForm({
               {versions ? (
                 versions.map((item) => (
                   <option key={item.version_id} value={item.version_id}>
-                    {item.version_label}
+                    {shortVersion(item.version_label, true)}
                   </option>
                 ))
               ) : (

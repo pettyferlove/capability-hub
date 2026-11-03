@@ -24,6 +24,7 @@ import {
 } from '../../shared/icons/lucide.js';
 import { useEffect, useState } from 'react';
 import type { IntakeConnection } from './use-intake-detail.js';
+import { VersionLabel } from '../../shared/components/VersionLabel.js';
 
 const steps = {
   received: { title: '内容已接收', detail: '原始内容已保存，等待后台开始校验。' },
@@ -103,7 +104,9 @@ export function IntakeProgress({
       <dl className={intakeProgressMetaStyles}>
         <div>
           <dt>接收版本</dt>
-          <dd>{intake.version_label}</dd>
+          <dd>
+            <VersionLabel value={intake.version_label} />
+          </dd>
         </div>
         <div>
           <dt>{processing ? '已用时间' : '处理耗时'}</dt>
