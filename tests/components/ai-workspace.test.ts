@@ -57,6 +57,8 @@ for (const [description, canExecute, consoleAccess] of [
     );
     t.after(() => history.replaceState(null, '', previous));
     const aiRequests: string[] = [];
+    const catalogReady = deferred();
+    let ledgerReady = Promise.resolve();
     t.mock.method(globalThis, 'fetch', async (path: string) => {
       if (path.startsWith('/api/ai/') || path.startsWith('/api/admin/operations/agents/'))
         aiRequests.push(path);
@@ -69,8 +71,10 @@ for (const [description, canExecute, consoleAccess] of [
         case '/api/publication-requests':
           return Response.json({ items: [] });
         case '/api/admin/operations/agents/catalog':
+          await catalogReady.promise;
           return Response.json({ default_profile: '', profiles: [], operations: [] });
         case '/api/admin/operations/agents/executions':
+          await ledgerReady;
           assert.equal(url.searchParams.get('view'), 'summary');
           return Response.json({
             items: [
@@ -103,6 +107,9 @@ for (const [description, canExecute, consoleAccess] of [
       assert(await screen.findByRole('button', { name: '新建任务' }));
       assert(await screen.findByRole('table', { name: '执行记录列表' }));
       await userEvent.setup().click(screen.getByRole('button', { name: '新建任务' }));
+      assert(await screen.findByText('正在加载新建任务…'));
+      assert.equal(screen.queryByRole('group', { name: '选择任务类型' }), null);
+      await act(async () => catalogReady.resolve());
       assert(await screen.findByRole('group', { name: '选择任务类型' }));
       await userEvent.setup().click(screen.getByRole('link', { name: '返回执行记录' }));
       assert(await screen.findByRole('table', { name: '执行记录列表' }));
@@ -113,8 +120,18 @@ for (const [description, canExecute, consoleAccess] of [
       assert.equal(screen.queryByRole('button', { name: '新建任务' }), null);
       const records = within(screen.getByRole('region', { name: '执行记录' }));
       assert(await records.findByRole('cell', { name: '用户' }));
+      const refreshing = deferred();
+      ledgerReady = refreshing.promise;
+      await userEvent.setup().click(records.getByRole('button', { name: '刷新记录' }));
+      assert(records.getByRole('region', { name: '执行记录结果', busy: true }));
+      assert(records.getByRole('cell', { name: '用户' }));
+      await act(async () => refreshing.resolve());
+      const searching = deferred();
+      ledgerReady = searching.promise;
       await userEvent.setup().type(records.getByRole('searchbox'), '林工');
       await waitFor(() => assert(!records.queryByRole('cell', { name: '用户' })));
+      assert(records.getByText('正在加载执行记录…'));
+      await act(async () => searching.resolve());
       assert(await records.findByRole('cell', { name: '林工' }));
       assert.equal(
         records.getByRole('link', { name: '下载 other-task 的 markdown' }).getAttribute('href'),
@@ -216,11 +233,15 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
     execution: { ...execution, status: 'succeeded', last_seq: 43 },
     watermark: 43,
   };
+  const streamReady = deferred();
+  const reportReady = deferred();
+  const handoffReady = deferred();
   t.mock.method(globalThis, 'fetch', async (url: string) => {
     if (url === '/api/auth/status') return Response.json({ initialized: true });
     if (url === '/api/me') return Response.json(workspaceUser(false, true));
     if (url === '/api/publication-requests') return Response.json({ items: [] });
-    if (url === '/api/ai/executions/' + execution.id + '/events')
+    if (url === '/api/ai/executions/' + execution.id + '/events') {
+      await streamReady.promise;
       return new Response(
         'event: stream.snapshot\ndata: ' +
           JSON.stringify({ schema_version: 1, ...latest }) +
@@ -229,10 +250,14 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
           headers: { 'Content-Type': 'text/event-stream' },
         },
       );
+    }
     if (url === '/api/ai/executions/' + execution.id) return Response.json(latest);
-    if (url === path + '?view=handoff')
+    if (url === path + '?view=handoff') {
+      await handoffReady.promise;
       return Response.json({ markdown: '交接正文 #42', watermark: 42 });
+    }
     assert.equal(url, path);
+    await reportReady.promise;
     return Response.json({
       schema_version: 1,
       captured_at: execution.created_at,
@@ -257,6 +282,11 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
     });
   });
   render(createElement(App));
+  assert(await screen.findByText('正在加载执行详情…'));
+  await act(async () => streamReady.resolve());
+  assert(await screen.findByText('正在读取流程快照…'));
+  assert.equal(screen.queryByRole('region', { name: '事件时间线' }), null);
+  await act(async () => reportReady.resolve());
   assert(await screen.findByText(/执行已推进到 #43/));
   assert.equal(
     screen.getByRole('link', { name: '完整 JSON' }).getAttribute('href'),
@@ -271,6 +301,9 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
   assert(await screen.findByText('#42'));
   assert.equal(screen.queryByText('#1'), null);
   await userEvent.setup().click(screen.getByRole('button', { name: '预览并复制交接文本' }));
+  assert(await screen.findByText('正在准备交接文本…'));
+  assert.equal(screen.queryByRole('textbox', { name: 'Agent 交接文本' }), null);
+  await act(async () => handoffReady.resolve());
   assert(await screen.findByDisplayValue('交接正文 #42'));
 });
 

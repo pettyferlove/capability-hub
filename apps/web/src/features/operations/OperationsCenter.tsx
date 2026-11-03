@@ -1,14 +1,47 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Activity, Bot, Layers3, ScrollText, Workflow } from '../../shared/icons/lucide.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { canOpenOperations, operationsHref } from './navigation.js';
 import { PageHead } from '../../shared/components/PageHead.js';
 import { PageTabs } from '../../shared/components/PageTabs.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
-import { AgentSection } from './agents/AgentSection.js';
-import { AuditPanel } from './audit/AuditPanel.js';
-import { OperationsPanel } from './OperationsPanel.js';
-import { TokenUsagePanel } from './usage/TokenUsagePanel.js';
-import { ResourceOverview } from './overview/ResourceOverview.js';
+import {
+  AuditMetricsSkeleton,
+  OverviewSkeleton,
+  SnapshotSkeleton,
+  TokenDetailsSkeleton,
+  TokenTotalsSkeleton,
+  WorkspaceSkeleton,
+} from './OperationsSkeleton.js';
+import { SkeletonBlock, SkeletonRegion, TableSkeleton } from '../../shared/components/Skeleton.js';
+import { panelStyles, formStackStyles } from '../../shared/styles/recipes.js';
+
+const Overview = lazy(async () => ({
+  default: (await import('./overview/ResourceOverview.js')).ResourceOverview,
+}));
+const Usage = lazy(async () => ({
+  default: (await import('./usage/TokenUsagePanel.js')).TokenUsagePanel,
+}));
+const Snapshot = lazy(async () => ({
+  default: (await import('./OperationsPanel.js')).OperationsPanel,
+}));
+const Audit = lazy(async () => ({ default: (await import('./audit/AuditPanel.js')).AuditPanel }));
+const Agents = lazy(async () => ({
+  default: (await import('./agents/AgentSection.js')).AgentSection,
+}));
+
+function HeadingPlaceholder({ title }: { title: string }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+      <h2 className="text-section">{title}</h2>
+      <div className="w-28">
+        <SkeletonRegion label="正在加载面板控件…">
+          <SkeletonBlock height={36} shape="rect" />
+        </SkeletonRegion>
+      </div>
+    </div>
+  );
+}
 
 /** 审计汇总和执行检查分别授权，进入子页时只挂载该页有权读取的数据。 */
 export default function OperationsCenter({ query }: { query: string }) {
@@ -30,22 +63,89 @@ export default function OperationsCenter({ query }: { query: string }) {
       : []),
   ];
   const tab = tabs.find((item) => item.id === requested)?.id;
-  let panel;
+  let panel: ReactNode;
+  let placeholder: ReactNode;
   switch (tab) {
     case 'overview':
-      panel = <ResourceOverview />;
+      panel = <Overview />;
+      placeholder = (
+        <>
+          <HeadingPlaceholder title="资源运营概览" />
+          <OverviewSkeleton />
+        </>
+      );
       break;
-    case 'agents':
-      panel = <AgentSection query={query} canAudit={canAudit} canInspect={canInspect} />;
+    case 'agents': {
+      const params = new URLSearchParams(query);
+      const selected = params.get('execution') ?? '';
+      const newTask = params.get('new') === '1';
+      const analytics =
+        !selected && !newTask && (params.get('view') === 'analytics' || !canInspect);
+      if (analytics && !canAudit) {
+        panel = <ErrorState message="当前账号无权查看 Agent 运行分析。" />;
+        break;
+      }
+      if (!analytics && !canInspect) {
+        panel = <ErrorState message="当前账号无权访问 Agent 执行记录。" />;
+        break;
+      }
+      const creating = !selected && newTask && !!me?.capabilities.can_ai;
+      panel = (
+        <Agents
+          analytics={analytics}
+          canSwitch={canInspect && canAudit}
+          selected={selected}
+          creating={creating}
+        />
+      );
+      placeholder = (
+        <div className="grid gap-5">
+          <SkeletonRegion label="正在加载 Agent 视图…">
+            <SkeletonBlock width={192} height={36} shape="rect" />
+          </SkeletonRegion>
+          {analytics ? (
+            <SnapshotSkeleton section="agents" />
+          ) : creating || selected ? (
+            <WorkspaceSkeleton creating={creating} />
+          ) : (
+            <TableSkeleton label="正在加载执行记录…" columns={6} paginated />
+          )}
+        </div>
+      );
       break;
+    }
     case 'usage':
-      panel = <TokenUsagePanel />;
+      panel = <Usage />;
+      placeholder = (
+        <div className={formStackStyles}>
+          <div className={panelStyles}>
+            <HeadingPlaceholder title="项目 Token 用量" />
+            <TokenTotalsSkeleton />
+          </div>
+          <TokenDetailsSkeleton />
+        </div>
+      );
       break;
     case 'runtime':
-      panel = <OperationsPanel section="runtime" />;
+      panel = <Snapshot section="runtime" />;
+      placeholder = (
+        <>
+          <HeadingPlaceholder title="实例运行状态" />
+          <SnapshotSkeleton section="runtime" />
+        </>
+      );
       break;
     case 'audit':
-      panel = <AuditPanel />;
+      panel = <Audit />;
+      placeholder = (
+        <div className={panelStyles}>
+          <div className={formStackStyles}>
+            <HeadingPlaceholder title="审计事件" />
+            <AuditMetricsSkeleton />
+            <TableSkeleton label="正在加载审计事件…" columns={6} paginated stackOnMobile />
+          </div>
+        </div>
+      );
       break;
     default:
       panel = <ErrorState message="当前账号无法访问此运营栏目。" />;
@@ -71,7 +171,9 @@ export default function OperationsCenter({ query }: { query: string }) {
         }))}
         hrefFor={(value) => operationsHref(value || 'overview')}
       />
-      {panel}
+      <Suspense key={tab} fallback={placeholder}>
+        {panel}
+      </Suspense>
     </div>
   );
 }

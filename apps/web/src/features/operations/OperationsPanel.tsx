@@ -1,17 +1,13 @@
-import {
-  formStackStyles,
-  panelStyles,
-  sectionHeadingStyles,
-  subtleStyles,
-  btnStyles,
-} from '../../shared/styles/recipes.js';
-import { operationsGridStyles, operationsPanelStyles } from './styles.js';
+import { sectionHeadingStyles, subtleStyles, btnStyles } from '../../shared/styles/recipes.js';
+import { operationsPanelStyles, operationsRevealStyles } from './styles.js';
 import type { OperationsResponse } from '@capability-hub/contracts/http';
 import type { ReactNode } from 'react';
 import { RefreshCw } from '../../shared/icons/lucide.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
-import { CardGridSkeleton, SummarySkeleton } from '../../shared/components/Skeleton.js';
+import { QueryRegion } from '../../shared/components/QueryRegion.js';
+import { cn } from '../../shared/styles/cn.js';
+import { SnapshotSkeleton } from './OperationsSkeleton.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { dateLabel } from '../../shared/format/labels.js';
 import { OperationsAgents } from './agents/OperationsAgents.js';
@@ -35,27 +31,7 @@ export function OperationsPanel({
   if (error) {
     content = <ErrorState message={error} retry={reload} />;
   } else if (!data) {
-    content = (
-      <div className={formStackStyles}>
-        <CardGridSkeleton
-          label={section === 'agents' ? '正在加载 Agent 运行分析…' : '正在加载实例运行状态…'}
-          count={3}
-          variant="stat"
-        />
-        <div className={operationsGridStyles}>
-          <section className={panelStyles}>
-            <SummarySkeleton
-              label={section === 'agents' ? '正在加载执行趋势…' : '正在加载数据库与对象存储…'}
-            />
-          </section>
-          <section className={panelStyles}>
-            <SummarySkeleton
-              label={section === 'agents' ? '正在加载 Agent 注册信息…' : '正在加载作业与扫描…'}
-            />
-          </section>
-        </div>
-      </div>
-    );
+    content = <SnapshotSkeleton section={section} />;
   } else if (section === 'agents') {
     content = (
       <>
@@ -66,7 +42,6 @@ export function OperationsPanel({
   } else {
     content = <InstanceRuntime data={data} />;
   }
-  if (!viewSwitch && (error || !data)) return content;
   return (
     <section className={operationsPanelStyles}>
       <div className={sectionHeadingStyles}>
@@ -89,7 +64,15 @@ export function OperationsPanel({
           </button>
         )}
       </div>
-      {content}
+      <QueryRegion
+        label={section === 'agents' ? 'Agent 运行结果' : '实例采样结果'}
+        loading={loading}
+        showProgress={!!data}
+      >
+        <div className={cn('grid min-w-0 gap-5', data && !error && operationsRevealStyles)}>
+          {content}
+        </div>
+      </QueryRegion>
     </section>
   );
 }

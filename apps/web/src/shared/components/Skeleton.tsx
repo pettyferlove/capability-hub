@@ -18,6 +18,7 @@ import {
   skeletonTableToolbarStyles,
   skeletonTableHeadStyles,
   skeletonTableRowStyles,
+  tablePaginationStyles,
   skeletonListStyles,
   skeletonListRowStyles,
   skeletonFormStyles,
@@ -47,7 +48,8 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useLoadingDelay } from './LoadingScope.js';
 import { PageHead } from './PageHead.js';
 
-function SkeletonBlock({
+/** 仅在骨架区域内作装饰，以同一套主题和动效绘制占位。 */
+export function SkeletonBlock({
   width = '100%',
   height = 12,
   shape = 'line',
@@ -70,7 +72,8 @@ function SkeletonBlock({
   );
 }
 
-function SkeletonRegion({
+/** 预留布局空间，沿用当前加载作用域的延迟，只向读屏播报区域名称。 */
+export function SkeletonRegion({
   label,
   children,
   className = '',
@@ -189,12 +192,16 @@ export function TableSkeleton({
   label = '正在加载表格…',
   rows = 5,
   columns = 4,
+  paginated = false,
+  stackOnMobile = false,
 }: {
   label?: string;
   /** 占位行数，默认 5；只是视觉密度，与真实分页大小无关。 */
   rows?: number;
   /** 列数，默认 4；必须与真实表头列数一致，否则切换时会横向跳动。 */
   columns?: number;
+  paginated?: boolean;
+  stackOnMobile?: boolean;
 }) {
   const cells = Array.from({ length: columns }, (_, i) => i);
   return (
@@ -203,22 +210,38 @@ export function TableSkeleton({
         className={skeletonTableStyles}
         style={{ '--skeleton-columns': columns } as CSSProperties}
       >
-        <div className={skeletonTableToolbarStyles}>
-          <SkeletonBlock width={108} />
-          <SkeletonBlock width={64} height={10} />
-        </div>
-        <div className={skeletonTableHeadStyles}>
+        {!paginated && (
+          <div className={skeletonTableToolbarStyles}>
+            <SkeletonBlock width={108} />
+            <SkeletonBlock width={64} height={10} />
+          </div>
+        )}
+        <div className={cn(skeletonTableHeadStyles, stackOnMobile && 'max-[760px]:hidden')}>
           {cells.map((i) => (
             <SkeletonBlock key={i} width="48%" height={10} />
           ))}
         </div>
         {Array.from({ length: rows }, (_, row) => (
-          <div className={skeletonTableRowStyles} key={row}>
+          <div
+            className={cn(
+              skeletonTableRowStyles,
+              paginated && row === rows - 1 && 'border-b-0',
+              stackOnMobile &&
+                'max-[760px]:grid-cols-[minmax(0,1fr)_4.5rem] max-[760px]:gap-y-3 max-[760px]:py-4 max-[760px]:[&>span:nth-child(even)]:justify-self-end',
+            )}
+            key={row}
+          >
             {cells.map((column) => (
               <SkeletonBlock key={column} width={`${64 + ((row + column) % 3) * 12}%`} />
             ))}
           </div>
         ))}
+        {paginated && (
+          <div className={tablePaginationStyles}>
+            <SkeletonBlock width="28%" />
+            <SkeletonBlock width={106} height={32} shape="rect" />
+          </div>
+        )}
       </div>
     </SkeletonRegion>
   );
@@ -282,17 +305,24 @@ export function SummarySkeleton({
 }) {
   return (
     <SkeletonRegion label={label}>
-      <div className={skeletonSummaryStyles}>
-        <SkeletonBlock width={156} height={16} />
-        {Array.from({ length: rows }, (_, i) => (
-          <div className={skeletonSummaryRowStyles} key={i}>
-            <SkeletonBlock width={`${40 + (i % 3) * 7}%`} />
-            <SkeletonBlock width="20%" />
-          </div>
-        ))}
-        <SkeletonBlock width="94%" height={10} />
-      </div>
+      <SummaryPlaceholder rows={rows} />
     </SkeletonRegion>
+  );
+}
+
+/** 在已统一计时和播报的骨架区域内组合键值面板。 */
+export function SummaryPlaceholder({ rows, note = true }: { rows: number; note?: boolean }) {
+  return (
+    <div className={skeletonSummaryStyles}>
+      <SkeletonBlock width={156} height={16} />
+      {Array.from({ length: rows }, (_, i) => (
+        <div className={skeletonSummaryRowStyles} key={i}>
+          <SkeletonBlock width={`${40 + (i % 3) * 7}%`} />
+          <SkeletonBlock width="20%" />
+        </div>
+      ))}
+      {note && <SkeletonBlock width="94%" height={10} />}
+    </div>
   );
 }
 

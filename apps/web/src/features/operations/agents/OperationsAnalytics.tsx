@@ -75,9 +75,12 @@ function DailyTrend({ series }: { series: ReturnType<typeof summarize>['series']
               className="flex h-full min-w-0 flex-1 flex-col justify-end"
               title={`${day.date} · 新建 ${day.total} · 失败或超时 ${day.failures}`}
             >
-              <span className="bg-danger" style={{ height: `${(100 * day.failures) / max}%` }} />
               <span
-                className="bg-brand"
+                className="bg-danger motion-safe:transition-[height]"
+                style={{ height: `${(100 * day.failures) / max}%` }}
+              />
+              <span
+                className="bg-brand motion-safe:transition-[height]"
                 style={{ height: `${(100 * (day.total - day.failures)) / max}%` }}
               />
             </div>

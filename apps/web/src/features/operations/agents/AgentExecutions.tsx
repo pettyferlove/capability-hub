@@ -19,18 +19,24 @@ import { ExecutionLedger } from './ExecutionLedger.js';
 import { ExecutionDiagnostics } from './ExecutionDiagnostics.js';
 import { ExecutionPanel } from '../../ai/ExecutionPanel.js';
 import { NewExecution } from './NewExecution.js';
+import { WorkspaceSkeleton } from '../OperationsSkeleton.js';
 import { useAiExecution } from '../../ai/use-ai-execution.js';
 import { fillStyles } from '../../ai/styles.js';
 import { workspaceStyles } from './styles.js';
 import { cn } from '../../../shared/styles/cn.js';
 
 /** 记录、诊断和新建表单各有独立链接，返回列表时保留筛选和页码。 */
-export function AgentExecutions({ query, viewSwitch }: { query: string; viewSwitch?: ReactNode }) {
+export function AgentExecutions({
+  selected,
+  creating,
+  viewSwitch,
+}: {
+  selected: string;
+  creating: boolean;
+  viewSwitch?: ReactNode;
+}) {
   const { me } = useHub();
   const canExecute = !!me?.capabilities.can_ai;
-  const params = new URLSearchParams(query);
-  const selected = params.get('execution') ?? '';
-  const creating = !selected && canExecute && params.get('new') === '1';
   const listing = !selected && !creating;
   const [catalog, setCatalog] = useState<AiCatalogResponse>();
   const [catalogError, setCatalogError] = useState('');
@@ -94,9 +100,7 @@ export function AgentExecutions({ query, viewSwitch }: { query: string; viewSwit
           />
         )}
         {((creating && !catalog && !catalogError) || (selected && !view && !execution.error)) && (
-          <p role="status" className="m-auto text-muted-ink">
-            正在加载工作区…
-          </p>
+          <WorkspaceSkeleton creating={creating} />
         )}
         {selected && view && (
           <ExecutionPanel

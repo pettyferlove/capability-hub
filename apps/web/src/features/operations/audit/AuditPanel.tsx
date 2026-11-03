@@ -50,6 +50,8 @@ import { Overlay } from '../../../shared/components/Overlay.js';
 import { SelectField } from '../../../shared/components/SelectField.js';
 import { ServerPagination } from '../../../shared/components/ServerPagination.js';
 import { TableSkeleton } from '../../../shared/components/Skeleton.js';
+import { AuditMetricsSkeleton } from '../OperationsSkeleton.js';
+import { operationsRevealStyles } from '../styles.js';
 import { QueryRegion } from '../../../shared/components/QueryRegion.js';
 import { useHub } from '../../../shared/context/HubContext.js';
 import { AuditEventDetail, AuditEventRow } from './AuditEventDetail.js';
@@ -116,37 +118,48 @@ export function AuditPanel() {
           刷新记录
         </button>
       </div>
-      <div className={auditMetricsStyles} aria-label="当前筛选结果概览" aria-busy={loading}>
-        <div>
-          <span>匹配事件</span>
-          <strong className={tnumStyles}>{data?.total ?? '—'}</strong>
-          <small>全部符合条件的记录</small>
-        </div>
-        <div className={data?.summary.failures ? hasFailuresStyles : ''}>
-          <span>
-            <CircleAlert size={14} />
-            操作失败
-          </span>
-          <strong className={tnumStyles}>{data?.summary.failures ?? '—'}</strong>
-          <small>已记录的失败操作</small>
-        </div>
-        <div>
-          <span>
-            <ShieldCheck size={14} />
-            账号与权限
-          </span>
-          <strong className={tnumStyles}>{data?.summary.identity ?? '—'}</strong>
-          <small>登录、授权和账号变更</small>
-        </div>
-        <div>
-          <span>
-            <Download size={14} />
-            资源下载
-          </span>
-          <strong className={tnumStyles}>{data?.summary.downloads ?? '—'}</strong>
-          <small>已记录的下载请求</small>
-        </div>
-      </div>
+      {!data && loading ? (
+        <AuditMetricsSkeleton />
+      ) : (
+        data &&
+        !error && (
+          <div
+            className={auditMetricsStyles}
+            aria-label={isPreviousData ? '上次查询结果概览' : '当前筛选结果概览'}
+            aria-busy={loading}
+          >
+            <div>
+              <span>匹配事件</span>
+              <strong className={tnumStyles}>{data.total}</strong>
+              <small>全部符合条件的记录</small>
+            </div>
+            <div className={data.summary.failures ? hasFailuresStyles : ''}>
+              <span>
+                <CircleAlert size={14} />
+                操作失败
+              </span>
+              <strong className={tnumStyles}>{data.summary.failures}</strong>
+              <small>已记录的失败操作</small>
+            </div>
+            <div>
+              <span>
+                <ShieldCheck size={14} />
+                账号与权限
+              </span>
+              <strong className={tnumStyles}>{data.summary.identity}</strong>
+              <small>登录、授权和账号变更</small>
+            </div>
+            <div>
+              <span>
+                <Download size={14} />
+                资源下载
+              </span>
+              <strong className={tnumStyles}>{data.summary.downloads}</strong>
+              <small>已记录的下载请求</small>
+            </div>
+          </div>
+        )
+      )}
       <div className={auditFiltersStyles}>
         <label className={auditSearchStyles}>
           <Search size={16} />
@@ -219,7 +232,11 @@ export function AuditPanel() {
         </label>
       </div>
       <div className={auditQueryCaptionStyles}>
-        <span>按时间倒序 · 精确到秒 · 统计随当前筛选更新</span>
+        <span>
+          {isPreviousData
+            ? '正在更新，当前显示上一次查询结果'
+            : '按时间倒序 · 精确到秒 · 统计随当前筛选更新'}
+        </span>
         {filtered && (
           <button type="button" className={textBtnStyles} onClick={clear}>
             <X size={13} />
@@ -227,10 +244,16 @@ export function AuditPanel() {
           </button>
         )}
       </div>
-      <QueryRegion label="审计查询结果" loading={loading} isPreviousData={isPreviousData}>
-        {error && <ErrorState message={error} retry={reload} />}
-        {!data && loading ? (
-          <TableSkeleton label="正在加载审计事件…" rows={5} columns={6} />
+      <QueryRegion
+        label="审计查询结果"
+        loading={loading}
+        isPreviousData={isPreviousData}
+        showProgress={!!data}
+      >
+        {error ? (
+          <ErrorState message={error} retry={reload} />
+        ) : !data && loading ? (
+          <TableSkeleton label="正在加载审计事件…" rows={5} columns={6} paginated stackOnMobile />
         ) : data && !data.items.length ? (
           <Empty
             title={filtered ? '没有匹配的审计事件' : '尚无审计事件'}
@@ -248,7 +271,10 @@ export function AuditPanel() {
           </Empty>
         ) : (
           data && (
-            <div className={cn(dataTableStyles, auditTableStyles)} aria-busy={loading}>
+            <div
+              className={cn(dataTableStyles, auditTableStyles, operationsRevealStyles)}
+              aria-busy={loading}
+            >
               <div className={tableWrapStyles} tabIndex={0} role="region" aria-label="审计事件表格">
                 <table aria-label="审计事件">
                   <thead>

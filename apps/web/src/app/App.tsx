@@ -23,6 +23,7 @@ import { useAppRoute } from './use-app-route.js';
 import { useSession } from './use-session.js';
 import { useTheme } from './theme.js';
 import { AppHeader } from './AppHeader.js';
+import OperationsCenter from '../features/operations/OperationsCenter.js';
 import { CommandPalette } from './CommandPalette.js';
 import { PageBoundary } from './PageBoundary.js';
 
@@ -31,7 +32,6 @@ const Publish = lazy(() => import('../features/publishing/PublishPage.js'));
 const Review = lazy(() => import('../features/review/ReviewPage.js'));
 const Connect = lazy(() => import('../features/connect/ConnectPage.js'));
 const Account = lazy(() => import('../features/identity/AccountPage.js'));
-const OperationsCenter = lazy(() => import('../features/operations/OperationsCenter.js'));
 const pagePlaceholders = {
   discover: { title: '资源目录', variant: 'cards' },
   publish: { title: '分享 Skill 与 MCP', variant: 'publish' },
@@ -39,7 +39,6 @@ const pagePlaceholders = {
   connect: { title: '安装与接入', variant: 'connect' },
   account: { title: '个人中心', variant: 'profile' },
   login: { title: '登录', variant: 'profile' },
-  operations: { title: '运营中心', variant: 'cards' },
 } as const;
 
 /**
@@ -92,7 +91,7 @@ export default function App() {
     if (me && view.page === 'login') navigate(loginReturnPath(view.query), { replace: true });
   }, [me, view.page, view.query]);
   const accountTab = new URLSearchParams(view.query).get('tab') ?? 'profile';
-  const placeholder = pagePlaceholders[view.page];
+  const placeholder = view.page === 'operations' ? undefined : pagePlaceholders[view.page];
   if (loading)
     return (
       <LoadingScope scopeKey={pageScrollKey}>
@@ -150,16 +149,18 @@ export default function App() {
           <PageBoundary key={view.page + (view.page === 'connect' ? '?' + view.query : '')}>
             <Suspense
               fallback={
-                <PageSkeleton
-                  title={placeholder.title}
-                  variant={
-                    view.page === 'account' && accountTab !== 'profile'
-                      ? accountTab === 'roles'
-                        ? 'roles'
-                        : 'table'
-                      : placeholder.variant
-                  }
-                />
+                placeholder && (
+                  <PageSkeleton
+                    title={placeholder.title}
+                    variant={
+                      view.page === 'account' && accountTab !== 'profile'
+                        ? accountTab === 'roles'
+                          ? 'roles'
+                          : 'table'
+                        : placeholder.variant
+                    }
+                  />
+                )
               }
             >
               <div className={pageContentStyles} key={view.page}>

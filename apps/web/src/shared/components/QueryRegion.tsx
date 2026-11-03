@@ -8,16 +8,18 @@ export function QueryRegion({
   children,
   label,
   loading,
-  isPreviousData,
+  isPreviousData = false,
+  showProgress = true,
   className = '',
 }: {
   children: ReactNode;
   label: string;
   loading: boolean;
-  isPreviousData: boolean;
+  isPreviousData?: boolean;
+  showProgress?: boolean;
   className?: string;
 }) {
-  const visible = useLoadingDelay(loading);
+  const visible = useLoadingDelay(loading && showProgress);
   return (
     <div
       className={cn(queryRegionStyles, className)}
@@ -25,7 +27,7 @@ export function QueryRegion({
       aria-label={label}
       aria-busy={loading}
     >
-      {loading && (
+      {loading && showProgress && (
         <span className={queryProgressStyles} aria-hidden="true" data-loading-visible={visible} />
       )}
       <div className={queryContentStyles} inert={isPreviousData}>

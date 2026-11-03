@@ -6,6 +6,7 @@ import {
 } from '@capability-hub/contracts';
 import { useQuery } from '../../../shared/api/use-query.js';
 import { ErrorState } from '../../../shared/components/ErrorState.js';
+import { QueryRegion } from '../../../shared/components/QueryRegion.js';
 import { Segmented } from '../../../shared/components/Segmented.js';
 import { TablePagination } from '../../../shared/components/TablePagination.js';
 import { RefreshCw } from '../../../shared/icons/lucide.js';
@@ -17,7 +18,13 @@ import {
   subtleStyles,
   tableWrapStyles,
 } from '../../../shared/styles/recipes.js';
-import { analyticsSummaryStyles, dailyCountsTableStyles } from '../styles.js';
+import { cn } from '../../../shared/styles/cn.js';
+import { TokenTotalsSkeleton, TokenDetailsSkeleton } from '../OperationsSkeleton.js';
+import {
+  analyticsSummaryStyles,
+  dailyCountsTableStyles,
+  operationsRevealStyles,
+} from '../styles.js';
 
 const periods: { id: TokenUsagePeriod; label: string }[] = [
   { id: 'today', label: '今天' },
@@ -82,11 +89,11 @@ function UsageTrend({ data }: { data: TokenUsageResponse }) {
                 }
               >
                 <span
-                  className="bg-success"
+                  className="bg-success motion-safe:transition-[height]"
                   style={{ height: (row.output_tokens * 100) / max + '%' }}
                 />
                 <span
-                  className="bg-brand"
+                  className="bg-brand motion-safe:transition-[height]"
                   style={{ height: (row.input_tokens * 100) / max + '%' }}
                 />
               </div>
@@ -225,76 +232,81 @@ export function TokenUsagePanel() {
   const error = query.error || (parsed && !data ? 'Token 用量数据格式无效' : '');
   const reload = () => setRefresh((value) => value + 1);
   return (
-    <div className={formStackStyles}>
-      <section className={panelStyles} aria-label="项目 Token 用量">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2>项目 Token 用量</h2>
-            <p className={subtleStyles}>
-              统计本实例保留的所有用户模型请求，按请求开始时间归入北京时间。
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Segmented
-              id="token-usage-period"
-              label="用量时间范围"
-              options={periods}
-              value={period}
-              onChange={setPeriod}
-            />
-            <button type="button" className={btnStyles} disabled={query.loading} onClick={reload}>
-              <RefreshCw size={14} />
-              刷新
-            </button>
-          </div>
-        </div>
-        {error ? (
-          <ErrorState message={error} retry={reload} />
-        ) : query.loading || !data ? (
-          <p role="status">正在读取 Token 用量…</p>
-        ) : (
-          <>
-            <div className={analyticsSummaryStyles}>
-              {(
-                [
-                  ['已确认 Token', confirmed(data.totals)],
-                  ['输入 Token', data.totals.input_tokens],
-                  ['输出 Token', data.totals.output_tokens],
-                ] as const
-              ).map(([label, value]) => (
-                <div key={label}>
-                  <span>{label}</span>
-                  <strong>{number.format(value)}</strong>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-label">
-              模型请求 {number.format(data.totals.requests)} 次 · 用量完整{' '}
-              {number.format(
-                data.totals.requests - data.totals.unknown_requests - data.totals.pending_requests,
-              )}{' '}
-              次 · 用量不完整 {number.format(data.totals.unknown_requests)} 次 · 待结算{' '}
-              {number.format(data.totals.pending_requests)} 次
-            </p>
-            {!!data.totals.unknown_requests && (
+    <QueryRegion label="Token 用量结果" loading={query.loading} showProgress={!!data}>
+      <div className={formStackStyles}>
+        <section className={panelStyles} aria-label="项目 Token 用量">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2>项目 Token 用量</h2>
               <p className={subtleStyles}>
-                不完整请求已回传输入 {number.format(data.totals.partial_input_tokens)}、输出{' '}
-                {number.format(data.totals.partial_output_tokens)} Token，单独列示。
+                统计本实例保留的所有用户模型请求，按请求开始时间归入北京时间。
               </p>
-            )}
-            <p className={subtleStyles}>
-              采样于 {observedTime.format(new Date(data.observed_at))}（北京时间）。
-            </p>
-            {!data.totals.requests && <p role="status">所选范围没有模型请求。</p>}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Segmented
+                id="token-usage-period"
+                label="用量时间范围"
+                options={periods}
+                value={period}
+                onChange={setPeriod}
+              />
+              <button type="button" className={btnStyles} disabled={query.loading} onClick={reload}>
+                <RefreshCw size={14} />
+                刷新
+              </button>
+            </div>
+          </div>
+          {error ? (
+            <ErrorState message={error} retry={reload} />
+          ) : !data ? (
+            <TokenTotalsSkeleton />
+          ) : (
+            <>
+              <div className={cn(analyticsSummaryStyles, operationsRevealStyles)}>
+                {(
+                  [
+                    ['已确认 Token', confirmed(data.totals)],
+                    ['输入 Token', data.totals.input_tokens],
+                    ['输出 Token', data.totals.output_tokens],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label}>
+                    <span>{label}</span>
+                    <strong>{number.format(value)}</strong>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-label">
+                模型请求 {number.format(data.totals.requests)} 次 · 用量完整{' '}
+                {number.format(
+                  data.totals.requests -
+                    data.totals.unknown_requests -
+                    data.totals.pending_requests,
+                )}{' '}
+                次 · 用量不完整 {number.format(data.totals.unknown_requests)} 次 · 待结算{' '}
+                {number.format(data.totals.pending_requests)} 次
+              </p>
+              {!!data.totals.unknown_requests && (
+                <p className={subtleStyles}>
+                  不完整请求已回传输入 {number.format(data.totals.partial_input_tokens)}、输出{' '}
+                  {number.format(data.totals.partial_output_tokens)} Token，单独列示。
+                </p>
+              )}
+              <p className={subtleStyles}>
+                采样于 {observedTime.format(new Date(data.observed_at))}（北京时间）。
+              </p>
+              {!data.totals.requests && <p role="status">所选范围没有模型请求。</p>}
+            </>
+          )}
+        </section>
+        {!error && !data && <TokenDetailsSkeleton />}
+        {!error && data && data.totals.requests > 0 && (
+          <>
+            <UsageTrend data={data} />
+            <UsageDistribution key={period} data={data} />
           </>
         )}
-      </section>
-      {!error && !query.loading && data && data.totals.requests > 0 && (
-        <>
-          <UsageTrend data={data} />
-          <UsageDistribution key={period} data={data} />
-        </>
-      )}
-    </div>
+      </div>
+    </QueryRegion>
   );
 }

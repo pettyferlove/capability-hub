@@ -2,12 +2,13 @@ import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { createElement, useState } from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
+import { deferred } from '../support/store.js';
 import { OperationsAnalytics } from '../../apps/web/src/features/operations/agents/OperationsAnalytics.js';
 import { TokenUsagePanel } from '../../apps/web/src/features/operations/usage/TokenUsagePanel.js';
 import type { TokenUsageResponse } from '@capability-hub/contracts';
-import type { OperationsResponse } from '@capability-hub/contracts/http';
+import type { AuditLogResponse, OperationsResponse } from '@capability-hub/contracts/http';
 import { OperationsPanel } from '../../apps/web/src/features/operations/OperationsPanel.js';
 import OperationsCenter from '../../apps/web/src/features/operations/OperationsCenter.js';
 import {
@@ -127,6 +128,39 @@ test('运营趋势缺少日期时允许重试，只有成功读取完整窗口�
   assert.equal(screen.getAllByRole('figure').length, 3);
 });
 
+test('刷新时保留展开的逐日明细，切换范围后不显示迟到的旧采样', async (t) => {
+  const user = userEvent.setup();
+  let seven = deferred();
+  const thirty = deferred();
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    const days = Number(new URL(path, 'http://localhost').searchParams.get('days'));
+    await (days === 7 ? seven : thirty).promise;
+    const sample = resourceSample(days);
+    sample.daily[0].downloads = days;
+    return Response.json(sample);
+  });
+  renderCenter('', true, false);
+  const result = within(await screen.findByRole('region', { name: '资源趋势结果', busy: true }));
+  assert(result.getByText('正在读取资源趋势…'));
+  assert.equal(result.queryByRole('figure'), null);
+  await act(async () => seven.resolve());
+  await user.click(await result.findByText('查看逐日明细'));
+  const table = result.getByRole('table', { name: '资源运营逐日明细' });
+
+  seven = deferred();
+  await user.click(screen.getByRole('button', { name: '刷新' }));
+  assert(screen.getByRole('region', { name: '资源趋势结果', busy: true }));
+  assert.equal(result.getByRole('table', { name: '资源运营逐日明细' }), table);
+  assert.equal(result.queryByText('正在读取资源趋势…'), null);
+  await user.click(screen.getByRole('radio', { name: '近 30 天' }));
+  await act(async () => seven.resolve());
+  assert(result.getByText('正在读取资源趋势…'));
+  assert.equal(result.queryByRole('table'), null);
+  assert.equal(result.queryByText('7', { selector: 'dd' }), null);
+  await act(async () => thirty.resolve());
+  assert(result.getByText('30', { selector: 'dd' }));
+});
+
 for (const [query, audit, inspect, message] of [
   ['tab=agents&execution=private', true, false, '当前账号无权访问 Agent 执行记录。'],
   ['tab=usage', false, true, '当前账号无法访问此运营栏目。'],
@@ -159,6 +193,62 @@ test('运营链接保留任务参数，导航、登录回跳与详情来源都�
   }
 });
 
+test('审计翻页时标明旧结果并冻结详情入口，失败后收起旧记录和统计', async (t) => {
+  const first = deferred<Response>();
+  const next = deferred<Response>();
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    const url = new URL(path, 'http://localhost');
+    assert.equal(url.pathname, '/api/admin/audit');
+    return (url.searchParams.get('page') === '1' ? first : next).promise;
+  });
+  renderCenter('tab=audit', true, false);
+  const results = within(await screen.findByRole('region', { name: '审计查询结果', busy: true }));
+  assert(screen.getByText('正在加载审计统计…'));
+  assert(results.getByText('正在加载审计事件…'));
+  assert.equal(screen.queryByText('尚无审计事件'), null);
+  const page: AuditLogResponse = {
+    items: [
+      {
+        id: 'login-1',
+        occurred_at: '2026-11-02T05:00:00.000Z',
+        action: 'login',
+        action_label: '账号登录',
+        category: 'identity',
+        result: 'success',
+        recorded_result: 'success',
+        reason: '',
+        changes: [],
+        facts: [],
+        actor: { kind: 'user', id: 'owner', name: '审计用户', name_source: 'event' },
+        subject: {
+          kind: 'session',
+          id: 'session',
+          name: '登录会话',
+          detail: '',
+          name_source: 'event',
+          href: null,
+        },
+      },
+    ],
+    page: 1,
+    page_size: 10,
+    total: 11,
+    summary: { failures: 0, identity: 11, publication: 0, downloads: 0 },
+  };
+  await act(async () => first.resolve(Response.json(page)));
+  const row = results.getByText('账号登录');
+  await userEvent.setup().click(results.getByRole('button', { name: '审计事件下一页' }));
+  assert(screen.getByText('正在更新，当前显示上一次查询结果'));
+  assert(row.closest('[inert]'));
+  assert.equal(results.queryByText('正在加载审计事件…'), null);
+  await act(async () =>
+    next.resolve(Response.json({ error: { message: '查询暂不可用' } }, { status: 503 })),
+  );
+  assert(results.getByText('查询暂不可用'));
+  assert.equal(results.queryByText('账号登录'), null);
+  assert.equal(screen.queryByText('匹配事件'), null);
+});
+
 test('Token 用量切换归属和范围，部分回传与尚无请求分别显示', async (t) => {
   const user = userEvent.setup();
   const totals = {
@@ -181,7 +271,9 @@ test('Token 用量切换归属和范围，部分回传与尚无请求分别显�
     by_profile: [{ id: 'primary', label: '主模型', ...totals }],
     by_user: [{ id: 'owner', label: '负责人甲', ...totals }],
   };
+  let usageRead = Promise.resolve();
   t.mock.method(globalThis, 'fetch', async (path: string) => {
+    await usageRead;
     if (path === '/api/admin/token-usage?period=all') return Response.json(snapshot);
     assert.equal(path, '/api/admin/token-usage?period=7d');
     return Response.json({
@@ -215,7 +307,22 @@ test('Token 用量切换归属和范围，部分回传与尚无请求分别显�
   await user.click(groups.getByRole('radio', { name: '用户' }));
   assert(groups.getByText('负责人甲'));
   assert(groups.getByText('100.0%'));
+  const refresh = deferred();
+  usageRead = refresh.promise;
+  await user.click(overview.getByRole('button', { name: '刷新' }));
+  assert(screen.getByRole('region', { name: 'Token 用量结果', busy: true }));
+  assert(groups.getByRole('radio', { name: '用户', checked: true }));
+  assert(groups.getByText('负责人甲'));
+  await act(async () => refresh.resolve());
+  assert(groups.getByRole('radio', { name: '用户', checked: true }));
+  const nextPeriod = deferred();
+  usageRead = nextPeriod.promise;
   await user.click(overview.getByRole('radio', { name: '近 7 天' }));
+  assert(overview.getByText('正在读取 Token 用量…'));
+  assert.equal(overview.queryByText('100'), null);
+  assert.equal(screen.queryByText('负责人甲'), null);
+  assert.equal(overview.queryByText('所选范围没有模型请求。'), null);
+  await act(async () => nextPeriod.resolve());
   assert(await overview.findByText('所选范围没有模型请求。'));
   assert.equal(screen.queryByRole('region', { name: 'Token 用量分布' }), null);
 });
@@ -278,9 +385,11 @@ test('刷新恢复的存储和 Agent 统计时，页面区分采样失败和没�
     scans: null,
     disk: { available: false },
   };
-  t.mock.method(globalThis, 'fetch', (path: string) => {
+  let snapshotReady = Promise.resolve();
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
     assert.equal(path, '/api/admin/operations');
-    return Promise.resolve(Response.json(snapshot));
+    await snapshotReady;
+    return Response.json(snapshot);
   });
   const runtime = render(createElement(OperationsView, { section: 'runtime' }));
   const objects = within(await screen.findByRole('region', { name: '对象存储' }));
@@ -322,8 +431,14 @@ test('刷新恢复的存储和 Agent 统计时，页面区分采样失败和没�
     version: '2',
     activity: { by_status: { waiting_input: 3 }, last_activity_at: time },
   });
+  const refresh = deferred();
+  snapshotReady = refresh.promise;
   fireEvent.click(within(runtime.container).getByRole('button', { name: '刷新' }));
   fireEvent.click(within(analysis.container).getByRole('button', { name: '刷新' }));
+  assert(within(runtime.container).getByRole('region', { name: '实例采样结果', busy: true }));
+  assert(objects.getByText('探测失败'));
+  assert(agents.getByText('执行统计暂不可用'));
+  await act(async () => refresh.resolve());
   assert(await objects.findByText('探测正常'));
   assert.equal(metric('成功备份记录'), '无法读取');
   assert.equal(metric('本实例 Worker'), '工作中');

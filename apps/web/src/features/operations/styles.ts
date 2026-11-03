@@ -1,5 +1,8 @@
 import { cn } from '../../shared/styles/cn.js';
 
+export const operationsRevealStyles =
+  'motion-safe:[animation:operations-content-in_var(--duration-normal)_ease-out]';
+
 export const operationsGridStyles = cn(
   'grid grid-cols-2 items-stretch gap-4.5 max-[760px]:grid-cols-1',
   '[&>section]:flex [&>section]:min-w-0 [&>section]:flex-col [&>section>dl]:grid [&>section>dl]:grow',

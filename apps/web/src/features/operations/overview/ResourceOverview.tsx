@@ -6,6 +6,9 @@ import {
 import { useQuery } from '../../../shared/api/use-query.js';
 import { Segmented } from '../../../shared/components/Segmented.js';
 import { ErrorState } from '../../../shared/components/ErrorState.js';
+import { QueryRegion } from '../../../shared/components/QueryRegion.js';
+import { OverviewSkeleton } from '../OperationsSkeleton.js';
+import { operationsRevealStyles } from '../styles.js';
 import { RefreshCw } from '../../../shared/icons/lucide.js';
 import {
   btnStyles,
@@ -69,7 +72,7 @@ function Trend({
             title={day.date + ' · ' + number.format(series[i]) + ' ' + unit}
           >
             <span
-              className={cn('w-full max-w-8 rounded-t-sm', color)}
+              className={cn('w-full max-w-8 rounded-t-sm motion-safe:transition-[height]', color)}
               style={{ height: (100 * series[i]) / (peak || 1) + '%' }}
             />
           </div>
@@ -123,10 +126,7 @@ export function ResourceOverview() {
           <h2>资源运营概览</h2>
           <p className={subtleStyles}>
             按北京时间统计正式发布、资源使用请求和新提交的反馈。
-            {data &&
-              !error &&
-              !result.loading &&
-              '采样于 ' + time.format(new Date(data.observed_at)) + '。'}
+            {data && !error && '采样于 ' + time.format(new Date(data.observed_at)) + '。'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -143,105 +143,107 @@ export function ResourceOverview() {
           </button>
         </div>
       </div>
-      {error ? (
-        <ErrorState message={error} retry={reload} />
-      ) : result.loading || !data ? (
-        <p role="status">正在读取资源趋势…</p>
-      ) : (
-        <>
-          {data.daily.every((day) => !releases(day) && !usage(day) && !feedback(day)) && (
-            <p role="status" className={subtleStyles}>
-              所选期间没有资源发布、使用请求或新增反馈。
-            </p>
-          )}
-          <div className="grid gap-3 md:grid-cols-3">
-            <Trend
-              label="正式发布"
-              unit="次"
-              daily={data.daily}
-              value={releases}
-              color="bg-brand"
-            />
-            <Trend
-              label="资源使用请求"
-              unit="次"
-              daily={data.daily}
-              value={usage}
-              color="bg-info"
-            />
-            <Trend
-              label="新增反馈"
-              unit="条"
-              daily={data.daily}
-              value={feedback}
-              color="bg-warning"
-            />
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            <Counts
-              title="发布构成"
-              note="同一资源按发布序号区分首次和后续发布。"
-              rows={[
-                ['首次发布', sum('first_releases')],
-                ['后续发布', sum('repeat_releases')],
-              ]}
-            />
-            <Counts
-              title="使用渠道"
-              note="计数来自审计记录，表示分发请求次数。"
-              rows={[
-                ['归档下载', sum('downloads')],
-                ['Skill 加载', sum('skill_loads')],
-                ['Skill 安装准备', sum('install_requests')],
-              ]}
-            />
-            <Counts
-              title="反馈处理状态"
-              note="所选期间提交的反馈，按当前处理状态分组。"
-              rows={[
-                ['待处理', sum('feedback_pending')],
-                ['处理中', sum('feedback_in_progress')],
-                ['已解决', sum('feedback_resolved')],
-                ['不采纳', sum('feedback_declined')],
-              ]}
-            />
-          </div>
-          <details className={panelStyles}>
-            <summary className="cursor-pointer font-medium">查看逐日明细</summary>
-            <div className={cn(dataTableStyles, 'mt-3')}>
-              <div className={tableWrapStyles}>
-                <table className="text-right" aria-label="资源运营逐日明细">
-                  <thead>
-                    <tr>
-                      {['日期', '正式发布', '归档下载', 'Skill 加载', '安装准备', '新增反馈'].map(
-                        (label) => (
-                          <th scope="col" key={label} className="first:text-left">
-                            {label}
-                          </th>
-                        ),
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.daily.map((day) => (
-                      <tr key={day.date}>
-                        <th className="text-left" scope="row">
-                          {day.date}
-                        </th>
-                        <td>{releases(day)}</td>
-                        <td>{day.downloads}</td>
-                        <td>{day.skill_loads}</td>
-                        <td>{day.install_requests}</td>
-                        <td>{feedback(day)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+      <QueryRegion label="资源趋势结果" loading={result.loading} showProgress={!!data}>
+        {error ? (
+          <ErrorState message={error} retry={reload} />
+        ) : !data ? (
+          <OverviewSkeleton />
+        ) : (
+          <div className={cn('grid min-w-0 gap-4', operationsRevealStyles)}>
+            {data.daily.every((day) => !releases(day) && !usage(day) && !feedback(day)) && (
+              <p role="status" className={subtleStyles}>
+                所选期间没有资源发布、使用请求或新增反馈。
+              </p>
+            )}
+            <div className="grid gap-3 md:grid-cols-3">
+              <Trend
+                label="正式发布"
+                unit="次"
+                daily={data.daily}
+                value={releases}
+                color="bg-brand"
+              />
+              <Trend
+                label="资源使用请求"
+                unit="次"
+                daily={data.daily}
+                value={usage}
+                color="bg-info"
+              />
+              <Trend
+                label="新增反馈"
+                unit="条"
+                daily={data.daily}
+                value={feedback}
+                color="bg-warning"
+              />
             </div>
-          </details>
-        </>
-      )}
+            <div className="grid gap-3 md:grid-cols-3">
+              <Counts
+                title="发布构成"
+                note="同一资源按发布序号区分首次和后续发布。"
+                rows={[
+                  ['首次发布', sum('first_releases')],
+                  ['后续发布', sum('repeat_releases')],
+                ]}
+              />
+              <Counts
+                title="使用渠道"
+                note="计数来自审计记录，表示分发请求次数。"
+                rows={[
+                  ['归档下载', sum('downloads')],
+                  ['Skill 加载', sum('skill_loads')],
+                  ['Skill 安装准备', sum('install_requests')],
+                ]}
+              />
+              <Counts
+                title="反馈处理状态"
+                note="所选期间提交的反馈，按当前处理状态分组。"
+                rows={[
+                  ['待处理', sum('feedback_pending')],
+                  ['处理中', sum('feedback_in_progress')],
+                  ['已解决', sum('feedback_resolved')],
+                  ['不采纳', sum('feedback_declined')],
+                ]}
+              />
+            </div>
+            <details className={panelStyles}>
+              <summary className="cursor-pointer font-medium">查看逐日明细</summary>
+              <div className={cn(dataTableStyles, 'mt-3')}>
+                <div className={tableWrapStyles}>
+                  <table className="text-right" aria-label="资源运营逐日明细">
+                    <thead>
+                      <tr>
+                        {['日期', '正式发布', '归档下载', 'Skill 加载', '安装准备', '新增反馈'].map(
+                          (label) => (
+                            <th scope="col" key={label} className="first:text-left">
+                              {label}
+                            </th>
+                          ),
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.daily.map((day) => (
+                        <tr key={day.date}>
+                          <th className="text-left" scope="row">
+                            {day.date}
+                          </th>
+                          <td>{releases(day)}</td>
+                          <td>{day.downloads}</td>
+                          <td>{day.skill_loads}</td>
+                          <td>{day.install_requests}</td>
+                          <td>{feedback(day)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </details>
+          </div>
+        )}
+      </QueryRegion>
     </section>
   );
 }
