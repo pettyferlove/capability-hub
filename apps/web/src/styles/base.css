@@ -60,6 +60,7 @@
   summary {
     @apply outline-offset-2;
   }
+  /* 虚拟焦点选项可能没有 DOM 焦点，只排除包含实际焦点的祖先容器。 */
   :where(
     button:not([data-rac]),
     a:not([data-rac]),
@@ -68,8 +69,8 @@
     textarea:not([data-rac]),
     summary
   ):focus-visible,
-  [data-rac][data-focus-visible] {
-    @apply outline-2 outline-solid outline-brand;
+  [data-rac][data-focus-visible]:not(:has(:focus)) {
+    outline: 2px solid var(--brand);
   }
   [data-rac]:focus-visible:not([data-focus-visible]) {
     outline: none;

@@ -823,6 +823,9 @@ export const skeletonCardGridRoleStyles =
 export const skeletonCardStyles = cn(
   'group/skeleton-card flex flex-col gap-5 min-w-0 min-h-[285px] pt-6 pr-[23px] pb-[17px] pl-[23px]',
   'border border-solid border-[color:var(--line)] rounded-[14px] bg-paper',
+  "[[class~='group/skeleton-card-grid--asset']_&]:min-h-0 [[class~='group/skeleton-card-grid--asset']_&]:gap-3.5",
+  "[[class~='group/skeleton-card-grid--asset']_&]:px-4.5 [[class~='group/skeleton-card-grid--asset']_&]:pt-[19px]",
+  "[[class~='group/skeleton-card-grid--asset']_&]:pb-[15px] max-[600px]:[[class~='group/skeleton-card-grid--asset']_&]:px-4",
   "[[class~='group/skeleton-card-grid--role']_&]:min-h-28",
   "[[class~='group/skeleton-card-grid--role']_&]:pt-4",
   "[[class~='group/skeleton-card-grid--role']_&]:pr-4",
@@ -853,8 +856,7 @@ export const skeletonCardStyles = cn(
   "[[class~='group/skeleton-review-stage']_>_&:last-child]:pb-0",
   "[[class~='group/skeleton-review-stage']_>_&:last-child]:pl-0",
   "[[class~='group/skeleton-review-stage']_>_&:last-child]:overflow-hidden",
-  "min-[1400px]:[[class~='group/skeleton-card-grid--asset']_&]:min-h-75 max-[600px]:pt-5",
-  'max-[600px]:pr-5 max-[600px]:pb-5 max-[600px]:pl-5',
+  'max-[600px]:pt-5 max-[600px]:pr-5 max-[600px]:pb-5 max-[600px]:pl-5',
 );
 
 export const skeletonCardHeaderStyles = 'flex items-center gap-3 min-w-0';

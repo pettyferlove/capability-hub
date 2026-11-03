@@ -40,6 +40,7 @@ import { useQuery } from '../../shared/api/use-query.js';
 import { CodeBlock } from '../../shared/components/CodeBlock.js';
 import { Empty } from '../../shared/components/Empty.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
+import { Message } from '../../shared/components/Message.js';
 import { PageTabs } from '../../shared/components/PageTabs.js';
 import { SafeMarkdown, markdownBody } from '../../shared/components/SafeMarkdown.js';
 import { CodeSkeleton, ListSkeleton } from '../../shared/components/Skeleton.js';
@@ -272,6 +273,9 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
           />
         </div>
         <div hidden={view.tab !== 'installation'}>
+          {asset.current_release.has_scripts && (
+            <Message>此版本含可执行脚本，建议安装前在「文件清单」中审阅。</Message>
+          )}
           <ResourceInstallation asset={asset} origin={location.origin} />
         </div>
         <div hidden={view.tab !== 'feedback'}>

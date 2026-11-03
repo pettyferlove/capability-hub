@@ -42,6 +42,7 @@ export function Glyph({
   animate = false,
   diffWith,
   className = '',
+  pixelRevealClassName,
 }: {
   seed: string;
   kind: Kind;
@@ -49,11 +50,14 @@ export function Glyph({
   animate?: boolean;
   diffWith?: string;
   className?: string;
+  /** 仅点亮的静态格按阅读顺序错开动画，触发条件由调用方的样式决定。 */
+  pixelRevealClassName?: string;
 }) {
   const on = cells(seed);
   const other = diffWith ? cells(diffWith) : null;
   const fill = kind === 'skill' ? 'var(--glyph-skill)' : 'var(--glyph-mcp)';
   const cell = 100 / 5;
+  let revealIndex = 0;
   return (
     <svg
       width={size}
@@ -79,7 +83,18 @@ export function Glyph({
           stroke: changed ? 'var(--danger)' : 'none',
           strokeWidth: changed ? 3 : 0,
         };
-        if (!animate) return <rect key={i} {...shape} opacity={v ? 1 : 0.9} />;
+        if (!animate) {
+          const revealClass = v ? pixelRevealClassName : undefined;
+          return (
+            <rect
+              key={i}
+              {...shape}
+              opacity={v ? 1 : 0.9}
+              className={revealClass}
+              style={revealClass ? { animationDelay: `${revealIndex++ * 20}ms` } : undefined}
+            />
+          );
+        }
         return (
           <motion.rect
             key={i}

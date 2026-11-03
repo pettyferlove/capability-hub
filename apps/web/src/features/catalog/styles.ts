@@ -302,59 +302,61 @@ export const catalogResultStateStyles = '[grid-column:1_/_-1] min-w-0';
 export const assetGridItemStyles = 'group/asset-grid-item min-w-0';
 
 export const assetCardStyles = cn(
-  "group/asset-card [[class~='group/asset-grid-item']_>_&]:h-full flex flex-col pt-6 pr-[23px]",
-  'pb-[17px] pl-[23px] bg-paper border border-solid border-[color:var(--line)] rounded-[14px] text-ink min-h-[285px]',
-  '[transition:box-shadow_0.2s,_border-color_0.2s,_transform_0.2s]',
-  'hover:border-t-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
-  'hover:border-r-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
-  'hover:border-b-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
-  'hover:border-l-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
-  'hover:[transform:translateY(-3px)] hover:[box-shadow:var(--shadow)]',
-  'focus-visible:border-t-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
-  'focus-visible:border-r-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
-  'focus-visible:border-b-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
-  'focus-visible:border-l-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
-  'focus-visible:[transform:translateY(-3px)] focus-visible:[box-shadow:var(--shadow)]',
+  "group/asset-card relative isolate [[class~='group/asset-grid-item']_>_&]:h-full flex flex-col px-4.5 pt-[19px] pb-[15px]",
+  'bg-paper border border-solid border-[color:var(--line)] rounded-[14px] text-ink max-[600px]:px-4',
+  '[box-shadow:var(--shadow)] transition-[translate,border-color,box-shadow] duration-200 ease-out motion-reduce:transition-none',
+  'group-hover/asset-grid-item:border-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
+  'group-hover/asset-grid-item:[box-shadow:var(--shadow-floating)] motion-safe:group-hover/asset-grid-item:-translate-y-0.5',
+  'focus-visible:border-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
+  'focus-visible:[box-shadow:var(--shadow-floating)] motion-safe:focus-visible:-translate-y-0.5',
   'focus-visible:[outline:2px_solid_var(--brand)] focus-visible:[outline-offset:3px]',
-  '[&_h3]:[display:-webkit-box] [&_h3]:[-webkit-line-clamp:2] [&_h3]:[-webkit-box-orient:vertical]',
-  '[&_h3]:overflow-hidden [&_h3]:font-mono [&_h3]:text-[length:15px] [&_h3]:[font-weight:550]',
-  '[&_h3]:tracking-[-0.3px] [&_h3]:[overflow-wrap:anywhere] [&_>_p]:[display:-webkit-box]',
-  '[&_>_p]:[-webkit-line-clamp:3] [&_>_p]:[-webkit-box-orient:vertical] [&_>_p]:overflow-hidden',
-  '[&_>_p]:min-h-[5.7em] [&_>_p]:text-[length:12px] [&_>_p]:text-muted-ink [&_>_p]:leading-[1.9]',
-  '[&_>_p]:[flex:initial] [&_>_p]:mb-[15px] [&_>_p]:[overflow-wrap:anywhere] min-[1400px]:min-h-75',
-  'max-[600px]:pt-[21px] max-[600px]:pr-5 max-[600px]:pb-4 max-[600px]:pl-5',
-  'max-[600px]:min-h-[255px] max-[600px]:[&_>_p]:text-[length:12px]',
+  '[&_h3]:line-clamp-2 [&_h3]:font-mono [&_h3]:text-[length:16px] [&_h3]:font-medium',
+  '[&_h3]:leading-[1.35] [&_h3]:tracking-[-0.25px] [&_h3]:[overflow-wrap:anywhere]',
+  '[&>p]:line-clamp-3 [&>p]:my-[13px] [&>p]:text-[length:13px] [&>p]:leading-[1.7]',
+  '[&>p]:text-muted-ink [&>p]:[overflow-wrap:anywhere]',
 );
 
-export const assetCardTopStyles = 'flex items-center gap-2.5 mb-[15px] max-[600px]:mb-3';
+export const assetCardCornerDotsStyles = cn(
+  'pointer-events-none absolute right-0 top-0 -z-10 h-24 w-1/2 max-w-44 rounded-tr-[inherit]',
+  'bg-top-right opacity-60 [background-size:var(--space-3)_var(--space-3)]',
+  '[mask-image:radial-gradient(ellipse_100%_100%_at_top_right,var(--mask-solid),transparent)] forced-colors:hidden',
+);
+
+export const assetCardPixelRevealStyles = cn(
+  'origin-center [transform-box:fill-box]',
+  'motion-safe:group-hover/asset-grid-item:animate-[agent-dot-in_380ms_var(--ease-out)_both]',
+  'motion-safe:group-focus-visible/asset-card:animate-[agent-dot-in_380ms_var(--ease-out)_both]',
+);
+
+export const assetCardTopStyles = 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5';
+
+export const assetCardSubtitleStyles =
+  'mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-caption leading-4 text-muted-ink';
 
 export const cardArrowStyles = cn(
-  "ml-auto text-muted-ink opacity-[0.4] [[class~='group/asset-card']:hover_&]:opacity-[1]",
-  "[[class~='group/asset-card']:hover_&]:text-brand",
-  "[[class~='group/asset-card']:focus-visible_&]:opacity-[1]",
-  "[[class~='group/asset-card']:focus-visible_&]:text-brand",
+  'mt-0.5 self-start text-muted-ink opacity-60 transition-[translate,color,opacity] duration-200 ease-out motion-reduce:transition-none',
+  'group-hover/asset-grid-item:text-brand group-hover/asset-grid-item:opacity-100',
+  'group-focus-visible/asset-card:text-brand group-focus-visible/asset-card:opacity-100',
+  'motion-safe:group-hover/asset-grid-item:translate-x-0.5 motion-safe:group-hover/asset-grid-item:-translate-y-0.5',
+  'motion-safe:group-focus-visible/asset-card:translate-x-0.5 motion-safe:group-focus-visible/asset-card:-translate-y-0.5',
 );
 
-export const assetVersionStyles = cn(
-  'block overflow-hidden text-ellipsis whitespace-nowrap text-[length:11px] text-muted-ink mt-[3px]',
-  'mr-0 mb-2.5 ml-0',
-);
-
-export const assetCardMetaStyles = 'flex flex-col gap-2 mt-auto pb-4';
+export const assetVersionStyles =
+  'inline-flex min-w-0 max-w-full items-center gap-1 font-mono [&>svg]:shrink-0';
 
 export const assetCardTagsStyles = cn(
-  "group/asset-card-tags items-start min-h-6 [&_[class~='group/tag']]:max-w-full",
+  "items-start mb-3.5 empty:hidden [&_[class~='group/tag']]:max-w-full",
   "[&_[class~='group/tag']]:[overflow-wrap:anywhere]",
 );
 
 export const matchReasonStyles = cn(
   'text-brand [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]',
-  'overflow-hidden leading-[1.6] [overflow-wrap:anywhere]',
+  'mb-3.5 overflow-hidden leading-[1.6] [overflow-wrap:anywhere]',
 );
 
 export const assetCardFootStyles = cn(
   'flex items-center gap-1.5 text-[length:11px] text-muted-ink border-t [border-top-style:solid] border-t-[color:var(--line)]',
-  'pt-[13px] mt-0',
+  'pt-3 mt-auto',
 );
 
 export const cardRecommendationsStyles =
@@ -371,7 +373,7 @@ export const ownerAvatarStyles = cn(
 export const assetOwnerNameStyles = 'overflow-hidden text-ellipsis whitespace-nowrap';
 
 export const audienceLabelStyles =
-  'ml-auto text-[length:11px] shrink-0 max-w-[48%] overflow-hidden text-ellipsis whitespace-nowrap';
+  'ml-auto inline-flex max-w-[48%] shrink-0 items-center gap-1 text-caption [&>svg]:shrink-0';
 
 export const paginationStyles = 'flex justify-center mt-7.5';
 

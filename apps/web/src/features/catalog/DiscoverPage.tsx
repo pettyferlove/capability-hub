@@ -34,12 +34,14 @@ import {
   catalogResultStateStyles,
   assetGridItemStyles,
   assetCardStyles,
+  assetCardCornerDotsStyles,
+  assetCardPixelRevealStyles,
   assetCardTopStyles,
   assetSymbolStyles,
   typeLabelStyles,
+  assetCardSubtitleStyles,
   cardArrowStyles,
   assetVersionStyles,
-  assetCardMetaStyles,
   assetCardTagsStyles,
   matchReasonStyles,
   assetCardFootStyles,
@@ -57,10 +59,8 @@ import {
   inlineIconStyles,
   filterTabsStyles,
   selectedStyles,
-  monoStyles,
   chipsStyles,
   tagStyles,
-  tagTealStyles,
   btnStyles,
   textBtnStyles,
 } from '../../shared/styles/recipes.js';
@@ -75,11 +75,16 @@ import {
   ArrowRight,
   ArrowUpRight,
   FileCode2,
+  GitCommitHorizontal,
+  Globe,
+  LockKeyhole,
   Plug,
   Search,
   RefreshCw,
   SlidersHorizontal,
+  Tag,
   ThumbsUp,
+  UsersRound,
   X,
 } from '../../shared/icons/lucide.js';
 import { AnimatePresence } from 'motion/react';
@@ -384,79 +389,7 @@ export default function DiscoverPage() {
                   className={assetGridItemStyles}
                   index={index}
                 >
-                  <a href={assetHref(a.slug)} className={assetCardStyles}>
-                    <div className={assetCardTopStyles}>
-                      <span className={cn(assetSymbolStyles, `group/${a.kind}`)}>
-                        <Glyph seed={a.content_digest} kind={a.kind} size={39} />
-                      </span>
-                      <span className={cn(typeLabelStyles, `group/${a.kind}`)}>
-                        {a.kind === 'skill' ? 'SKILL' : 'MCP'}
-                      </span>
-                      <ArrowUpRight size={17} className={cardArrowStyles} />
-                    </div>
-                    <h3 title={a.slug}>{a.slug}</h3>
-                    <span
-                      className={cn(assetVersionStyles, monoStyles)}
-                      title={a.current_release.version_label}
-                    >
-                      {a.current_release.version_label.startsWith('git.')
-                        ? a.current_release.version_label.slice(0, 12) + '…'
-                        : 'v' + a.current_release.version_label}
-                    </span>
-                    <p>{a.description}</p>
-                    <div className={assetCardMetaStyles}>
-                      <div className={cn(chipsStyles, assetCardTagsStyles)}>
-                        <span
-                          className={cn(
-                            tagStyles,
-                            a.current_release.category === 'general' ? tagTealStyles : '',
-                          )}
-                        >
-                          {categoryLabel(a.current_release.category)}
-                        </span>
-                        {[
-                          ...new Set([
-                            ...(a.applies_to.languages ?? []),
-                            ...(a.applies_to.frameworks ?? []),
-                            ...(a.applies_to.keywords ?? []),
-                          ]),
-                        ]
-                          .slice(0, 2)
-                          .map((t) => (
-                            <span className={tagStyles} key={t}>
-                              {t}
-                            </span>
-                          ))}
-                        {a.current_release.has_scripts && <ScriptBadge />}
-                        {a.kind === 'skill' && a.requires_api_key && <ApiKeyBadge />}
-                      </div>
-                      {q && a.match_reasons?.length ? (
-                        <small className={matchReasonStyles}>{a.match_reasons.join(' · ')}</small>
-                      ) : null}
-                    </div>
-                    <div className={assetCardFootStyles}>
-                      {!!a.community.recommendation_count && (
-                        <span className={cardRecommendationsStyles} title="此资源获得的用户推荐">
-                          <ThumbsUp size={13} />
-                          {a.community.recommendation_count}
-                        </span>
-                      )}
-                      <span className={assetOwnerStyles} title={a.owner.name}>
-                        <span className={ownerAvatarStyles} aria-hidden="true">
-                          {a.owner.name.slice(0, 1)}
-                        </span>
-                        <span className={assetOwnerNameStyles}>{a.owner.name}</span>
-                      </span>
-                      <span
-                        className={audienceLabelStyles}
-                        title={'可见范围：' + a.current_release.visibility_label}
-                      >
-                        {a.current_release.visibility_label === a.owner.name
-                          ? '团队可见'
-                          : a.current_release.visibility_label}
-                      </span>
-                    </div>
-                  </a>
+                  <AssetCard asset={a} searching={!!q} />
                 </CatalogMotionItem>
               ))
             )}
@@ -484,5 +417,98 @@ export default function DiscoverPage() {
         )}
       </QueryRegion>
     </div>
+  );
+}
+
+function AssetCard({ asset, searching }: { asset: AssetResponse; searching: boolean }) {
+  const release = asset.current_release;
+  const version = release.version_label;
+  const isGit = version.startsWith('git.');
+  const VersionIcon = isGit ? GitCommitHorizontal : Tag;
+  const audience = release.distribution.audience;
+  const isPublic = audience.includes('public');
+  const AudienceIcon = isPublic
+    ? Globe
+    : audience.includes('organization')
+      ? LockKeyhole
+      : UsersRound;
+  const ownerOnly = audience.length === 1 && audience[0] === `group:${asset.owner.id}`;
+  const keywords = [
+    ...new Set([
+      ...(asset.applies_to.languages ?? []),
+      ...(asset.applies_to.frameworks ?? []),
+      ...(asset.applies_to.keywords ?? []),
+    ]),
+  ].slice(0, 2);
+
+  return (
+    <a href={assetHref(asset.slug)} className={assetCardStyles}>
+      <span aria-hidden="true" className={cn(dotgridStyles, assetCardCornerDotsStyles)} />
+      <div className={assetCardTopStyles}>
+        <span className={cn(assetSymbolStyles, `group/${asset.kind}`)} aria-hidden="true">
+          <Glyph
+            seed={asset.content_digest}
+            kind={asset.kind}
+            size={30}
+            pixelRevealClassName={assetCardPixelRevealStyles}
+          />
+        </span>
+        <div className="min-w-0">
+          <h3 title={asset.slug}>{asset.slug}</h3>
+          <div className={assetCardSubtitleStyles}>
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <span className={cn(typeLabelStyles, 'text-caption', `group/${asset.kind}`)}>
+                {asset.kind === 'skill' ? 'SKILL' : 'MCP'}
+              </span>
+              <span className="opacity-60" aria-hidden="true">
+                /
+              </span>
+              <span className="font-medium text-brand">{categoryLabel(release.category)}</span>
+            </span>
+            <span className={assetVersionStyles} title={version}>
+              <VersionIcon size={13} />
+              <span className="sr-only">{isGit ? 'Git 提交 ' : '版本 '}</span>
+              <span className="truncate">{isGit ? version.slice(4, 11) : `v${version}`}</span>
+            </span>
+          </div>
+        </div>
+        <ArrowUpRight size={16} className={cardArrowStyles} />
+      </div>
+      <p>{asset.description}</p>
+      <div className={cn(chipsStyles, assetCardTagsStyles)}>
+        {release.has_scripts && <ScriptBadge />}
+        {asset.kind === 'skill' && asset.requires_api_key && <ApiKeyBadge />}
+        {keywords.map((keyword) => (
+          <span className={tagStyles} key={keyword}>
+            {keyword}
+          </span>
+        ))}
+      </div>
+      {searching && asset.match_reasons?.length ? (
+        <small className={matchReasonStyles}>{asset.match_reasons.join(' · ')}</small>
+      ) : null}
+      <div className={assetCardFootStyles}>
+        {!!asset.community.recommendation_count && (
+          <span className={cardRecommendationsStyles} title="此资源获得的用户推荐">
+            <ThumbsUp size={13} />
+            {asset.community.recommendation_count}
+          </span>
+        )}
+        <span className={assetOwnerStyles} title={asset.owner.name}>
+          <span className={ownerAvatarStyles} aria-hidden="true">
+            {asset.owner.name.slice(0, 1)}
+          </span>
+          <span className={assetOwnerNameStyles}>{asset.owner.name}</span>
+        </span>
+        <span
+          className={cn(audienceLabelStyles, !isPublic && 'text-ink')}
+          title={'可见范围：' + release.visibility_label}
+        >
+          <AudienceIcon size={13} />
+          <span className="sr-only">可见范围：</span>
+          <span className="truncate">{ownerOnly ? '团队可见' : release.visibility_label}</span>
+        </span>
+      </div>
+    </a>
   );
 }

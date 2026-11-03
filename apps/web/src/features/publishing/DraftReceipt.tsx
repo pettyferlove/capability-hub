@@ -80,17 +80,7 @@ export function DraftReceipt({
         { duration: 920, delay: i * 180, easing: 'ease-in-out', fill: 'both' },
       );
       flight.onfinish = () => token.remove();
-      animations.push(
-        flight,
-        target.animate(
-          [
-            { boxShadow: '0 0 0 0 transparent' },
-            { boxShadow: '0 0 0 3px var(--brand)', offset: 0.3 },
-            { boxShadow: '0 0 0 0 transparent' },
-          ],
-          { duration: 880, delay: 700 + i * 180 },
-        ),
-      );
+      animations.push(flight);
     });
     return () => {
       window.cancelAnimationFrame(frame);

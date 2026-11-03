@@ -6,7 +6,10 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import { userEvent } from '@testing-library/user-event';
 import { IntakeDetail } from '../../apps/web/src/features/publishing/IntakeDetail.js';
 import { AssetCommunity } from '../../apps/web/src/features/catalog/AssetCommunity.js';
+import DiscoverPage from '../../apps/web/src/features/catalog/DiscoverPage.js';
 import ManagementPanel from '../../apps/web/src/features/catalog/ManagementPanel.js';
+import { assetCardPixelRevealStyles } from '../../apps/web/src/features/catalog/styles.js';
+import { cells, Glyph } from '../../apps/web/src/shared/components/Glyph.js';
 import { VersionComparison } from '../../apps/web/src/shared/components/VersionComparison.js';
 import { UploadPanel } from '../../apps/web/src/features/publishing/UploadPanel.js';
 import { ReviewDetail } from '../../apps/web/src/features/review/ReviewDetail.js';
@@ -17,6 +20,7 @@ import {
   receiveSkill,
   submitPublication,
   publishSkill,
+  testPassword,
 } from '../support/application.js';
 
 afterEach(cleanup);
@@ -271,6 +275,44 @@ test('维护资产显示版本与审核入口，更新链接预选原资产', as
   );
 });
 
+test('目录只将维护组受众简写为团队可见，同名个人保留实际可见范围', async (context) => {
+  const fixture = await createTestHub(context);
+  const team = await fixture.store.get('groups', fixture.teamId);
+  assert(team);
+  const member = await fixture.hub.administration.createUser(fixture.admin, {
+    username: 'namesake',
+    display_name: team.name,
+    password: testPassword,
+    group_ids: [team.id],
+  });
+  for (const [slug, audience] of [
+    ['team-skill', `group:${team.id}`],
+    ['member-skill', `principal:${member.id}`],
+  ] as const) {
+    await publishSkill(fixture, {
+      slug,
+      distribution: { mode: 'approved_audience', audience: [audience] },
+    });
+  }
+  const memberPrincipal = await fixture.hub.identity.principal(member.id);
+  context.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === '/api/scenarios') return Response.json([]);
+    if (path.startsWith('/api/assets/keywords?')) return Response.json({ items: [] });
+    assert(path.startsWith('/api/assets?'));
+    return Response.json(await fixture.hub.catalog.search(memberPrincipal, {}));
+  });
+  render(page(createElement(DiscoverPage)));
+  const teamCard = await screen.findByRole('link', { name: /team-skill/ });
+  const memberCard = screen.getByRole('link', { name: /member-skill/ });
+  assert(within(teamCard).getByText('团队可见'));
+  assert(
+    within(memberCard)
+      .getByTitle('可见范围：' + team.name)
+      .textContent?.includes(team.name),
+  );
+  assert.equal(within(memberCard).queryByText('团队可见'), null);
+});
+
 test('通用提名按输入状态显示一条提示，扣除首尾空白后满十字才能提交', async (context) => {
   const fixture = await createTestHub(context);
   const { intake } = await publishSkill(fixture);
@@ -313,6 +355,31 @@ test('通用提名按输入状态显示一条提示，扣除首尾空白后满�
       reason: '跨团队复用提交信息。',
     },
   ]);
+});
+
+test('卡片点阵按阅读顺序错开点亮格的显现，切回静态时清除延迟', () => {
+  const seed = 'sha256:' + 'a'.repeat(64);
+  const view = render(
+    createElement(Glyph, { kind: 'skill', seed, pixelRevealClassName: assetCardPixelRevealStyles }),
+  );
+  const pixels = screen.getByRole('img').querySelectorAll('rect');
+  let previousDelay = -1;
+  cells(seed).forEach((lit, index) => {
+    const delay = pixels[index].style.animationDelay;
+    if (lit) {
+      const currentDelay = Number.parseFloat(delay);
+      assert(currentDelay > previousDelay);
+      previousDelay = currentDelay;
+    } else {
+      assert.equal(delay, '');
+    }
+  });
+  view.rerender(createElement(Glyph, { kind: 'skill', seed }));
+  assert(
+    [...screen.getByRole('img').querySelectorAll('rect')].every(
+      (pixel) => !pixel.style.animationDelay,
+    ),
+  );
 });
 
 test('版本点阵区分首次发布、相同内容与内容更新', () => {

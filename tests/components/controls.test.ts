@@ -1,8 +1,10 @@
 import '../support/dom.js';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { afterEach, test } from 'node:test';
+import { parse } from 'postcss';
 import { createElement, useState } from 'react';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { DataTable } from '../../apps/web/src/shared/components/DataTable.js';
 import { CopyButton } from '../../apps/web/src/shared/components/CopyButton.js';
@@ -54,6 +56,61 @@ test('带图标的下拉保持文字名称、键盘搜索和原生表单值', as
   const form = screen.getByRole('form', { name: '凭据表单' });
   assert(form instanceof HTMLFormElement);
   assert.equal(new domWindow.FormData(form).get('kind'), 'ssh');
+});
+
+test('下拉关闭或回填选项时只在获得键盘焦点的按钮上显示轮廓', async (context) => {
+  const sheet = parse(
+    readFileSync(new URL('../../apps/web/src/styles/base.css', import.meta.url), 'utf8'),
+  );
+  sheet.walkAtRules('layer', (layer) => {
+    if (layer.nodes) layer.replaceWith(...layer.nodes);
+  });
+  const style = document.createElement('style');
+  style.textContent = ':root { --brand: CanvasText; }' + sheet.toString();
+  document.head.append(style);
+  context.after(() => style.remove());
+  const user = userEvent.setup();
+  const form = (value: string) =>
+    createElement(
+      'form',
+      null,
+      createElement(SelectField, {
+        'aria-label': '场景',
+        value,
+        children: [
+          createElement('option', { key: 'all', value: '' }, '全部场景'),
+          createElement('option', { key: 'dev', value: 'dev' }, '开发'),
+        ],
+      }),
+      createElement('button', { type: 'button' }, '采纳'),
+    );
+  const view = render(form(''));
+  const trigger = screen.getByRole('button', { name: /全部场景/ });
+  const outlined = () =>
+    [...view.container.querySelectorAll('[data-rac]')].filter((element) => {
+      const css = getComputedStyle(element);
+      return css.outlineStyle === 'solid' || css.outline.includes('solid');
+    });
+  const assertTriggerRing = () => {
+    assert(document.activeElement === trigger);
+    const rings = outlined();
+    assert.equal(rings.length, 1);
+    assert(rings[0] === trigger);
+  };
+  await user.tab();
+  assertTriggerRing();
+  await user.keyboard('{Enter}');
+  assert(await screen.findByRole('listbox'));
+  await user.keyboard('{Escape}');
+  await waitFor(assertTriggerRing);
+  view.rerender(form('dev'));
+  assert(screen.getByRole('button', { name: /开发/ }) === trigger);
+  assertTriggerRing();
+  const adopt = screen.getByRole('button', { name: '采纳' });
+  await user.click(adopt);
+  view.rerender(form(''));
+  assert(document.activeElement === adopt);
+  assert.equal(outlined().length, 0);
 });
 
 test('表格按用户输入筛选实际行，清空后恢复记录，空结果保留表头', async () => {
