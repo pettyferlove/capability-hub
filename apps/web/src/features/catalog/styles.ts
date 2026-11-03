@@ -402,6 +402,10 @@ export const managementGridStyles = 'grid grid-cols-2 items-start gap-4 max-[900
 
 export const managementCardStyles = cn(
   'group/management-card flex flex-col gap-3 min-w-0 [&_h3]:[overflow-wrap:anywhere] [&_h3]:my-1 [&_p]:my-0',
+  '[overflow-wrap:anywhere]',
+  "[&_[class~='group/text-btn']]:min-w-0 [&_[class~='group/text-btn']]:max-w-full",
+  "[&_[class~='group/text-btn']]:whitespace-normal [&_[class~='group/text-btn']]:text-left",
+  "[&_[class~='group/text-btn']_>_svg]:shrink-0",
   "[&_[class~='group/source-actions']]:mt-auto [&_[class~='group/source-actions']]:pt-5",
 );
 
