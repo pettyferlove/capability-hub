@@ -82,6 +82,7 @@ export function IntakeHistoryPanel({
     error: detailError,
     loading: detailLoading,
     connection,
+    recordSubmission,
   } = useIntakeDetail(active, refresh);
   const pending =
     !!data?.processing_total ||
@@ -233,6 +234,7 @@ export function IntakeHistoryPanel({
                   key={detail.id}
                   intake={detail}
                   origin={origin}
+                  onSubmitted={recordSubmission}
                   suggestion={me?.capabilities.can_ai ? suggestion : undefined}
                   onSelect={onSelect}
                   connection={connection}
@@ -245,6 +247,7 @@ export function IntakeHistoryPanel({
               className="absolute"
               key={detail.version_id}
               versionId={detail.version_id}
+              readOnly={detail.publication?.state === 'pending'}
               onAdopt={setOrigin}
               onSuggestion={setSuggestion}
               title={detail.asset_slug}

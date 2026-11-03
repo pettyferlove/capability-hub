@@ -44,6 +44,8 @@ CAPABILITY_HUB_AI_CONFIG=.data/ai-config.json
 HUB_AI_PRIMARY_KEY=<实际凭据>
 ```
 
-JSON 中仅保存环境变量名，不直接保存 key。`format` 选择接口协议，`credential_ref` 独立指定供应商或账号的密钥变量，两者没有固定对应关系。示例中的两种协议使用同一供应商账号，因此都引用 `HUB_AI_PRIMARY_KEY`；使用不同供应商或账号时，分别指定各自的变量名即可。也可以只保留一个模型配置；`default_profile` 必须存在。支持字段、默认预算和 MCP 白名单见 [AI 框架](../design/ai-framework.md)。修改后重启服务；现有执行绑定原模型配置摘要，不能静默改用另一个模型恢复。
+`format` 选择协议，`credential_ref` 只填写密钥的环境变量名。`default_profile` 必须指向已有模型配置。修改后重启服务，新执行使用新配置，已有执行按原模型配置摘要校验。预算和 MCP 白名单见 [AI 框架](../design/ai-framework.md)。
+
+在支持思考强度的模型配置中，可用 `reasoning_effort` 设置默认档位，或用 `"reasoning_effort_overrides": {"resource-audit/assessment": "low"}` 只调整资源审计报告。覆盖项按 `操作 ID/调用的 Agent ID` 匹配，格式修复沿用原调用的档位。可选 `low`、`medium`、`high`、`xhigh`、`max` 中端点支持的值。未匹配且未设默认值时由模型决定。
 
 Compose 传入 `CAPABILITY_HUB_AI_CONFIG` 和示例使用的 `HUB_AI_PRIMARY_KEY`。模型配置可单独只读挂载，也可放入宿主数据目录并使用容器路径 `/app/data/ai-config.json`。其他 `credential_ref` 需显式注入对应环境变量，凭据不得进入 Web 构建。

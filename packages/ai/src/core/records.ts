@@ -235,6 +235,9 @@ export const memoryRecordSchema = z
   .object({ ...base, payload: z.object({ value: jsonSchema }).strict() })
   .strict();
 
+/** 仅记录显式请求的思考档位，省略时由模型端点选择。 */
+export const reasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
+
 const elapsedMs = z.number().int().nonnegative();
 const callDiagnosticsSchema = z.strictObject({
   agent_id: id,
@@ -243,6 +246,7 @@ const callDiagnosticsSchema = z.strictObject({
   format: z.enum(['openai', 'anthropic']),
   request_timeout_ms: z.number().int().positive(),
   max_output_tokens: z.number().int().positive(),
+  reasoning_effort: reasoningEffortSchema.optional(),
   transport: z
     .strictObject({
       http_status: z.number().int().min(100).max(599).optional(),

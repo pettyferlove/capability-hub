@@ -1,5 +1,6 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import type { AgentExecutionOptions } from '@mastra/core/agent';
 import { randomUUID } from 'node:crypto';
 import type { AiAuthorization, CredentialResolver } from '../core/ports.js';
 import type { AiConfiguration, ModelProfile } from '../core/config.js';
@@ -17,6 +18,7 @@ type EndpointModel = ReturnType<ReturnType<typeof createOpenAICompatible>>;
  */
 export class ManagedProvider {
   private failure: AiError | undefined;
+  private readonly reasoningEffort: ModelProfile['reasoning_effort'];
   constructor(
     private readonly scope: ExecutionScope,
     private readonly events: AiEventService,
@@ -25,7 +27,18 @@ export class ManagedProvider {
     private readonly config: AiConfiguration,
     readonly profile: ModelProfile,
     private readonly agentId: string,
-  ) {}
+    operationId: string,
+  ) {
+    this.reasoningEffort =
+      profile.reasoning_effort_overrides?.[`${operationId}/${agentId}`] ?? profile.reasoning_effort;
+  }
+  get providerOptions(): AgentExecutionOptions['providerOptions'] {
+    const effort = this.reasoningEffort;
+    if (!effort) return undefined;
+    return this.profile.format === 'openai'
+      ? { openaiCompatible: { reasoningEffort: effort } }
+      : { anthropic: { effort } };
+  }
   assertSuccess() {
     if (this.failure) throw this.failure;
     this.scope.current().controller.signal.throwIfAborted();
@@ -116,6 +129,7 @@ export class ManagedProvider {
       format: this.profile.format,
       request_timeout_ms: this.profile.request_timeout_ms,
       max_output_tokens: this.profile.max_output_tokens,
+      ...(this.reasoningEffort && { reasoning_effort: this.reasoningEffort }),
     };
     let call: AiRecordMap['ai_calls'];
     try {

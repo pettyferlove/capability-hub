@@ -1,26 +1,10 @@
 import type { PublicationRequestResponse } from '@capability-hub/contracts/http';
-import {
-  categoryLabels,
-  sameClassification,
-  type AuditSuggestion,
-} from '../ai/publication-suggestion.js';
+import { categoryLabels } from '../ai/publication-suggestion.js';
 import { ScenarioSummary } from '../../shared/components/ScenarioSummary.js';
-import { FieldSuggestion } from './FieldSuggestion.js';
 
-/**
- * 已提交发布申请的三项只读摘要（分类、关键词、用途）；有审计建议时逐项对比，分类须连同适用场景集合
- * 一致才算匹配，关键词按小写比较，用途按原串比较。
- */
-export function SubmittedFields({
-  publication,
-  suggestion,
-}: {
-  publication: PublicationRequestResponse;
-  suggestion?: AuditSuggestion;
-}) {
-  const fields = suggestion?.fields;
+/** 送审摘要只读取提交时冻结的申请字段。 */
+export function SubmittedFields({ publication }: { publication: PublicationRequestResponse }) {
   const keywords = publication.applies_to.keywords ?? [];
-  const terms = new Set(keywords.map((term) => term.toLowerCase()));
   return (
     <section
       aria-label="已提交的发布申请"
@@ -36,14 +20,6 @@ export function SubmittedFields({
               <ScenarioSummary policy={publication} />
             </dd>
           )}
-          {fields && (
-            <FieldSuggestion
-              label="分类"
-              values={[categoryLabels[fields.category]]}
-              matched={sameClassification(publication, fields)}
-              pending={suggestion?.pending}
-            />
-          )}
         </div>
         <div>
           <dt className="text-caption text-muted-ink">检索关键词</dt>
@@ -56,26 +32,10 @@ export function SubmittedFields({
                 ))
               : '未填写'}
           </dd>
-          {fields && (
-            <FieldSuggestion
-              label="关键词"
-              values={fields.keywords}
-              matched={fields.keywords.every((word) => terms.has(word.toLowerCase()))}
-              pending={suggestion?.pending}
-            />
-          )}
         </div>
         <div>
           <dt className="text-caption text-muted-ink">共享目的</dt>
           <dd className="whitespace-pre-wrap break-words">{publication.source_consent.purpose}</dd>
-          {fields && (
-            <FieldSuggestion
-              label="共享目的"
-              values={[fields.purpose]}
-              matched={fields.purpose === publication.source_consent.purpose}
-              pending={suggestion?.pending}
-            />
-          )}
         </div>
       </dl>
     </section>

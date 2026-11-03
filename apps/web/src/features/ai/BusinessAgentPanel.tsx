@@ -55,6 +55,7 @@ interface BusinessAgentPanelProps {
   /** 存在即切换为反馈研判（`feedback-triage`），否则为资源审计（`resource-audit`）。 */
   feedbackId?: string;
   title: string;
+  readOnly?: boolean;
   /** 选中执行状态转为 `succeeded` 时回调；内部用 ref 持有最新引用，父组件无需 memo。 */
   onCompleted?: (execution: AiExecutionResponse) => void;
   /** 结论变化时回传当前应采用的建议（待确认优先于已成功记录），`undefined` 表示无可采用建议。 */
@@ -76,6 +77,7 @@ function BusinessWorkspace({
   title,
   versionId,
   feedbackId,
+  readOnly = false,
   onCompleted,
   onSuggestion,
   onAdopt,
@@ -116,13 +118,15 @@ function BusinessWorkspace({
     void (async () => {
       try {
         setError('');
-        const config = aiModelOptionsResponseSchema.parse(
-          await api('/api/ai/model-options', { signal: controller.signal }),
-        );
-        setModels(config);
-        setProfile((value) =>
-          config.profiles.some((item) => item.id === value) ? value : config.default_profile,
-        );
+        if (!readOnly) {
+          const config = aiModelOptionsResponseSchema.parse(
+            await api('/api/ai/model-options', { signal: controller.signal }),
+          );
+          setModels(config);
+          setProfile((value) =>
+            config.profiles.some((item) => item.id === value) ? value : config.default_profile,
+          );
+        }
         const params = new URLSearchParams({
           operation_id: operation,
           version_id: versionId,
@@ -143,7 +147,7 @@ function BusinessWorkspace({
         } while (
           cursor &&
           (items.length < 30 ||
-            (onSuggestion && !items.some((item) => item.status === 'succeeded')))
+            (!readOnly && onSuggestion && !items.some((item) => item.status === 'succeeded')))
         );
         if (!controller.signal.aborted) {
           const tasks = automatic
@@ -162,7 +166,7 @@ function BusinessWorkspace({
       }
     })();
     return () => controller.abort();
-  }, [versionId, feedbackId, operation, refresh, hubRefresh, onSuggestion]);
+  }, [versionId, feedbackId, operation, refresh, hubRefresh, onSuggestion, readOnly]);
   useEffect(() => {
     const latest = execution.view?.execution;
     if (latest) setHistory((items) => items.map((item) => (item.id === latest.id ? latest : item)));
@@ -176,7 +180,7 @@ function BusinessWorkspace({
       item.id === selected ? (selectedRecord?.status ?? item.status) : item.status,
     ),
   );
-  const startAvailable = historyReady && !!profile && !active;
+  const startAvailable = !readOnly && historyReady && !!profile && !active;
   const start = async () => {
     if (busy || !startAvailable) return;
     setBusy(true);
@@ -205,8 +209,8 @@ function BusinessWorkspace({
   );
   const pending = useMemo(() => pendingSuggestion(view), [view]);
   useEffect(() => {
-    onSuggestion?.(pending ?? accepted);
-  }, [onSuggestion, pending, accepted]);
+    onSuggestion?.(readOnly ? undefined : (pending ?? accepted));
+  }, [onSuggestion, pending, accepted, readOnly]);
   const collapse = () => {
     setOpen(false);
   };
@@ -249,14 +253,30 @@ function BusinessWorkspace({
           view={view}
           status={selectedRecord?.status}
           startAvailable={startAvailable}
-          starting={busy}
+          starting={!readOnly && busy}
           onStart={() => {
             toggle.current?.focus({ preventScroll: true });
             void start();
           }}
-          title={shared ? '共享自动研判（只读）' : feedbackId ? '反馈研判' : '资源审计'}
-          readOnly={shared}
-          emptyLabel={!models ? '正在连接' : !profile ? '尚未配置模型' : '尚未发起'}
+          title={
+            readOnly
+              ? '资源审计记录（只读）'
+              : shared
+                ? '共享自动研判（只读）'
+                : feedbackId
+                  ? '反馈研判'
+                  : '资源审计'
+          }
+          readOnly={readOnly || shared}
+          emptyLabel={
+            !historyReady
+              ? '正在连接'
+              : readOnly
+                ? '暂无研判记录'
+                : profile
+                  ? '尚未发起'
+                  : '尚未配置模型'
+          }
           error={error || execution.error}
           open={open}
           docked={!!beside}
@@ -284,6 +304,7 @@ function BusinessWorkspace({
             <div className="min-w-0 flex-1">
               <p className="truncate font-semibold">{title}</p>
               <p className="mt-1 text-caption text-muted-ink">
+                {readOnly && '申请待审 · 研判记录只读 · '}
                 {shared && `共享自动研判 · 负责人 ${automaticOwner} · 只读 · `}
                 {tools.length ? `已调用 ${tools.length} 次工具 · ` : ''}
                 {execution.connection || '任务记录自动保存'}
@@ -311,7 +332,7 @@ function BusinessWorkspace({
 
           <details className="shrink-0 border-b border-separator bg-page/50">
             <summary className="cursor-pointer px-4 py-2 text-caption font-medium text-muted-ink">
-              任务记录与模型设置
+              {readOnly ? '研判任务记录' : '任务记录与模型设置'}
             </summary>
             <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
               {history.length > 0 && (
@@ -337,26 +358,30 @@ function BusinessWorkspace({
                   </SelectField>
                 </div>
               )}
-              <div className="min-w-36 flex-1">
-                <SelectField aria-label="研判模型" value={profile} onValueChange={setProfile}>
-                  {models?.profiles.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </SelectField>
-              </div>
-              <button
-                className={btnStyles}
-                type="button"
-                disabled={busy || !startAvailable}
-                onClick={() => {
-                  void start();
-                }}
-              >
-                <Plus size={14} />
-                {busy ? '正在排队…' : '发起新研判'}
-              </button>
+              {!readOnly && (
+                <>
+                  <div className="min-w-36 flex-1">
+                    <SelectField aria-label="研判模型" value={profile} onValueChange={setProfile}>
+                      {models?.profiles.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </SelectField>
+                  </div>
+                  <button
+                    className={btnStyles}
+                    type="button"
+                    disabled={busy || !startAvailable}
+                    onClick={() => {
+                      void start();
+                    }}
+                  >
+                    <Plus size={14} />
+                    {busy ? '正在排队…' : '发起新研判'}
+                  </button>
+                </>
+              )}
             </div>
           </details>
           {(error || execution.error) && (
@@ -379,10 +404,14 @@ function BusinessWorkspace({
               visible={open}
               key={view.execution.id}
               view={view}
-              canManage={view.execution.owner_id === me?.id}
+              canManage={!readOnly && view.execution.owner_id === me?.id}
               connection={execution.connection}
               onRefresh={() => setRefresh((value) => value + 1)}
             />
+          ) : readOnly ? (
+            <p role="status" className="p-8 text-center text-muted-ink">
+              {historyReady && !selected ? '暂无研判记录' : '正在读取研判记录…'}
+            </p>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-5 overflow-auto p-8 text-center">
               <span className="rounded-2xl bg-brand-soft p-5 text-brand">

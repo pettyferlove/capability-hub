@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { AiError } from './errors.js';
+import { reasoningEffortSchema } from './records.js';
 
 /**
  * 单个模型端点的配置。`base_url` 必须是 API 前缀而不是具体操作地址：不允许内嵌凭据、查询或片段，
@@ -21,6 +22,13 @@ export const modelProfileSchema = z
     allow_http: z.boolean().default(false),
     max_output_tokens: z.number().int().min(128).max(32768).default(4096),
     request_timeout_ms: z.number().int().min(1000).max(120000).default(60000),
+    reasoning_effort: reasoningEffortSchema.optional(),
+    reasoning_effort_overrides: z
+      .record(
+        z.string().regex(/^[a-z][a-z0-9-]{0,63}\/[a-z][a-z0-9-]{0,63}$/),
+        reasoningEffortSchema,
+      )
+      .optional(),
   })
   .strict()
   .superRefine((profile, ctx) => {

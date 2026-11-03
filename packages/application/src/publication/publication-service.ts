@@ -34,7 +34,6 @@ export class PublicationService {
     private readonly assets: AssetAccessService,
     private readonly idempotency: IdempotencyService,
     private readonly mcpKeys: McpSharedKeyService,
-    private readonly onSubmitted?: (principal: Principal, versionId: string) => Promise<void>,
   ) {}
   /**
    * 提交与批准共用的策略自洽校验，只读不写；任一规则不满足即抛 422 并中止后续冻结。
@@ -158,7 +157,7 @@ export class PublicationService {
    * 会抛 422/`NOT_SKILL`（只有 Skill 能声明 `requires_api_key`）、`INVALID_POLICY` 系列，
    * 409/`UNAVAILABLE`、`BASE_RELEASE_CHANGED`、`SCAN_REQUIRED`、`PENDING_EXISTS`、
    * `SOURCE_BLOCKED`、`INTAKE_MISMATCH`，并要求 `source:share`（source + owner 团队作用域）。
-   * 成功时写 `publication.submitted` 审计并触发 `onSubmitted` 通知钩子。
+   * 成功时写 `publication.submitted` 审计。
    * @param key - 幂等键，缺失或超长时由幂等层抛 400/`IDEMPOTENCY_REQUIRED`。
    * @param historical - 历史导入标记，同时落入申请记录并放宽证据复核。
    */
@@ -265,7 +264,6 @@ export class PublicationService {
           request.id,
           b.purpose,
         );
-        await this.onSubmitted?.(principal, request.version_id);
         return request;
       },
     );
@@ -278,7 +276,7 @@ export class PublicationService {
    * 已是 general → 409/`ALREADY_GENERAL`，该版本已有待审申请 → 409/`PENDING_EXISTS`，
    * 扫描记录不是当前 `contentScanRuleset` 通过 → 409/`SCAN_REQUIRED`（要求维护者重扫）。
    * 提名固定 `category: 'general'` 且 `scenario_ids` 为空，并把 `base_release_id` 记为
-   * 被提名的发布，成功时写 `publication.nominated` 审计并触发 `onSubmitted`。
+   * 被提名的发布，成功时写 `publication.nominated` 审计。
    */
   async nominate(principal: Principal, body: NominateAssetCommand, key: string | undefined) {
     const b = body;
@@ -340,7 +338,6 @@ export class PublicationService {
           revision: 1,
         });
         await this.context.store.audit(principal.id, 'publication.nominated', request.id, b.reason);
-        await this.onSubmitted?.(principal, request.version_id);
         return request;
       },
     );

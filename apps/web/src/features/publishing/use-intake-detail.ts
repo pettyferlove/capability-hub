@@ -1,5 +1,5 @@
 import { intakeProgressResponseSchema } from '@capability-hub/contracts';
-import type { IntakeResponse } from '@capability-hub/contracts/http';
+import type { IntakeResponse, PublicationRequestResponse } from '@capability-hub/contracts/http';
 import { useEffect, useState } from 'react';
 import { api } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
@@ -89,6 +89,13 @@ export function useIntakeDetail(id: string, refresh: number) {
   }, [id, refresh]);
   const current = id === result.id;
   return {
+    recordSubmission: (publication: PublicationRequestResponse) => {
+      setResult((previous) =>
+        previous.data?.id === publication.source_intake_id
+          ? { ...previous, data: { ...previous.data, publication } }
+          : previous,
+      );
+    },
     data: current ? result.data : undefined,
     error: current ? result.error : '',
     loading: !!id && (!current || (!result.data && !result.error)),

@@ -78,6 +78,7 @@ export class OperationContext {
     private readonly dependencies: RuntimeDependencies,
     private readonly config: AiConfiguration,
     private readonly profile: ModelProfile,
+    private readonly operationId: string,
   ) {}
   get signal() {
     return this.scope.current().controller.signal;
@@ -243,6 +244,7 @@ export class OperationContext {
       this.config,
       this.profile,
       options.id,
+      this.operationId,
     );
     const agent = new Agent({
       id: options.id,
@@ -276,6 +278,7 @@ export class OperationContext {
       const streamOptions = {
         maxSteps: Math.min(options.max_steps ?? 5, 100),
         abortSignal: this.signal,
+        providerOptions: provider.providerOptions,
         modelSettings: { maxRetries: 0, maxOutputTokens: this.profile.max_output_tokens },
         ...(options.memory
           ? { memory: { thread: `${this.executionId}:${options.id}`, resource: this.ownerId } }

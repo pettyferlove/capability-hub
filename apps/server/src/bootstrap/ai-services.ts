@@ -35,6 +35,15 @@ function automaticTriageKey(feedbackId: string) {
   return `feedback-triage:auto:${feedbackId}`;
 }
 
+function approvesAssessment(response: unknown) {
+  return (
+    !!response &&
+    typeof response === 'object' &&
+    'approved' in response &&
+    response.approved === true
+  );
+}
+
 /**
  * 服务端 AI 装配：用身份、作业队列、资产访问与证据服务构造 {@link AiRuntime}，
  * 并在每次访问前重查账号状态与执行引用的业务资源——失去权限或资源不可访问即抛
@@ -45,7 +54,7 @@ export class HubAiServices {
   private readonly recheckResources: (
     principal: Principal,
     execution: ExecutionRecord,
-    mode?: 'execute' | 'inspect' | 'shared-feedback',
+    mode?: 'execute' | 'inspect' | 'shared-feedback' | 'audit-write',
   ) => Promise<void>;
   constructor(
     private readonly identity: IdentityService,
@@ -72,7 +81,7 @@ export class HubAiServices {
           await publications.requireAgentAccess(
             principal,
             input.publication_request_id,
-            mode === 'execute' ? 'execute' : 'inspect',
+            mode === 'inspect' ? 'inspect' : 'execute',
           );
         } catch (error) {
           if (error instanceof HubError && error.code === 'REVIEW_STALE')
@@ -103,6 +112,14 @@ export class HubAiServices {
           !(mode === 'inspect' && has(principal, 'ai:inspect'))
         )
           throw new AiError('AI_FORBIDDEN', '当前账号无权在此范围执行 AI 操作');
+        if (
+          mode === 'audit-write' &&
+          (await this.hasPendingSubmission(principal.id, input.version_id))
+        )
+          throw new AiError(
+            'AI_CONFLICT',
+            '你提交的该版本发布申请正在审核，暂不能发起或采纳资源审计。',
+          );
       } else {
         requireAiConsole(principal, mode !== 'inspect');
       }
@@ -131,7 +148,7 @@ export class HubAiServices {
       }
     };
     const authorization: AiAuthorization = {
-      authorize: async (ownerId, action, execution) => {
+      authorize: async (ownerId, action, execution, target) => {
         try {
           const principal = await identity.principal(ownerId);
           if (
@@ -141,7 +158,19 @@ export class HubAiServices {
             throw new AiError('AI_FORBIDDEN', '当前账号无权执行 AI 操作');
           if (action === 'respond' && execution && execution.owner_id !== principal.id)
             throw new AiError('AI_FORBIDDEN', '只能回答自己的交互');
-          if (execution) await this.recheckResources(principal, execution);
+          if (execution) {
+            const auditWrite =
+              execution.payload.operation_id === 'resource-audit' &&
+              (action === 'submit' ||
+                (action === 'respond' &&
+                  typeof target === 'object' &&
+                  approvesAssessment(target.response)));
+            await this.recheckResources(
+              principal,
+              execution,
+              auditWrite ? 'audit-write' : 'execute',
+            );
+          }
         } catch (error) {
           if (error instanceof HubError) throw new AiError('AI_FORBIDDEN', '账号或授权已失效');
           throw error;
@@ -213,6 +242,13 @@ export class HubAiServices {
     return { default_profile, profiles: profiles.map(({ id, label }) => ({ id, label })) };
   }
 
+  private async hasPendingSubmission(ownerId: string, versionId: string) {
+    const requests = await this.store.where('requests', 'version_id', versionId);
+    return requests.some(
+      (request) => request.state === 'pending' && request.submitted_by === ownerId,
+    );
+  }
+
   async autoTriage(version: VersionRecord, feedbackId: string) {
     if (!this.runtime.config.profiles.length) return;
     await this.runtime.store.tx(async () => {
@@ -255,7 +291,9 @@ export class HubAiServices {
         if (error instanceof HubError && [403, 404, 409].includes(error.status)) return false;
         throw error;
       }
-      // 上传、重扫及发布申请共享同一固定版本的任务；自动触发不重试失败任务。
+      if (operation === 'resource-audit' && (await this.hasPendingSubmission(ownerId, versionId)))
+        return false;
+      // 上传与重扫共享同一固定版本的任务；自动触发不重试失败任务。
       const sharedKey =
         operation === 'feedback-triage' && feedbackId ? automaticTriageKey(feedbackId) : undefined;
       let after: { position: number; id: string } | undefined;

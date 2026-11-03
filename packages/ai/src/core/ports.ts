@@ -116,7 +116,7 @@ export interface AiAuthorization {
     ownerId: string,
     action: 'submit' | 'execute' | 'read' | 'respond' | 'cancel' | 'tool' | 'resource',
     execution?: ExecutionRecord,
-    resource?: string,
+    target?: string | { response: unknown },
   ): Promise<void>;
 }
 

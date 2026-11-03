@@ -25,7 +25,7 @@ const risks: Record<string, string> = {
 
 /**
  * 报告主体：`value` 为整份报告对象，`assessment` 缺失时各区块自动隐藏；
- * 已采纳但没有 `publication_suggestion` 的历史报告会提示改在新研判中重新生成。
+ * 已采纳但没有 `publication_suggestion` 的历史报告只展示已有审计结论。
  */
 export function BusinessAssessment({
   value,
@@ -73,7 +73,7 @@ export function BusinessAssessment({
       {!review && suggestion && <SuggestionPreview fields={suggestion} />}
       {!review && !suggestion && !report.feedback_id && report.approved === true && (
         <p className="rounded-xl border border-separator p-3 text-caption text-muted-ink">
-          这份历史报告未生成发布建议。在「任务记录与模型设置」中发起新研判，即可生成分类、关键词和共享目的。
+          这份历史报告未包含分类、关键词和共享目的的建议。
         </p>
       )}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">

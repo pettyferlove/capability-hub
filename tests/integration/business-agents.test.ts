@@ -90,6 +90,52 @@ async function grantMaintainer(f: TestHub, principalId: string, teamId = f.teamI
   });
 }
 
+for (const format of ['openai', 'anthropic'] as const)
+  test(`资源审计 ${format} 仅对报告及其格式修复覆盖思考强度`, async (t) => {
+    const provider = await fixture(format, 'tools', false, {
+      turns: [{ name: 'read_file', input: { path: 'SKILL.md' } }],
+      text: script.text,
+      json: [{ text: ' ', stop: 'length' }, feedbackJson, suggestionJson],
+    });
+    t.after(provider.close);
+    const previous = process.env.AI_FIXTURE_KEY;
+    process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+    t.after(() => {
+      if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+      else process.env.AI_FIXTURE_KEY = previous;
+    });
+    const ai = frameworkConfig(provider.url, format);
+    const fallback = format === 'anthropic' ? 'medium' : undefined;
+    if (fallback) ai.profiles[0].reasoning_effort = fallback;
+    ai.profiles[0].reasoning_effort_overrides = { 'resource-audit/assessment': 'low' };
+    const f = await createTestHub(t, { ai });
+    await receiveSkill(f);
+    const execution = await run(f);
+    assert.equal(execution.status, 'waiting_input', JSON.stringify(execution.payload.error));
+    const calls = await f.hub.ai.runtime.store.list('ai_calls', {
+      execution_id: execution.id,
+      limit: 20,
+    });
+    for (const [step, expected] of [
+      ['investigate', fallback],
+      ['assessment', 'low'],
+      ['repair-output', 'low'],
+      ['publication-suggestion', fallback],
+    ] as const) {
+      const matches = calls.filter((call) => call.payload.diagnostics.step?.id === step);
+      assert(matches.length, step);
+      for (const call of matches) {
+        const { body } = provider.requests[call.position - 1];
+        const sent =
+          format === 'openai'
+            ? body.reasoning_effort
+            : (body.output_config as { effort?: string } | undefined)?.effort;
+        assert.equal(sent, expected, step);
+        assert.equal(call.payload.diagnostics.reasoning_effort, expected, step);
+      }
+    }
+  });
+
 test('AI 只能在查询词表后起草未登记的场景，人工采纳只回填草稿', async (t) => {
   const previous = process.env.AI_FIXTURE_KEY;
   process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
@@ -142,7 +188,7 @@ test('AI 只能在查询词表后起草未登记的场景，人工采纳只回�
   }
 });
 
-test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报告，发布申请保持待审', async (t) => {
+test('提交人可回看版本审计，待审期间不能采纳，撤回后可继续原交互', async (t) => {
   const scenarioId = randomUUID();
   const suggested = { ...publicationSuggestion, category: 'scenario', scenario_ids: [scenarioId] };
   const provider = await fixture('openai', 'tools', false, {
@@ -173,7 +219,7 @@ test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报�
     limit: 100,
   });
   assert.equal(queued.length, 1);
-  assert.equal(queued[0].id, beforePublication[0].id, '发布申请复用上传审计');
+  assert.equal(queued[0].id, beforePublication[0].id);
   assert.equal(queued[0].payload.operation_id, 'resource-audit');
   assert.deepEqual(queued[0].payload.input, { version_id: intake.version_id });
   const waiting = await run(f);
@@ -192,13 +238,23 @@ test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报�
   assert(view.artifacts.some((item) => item.payload.name === 'assessment'));
   const requestsBeforeResume = provider.requests.length;
   const interaction = view.interactions[0];
-  await f.hub.ai.runtime.respond(
-    waiting.id,
-    interaction.id,
-    f.admin.id,
-    interaction.payload.revision,
-    { approved: true, comment: '确认检查范围', apply_feedback: false },
-  );
+  const client = await signIn(f);
+  const path = '/api/ai/executions/' + waiting.id;
+  await client.get(path).expect(200);
+  const key = randomUUID();
+  const adopt = () =>
+    client
+      .post(path + '/interactions/' + interaction.id + '/respond')
+      .set('Idempotency-Key', key)
+      .set('If-Match', `"${interaction.payload.revision}"`)
+      .send({ response: { approved: true, comment: '确认检查范围', apply_feedback: false } });
+  assert.equal((await adopt().expect(409)).body.error.code, 'AI_CONFLICT');
+  const locked = await f.hub.ai.runtime.view(waiting.id);
+  assert.equal(locked.interactions[0].status, 'pending');
+  assert.equal(locked.execution.status, 'waiting_input');
+  assert.deepEqual(await f.store.get('requests', request.id), request);
+  await f.hub.publications.cancel(f.admin, request.id, { reason: '补充申请材料' }, '"1"');
+  await adopt().expect(200);
   const done = await run(f);
   assert.equal(done.status, 'succeeded', JSON.stringify(done.payload.error));
   assert.deepEqual(
@@ -218,9 +274,50 @@ test('资源审计通过自主工具调查、SSE 活动、人工恢复形成报�
       },
     ],
   });
-  assert.equal((await f.store.get('requests', request.id))?.state, 'pending');
+  assert.equal((await f.store.get('requests', request.id))?.state, 'cancelled');
   assert.equal((await f.store.all('releases')).length, 0);
   assert.equal(provider.requests.length, requestsBeforeResume, '人工恢复不重复调用模型');
+});
+
+test('同版本待审仅禁止提交人发起资源审计，自动触发也不能替他创建任务', async (t) => {
+  const provider = await fixture('openai', 'tools', false, script);
+  t.after(provider.close);
+  const previous = process.env.AI_FIXTURE_KEY;
+  process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+  t.after(() => {
+    if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+    else process.env.AI_FIXTURE_KEY = previous;
+  });
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f);
+  const next = await receiveSkill(f, { assetId: intake.asset_id, version: '1.0.1' });
+  Object.assign(f.hub.ai.runtime.config, frameworkConfig(provider.url));
+  const request = await submitPublication(f, intake);
+  await f.hub.ai.autoSubmit(f.admin, 'resource-audit', intake.version_id);
+  const owner = await signIn(f);
+  const reviewer = await signIn(f, f.reviewer.username);
+  const start = (client: typeof owner, versionId: string) =>
+    client
+      .post('/api/ai/executions')
+      .set('Idempotency-Key', randomUUID())
+      .send({ operation_id: 'resource-audit', input: { version_id: versionId } });
+  assert.equal((await start(owner, intake.version_id).expect(409)).body.error.code, 'AI_CONFLICT');
+  assert.deepEqual(await f.hub.ai.runtime.store.list('ai_executions', { limit: 10 }), []);
+  await start(reviewer, intake.version_id).expect(201);
+  const waiting = await run(f);
+  assert.equal(waiting.status, 'waiting_input', JSON.stringify(waiting.payload.error));
+  const [interaction] = (await f.hub.ai.runtime.view(waiting.id)).interactions;
+  await reviewer
+    .post(`/api/ai/executions/${waiting.id}/interactions/${interaction.id}/respond`)
+    .set('Idempotency-Key', randomUUID())
+    .set('If-Match', `"${interaction.payload.revision}"`)
+    .send({ response: { approved: true } })
+    .expect(200);
+  const done = await run(f);
+  assert(acceptedSuggestion(executionResponse(done)));
+  assert.deepEqual(await f.store.get('requests', request.id), request);
+  assert.equal((await f.store.all('releases')).length, 0);
+  await start(owner, next.version_id).expect(201);
 });
 
 test('反馈提交自动排队且幂等，采纳后仅写入处理中，效果回执与业务写入共同提交', async (t) => {
@@ -304,7 +401,9 @@ test('整理反馈报告时能独立核对上报原文，即使调查扩大了�
   });
   const f = await createTestHub(t);
   const { intake } = await publishSkill(f);
-  Object.assign(f.hub.ai.runtime.config, frameworkConfig(provider.url));
+  const ai = frameworkConfig(provider.url);
+  ai.profiles[0].reasoning_effort_overrides = { 'resource-audit/assessment': 'low' };
+  Object.assign(f.hub.ai.runtime.config, ai);
   const feedback = await f.hub.feedback.report(
     f.admin,
     assetFeedbackRequestSchema.parse({
@@ -323,6 +422,7 @@ test('整理反馈报告时能独立核对上报原文，即使调查扩大了�
   const waiting = await run(f);
   assert.equal(waiting.status, 'waiting_input', JSON.stringify(waiting.payload.error));
   const messages = provider.requests.at(-1)?.body.messages as { role: string; content: string }[];
+  assert.equal(provider.requests.at(-1)?.body.reasoning_effort, undefined);
   const message = messages.find((item) => item.role === 'user');
   assert(message);
   const material = JSON.parse(message.content) as {
@@ -958,6 +1058,12 @@ test('MCP 审计按需读取 server.json 和声明工具，明确静态边界并
   const view = await f.hub.ai.runtime.view(waiting.id);
   assert(view.activity.some((item) => item.payload.data.tool_id === 'mcp-declarations'));
   assert(JSON.stringify(view.artifacts).includes('未连接远端服务'));
+  assert(intake.scan_run_id);
+  await submitPublication(f, {
+    ...intake,
+    version_id: intake.version_id,
+    scan_run_id: intake.scan_run_id,
+  });
   const interaction = view.interactions[0];
   await f.hub.ai.runtime.respond(
     waiting.id,

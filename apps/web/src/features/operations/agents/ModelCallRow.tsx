@@ -86,6 +86,7 @@ export function ModelCallRow({ call, locate }: { call: Call; locate: (seq: numbe
             <p>
               单次时限 {ms(diagnostics.request_timeout_ms)} · 输出上限{' '}
               {diagnostics.max_output_tokens} token
+              {diagnostics.reasoning_effort && ` · 请求思考强度 ${diagnostics.reasoning_effort}`}
             </p>
             {transport && (
               <>

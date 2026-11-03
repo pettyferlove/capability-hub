@@ -169,7 +169,7 @@ export class AiRuntime {
   ) {
     return this.store.tx(async () => {
       const execution = await this.get(id);
-      await this.dependencies.authorization.authorize(actor, 'respond', execution);
+      await this.dependencies.authorization.authorize(actor, 'respond', execution, { response });
       const interaction = await this.store.get('ai_interactions', interactionId);
       if (!interaction || interaction.execution_id !== id)
         throw new AiError('AI_NOT_FOUND', '交互不存在');
@@ -287,6 +287,7 @@ export class AiRuntime {
               this.dependencies,
               this.config,
               profileFor(this.config, current.payload.model_profile),
+              definition.id,
             );
             const workflow = definition.create(context);
             if (workflow.id !== definition.id)

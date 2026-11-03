@@ -159,9 +159,6 @@ export class HubServices {
       this.assetAccess,
       this.idempotency,
       this.mcpKeys,
-      async (principal, versionId) => {
-        await this.ai.autoSubmit(principal, 'resource-audit', versionId);
-      },
     );
     this.lifecycle = new AssetLifecycleService(context, this.assetAccess, this.publications);
     this.audit = new AuditService(context, this.assetAccess);

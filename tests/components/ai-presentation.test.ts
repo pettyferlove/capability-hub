@@ -8,6 +8,7 @@ import { createHubAgentRegistry } from '@capability-hub/hub-agents';
 import {
   aiExecutionViewResponseSchema,
   aiEventResponseSchema,
+  submitPublicationRequestSchema,
   type AiExecutionResponse,
 } from '@capability-hub/contracts';
 import { ExecutionPanel } from '../../apps/web/src/features/ai/ExecutionPanel.js';
@@ -23,6 +24,7 @@ import { BusinessAgentPanel } from '../../apps/web/src/features/ai/BusinessAgent
 import { PublicationReviewAssistant } from '../../apps/web/src/features/review/PublicationReviewAssistant.js';
 import { ReviewAuditEvidence } from '../../apps/web/src/features/review/ReviewAuditEvidence.js';
 import { ReviewDetail } from '../../apps/web/src/features/review/ReviewDetail.js';
+import { IntakeHistoryPanel } from '../../apps/web/src/features/publishing/IntakeHistoryPanel.js';
 import { createTestHub, receiveSkill, submitPublication } from '../support/application.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
 
@@ -314,6 +316,110 @@ test('业务成果展示发现、行号证据、真实检查范围和人工采�
   assert(screen.getByText('SKILL.md:1–20'));
   assert(screen.getByText('未执行脚本'));
   assert(screen.getByText('人工已采纳'));
+});
+
+test('发布申请一经提交即关闭新研判和采纳入口，重新打开仍可回看报告和送审原文', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f);
+  const task = executionView({
+    owner_id: f.admin.id,
+    operation_id: 'resource-audit',
+    status: 'waiting_input',
+    input: { version_id: intake.version_id },
+  });
+  const report = {
+    version_id: intake.version_id,
+    content_digest: intake.content_digest!,
+    inspected: businessReport.inspected,
+    assessment: {
+      ...businessReport.assessment,
+      publication_suggestion: {
+        category: 'general',
+        scenario_ids: [],
+        keywords: ['Git'],
+        purpose: '研判建议的用途',
+      },
+    },
+  };
+  task.artifacts = [
+    {
+      id: 'report',
+      name: 'assessment',
+      media_type: 'application/json',
+      digest: 'report',
+      content: report,
+    },
+  ];
+  task.interactions = [
+    {
+      id: 'review',
+      status: 'pending',
+      revision: 1,
+      response: null,
+      expires_at: Date.now() + 60000,
+      request: { question: '是否采纳研判？', assessment: report },
+      response_schema: { type: 'object', properties: { approved: { type: 'boolean' } } },
+    },
+  ];
+  t.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path.startsWith('/api/intakes?'))
+      return Response.json(await f.hub.intakeQueries.list(f.admin, {}));
+    if (path === '/api/intakes/' + intake.id)
+      return Response.json(await f.hub.intakeQueries.getDetail(f.admin, intake.id));
+    if (path === '/api/publication-requests')
+      return Response.json(
+        await f.hub.publications.submit(
+          f.admin,
+          submitPublicationRequestSchema.parse(JSON.parse(String(options.body))),
+          'submit',
+        ),
+      );
+    if (path === '/api/scenarios') return Response.json([]);
+    if (path === '/api/ai/model-options')
+      return Response.json({
+        default_profile: 'primary',
+        profiles: [{ id: 'primary', label: '模型' }],
+      });
+    if (path.startsWith('/api/ai/executions?'))
+      return Response.json({ items: [task.execution], next_cursor: null });
+    if (path.endsWith('/events'))
+      return new Response('', { headers: { 'Content-Type': 'text/event-stream' } });
+    assert.equal(path, '/api/ai/executions/execution');
+    return Response.json(task);
+  });
+  const open = () =>
+    render(
+      withHub(createElement(IntakeHistoryPanel, { active: intake.id, onSelect() {} }), f.admin.id),
+    );
+  const page = open();
+  const user = userEvent.setup();
+  await screen.findByRole('button', { name: '快速采纳' });
+  await user.type(screen.getByRole('textbox', { name: '共享目的与授权确认' }), '实际提交的用途');
+  await user.click(screen.getByRole('button', { name: '确认内容并提交审核' }));
+  const snapshot = within(await screen.findByRole('region', { name: '已提交的发布申请' }));
+  assert(snapshot.getByText('实际提交的用途'));
+  assert.equal(snapshot.queryByText('待采纳研判'), null);
+  assert.equal(snapshot.queryByText('研判建议的用途'), null);
+  assert.equal(screen.queryByRole('button', { name: '快速采纳' }), null);
+  await user.click(screen.getByRole('button', { name: '展开 Agent 实时状态' }));
+  assert.equal(screen.queryByRole('form', { name: '人工确认' }), null);
+  assert.equal(screen.queryByRole('button', { name: '前往确认' }), null);
+  await user.click(screen.getByRole('tab', { name: /成果/ }));
+  assert(
+    within(screen.getByRole('tabpanel', { name: /成果/ })).getByText(report.assessment.summary),
+  );
+  page.unmount();
+
+  task.execution.status = 'succeeded';
+  task.execution.result = { ...report, approved: false };
+  task.interactions = [];
+  open();
+  await screen.findByText(/未采纳 ·/);
+  assert.equal(screen.queryByRole('button', { name: '发起新研判' }), null);
+  await user.click(screen.getByRole('button', { name: '展开 Agent 实时状态' }));
+  await user.click(screen.getByText('研判任务记录', { selector: 'summary' }));
+  assert(screen.getByRole('button', { name: /研判任务记录/ }));
+  assert.equal(screen.queryByRole('button', { name: '发起新研判' }), null);
 });
 
 test('维护者从反馈详情打开同事的自动研判能看负责人和报告且没有确认或取消入口', async (t) => {

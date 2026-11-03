@@ -30,7 +30,7 @@ import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { PublicationPolicyFields } from './PublicationPolicyFields.js';
 import type { PublicationDraftPolicy } from '@capability-hub/contracts';
-import type { IntakeResponse } from '@capability-hub/contracts/http';
+import type { IntakeResponse, PublicationRequestResponse } from '@capability-hub/contracts/http';
 import { ArrowRight, ShieldCheck } from '../../shared/icons/lucide.js';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
@@ -64,6 +64,7 @@ export function IntakeDetail({
   intake: i,
   suggestion,
   origin,
+  onSubmitted,
   onSelect,
   connection,
   footerSlot,
@@ -72,6 +73,7 @@ export function IntakeDetail({
   footerSlot?: HTMLElement | null;
   suggestion?: AuditSuggestion;
   origin?: ReviewOrigin;
+  onSubmitted?: (publication: PublicationRequestResponse) => void;
   connection?: IntakeConnection;
   onSelect?: (id: string) => void;
 }) {
@@ -274,7 +276,7 @@ export function IntakeDetail({
     setBusy(true);
     setError('');
     try {
-      const result = await mutate<{ id: string }>('/api/publication-requests', {
+      const result = await mutate<PublicationRequestResponse>('/api/publication-requests', {
         source_intake_id: i.id,
         version_id: i.version_id,
         ...value,
@@ -284,6 +286,7 @@ export function IntakeDetail({
         base_release_id: i.current_release_id,
       });
       setSubmitted(result.id);
+      onSubmitted?.(result);
       reload();
     } catch (e) {
       setError(errorMessage(e));
@@ -467,7 +470,7 @@ export function IntakeDetail({
           (i.ruleset_current || i.publication?.state === 'approved') &&
           (submitted || i.publication?.state === 'pending' ? (
             i.publication?.state === 'pending' ? (
-              <SubmittedFields publication={i.publication} suggestion={proposal} />
+              <SubmittedFields publication={i.publication} />
             ) : (
               <Message>已提交人工审核。</Message>
             )
