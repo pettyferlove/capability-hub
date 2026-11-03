@@ -18,8 +18,7 @@ export const iconBtnStyles = cn(
   '[&:not(:disabled)]:[transition:background-color_var(--duration-fast),_border-color_var(--duration-fast),_box-shadow_var(--duration-fast),_transform_var(--duration-fast)]',
   '[&:not(:disabled):active]:[transform:scale(0.98)]',
   'motion-reduce:[&:not(:disabled):active]:[transform:none] disabled:opacity-[0.5]',
-  "disabled:cursor-not-allowed [[class~='group/table-pagination']_&]:w-8",
-  "[[class~='group/table-pagination']_&]:h-8",
+  'disabled:cursor-not-allowed',
 );
 
 export const btnStyles = cn(
@@ -301,7 +300,7 @@ export const dataTableStyles = cn(
   '[&_td_>_svg]:inline-block [&_td_>_svg]:[vertical-align:middle]',
   '[&_tbody_tr:hover]:[background:color-mix(in_srgb,_var(--brand-soft)_35%,_transparent)]',
   '[&_tbody_tr:focus-within]:[background:color-mix(in_srgb,_var(--brand-soft)_45%,_transparent)]',
-  '[&_tbody_tr:last-child_td]:border-b-0 max-[760px]:[&_th]:pt-2 max-[760px]:[&_th]:pr-3',
+  '[&_tbody_tr:last-child_>_*]:border-b-0 max-[760px]:[&_th]:pt-2 max-[760px]:[&_th]:pr-3',
   'max-[760px]:[&_th]:pb-2 max-[760px]:[&_th]:pl-3 max-[760px]:[&_td]:pt-2 max-[760px]:[&_td]:pr-3',
   'max-[760px]:[&_td]:pb-2 max-[760px]:[&_td]:pl-3 max-[760px]:[&_table]:min-w-140',
 );
@@ -732,8 +731,6 @@ export const hubSelectStyles = cn(
   'group/hub-select min-w-0 w-full block font-normal [&[data-disabled]]:opacity-[0.6]',
   '[&[data-disabled]_button]:cursor-not-allowed [&[data-disabled]_button]:bg-page',
   "[&_[data-placeholder]]:text-muted-ink [[class~='group/filter-bar']_>_&]:w-47.5",
-  "[[class~='group/table-pagination']_&]:w-31.5",
-  "max-[760px]:[[class~='group/table-pagination']_&]:mr-auto",
 );
 
 export const hubSelectTriggerStyles = cn(
@@ -752,6 +749,7 @@ export const hubSelectTriggerStyles = cn(
   "[[class~='group/table-pagination']_&]:text-[length:12px]",
   "[[class~='group/table-pagination']_&]:pt-1.5 [[class~='group/table-pagination']_&]:pr-[9px]",
   "[[class~='group/table-pagination']_&]:pb-1.5 [[class~='group/table-pagination']_&]:pl-[9px]",
+  "pointer-coarse:[[class~='group/table-pagination']_&]:min-h-11",
   'max-[760px]:text-body',
   '[&[data-focus-visible]]:outline-muted-ink',
 );
@@ -770,11 +768,13 @@ export const hubSelectOptionsStyles = cn(
 );
 
 export const tablePaginationStyles = cn(
-  'group/table-pagination pt-3 pr-4 pb-3 pl-4 flex items-center justify-between gap-4',
-  'border-t [border-top-style:solid] border-t-[color:var(--line)] text-[length:12px] text-muted-ink bg-page flex-wrap',
-  'tabular-nums [&_>_div]:flex [&_>_div]:items-center [&_>_div]:gap-2.5 [&_>_div]:flex-wrap',
-  '[&_>_div]:max-w-full [&_>_div]:ml-auto max-[760px]:flex-col max-[760px]:items-start',
-  'max-[760px]:gap-3 max-[760px]:[&_>_div]:w-full max-[760px]:[&_>_div]:justify-end',
+  'group/table-pagination flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2',
+  'border-t border-line bg-page/50 px-4 py-2 text-label text-muted-ink tabular-nums max-[600px]:px-3',
+);
+
+export const tablePageButtonStyles = cn(
+  iconBtnStyles,
+  'size-8 shrink-0 rounded-md focus-visible:-outline-offset-2 pointer-coarse:size-11',
 );
 
 export const skeletonBlockStyles = cn(

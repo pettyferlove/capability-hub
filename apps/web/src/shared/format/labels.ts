@@ -1,8 +1,15 @@
-import type { PublicUserResponse } from '@capability-hub/contracts/http';
+import type { OperationsResponse, PublicUserResponse } from '@capability-hub/contracts/http';
 
 /** 同名账号的授权和成员关系独立，管理操作需显示来源。 */
 export const accountLoginLabel = (user: Pick<PublicUserResponse, 'username' | 'auth_provider'>) =>
   `${user.username} · ${user.auth_provider === 'ldap' ? 'LDAP 账号' : '本地账号'}`;
+
+/** Worker 状态只描述采样实例的进程，队列计数取自共享数据库。 */
+export const workerStateLabels: Record<OperationsResponse['worker_state'], string> = {
+  stopped: '未运行',
+  idle: '空闲',
+  busy: '工作中',
+};
 
 /**
  * 分类名；未知取值原样返回而不是回退到「未分类」——后端新增分类时界面会直接露出该标识，

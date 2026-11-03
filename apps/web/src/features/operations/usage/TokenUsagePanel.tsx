@@ -7,6 +7,7 @@ import {
 import { useQuery } from '../../../shared/api/use-query.js';
 import { ErrorState } from '../../../shared/components/ErrorState.js';
 import { Segmented } from '../../../shared/components/Segmented.js';
+import { TablePagination } from '../../../shared/components/TablePagination.js';
 import { RefreshCw } from '../../../shared/icons/lucide.js';
 import {
   btnStyles,
@@ -196,33 +197,17 @@ function UsageDistribution({ data }: { data: TokenUsageResponse }) {
             </tbody>
           </table>
         </div>
+        {last > 0 && (
+          <TablePagination
+            label="用量分布"
+            summary={`共 ${rows.length} 项`}
+            page={current + 1}
+            pageCount={last + 1}
+            onPrevious={current > 0 ? () => setPage(current - 1) : undefined}
+            onNext={current < last ? () => setPage(current + 1) : undefined}
+          />
+        )}
       </div>
-      {last > 0 && (
-        <nav
-          aria-label="用量分布分页"
-          className="mt-2 flex items-center justify-end gap-2 text-caption"
-        >
-          <button
-            type="button"
-            className={btnStyles}
-            disabled={!current}
-            onClick={() => setPage(current - 1)}
-          >
-            上一页
-          </button>
-          <span>
-            {current + 1} / {last + 1}
-          </span>
-          <button
-            type="button"
-            className={btnStyles}
-            disabled={current === last}
-            onClick={() => setPage(current + 1)}
-          >
-            下一页
-          </button>
-        </nav>
-      )}
     </section>
   );
 }

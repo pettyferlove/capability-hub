@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { operationsAgentApi, aiExecutionLedgerResponseSchema } from '@capability-hub/contracts';
 import { useQuery } from '../../../shared/api/use-query.js';
 import { SelectField } from '../../../shared/components/SelectField.js';
+import { TablePagination } from '../../../shared/components/TablePagination.js';
 import { operationsHref } from '../navigation.js';
 import { btnStyles, dataTableStyles, tableWrapStyles } from '../../../shared/styles/recipes.js';
 import { cn } from '../../../shared/styles/cn.js';
@@ -41,6 +42,7 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
     [query.data],
   );
   const page = parsed?.success ? parsed.data : undefined;
+  const nextCursor = page?.next_cursor;
   const error = query.error || (parsed && !parsed.success ? '执行列表格式无效' : '');
   if (!active) return null;
   return (
@@ -110,101 +112,84 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
       ) : query.loading || !page ? (
         <p role="status">正在加载执行记录…</p>
       ) : (
-        <>
-          <div className={dataTableStyles}>
-            <div className={tableWrapStyles}>
-              <table className="text-left" aria-label="执行记录列表">
-                <thead>
-                  <tr>
-                    {[
-                      '任务 / 执行 ID',
-                      'Agent',
-                      '负责人',
-                      '状态 / 错误码',
-                      '创建时间',
-                      '导出流程',
-                    ].map((label) => (
-                      <th key={label} scope="col">
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {page.items.map((row) => (
-                    <tr key={row.id}>
-                      <td>
-                        <a
-                          className="font-medium text-brand"
-                          href={operationsHref('agents', { execution: row.id })}
-                        >
-                          {row.title}
-                        </a>
-                        <small className="block font-mono text-muted-ink">{row.id}</small>
-                      </td>
-                      <td>{operationLabels[row.operation_id] ?? row.operation_id}</td>
-                      <td>{row.owner_display_name ?? row.owner_id}</td>
-                      <td>
-                        <ExecutionStatus compact status={row.status} />
-                        {row.error_code && (
-                          <small className="block font-mono text-danger">{row.error_code}</small>
-                        )}
-                      </td>
-                      <td>
-                        <time dateTime={row.created_at}>
-                          {new Date(row.created_at).toLocaleString()}
-                        </time>
-                      </td>
-                      <td>
-                        <div className="flex gap-3 text-brand">
-                          {(['markdown', 'json'] as const).map((format) => (
-                            <a
-                              key={format}
-                              download
-                              href={operationsAgentApi.diagnostics(row.id) + '?download=' + format}
-                              aria-label={'下载 ' + row.id + ' 的 ' + format}
-                            >
-                              {format === 'markdown' ? 'Markdown' : 'JSON'}
-                            </a>
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
+        <div className={dataTableStyles}>
+          <div className={tableWrapStyles}>
+            <table className="text-left" aria-label="执行记录列表">
+              <thead>
+                <tr>
+                  {[
+                    '任务 / 执行 ID',
+                    'Agent',
+                    '负责人',
+                    '状态 / 错误码',
+                    '创建时间',
+                    '导出流程',
+                  ].map((label) => (
+                    <th key={label} scope="col">
+                      {label}
+                    </th>
                   ))}
-                </tbody>
-              </table>
-              {!page.items.length && (
-                <p role="status" className="p-6 text-center text-muted-ink">
-                  没有符合条件的执行记录。
-                </p>
-              )}
-            </div>
+                </tr>
+              </thead>
+              <tbody>
+                {page.items.map((row) => (
+                  <tr key={row.id}>
+                    <td>
+                      <a
+                        className="font-medium text-brand"
+                        href={operationsHref('agents', { execution: row.id })}
+                      >
+                        {row.title}
+                      </a>
+                      <small className="block font-mono text-muted-ink">{row.id}</small>
+                    </td>
+                    <td>{operationLabels[row.operation_id] ?? row.operation_id}</td>
+                    <td>{row.owner_display_name ?? row.owner_id}</td>
+                    <td>
+                      <ExecutionStatus compact status={row.status} />
+                      {row.error_code && (
+                        <small className="block font-mono text-danger">{row.error_code}</small>
+                      )}
+                    </td>
+                    <td>
+                      <time dateTime={row.created_at}>
+                        {new Date(row.created_at).toLocaleString()}
+                      </time>
+                    </td>
+                    <td>
+                      <div className="flex gap-3 text-brand">
+                        {(['markdown', 'json'] as const).map((format) => (
+                          <a
+                            key={format}
+                            download
+                            href={operationsAgentApi.diagnostics(row.id) + '?download=' + format}
+                            aria-label={'下载 ' + row.id + ' 的 ' + format}
+                          >
+                            {format === 'markdown' ? 'Markdown' : 'JSON'}
+                          </a>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!page.items.length && (
+              <p role="status" className="p-6 text-center text-muted-ink">
+                没有符合条件的执行记录。
+              </p>
+            )}
           </div>
-          <nav
-            aria-label="执行记录分页"
-            className="flex items-center justify-end gap-3 text-caption"
-          >
-            <button
-              type="button"
-              className={btnStyles}
-              disabled={!cursors.length}
-              onClick={() => setCursors((value) => value.slice(0, -1))}
-            >
-              上一页
-            </button>
-            <span>第 {cursors.length + 1} 页</span>
-            <button
-              type="button"
-              className={btnStyles}
-              disabled={!page.next_cursor}
-              onClick={() => {
-                if (page.next_cursor) setCursors([...cursors, page.next_cursor]);
-              }}
-            >
-              下一页
-            </button>
-          </nav>
-        </>
+          <TablePagination
+            label="执行记录"
+            summary={`本页 ${page.items.length} 条`}
+            page={cursors.length + 1}
+            onPrevious={
+              cursors.length ? () => setCursors((value) => value.slice(0, -1)) : undefined
+            }
+            onNext={nextCursor ? () => setCursors([...cursors, nextCursor]) : undefined}
+          />
+        </div>
       )}
     </section>
   );

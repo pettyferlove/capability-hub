@@ -1,6 +1,6 @@
 import { aiExecutionStatusSchema } from '@capability-hub/contracts';
 import type { OperationsResponse } from '@capability-hub/contracts/http';
-import { dateLabel } from '../../../shared/format/labels.js';
+import { dateLabel, workerStateLabels } from '../../../shared/format/labels.js';
 import {
   chipsStyles,
   panelStyles,
@@ -24,8 +24,7 @@ export function OperationsAgents({
       <h3>AI Agents</h3>
       <p className={subtleStyles}>
         已注册 {operations.length} 个 Agent · 本进程 Worker
-        {{ stopped: '未运行', idle: '空闲', busy: '工作中' }[workerState]}。
-        执行统计覆盖数据库中保留的记录。
+        {workerStateLabels[workerState]}。 执行统计覆盖数据库中保留的记录。
       </p>
       <ul className={operationsAgentListStyles}>
         {operations.map(({ id, title, version, activity }) => (

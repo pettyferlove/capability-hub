@@ -4,7 +4,7 @@
  * 拒绝（401/403）与失败（5xx）三类，其余状态不计入任何一类。
  */
 import type { OperationsResponse } from '@capability-hub/contracts/http';
-import { bytesLabel, dateLabel } from '../../../shared/format/labels.js';
+import { bytesLabel, dateLabel, workerStateLabels } from '../../../shared/format/labels.js';
 import { panelStyles, subtleStyles } from '../../../shared/styles/recipes.js';
 import { operationsGridStyles } from '../styles.js';
 import { OperationsStorage } from './OperationsStorage.js';
@@ -116,6 +116,10 @@ export function InstanceRuntime({ data }: { data: OperationsResponse }) {
           <h3>处理与检查</h3>
           <dl>
             <div>
+              <dt>本实例 Worker</dt>
+              <dd>{workerStateLabels[data.worker_state]}</dd>
+            </div>
+            <div>
               <dt>已完成作业</dt>
               <dd>{jobs ? (jobs.by_state.succeeded ?? 0) : '—'}</dd>
             </div>
@@ -124,8 +128,16 @@ export function InstanceRuntime({ data }: { data: OperationsResponse }) {
               <dd>{jobs ? (jobs.by_state.failed ?? 0) : '—'}</dd>
             </div>
             <div>
+              <dt>已取消作业</dt>
+              <dd>{jobs ? (jobs.by_state.cancelled ?? 0) : '—'}</dd>
+            </div>
+            <div>
               <dt>过期租约</dt>
               <dd>{jobs?.expired_leases ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>扫描通过</dt>
+              <dd>{scans ? (scans.by_state.passed ?? 0) : '—'}</dd>
             </div>
             <div>
               <dt>扫描阻断</dt>

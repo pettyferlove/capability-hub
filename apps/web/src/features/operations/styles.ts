@@ -1,6 +1,9 @@
 import { cn } from '../../shared/styles/cn.js';
 
-export const operationsGridStyles = 'grid grid-cols-2 gap-4.5 items-start max-[760px]:grid-cols-1';
+export const operationsGridStyles = cn(
+  'grid grid-cols-2 items-stretch gap-4.5 max-[760px]:grid-cols-1',
+  '[&>section]:flex [&>section]:min-w-0 [&>section]:flex-col [&>section>dl]:grid [&>section>dl]:grow',
+);
 
 export const analyticsSummaryStyles = cn(
   'grid gap-2 sm:grid-cols-3 [&_>_div]:min-w-0 [&_>_div]:rounded-lg [&_>_div]:bg-page [&_>_div]:p-3',

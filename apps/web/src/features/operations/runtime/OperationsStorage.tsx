@@ -51,6 +51,8 @@ export function OperationsStorage({ data }: { data: OperationsResponse }) {
           查询探测耗时: `${database.duration_ms} ms`,
           数据库大小: database.size_bytes === null ? '无法读取' : bytesLabel(database.size_bytes),
           ...(database.pool_limit === null ? {} : { 连接池上限: database.pool_limit }),
+          成功备份记录:
+            data.backup_record_count === undefined ? '无法读取' : `${data.backup_record_count} 条`,
           最近备份: data.last_backup_at
             ? dateLabel(data.last_backup_at)
             : data.last_backup_at === null

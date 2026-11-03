@@ -73,13 +73,8 @@ export const intakeHistoryPanelStyles = cn(
   "[&_[class~='group/query-content']_>_[class~='group/empty']]:pr-4",
   "[&_[class~='group/query-content']_>_[class~='group/empty']]:pb-8",
   "[&_[class~='group/query-content']_>_[class~='group/empty']]:pl-4",
-  "[&_[class~='group/table-pagination']_[class~='group/hub-select']]:w-27.5",
-  "[&_[class~='group/table-pagination']]:flex-wrap [&_[class~='group/table-pagination']]:pt-3",
-  "[&_[class~='group/table-pagination']]:pr-0 [&_[class~='group/table-pagination']]:pb-0",
-  "[&_[class~='group/table-pagination']]:pl-0 [&_[class~='group/table-pagination']]:mt-2",
-  "[&_[class~='group/table-pagination']]:bg-transparent",
-  "[&_[class~='group/table-pagination']]:gap-2.5",
-  "[&_[class~='group/table-pagination']_>_div]:gap-[5px]",
+  "[&_[class~='group/table-pagination']]:mt-2 [&_[class~='group/table-pagination']]:px-0",
+  "[&_[class~='group/table-pagination']]:pb-0 [&_[class~='group/table-pagination']]:bg-transparent",
 );
 
 export const intakeHistoryFiltersStyles = cn(

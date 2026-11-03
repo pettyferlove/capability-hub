@@ -191,6 +191,25 @@ test('运行快照按 Agent 汇总保留的执行，只向审计员披露统计�
     assert(!response.text.includes(value));
 });
 
+test('备份记录数区分没有成功备份、已有记录和审计读取失败', async (context) => {
+  const fixture = await createTestHub(context);
+  const admin = await signIn(fixture);
+  const snapshot = async () =>
+    (await admin.get(operationsPath).expect(200)).body as OperationsResponse;
+  assert.equal((await snapshot()).backup_record_count, 0);
+  await fixture.store.audit('system', 'backup.completed', 'instance');
+  await fixture.store.audit('system', 'backup.completed', 'instance');
+  assert.equal((await snapshot()).backup_record_count, 2);
+
+  const where = fixture.store.where.bind(fixture.store);
+  context.mock.method(fixture.store, 'where', (async (table, key, value) => {
+    if (table === 'audit' && key === 'action' && value === 'backup.completed')
+      throw new Error('备份审计暂不可读');
+    return where(table, key, value);
+  }) satisfies typeof fixture.store.where);
+  assert.equal((await snapshot()).backup_record_count, undefined);
+});
+
 test('对象存储读写探测失败时，运行快照仍保留数据库、Agent 和队列信息', async (context) => {
   const fixture = await createTestHub(context);
   const client = await signIn(fixture);

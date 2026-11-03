@@ -51,7 +51,7 @@ export default function OperationsCenter({ query }: { query: string }) {
       panel = <ErrorState message="当前账号无法访问此运营栏目。" />;
   }
   return (
-    <div>
+    <div className="[&>nav]:mb-[var(--section-gap)] max-[600px]:[&>nav]:mb-[var(--space-4)]">
       <PageHead
         eyebrow="OPERATIONS"
         title="运营中心"

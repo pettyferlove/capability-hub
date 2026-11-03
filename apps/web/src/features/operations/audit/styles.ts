@@ -76,7 +76,6 @@ export const auditPanelStyles = cn(
   "[&_>_[class~='group/section-heading']]:mr-0 [&_>_[class~='group/section-heading']]:mb-0",
   "[&_>_[class~='group/section-heading']]:ml-0 [&_[class~='group/section-heading']_>_div]:grid",
   "[&_[class~='group/section-heading']_>_div]:gap-[var(--space-1)]",
-  "max-[600px]:[&_[class~='group/table-pagination']_>_div]:flex-wrap",
 );
 
 export const auditMetricsStyles = cn(

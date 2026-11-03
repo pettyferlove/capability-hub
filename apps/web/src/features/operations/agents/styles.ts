@@ -1,4 +1,16 @@
 import { cn } from '../../../shared/styles/cn.js';
+import { segmentedStyles } from '../../../shared/styles/recipes.js';
+
+export const agentViewSwitchStyles = cn(
+  segmentedStyles,
+  'inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-lg p-0.5',
+);
+
+export const agentViewLinkStyles = cn(
+  'inline-flex min-h-7 items-center justify-center rounded-md px-2.5 text-label leading-5 font-medium whitespace-nowrap text-muted-ink',
+  'hover:text-ink aria-[current=page]:text-brand focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand',
+  'transition-colors motion-reduce:transition-none pointer-coarse:min-h-11',
+);
 
 export const workspaceStyles = cn(
   'relative flex h-[clamp(520px,calc(100dvh_-_240px),980px)] min-h-0 shrink-0 overflow-hidden rounded-[22px] border border-[color:var(--line)] bg-paper',

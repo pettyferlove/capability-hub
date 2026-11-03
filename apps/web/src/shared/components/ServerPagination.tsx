@@ -1,6 +1,5 @@
-import { tablePaginationStyles, iconBtnStyles } from '../styles/recipes.js';
-import { ChevronLeft, ChevronRight } from '../icons/lucide.js';
 import { SelectField } from './SelectField.js';
+import { TablePagination } from './TablePagination.js';
 
 /** 只改变请求页码和页大小，数据分页由服务端完成。 */
 export function ServerPagination({
@@ -20,46 +19,31 @@ export function ServerPagination({
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   return (
-    <nav className={tablePaginationStyles} aria-label={label + '分页'}>
-      <span role="status" aria-live="polite" aria-atomic="true">
-        共 {total} 条 · {total ? (page - 1) * pageSize + 1 : 0}–{Math.min(page * pageSize, total)}{' '}
-        条
-      </span>
-      <div>
-        <SelectField
-          aria-label={label + '每页条数'}
-          value={String(pageSize)}
-          disabled={disabled}
-          onValueChange={(value) => onChange(1, Number(value))}
-        >
-          {[5, 10, 20, 50].map((size) => (
-            <option key={size} value={size}>
-              {size} 条 / 页
-            </option>
-          ))}
-        </SelectField>
-        <button
-          type="button"
-          className={iconBtnStyles}
-          aria-label={label + '上一页'}
-          disabled={disabled || page <= 1}
-          onClick={() => onChange(page - 1, pageSize)}
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <span>
-          {page} / {pages}
-        </span>
-        <button
-          type="button"
-          className={iconBtnStyles}
-          aria-label={label + '下一页'}
-          disabled={disabled || page >= pages}
-          onClick={() => onChange(page + 1, pageSize)}
-        >
-          <ChevronRight size={16} />
-        </button>
-      </div>
-    </nav>
+    <TablePagination
+      label={label}
+      summary={
+        total
+          ? `第 ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} 条，共 ${total} 条`
+          : '共 0 条'
+      }
+      page={page}
+      pageCount={pages}
+      onPrevious={!disabled && page > 1 ? () => onChange(page - 1, pageSize) : undefined}
+      onNext={!disabled && page < pages ? () => onChange(page + 1, pageSize) : undefined}
+    >
+      <SelectField
+        className="w-27 max-w-full"
+        aria-label={label + '每页条数'}
+        value={String(pageSize)}
+        disabled={disabled}
+        onValueChange={(value) => onChange(1, Number(value))}
+      >
+        {[5, 10, 20, 50].map((size) => (
+          <option key={size} value={size}>
+            {size} 条 / 页
+          </option>
+        ))}
+      </SelectField>
+    </TablePagination>
   );
 }

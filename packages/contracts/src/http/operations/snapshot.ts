@@ -26,6 +26,8 @@ export interface OperationsResponse {
   memory_rss_bytes: number;
   /** null 表示没有成功备份记录；读取备份审计失败时省略。 */
   last_backup_at?: string | null;
+  /** 当前保留的成功备份审计记录数，读取失败时省略。 */
+  backup_record_count?: number;
   worker_state: 'stopped' | 'idle' | 'busy';
   database: StorageProbe & {
     driver: 'sqlite' | 'postgresql';

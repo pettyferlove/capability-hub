@@ -244,6 +244,7 @@ test('刷新恢复的存储和 Agent 统计时，页面区分采样失败和没�
     observed_at: time,
     memory_rss_bytes: 1024,
     last_backup_at: null,
+    backup_record_count: 0,
     worker_state: 'stopped',
     database: {
       driver: 'sqlite',
@@ -285,6 +286,12 @@ test('刷新恢复的存储和 Agent 统计时，页面区分采样失败和没�
   const objects = within(await screen.findByRole('region', { name: '对象存储' }));
   assert(objects.getByText('探测失败'));
   assert(within(screen.getByRole('region', { name: '数据库' })).getByText('探测正常'));
+  const metric = (label: string) =>
+    within(runtime.container).getByText(label, { selector: 'dt' }).nextElementSibling?.textContent;
+  assert.equal(metric('成功备份记录'), '0 条');
+  assert.equal(metric('本实例 Worker'), '未运行');
+  assert.equal(metric('已取消作业'), '—');
+  assert.equal(metric('扫描通过'), '—');
   const analysis = render(createElement(OperationsView, { section: 'agents' }));
   const agents = within(await screen.findByRole('region', { name: 'AI Agents' }));
   assert(agents.getByText('执行统计暂不可用'));
@@ -294,6 +301,17 @@ test('刷新恢复的存储和 Agent 统计时，页面区分采样失败和没�
   assert(screen.getByText(/趋势统计暂不可用/));
 
   snapshot.object_storage.available = true;
+  delete snapshot.last_backup_at;
+  delete snapshot.backup_record_count;
+  snapshot.worker_state = 'busy';
+  snapshot.jobs = {
+    by_state: { cancelled: 2 },
+    oldest_wait_seconds: 0,
+    retrying: 0,
+    expired_leases: 0,
+    recent_failures: [],
+  };
+  snapshot.scans = { by_state: {}, ruleset: 'test' };
   snapshot.http.requests++;
   snapshot.http.duration_buckets[2] = { upper_ms: null, count: 2, cumulative: 21 };
   snapshot.agents.daily_activity = [];
@@ -307,6 +325,10 @@ test('刷新恢复的存储和 Agent 统计时，页面区分采样失败和没�
   fireEvent.click(within(runtime.container).getByRole('button', { name: '刷新' }));
   fireEvent.click(within(analysis.container).getByRole('button', { name: '刷新' }));
   assert(await objects.findByText('探测正常'));
+  assert.equal(metric('成功备份记录'), '无法读取');
+  assert.equal(metric('本实例 Worker'), '工作中');
+  assert.equal(metric('已取消作业'), '2');
+  assert.equal(metric('扫描通过'), '0');
   assert(screen.getByText('> 30000 ms'));
   assert(await screen.findByText('所选范围暂无执行记录。'));
   assert(agents.getByText('暂无执行记录'));

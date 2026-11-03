@@ -13,6 +13,7 @@ import {
   within,
 } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
+import { deferred } from '../support/store.js';
 import { aiExecutionViewResponseSchema, aiEventResponseSchema } from '@capability-hub/contracts';
 import type { MeResponse } from '@capability-hub/contracts/http';
 import App from '../../apps/web/src/app/App.js';
@@ -106,6 +107,7 @@ for (const [description, canExecute, consoleAccess] of [
       await userEvent.setup().click(screen.getByRole('link', { name: '返回执行记录' }));
       assert(await screen.findByRole('table', { name: '执行记录列表' }));
     } else if (consoleAccess) {
+      assert.equal(screen.queryByRole('navigation', { name: 'Agent 视图' }), null);
       assert.equal(screen.queryByRole('link', { name: 'Token 用量' }), null);
       assert(await screen.findByText('当前账号具有只读权限，可从任务记录或执行链接查看详情。'));
       assert.equal(screen.queryByRole('button', { name: '新建任务' }), null);
@@ -138,6 +140,58 @@ for (const [description, canExecute, consoleAccess] of [
     const item = within(menu).queryByRole('menuitem', { name: '运营中心' });
     assert.equal(item?.getAttribute('href') ?? null, consoleAccess ? '/operations' : null);
   });
+
+test('Agent 视图可用键盘切换，分析采样失败时仍能返回执行记录', async (t) => {
+  const previous = location.href;
+  history.replaceState(null, '', '/operations?tab=agents');
+  t.after(() => history.replaceState(null, '', previous));
+  const sampling = deferred<Response>();
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    switch (new URL(path, 'http://localhost').pathname) {
+      case '/api/auth/status':
+        return Response.json({ initialized: true });
+      case '/api/me':
+        return Response.json(workspaceUser(true, true));
+      case '/api/publication-requests':
+        return Response.json({ items: [] });
+      case '/api/admin/operations/agents/executions':
+        return Response.json({ items: [], next_cursor: null });
+      case '/api/admin/operations':
+        return (await sampling.promise).clone();
+      default:
+        throw new Error('意外请求 ' + path);
+    }
+  });
+  render(createElement(App));
+  const user = userEvent.setup();
+  const views = () => within(screen.getByRole('navigation', { name: 'Agent 视图' }));
+  await screen.findByRole('heading', { name: 'Agent 执行' });
+  const analytics = views().getByRole('link', { name: '运行分析' });
+  assert.equal(analytics.getAttribute('href'), '/operations?tab=agents&view=analytics');
+  analytics.focus();
+  await user.keyboard('{Enter}');
+  assert(await screen.findByRole('heading', { name: 'Agent 运行概况' }));
+  const selected = views().getByRole('link', { name: '运行分析', current: 'page' });
+  assert.equal(document.activeElement, selected);
+  assert.equal(location.search, '?tab=agents&view=analytics');
+  await act(async () => {
+    sampling.resolve(Response.json({ error: { message: '采样暂不可用' } }, { status: 503 }));
+  });
+  assert(await screen.findByText('采样暂不可用'));
+  const records = views().getByRole('link', { name: '执行记录' });
+  assert.equal(records.getAttribute('href'), '/operations?tab=agents');
+  records.focus();
+  await user.keyboard('{Enter}');
+  assert(await screen.findByRole('table', { name: '执行记录列表' }));
+  assert.equal(
+    document.activeElement,
+    views().getByRole('link', { name: '执行记录', current: 'page' }),
+  );
+  assert.equal(location.search, '?tab=agents');
+  await act(async () => history.back());
+  assert(await screen.findByRole('heading', { name: 'Agent 运行概况' }));
+  assert.equal(location.search, '?tab=agents&view=analytics');
+});
 
 test('诊断页按原事件序号定位并展示交接快照，导出链接只指向当前任务', async (t) => {
   const view = streamView();

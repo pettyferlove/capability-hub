@@ -248,32 +248,25 @@ export function AuditPanel() {
           </Empty>
         ) : (
           data && (
-            <>
-              <div className={cn(dataTableStyles, auditTableStyles)} aria-busy={loading}>
-                <div
-                  className={tableWrapStyles}
-                  tabIndex={0}
-                  role="region"
-                  aria-label="审计事件表格"
-                >
-                  <table aria-label="审计事件">
-                    <thead>
-                      <tr>
-                        <th>时间</th>
-                        <th>事件与说明</th>
-                        <th>操作身份</th>
-                        <th>关联对象</th>
-                        <th className={tableCellStatusStyles}>结果</th>
-                        <th className={tableCellActionsStyles}>追查</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.items.map((event) => (
-                        <AuditEventRow key={event.id} event={event} onOpen={setSelected} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+            <div className={cn(dataTableStyles, auditTableStyles)} aria-busy={loading}>
+              <div className={tableWrapStyles} tabIndex={0} role="region" aria-label="审计事件表格">
+                <table aria-label="审计事件">
+                  <thead>
+                    <tr>
+                      <th>时间</th>
+                      <th>事件与说明</th>
+                      <th>操作身份</th>
+                      <th>关联对象</th>
+                      <th className={tableCellStatusStyles}>结果</th>
+                      <th className={tableCellActionsStyles}>追查</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.items.map((event) => (
+                      <AuditEventRow key={event.id} event={event} onOpen={setSelected} />
+                    ))}
+                  </tbody>
+                </table>
               </div>
               <ServerPagination
                 label="审计事件"
@@ -286,7 +279,7 @@ export function AuditPanel() {
                   setPageSize(size);
                 }}
               />
-            </>
+            </div>
           )
         )}
       </QueryRegion>

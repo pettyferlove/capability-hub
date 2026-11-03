@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   aiCatalogResponseSchema,
   operationsAgentApi,
@@ -25,7 +25,7 @@ import { workspaceStyles } from './styles.js';
 import { cn } from '../../../shared/styles/cn.js';
 
 /** 记录、诊断和新建表单各有独立链接，返回列表时保留筛选和页码。 */
-export function AgentExecutions({ query }: { query: string }) {
+export function AgentExecutions({ query, viewSwitch }: { query: string; viewSwitch?: ReactNode }) {
   const { me } = useHub();
   const canExecute = !!me?.capabilities.can_ai;
   const params = new URLSearchParams(query);
@@ -55,7 +55,10 @@ export function AgentExecutions({ query }: { query: string }) {
     <div className={fillStyles}>
       <div className={sectionHeadingStyles}>
         <div>
-          <h2>Agent 执行</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2>Agent 执行</h2>
+            {viewSwitch}
+          </div>
           <p className={subtleStyles}>检索各用户的执行记录，回看流程并导出排查材料。</p>
         </div>
         <div className="flex flex-wrap gap-2">

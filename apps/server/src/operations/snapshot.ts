@@ -142,6 +142,7 @@ export async function operationsSnapshot(
     http: metrics.snapshot(),
     jobs: jobs && jobSnapshot(jobs),
     scans: scans && { by_state: counts(scans), ruleset: contentScanRuleset },
+    backup_record_count: backups?.length,
     last_backup_at: backups
       ? (backups
           .map((row) => row.occurred_at)
