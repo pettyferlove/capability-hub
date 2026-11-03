@@ -9,6 +9,32 @@ import { fixture } from '../support/ai-provider.js';
 import { frameworkFixture, frameworkConfig } from '../support/ai-framework.js';
 import { recoveryRuntime } from '../support/ai-recovery.js';
 
+for (const control of ['thinking_type', 'omit'] as const)
+  test(`OpenAI 兼容端点按 ${control} 接收思考参数，强度覆盖不能意外开启推理`, async (t) => {
+    const provider = await fixture('openai', 'text');
+    t.after(provider.close);
+    const config = frameworkConfig(provider.url);
+    config.profiles[0].thinking_control = control;
+    config.profiles[0].reasoning_effort_overrides = { 'framework-test/writer': 'high' };
+    const hub = await frameworkFixture(t, config, (context) =>
+      context.agent({ id: 'writer', instructions: 'Answer briefly.', prompt: 'Hello' }),
+    );
+    const execution = await hub.runtime.submit(hub.admin.id, 'framework-test', {});
+    await hub.run();
+    assert.equal((await hub.runtime.get(execution.id)).status, 'succeeded');
+    const { body } = provider.requests[0];
+    assert.deepEqual(body.thinking, control === 'thinking_type' ? { type: 'disabled' } : undefined);
+    assert.equal(body.reasoning_effort, undefined);
+    const [call] = await hub.runtime.store.list('ai_calls', {
+      execution_id: execution.id,
+      limit: 1,
+    });
+    assert.equal(
+      call.payload.diagnostics.reasoning_effort,
+      control === 'thinking_type' ? 'none' : undefined,
+    );
+  });
+
 for (const format of ['openai', 'anthropic'] as const)
   test(`AI ${format} 原生结构化输出通过 Schema 校验`, { timeout: 20000 }, async (t) => {
     const provider = await fixture(format, 'json');

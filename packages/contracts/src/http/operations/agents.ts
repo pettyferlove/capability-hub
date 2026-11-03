@@ -87,7 +87,7 @@ const callDiagnosticsSchema = z.strictObject({
   format: z.enum(['openai', 'anthropic']),
   request_timeout_ms: z.number().int().positive(),
   max_output_tokens: z.number().int().positive(),
-  reasoning_effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  reasoning_effort: z.enum(['none', 'low', 'medium', 'high', 'xhigh', 'max']).optional(),
   transport: z
     .strictObject({
       http_status: z.number().int().min(100).max(599).optional(),

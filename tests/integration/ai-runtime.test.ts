@@ -176,6 +176,11 @@ for (const format of ['openai', 'anthropic'] as const) {
     assert.equal(result.body.execution.usage.unknown_requests, 0);
     if (format === 'openai')
       assert.deepEqual(provider.requests[0]?.body.stream_options, { include_usage: true });
+    for (const { body } of provider.requests) {
+      assert.equal(body.reasoning_effort, format === 'openai' ? 'none' : undefined);
+      assert.deepEqual(body.thinking, format === 'anthropic' ? { type: 'disabled' } : undefined);
+      assert.equal(body.output_config, undefined);
+    }
     const activity = aiExecutionViewResponseSchema.parse(result.body).activity;
     const diagnosticsPath = `/api/admin/operations/agents/executions/${id}/diagnostics`;
     const report = aiExecutionDiagnosticsResponseSchema.parse(
@@ -193,6 +198,7 @@ for (const format of ['openai', 'anthropic'] as const) {
       assert.equal(observed.model, 'fixture-model');
       assert.equal(observed.format, format);
       assert.equal(observed.max_output_tokens, 4096);
+      assert.equal(observed.reasoning_effort, 'none');
       assert.equal(observed.transport.terminal_received, true);
       assert.equal(observed.transport.output_tokens_reported, true);
       assert.equal(observed.transport.request_timed_out, false);

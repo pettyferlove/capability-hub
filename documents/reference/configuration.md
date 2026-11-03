@@ -46,6 +46,8 @@ HUB_AI_PRIMARY_KEY=<实际凭据>
 
 `format` 选择协议，`credential_ref` 只填写密钥的环境变量名。`default_profile` 必须指向已有模型配置。修改后重启服务，新执行使用新配置，已有执行按原模型配置摘要校验。预算和 MCP 白名单见 [AI 框架](../design/ai-framework.md)。
 
-在支持思考强度的模型配置中，可用 `reasoning_effort` 设置默认档位，或用 `"reasoning_effort_overrides": {"resource-audit/assessment": "low"}` 只调整资源审计报告。覆盖项按 `操作 ID/调用的 Agent ID` 匹配，格式修复沿用原调用的档位。可选 `low`、`medium`、`high`、`xhigh`、`max` 中端点支持的值。未匹配且未设默认值时由模型决定。
+所有 Agent 在模型配置的 `thinking_control` 下运行。默认 `protocol` 请求关闭思考，OpenAI 发送 `reasoning_effort=none`，Anthropic 发送 `thinking.type=disabled`。OpenAI 兼容端点若要求 `thinking.type=disabled`，选 `thinking_type`。不接受思考参数的端点选 `omit`。
+
+必须思考的模型选 `effort_only`，仅发送强度。默认 `reasoning_effort` 为 `medium`，可选端点支持的 `low`、`medium`、`high`、`xhigh`、`max`。用 `"reasoning_effort_overrides": {"resource-audit/assessment": "low"}` 按 `操作 ID/调用的 Agent ID` 覆盖，格式修复沿用原调用档位。
 
 Compose 传入 `CAPABILITY_HUB_AI_CONFIG` 和示例使用的 `HUB_AI_PRIMARY_KEY`。模型配置可单独只读挂载，也可放入宿主数据目录并使用容器路径 `/app/data/ai-config.json`。其他 `credential_ref` 需显式注入对应环境变量，凭据不得进入 Web 构建。

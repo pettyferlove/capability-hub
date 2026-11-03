@@ -105,8 +105,7 @@ for (const format of ['openai', 'anthropic'] as const)
       else process.env.AI_FIXTURE_KEY = previous;
     });
     const ai = frameworkConfig(provider.url, format);
-    const fallback = format === 'anthropic' ? 'medium' : undefined;
-    if (fallback) ai.profiles[0].reasoning_effort = fallback;
+    ai.profiles[0].thinking_control = 'effort_only';
     ai.profiles[0].reasoning_effort_overrides = { 'resource-audit/assessment': 'low' };
     const f = await createTestHub(t, { ai });
     await receiveSkill(f);
@@ -117,10 +116,10 @@ for (const format of ['openai', 'anthropic'] as const)
       limit: 20,
     });
     for (const [step, expected] of [
-      ['investigate', fallback],
+      ['investigate', 'medium'],
       ['assessment', 'low'],
       ['repair-output', 'low'],
-      ['publication-suggestion', fallback],
+      ['publication-suggestion', 'medium'],
     ] as const) {
       const matches = calls.filter((call) => call.payload.diagnostics.step?.id === step);
       assert(matches.length, step);
@@ -131,6 +130,7 @@ for (const format of ['openai', 'anthropic'] as const)
             ? body.reasoning_effort
             : (body.output_config as { effort?: string } | undefined)?.effort;
         assert.equal(sent, expected, step);
+        assert.equal(body.thinking, undefined, step);
         assert.equal(call.payload.diagnostics.reasoning_effort, expected, step);
       }
     }
@@ -402,6 +402,7 @@ test('整理反馈报告时能独立核对上报原文，即使调查扩大了�
   const f = await createTestHub(t);
   const { intake } = await publishSkill(f);
   const ai = frameworkConfig(provider.url);
+  ai.profiles[0].thinking_control = 'effort_only';
   ai.profiles[0].reasoning_effort_overrides = { 'resource-audit/assessment': 'low' };
   Object.assign(f.hub.ai.runtime.config, ai);
   const feedback = await f.hub.feedback.report(
@@ -422,7 +423,7 @@ test('整理反馈报告时能独立核对上报原文，即使调查扩大了�
   const waiting = await run(f);
   assert.equal(waiting.status, 'waiting_input', JSON.stringify(waiting.payload.error));
   const messages = provider.requests.at(-1)?.body.messages as { role: string; content: string }[];
-  assert.equal(provider.requests.at(-1)?.body.reasoning_effort, undefined);
+  assert.equal(provider.requests.at(-1)?.body.reasoning_effort, 'medium');
   const message = messages.find((item) => item.role === 'user');
   assert(message);
   const material = JSON.parse(message.content) as {

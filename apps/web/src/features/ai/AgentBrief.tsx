@@ -34,6 +34,7 @@ import {
 } from './agent-brief.js';
 import { AgentSignal, type BriefSignal } from './AgentSignal.js';
 import { PhaseTrack, phaseLabel } from './PhaseTrack.js';
+import { ReadOnlyBadge } from './ReadOnlyBadge.js';
 import { jsonObject, statusLabels } from './presentation.js';
 
 type Status = AiExecutionResponse['status'];
@@ -248,7 +249,7 @@ export function AgentBrief({
       aria-label={orbOnly ? '展开 Agent 状态条' : '收起为悬浮球'}
       title={
         orbOnly
-          ? [title, stateLabel, action?.label ?? (line !== stateLabel && line)]
+          ? [title, readOnly && '只读', stateLabel, action?.label ?? (line !== stateLabel && line)]
               .filter(Boolean)
               .join(' · ')
           : '收起为悬浮球'
@@ -320,6 +321,7 @@ export function AgentBrief({
           <div id={panelId + '-brief'} className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <strong className="truncate text-section">{title}</strong>
+              {readOnly && <ReadOnlyBadge />}
               {timer}
             </div>
             <p className="mt-1 flex min-w-0 items-center gap-1.5">
@@ -449,10 +451,11 @@ export function AgentBrief({
             className="group flex min-h-11 min-w-0 flex-1 items-center gap-1 rounded-2xl px-2 py-0.5 text-left focus-visible:outline-brand"
           >
             <span id={panelId + '-brief'} className="flex min-w-0 flex-1 flex-col gap-1">
-              <span className="flex items-center gap-2">
+              <span className={cn('flex items-center gap-2', readOnly && 'flex-wrap gap-y-1')}>
                 <strong className="truncate text-body font-semibold group-hover:text-brand">
                   {title}
                 </strong>
+                {readOnly && <ReadOnlyBadge />}
                 {(line !== stateLabel || action) && stateChip}
                 {timer}
               </span>

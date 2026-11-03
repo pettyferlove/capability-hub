@@ -18,7 +18,7 @@ type EndpointModel = ReturnType<ReturnType<typeof createOpenAICompatible>>;
  */
 export class ManagedProvider {
   private failure: AiError | undefined;
-  private readonly reasoningEffort: ModelProfile['reasoning_effort'];
+  private readonly reasoningEffort: ModelCallDiagnostics['reasoning_effort'];
   constructor(
     private readonly scope: ExecutionScope,
     private readonly events: AiEventService,
@@ -29,15 +29,22 @@ export class ManagedProvider {
     private readonly agentId: string,
     operationId: string,
   ) {
-    this.reasoningEffort =
-      profile.reasoning_effort_overrides?.[`${operationId}/${agentId}`] ?? profile.reasoning_effort;
+    if (profile.thinking_control === 'effort_only') {
+      this.reasoningEffort =
+        profile.reasoning_effort_overrides?.[`${operationId}/${agentId}`] ??
+        profile.reasoning_effort;
+    } else if (profile.thinking_control !== 'omit') {
+      this.reasoningEffort = 'none';
+    }
   }
   get providerOptions(): AgentExecutionOptions['providerOptions'] {
     const effort = this.reasoningEffort;
     if (!effort) return undefined;
-    return this.profile.format === 'openai'
-      ? { openaiCompatible: { reasoningEffort: effort } }
-      : { anthropic: { effort } };
+    if (this.profile.format === 'anthropic')
+      return { anthropic: effort === 'none' ? { thinking: { type: 'disabled' } } : { effort } };
+    if (this.profile.thinking_control === 'thinking_type')
+      return { hubOpenai: { thinking: { type: 'disabled' } } };
+    return { openaiCompatible: { reasoningEffort: effort } };
   }
   assertSuccess() {
     if (this.failure) throw this.failure;

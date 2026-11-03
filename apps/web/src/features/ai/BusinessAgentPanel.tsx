@@ -41,6 +41,7 @@ import { useAiCommand } from './use-ai-command.js';
 import { activityItems } from './activity.js';
 import { QuickReview, type ReviewOrigin } from './quick-review.js';
 import { AgentBrief } from './AgentBrief.js';
+import { ReadOnlyBadge } from './ReadOnlyBadge.js';
 import { PhaseTrack } from './PhaseTrack.js';
 import {
   acceptedSuggestion,
@@ -260,9 +261,9 @@ function BusinessWorkspace({
           }}
           title={
             readOnly
-              ? '资源审计记录（只读）'
+              ? '资源审计记录'
               : shared
-                ? '共享自动研判（只读）'
+                ? '共享自动研判'
                 : feedbackId
                   ? '反馈研判'
                   : '资源审计'
@@ -302,10 +303,13 @@ function BusinessWorkspace({
         >
           <header className="flex shrink-0 items-start gap-3 border-b border-[color:var(--line)] px-4 py-3">
             <div className="min-w-0 flex-1">
-              <p className="truncate font-semibold">{title}</p>
+              <p className="flex items-center gap-2 font-semibold">
+                <span className="truncate">{title}</span>
+                {(readOnly || shared) && <ReadOnlyBadge />}
+              </p>
               <p className="mt-1 text-caption text-muted-ink">
-                {readOnly && '申请待审 · 研判记录只读 · '}
-                {shared && `共享自动研判 · 负责人 ${automaticOwner} · 只读 · `}
+                {readOnly && '申请待审 · '}
+                {shared && `共享自动研判 · 负责人 ${automaticOwner} · `}
                 {tools.length ? `已调用 ${tools.length} 次工具 · ` : ''}
                 {execution.connection || '任务记录自动保存'}
               </p>
