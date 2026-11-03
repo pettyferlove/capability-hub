@@ -25,7 +25,12 @@ import { PublicationReviewAssistant } from '../../apps/web/src/features/review/P
 import { ReviewAuditEvidence } from '../../apps/web/src/features/review/ReviewAuditEvidence.js';
 import { ReviewDetail } from '../../apps/web/src/features/review/ReviewDetail.js';
 import { IntakeHistoryPanel } from '../../apps/web/src/features/publishing/IntakeHistoryPanel.js';
-import { createTestHub, receiveSkill, submitPublication } from '../support/application.js';
+import {
+  createTestHub,
+  publishSkill,
+  receiveSkill,
+  submitPublication,
+} from '../support/application.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
 
 afterEach(cleanup);
@@ -420,6 +425,59 @@ test('发布申请一经提交即关闭新研判和采纳入口，重新打开�
   await user.click(screen.getByText('研判任务记录', { selector: 'summary' }));
   assert(screen.getByRole('button', { name: /研判任务记录/ }));
   assert.equal(screen.queryByRole('button', { name: '发起新研判' }), null);
+});
+
+test('已发布记录仅在重新申请分发的草稿中开放新研判', async (t) => {
+  const f = await createTestHub(t);
+  const { intake } = await publishSkill(f);
+  const task = executionView({
+    operation_id: 'resource-audit',
+    owner_id: f.admin.id,
+    input: { version_id: intake.version_id },
+  });
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path.startsWith('/api/intakes?'))
+      return Response.json(await f.hub.intakeQueries.list(f.admin, {}));
+    if (path === '/api/intakes/' + intake.id)
+      return Response.json(await f.hub.intakeQueries.getDetail(f.admin, intake.id));
+    if (path.startsWith('/api/ai/executions?'))
+      return Response.json({ items: [task.execution], next_cursor: null });
+    if (path === '/api/ai/executions/' + task.execution.id) return Response.json(task);
+    if (path === '/api/scenarios') return Response.json([]);
+    assert.equal(path, '/api/ai/model-options');
+    return Response.json({
+      default_profile: 'primary',
+      profiles: [{ id: 'primary', label: '模型' }],
+    });
+  });
+  const open = () =>
+    render(
+      withHub(createElement(IntakeHistoryPanel, { active: intake.id, onSelect() {} }), f.admin.id),
+    );
+  const page = open();
+  const user = userEvent.setup();
+  await screen.findByRole('heading', { name: '此快照已审核发布' });
+  const readBrief = async () =>
+    within(await screen.findByRole('region', { name: 'Agent 任务简报' })).findByText('已完成');
+  await readBrief();
+  assert(!screen.queryByRole('button', { name: '发起新研判' }));
+  await user.click(screen.getByRole('button', { name: '展开 Agent 实时状态' }));
+  assert(
+    within(screen.getByRole('region', { name: 'Agent 实时工作区' })).getByText(/已审核发布 ·/),
+  );
+  await user.click(screen.getByText('研判任务记录', { selector: 'summary' }));
+  assert(screen.getByRole('button', { name: /研判任务记录/ }));
+  assert(!screen.queryByRole('button', { name: '发起新研判' }));
+  await user.click(screen.getByRole('button', { name: '重新申请分发' }));
+  await waitFor(() =>
+    assert(!(screen.getByRole('button', { name: '发起新研判' }) as HTMLButtonElement).disabled),
+  );
+  assert(screen.getByRole('button', { name: '确认内容并提交审核' }));
+
+  page.unmount();
+  open();
+  await readBrief();
+  assert(!screen.queryByRole('button', { name: '发起新研判' }));
 });
 
 test('维护者从反馈详情打开同事的自动研判能看负责人和报告且没有确认或取消入口', async (t) => {

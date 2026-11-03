@@ -56,7 +56,7 @@ interface BusinessAgentPanelProps {
   /** 存在即切换为反馈研判（`feedback-triage`），否则为资源审计（`resource-audit`）。 */
   feedbackId?: string;
   title: string;
-  readOnly?: boolean;
+  readOnlyReason?: string;
   /** 选中执行状态转为 `succeeded` 时回调；内部用 ref 持有最新引用，父组件无需 memo。 */
   onCompleted?: (execution: AiExecutionResponse) => void;
   /** 结论变化时回传当前应采用的建议（待确认优先于已成功记录），`undefined` 表示无可采用建议。 */
@@ -78,13 +78,14 @@ function BusinessWorkspace({
   title,
   versionId,
   feedbackId,
-  readOnly = false,
+  readOnlyReason,
   onCompleted,
   onSuggestion,
   onAdopt,
   className,
 }: BusinessAgentPanelProps) {
   const { me, refresh: hubRefresh } = useHub();
+  const readOnly = !!readOnlyReason;
   const [open, setOpen] = useState(false);
   const [wide, setWide] = useState(false);
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
@@ -308,7 +309,7 @@ function BusinessWorkspace({
                 {(readOnly || shared) && <ReadOnlyBadge />}
               </p>
               <p className="mt-1 text-caption text-muted-ink">
-                {readOnly && '申请待审 · '}
+                {readOnlyReason && `${readOnlyReason} · `}
                 {shared && `共享自动研判 · 负责人 ${automaticOwner} · `}
                 {tools.length ? `已调用 ${tools.length} 次工具 · ` : ''}
                 {execution.connection || '任务记录自动保存'}

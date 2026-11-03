@@ -28,6 +28,7 @@ import { intakeStatuses } from '@capability-hub/contracts';
 import type { IntakeListResponse } from '@capability-hub/contracts/http';
 import { RefreshCw, Search, ShieldCheck, X } from '../../shared/icons/lucide.js';
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '../../shared/api/use-query.js';
 import { Empty } from '../../shared/components/Empty.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
@@ -60,6 +61,7 @@ export function IntakeHistoryPanel({
   const { refresh, reload, me } = useHub();
   const [suggestion, setSuggestion] = useState<AuditSuggestion>();
   const [footerSlot, setFooterSlot] = useState<HTMLDivElement | null>(null);
+  const [auditSlot, setAuditSlot] = useState<HTMLDivElement | null>(null);
   const [origin, setOrigin] = useState<ReviewOrigin>();
   useEffect(() => setOrigin(undefined), [active]);
   const [query, setQuery] = useState('');
@@ -106,6 +108,21 @@ export function IntakeHistoryPanel({
   function search(event: SubmitEvent) {
     event.preventDefault();
     setFilters((value) => ({ ...value, page: 1, q: query.trim() }));
+  }
+  function renderAudit(readOnlyReason?: string) {
+    if (!detail?.version_id || !auditSlot) return null;
+    return createPortal(
+      <BusinessAgentPanel
+        className="absolute"
+        key={detail.version_id}
+        versionId={detail.version_id}
+        readOnlyReason={readOnlyReason}
+        onAdopt={setOrigin}
+        onSuggestion={setSuggestion}
+        title={detail.asset_slug}
+      />,
+      auditSlot,
+    );
   }
   return (
     <section className={cn(panelStyles, intakeHistoryPanelStyles)} aria-busy={loading}>
@@ -215,7 +232,7 @@ export function IntakeHistoryPanel({
             <X size={20} />
           </button>
         </div>
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="relative flex min-h-0 flex-1 flex-col" ref={setAuditSlot}>
           <div
             data-intake-scroll
             className={cn(
@@ -231,6 +248,7 @@ export function IntakeHistoryPanel({
               detail && (
                 <IntakeDetail
                   footerSlot={footerSlot}
+                  renderAudit={renderAudit}
                   key={detail.id}
                   intake={detail}
                   origin={origin}
@@ -242,17 +260,6 @@ export function IntakeHistoryPanel({
               )
             )}
           </div>
-          {detail?.version_id && (
-            <BusinessAgentPanel
-              className="absolute"
-              key={detail.version_id}
-              versionId={detail.version_id}
-              readOnly={detail.publication?.state === 'pending'}
-              onAdopt={setOrigin}
-              onSuggestion={setSuggestion}
-              title={detail.asset_slug}
-            />
-          )}
         </div>
         <div ref={setFooterSlot} className="shrink-0 empty:hidden" />
       </Overlay>

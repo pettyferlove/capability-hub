@@ -32,7 +32,15 @@ import { PublicationPolicyFields } from './PublicationPolicyFields.js';
 import type { PublicationDraftPolicy } from '@capability-hub/contracts';
 import type { IntakeResponse, PublicationRequestResponse } from '@capability-hub/contracts/http';
 import { ArrowRight, ShieldCheck } from '../../shared/icons/lucide.js';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type SubmitEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type SubmitEvent,
+} from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
@@ -68,9 +76,11 @@ export function IntakeDetail({
   onSelect,
   connection,
   footerSlot,
+  renderAudit,
 }: {
   intake: IntakeResponse;
   footerSlot?: HTMLElement | null;
+  renderAudit?: (readOnlyReason?: string) => ReactNode;
   suggestion?: AuditSuggestion;
   origin?: ReviewOrigin;
   onSubmitted?: (publication: PublicationRequestResponse) => void;
@@ -118,6 +128,7 @@ export function IntakeDetail({
     suggestion?.versionId === i.version_id && suggestion?.digest === i.content_digest
       ? suggestion
       : undefined;
+  const published = i.publication?.state === 'approved' && !reapplying;
   const editable =
     i.can_maintain &&
     !inactive &&
@@ -125,7 +136,7 @@ export function IntakeDetail({
     i.ruleset_current &&
     !submitted &&
     i.publication?.state !== 'pending' &&
-    (i.publication?.state !== 'approved' || reapplying);
+    !published;
   const formId = useId();
   const root = useRef<HTMLDivElement>(null);
   const [jump, setJump] = useState<PublicationNotice>();
@@ -474,7 +485,7 @@ export function IntakeDetail({
             ) : (
               <Message>已提交人工审核。</Message>
             )
-          ) : i.publication?.state === 'approved' && !reapplying ? (
+          ) : published ? (
             <div className={intakePublishedStyles}>
               <ShieldCheck size={27} />
               <h4>此快照已审核发布</h4>
@@ -591,6 +602,7 @@ export function IntakeDetail({
           ))}
       </div>
       {footerSlot ? createPortal(footer, footerSlot) : footer}
+      {renderAudit?.(reviewId ? '申请待审' : published ? '已审核发布' : undefined)}
     </div>
   );
 }
