@@ -61,6 +61,9 @@ export const appHeaderStyles = cn(
   "[&_[class~='group/header-actions']_>_[class~='group/btn']]:text-[length:12px]",
 );
 
+export const headerProgressStyles =
+  'pointer-events-none absolute inset-x-0 -bottom-px h-0.5 origin-left bg-brand/65 [transform:scaleX(0)] motion-reduce:hidden';
+
 export const headerInnerStyles = cn(
   'max-w-310 mt-auto mr-auto mb-auto ml-auto min-h-[79px] pt-0 pr-7 pb-0 pl-7 flex items-center',
   'gap-9.5 max-[1100px]:gap-5 max-[850px]:gap-4.5 max-[850px]:pt-3.5 max-[850px]:pr-5.5',

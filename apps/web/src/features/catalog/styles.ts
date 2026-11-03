@@ -147,26 +147,9 @@ export const detailMetaStyles = cn(
 export const managementToolsStyles =
   'mt-5 text-[length:12px] text-muted-ink [&_summary]:cursor-pointer [&_summary]:mb-[15px]';
 
-export const discoverStyles = cn(
-  "group/discover [&_[class~='group/hero-copy']_[class~='group/eyebrow']]:text-caption",
-  "[&_[class~='group/hero-copy']_[class~='group/eyebrow']]:leading-[18px]",
-  "[&_[class~='group/hero-copy']_[class~='group/eyebrow']]:mt-0",
-  "[&_[class~='group/hero-copy']_[class~='group/eyebrow']]:mr-0",
-  "[&_[class~='group/hero-copy']_[class~='group/eyebrow']]:mb-[var(--space-1)]",
-  "[&_[class~='group/hero-copy']_[class~='group/eyebrow']]:ml-0",
-);
+export const discoverStyles = 'group/discover';
 
-export const discoverHeroStyles = cn(
-  'relative [isolation:isolate] flex pt-15 pr-0 pb-[55px] pl-0 overflow-hidden',
-  'min-[1400px]:pt-[67px] min-[1400px]:pb-[65px] max-[600px]:pt-[35px] max-[600px]:pr-0',
-  "max-[600px]:pb-8 max-[600px]:pl-0 [[class~='group/discover']_&]:pt-0",
-  "[[class~='group/discover']_&]:pr-0 [[class~='group/discover']_&]:pb-[var(--section-gap)]",
-  "[[class~='group/discover']_&]:pl-0 [[class~='group/discover']_&]:mt-0",
-  "[[class~='group/discover']_&]:mr-0 [[class~='group/discover']_&]:mb-0",
-  "[[class~='group/discover']_&]:ml-0 max-[600px]:[[class~='group/discover']_&]:pt-7",
-  "max-[600px]:[[class~='group/discover']_&]:pr-0 max-[600px]:[[class~='group/discover']_&]:pb-6",
-  "max-[600px]:[[class~='group/discover']_&]:pl-0",
-);
+export const discoverHeroStyles = 'relative isolate flex overflow-hidden pb-4';
 
 export const heroDotsStyles = cn(
   'absolute top-0 right-0 bottom-0 left-0 z-[-2] opacity-[var(--hero-dot-opacity)]',
@@ -179,37 +162,11 @@ export const heroOrbStyles = cn(
   'z-[-1]',
 );
 
-export const heroCopyStyles = cn(
-  'group/hero-copy w-[75%] relative z-[2] [&_h1]:text-[length:43px]',
-  '[&_h1]:[font-weight:650] [&_h1]:tracking-[-1.6px] [&_h1]:leading-[1.35] [&_h1]:mt-[17px]',
-  '[&_h1]:mr-0 [&_h1]:mb-[17px] [&_h1]:ml-0 max-[1100px]:w-[75%] max-[850px]:w-full',
-  'max-[600px]:[&_h1]:text-[length:31px] max-[600px]:[&_h1]:tracking-[-1px]',
-  'max-[600px]:[&_h1]:leading-[1.4] max-[600px]:[&_h1]:mt-3.5 max-[600px]:[&_h1]:mr-0',
-  'max-[600px]:[&_h1]:mb-3.5 max-[600px]:[&_h1]:ml-0',
-  "[[class~='group/discover']_&_h1]:text-[length:31px]",
-  "[[class~='group/discover']_&_h1]:leading-[1.4]",
-  "[[class~='group/discover']_&_h1]:tracking-[-0.015em]",
-  "[[class~='group/discover']_&_h1]:mt-[var(--space-2)] [[class~='group/discover']_&_h1]:mr-0",
-  "[[class~='group/discover']_&_h1]:mb-[var(--space-2)] [[class~='group/discover']_&_h1]:ml-0",
-  "[[class~='group/discover']_&_h1]:max-w-175 [[class~='group/discover']_&_h1]:font-semibold",
-  "max-[600px]:[[class~='group/discover']_&_h1]:text-[length:29px]",
-  "max-[600px]:[[class~='group/discover']_&_h1]:leading-[1.5]",
-  "max-[600px]:[[class~='group/discover']_&_h1]:max-w-full",
-  "max-[600px]:[&_[class~='group/eyebrow']]:text-[length:9px]",
-  "max-[600px]:[&_[class~='group/eyebrow']]:tracking-[1px]",
-);
-
-export const liveDotStyles = 'inline-block w-1.5 h-1.5 bg-brand rounded-[50%] shrink-0';
-
-export const heroDescriptionStyles = cn(
-  'text-[length:15px] text-muted-ink leading-[1.9] max-[600px]:text-[length:12px]',
-  "[[class~='group/discover']_&]:text-body [[class~='group/discover']_&]:leading-[1.8]",
-  "max-[600px]:[[class~='group/discover']_&]:text-[length:12px]",
-);
+export const heroCopyStyles = 'relative z-[2] min-w-0 w-3/4 max-[850px]:w-full';
 
 export const catalogSearchStyles = cn(
   'group/catalog-search grid grid-cols-[20px_minmax(0,_1fr)_32px] items-center gap-3 w-full',
-  'max-w-162.5 h-13.5 mt-[var(--space-5)] pt-0 pr-2.5 pb-0 pl-4 border border-solid border-[color:var(--line)]',
+  'max-w-162.5 h-13.5 pt-0 pr-2.5 pb-0 pl-4 border border-solid border-[color:var(--line)]',
   'rounded-[14px] bg-paper [box-shadow:0_2px_8px_color-mix(in_srgb,_var(--ink)_4%,_transparent)]',
   'text-muted-ink [transition:border-color_150ms_ease]',
   'hover:border-t-[color:color-mix(in_srgb,_var(--brand)_40%,_var(--line))]',
@@ -266,11 +223,8 @@ export const keywordRefreshingStyles =
   'motion-safe:[animation:keyword-refresh_0.9s_linear_infinite]';
 
 export const heroArtStyles = cn(
-  'group/hero-art absolute right-5 top-[75px] w-70 h-[255px] max-[1100px]:right-2',
-  'max-[1100px]:[transform:scale(0.85)] max-[850px]:opacity-[0.22] max-[850px]:right-0',
-  "max-[850px]:top-10 max-[850px]:z-[-1] max-[600px]:hidden [[class~='group/discover']_&]:top-0",
-  "[[class~='group/discover']_&]:[transform:scale(0.85)]",
-  "[[class~='group/discover']_&]:[transform-origin:top_right]",
+  'group/hero-art pointer-events-none absolute top-0 right-5 h-[255px] w-70 origin-top-right scale-[0.68]',
+  'max-[1100px]:right-2 max-[850px]:right-0 max-[850px]:-z-1 max-[850px]:opacity-[0.22] max-[600px]:hidden',
 );
 
 export const orbitLineStyles =
@@ -420,12 +374,6 @@ export const audienceLabelStyles =
   'ml-auto text-[length:11px] shrink-0 max-w-[48%] overflow-hidden text-ellipsis whitespace-nowrap';
 
 export const paginationStyles = 'flex justify-center mt-7.5';
-
-export const catalogNoteStyles = cn(
-  'flex items-center justify-center gap-[7px] text-muted-ink text-[length:11px] mt-8.5 pt-2.5 pr-2.5',
-  'pb-2.5 pl-2.5 text-center [&_svg]:shrink-0 max-[600px]:text-[length:11px] max-[600px]:items-start',
-  'max-[600px]:text-left max-[600px]:mt-[23px]',
-);
 
 export const assetDetailScrollStyles = cn(
   'group/asset-detail-scroll [--detail-padding:26px] pt-[var(--detail-padding)]',

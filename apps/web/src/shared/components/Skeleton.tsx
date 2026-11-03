@@ -38,9 +38,6 @@ import {
   skeletonReviewInboxStyles,
   skeletonReviewStageStyles,
   skeletonPageStyles,
-  skeletonPageHeadingStyles,
-  skeletonPageEyebrowStyles,
-  skeletonPageDescriptionStyles,
   formStackStyles,
   skeletonPublishStyles,
   connectLayoutStyles,
@@ -48,6 +45,7 @@ import {
 import { cn } from '../styles/cn.js';
 import type { CSSProperties, ReactNode } from 'react';
 import { useLoadingDelay } from './LoadingScope.js';
+import { PageHead } from './PageHead.js';
 
 function SkeletonBlock({
   width = '100%',
@@ -408,15 +406,13 @@ export function PageSkeleton({
 }) {
   return (
     <SkeletonRegion label={'正在加载' + title + '…'} className={skeletonPageStyles}>
-      <div className={skeletonPageHeadingStyles}>
-        <div className={skeletonPageEyebrowStyles} aria-hidden="true">
-          <SkeletonBlock width={140} height={18} />
-        </div>
-        <h1>{title}</h1>
-        <div className={skeletonPageDescriptionStyles} aria-hidden="true">
-          <SkeletonBlock width="42%" />
-        </div>
-      </div>
+      <PageHead
+        title={title}
+        eyebrow={<SkeletonBlock width={96} height={10} />}
+        description={
+          <SkeletonBlock width="42%" height={12} className="inline-block align-middle" />
+        }
+      />
       {variant === 'profile' ? (
         <ProfileSkeleton />
       ) : variant === 'roles' ? (

@@ -1,5 +1,6 @@
 import {
   appHeaderStyles,
+  headerProgressStyles,
   headerInnerStyles,
   brandMarkStyles,
   brandCopyStyles,
@@ -20,7 +21,7 @@ import {
 } from '../shared/styles/recipes.js';
 import { cn } from '../shared/styles/cn.js';
 import { Bot, Compass, Search, ShieldCheck, UploadCloud } from '../shared/icons/lucide.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from 'react-aria-components';
 import { Glyph } from '../shared/components/Glyph.js';
 import type { HubPage } from '@capability-hub/contracts/web-pages';
@@ -63,24 +64,36 @@ export function AppHeader({
 }) {
   const { me } = useHub();
   const [scrolled, setScrolled] = useState(false);
+  const progressLine = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     let frame = 0;
     const update = () => {
       frame = 0;
-      setScrolled(window.scrollY > 12);
+      const offset = window.scrollY;
+      setScrolled(offset > 12);
+      const root = document.documentElement;
+      const range = root.scrollHeight - root.clientHeight;
+      const progress = range > 0 ? Math.min(1, Math.max(0, offset / range)) : 0;
+      if (progressLine.current) progressLine.current.style.transform = `scaleX(${progress})`;
     };
     const scroll = () => {
       if (!frame) frame = window.requestAnimationFrame(update);
     };
     update();
     window.addEventListener('scroll', scroll, { passive: true });
+    window.addEventListener('resize', scroll);
+    const observer = new ResizeObserver(scroll);
+    observer.observe(document.body);
     return () => {
       window.removeEventListener('scroll', scroll);
+      window.removeEventListener('resize', scroll);
+      observer.disconnect();
       window.cancelAnimationFrame(frame);
     };
   }, []);
   return (
     <header className={appHeaderStyles} data-scrolled={scrolled}>
+      <span ref={progressLine} aria-hidden="true" className={headerProgressStyles} />
       <div className={headerInnerStyles}>
         <a href="/discover" className={brandStyles}>
           <span className={brandMarkStyles} aria-hidden="true">

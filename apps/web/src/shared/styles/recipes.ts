@@ -96,13 +96,10 @@ export const desktopOnlyStyles = 'max-[600px]:hidden';
 
 export const subtleStyles = cn(
   'text-muted-ink text-label leading-[1.65] group/subtle',
-  "max-[600px]:[[class~='group/page-head']_&]:text-[length:12px]",
-  "max-[600px]:[[class~='group/page-head']_&]:leading-[1.8]",
   "[[class~='group/connect-layout']_[class~='group/panel']_>_&]:mt-0",
   "[[class~='group/connect-layout']_[class~='group/panel']_>_&]:mr-0",
   "[[class~='group/connect-layout']_[class~='group/panel']_>_&]:mb-0",
   "[[class~='group/connect-layout']_[class~='group/panel']_>_&]:ml-0",
-  "[[class~='group/page-head']_&]:text-body [[class~='group/page-head']_&]:leading-[1.8]",
 );
 
 export const formStackStyles = cn(
@@ -173,13 +170,8 @@ export const chipsStyles = cn(
   "[[class~='group/data-table']_&]:gap-[4px_6px] group/chips",
 );
 
-export const eyebrowStyles = cn(
-  'text-brand text-[length:11px] font-semibold tracking-[1.5px] flex items-center gap-2 group/eyebrow',
-  "max-[600px]:[[class~='group/page-head']_&]:text-[length:9px]",
-  "[[class~='group/page-head']_&]:text-caption [[class~='group/page-head']_&]:leading-[18px]",
-  "[[class~='group/page-head']_&]:mt-0 [[class~='group/page-head']_&]:mr-0",
-  "[[class~='group/page-head']_&]:mb-[var(--space-1)] [[class~='group/page-head']_&]:ml-0",
-);
+export const eyebrowStyles =
+  'text-brand text-[length:11px] font-semibold tracking-[1.5px] flex items-center gap-2 group/eyebrow';
 
 export const countPillStyles = cn(
   'inline-flex items-center gap-[5px] rounded-[5px] bg-page text-muted-ink pt-0.5 pr-2 pb-0.5 pl-2',
@@ -674,16 +666,14 @@ export const hubShowcaseDialogStyles = cn(
   'focus-visible:[outline-offset:-2px] focus-visible:rounded-[24px]',
 );
 
-export const pageHeadStyles = cn(
-  'group/page-head flex items-center justify-between gap-5 pt-0 pr-0 pb-[var(--section-gap)] pl-0',
-  'mt-0 mr-0 mb-0 ml-0 [&_h1]:text-[length:31px] [&_h1]:font-semibold',
-  '[&_h1]:tracking-[-0.015em] [&_h1]:mt-0 [&_h1]:mr-0 [&_h1]:mb-0 [&_h1]:ml-0 [&_h1]:leading-[1.4]',
-  'max-[600px]:pt-7.5 max-[600px]:pr-0 max-[600px]:pb-5.5 max-[600px]:pl-0 max-[600px]:items-start',
-  'max-[600px]:flex-col max-[600px]:gap-3 max-[600px]:[&_h1]:text-[length:27px]',
-  'max-[600px]:[&_h1]:tracking-[-0.6px] max-[760px]:[&_h1]:text-[length:25px] [&_>_div]:grid',
-  '[&_>_div]:gap-[var(--space-2)] [&_>_div]:min-w-0 max-[760px]:items-start max-[760px]:flex-wrap',
-  'max-[760px]:gap-[var(--space-4)]',
-);
+export const pageHeadStyles =
+  'group/page-head flex items-start justify-between gap-3 pb-4 max-[850px]:pt-4 [&>button]:shrink-0';
+
+export const pageHeadTitleStyles =
+  'origin-left text-title leading-tight font-semibold tracking-[-0.015em] max-[600px]:text-2xl motion-reduce:transform-none!';
+
+export const pageHeadLabelStyles =
+  'border-s border-line ps-3 text-caption leading-none font-semibold tracking-[0.1em] text-brand max-[600px]:hidden motion-reduce:opacity-100!';
 
 export const pageTabsStyles = cn(
   'group/page-tabs flex gap-5 overflow-x-auto border-b border-[color:var(--line)] [scrollbar-width:thin] [scroll-padding-inline:4px]',
@@ -974,16 +964,6 @@ export const skeletonReviewStageStyles =
   'group/skeleton-review-stage flex flex-col gap-3.5 min-w-0';
 
 export const skeletonPageStyles = 'min-w-0';
-
-export const skeletonPageHeadingStyles = cn(
-  'grid gap-[var(--space-2)] pt-0 pr-0 pb-[var(--section-gap)] pl-0',
-  '[&_h1]:text-[length:31px] [&_h1]:font-semibold [&_h1]:leading-[1.4]',
-  '[&_h1]:tracking-[-0.015em] [&_>_div]:w-full [&_>_div]:min-w-0',
-);
-
-export const skeletonPageEyebrowStyles = 'mb-[var(--space-1)]';
-
-export const skeletonPageDescriptionStyles = 'flex items-center h-6';
 
 export const skeletonPublishStyles = 'flex flex-col gap-5 max-w-250';
 

@@ -9,8 +9,6 @@ import {
   heroDotsStyles,
   heroOrbStyles,
   heroCopyStyles,
-  liveDotStyles,
-  heroDescriptionStyles,
   catalogSearchStyles,
   catalogSearchIconStyles,
   catalogSearchActionStyles,
@@ -51,7 +49,6 @@ import {
   assetOwnerNameStyles,
   audienceLabelStyles,
   paginationStyles,
-  catalogNoteStyles,
 } from './styles.js';
 import {
   dotgridStyles,
@@ -81,7 +78,6 @@ import {
   Plug,
   Search,
   RefreshCw,
-  ShieldCheck,
   SlidersHorizontal,
   ThumbsUp,
   X,
@@ -94,6 +90,7 @@ import { Glyph } from '../../shared/components/Glyph.js';
 import { Segmented } from '../../shared/components/Segmented.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { CardGridSkeleton } from '../../shared/components/Skeleton.js';
+import { PageHead } from '../../shared/components/PageHead.js';
 import { QueryRegion } from '../../shared/components/QueryRegion.js';
 import { ScriptBadge } from '../../shared/components/ScriptBadge.js';
 import { useHub } from '../../shared/context/HubContext.js';
@@ -181,14 +178,11 @@ export default function DiscoverPage() {
         <div className={cn(dotgridStyles, heroDotsStyles)} />
         <div className={heroOrbStyles} />
         <div className={heroCopyStyles}>
-          <p className={eyebrowStyles}>
-            <span className={liveDotStyles} />
-            SKILLS & MCP
-          </p>
-          <h1>发现和使用 Skill 与 MCP</h1>
-          <p className={heroDescriptionStyles}>
-            查找适用于当前任务的资源，下载指定版本或通过 Agent 安装。
-          </p>
+          <PageHead
+            title="发现和使用 Skill 与 MCP"
+            eyebrow="SKILLS & MCP"
+            description="查找适用于当前任务的资源，下载指定版本或通过 Agent 安装。"
+          />
           <div className={catalogSearchStyles}>
             <Search size={20} className={catalogSearchIconStyles} aria-hidden="true" />
             <input
@@ -489,10 +483,6 @@ export default function DiscoverPage() {
           </button>
         )}
       </QueryRegion>
-      <div className={catalogNoteStyles}>
-        <ShieldCheck size={15} />
-        <span>所有资源均经过审核，并保留来源与版本记录。</span>
-      </div>
     </div>
   );
 }

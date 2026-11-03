@@ -2,13 +2,12 @@
   :root {
     --duration-fast: 120ms;
     --duration-normal: 180ms;
-    --page-inset: 32px;
+    --page-inset: var(--space-4);
     --section-gap: 24px;
     --panel-space: 24px;
   }
   @media (max-width: 760px) {
     :root {
-      --page-inset: 24px;
       --panel-space: 20px;
     }
   }
