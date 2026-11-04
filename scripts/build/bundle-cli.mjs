@@ -8,7 +8,7 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'esm',
-  target: 'node24',
+  target: 'node22',
   conditions: ['development'],
   mainFields: ['module', 'main'],
   minify: true,
