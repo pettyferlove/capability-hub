@@ -1,6 +1,20 @@
 import { z } from 'zod';
 import { assetCategorySchema, assetKindSchema } from './primitives.js';
 
+/** 维护列表的查询入口，页大小与共享分页控件保持一致，拒绝未知参数。 */
+export const managementAssetListQuerySchema = z
+  .object({
+    q: z.string().trim().max(200).default(''),
+    state: z.enum(['all', 'pending', 'active', 'deprecated', 'blocked']).default('all'),
+    page: z
+      .string()
+      .regex(/^[1-9]\d{0,6}$/)
+      .default('1')
+      .transform(Number),
+    page_size: z.enum(['5', '10', '20', '50']).default('10').transform(Number),
+  })
+  .strict();
+
 /**
  * 关键词联想查询：`limit` 1–20 默认 20，`q` 去空白后 ≤128 字符，空串表示不过滤。
  * 服务端在请求入口解析，严格模式拒绝未知查询参数。

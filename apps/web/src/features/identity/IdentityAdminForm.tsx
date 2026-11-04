@@ -54,7 +54,7 @@ export function IdentityAdminForm({
     [scope, setScope] = useState('platform'),
     [scenarioAction, setScenarioAction] = useState('edit');
   const { data: sources } = useQuery<SourceResponse[]>('/api/sources');
-  const { data: assets } = useQuery<ManagementAssetResponse[]>('/api/management/assets');
+  const { data: assets } = useQuery<ManagementAssetResponse[]>('/api/management/assets/options');
   async function submit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);

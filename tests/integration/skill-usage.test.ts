@@ -33,7 +33,7 @@ test('Skill 使用要求默认关闭，保存与取消同步目录、维护列�
   assert.deepEqual(detail.body.current_release, before.body.current_release);
   assert.equal((await client.get('/api/assets').expect(200)).body.items[0].requires_api_key, true);
   assert.equal(
-    (await client.get('/api/management/assets').expect(200)).body[0].requires_api_key,
+    (await client.get('/api/management/assets').expect(200)).body.items[0].requires_api_key,
     true,
   );
 

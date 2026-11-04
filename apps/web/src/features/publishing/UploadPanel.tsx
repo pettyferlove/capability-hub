@@ -109,7 +109,7 @@ export function UploadPanel({
   );
   const initialized = useRef(false);
   const { data: managedAssets, error: assetsError } = useQuery<ManagementAssetResponse[]>(
-    '/api/management/assets',
+    '/api/management/assets/options',
     refresh,
   );
   const assets = managedAssets?.filter((asset) => asset.source_kind === 'upload');

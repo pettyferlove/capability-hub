@@ -2,6 +2,7 @@ import {
   uploadIntakeRequestSchema,
   intakeListQuerySchema,
   keywordOptionsQuerySchema,
+  managementAssetListQuerySchema,
   mcpHeaderNamePattern,
   mcpSharedKeyUpdateRequestSchema,
 } from '@capability-hub/contracts';
@@ -117,7 +118,16 @@ export function registerIntakesRoutes(app: Express, context: HttpContext): void 
   );
   app.get(
     '/api/management/assets',
-    send(async (_req, res) => hub.assetManagement.list(res.locals.principal)),
+    send(async (req, res) =>
+      hub.assetManagement.list(
+        res.locals.principal,
+        managementAssetListQuerySchema.parse(req.query),
+      ),
+    ),
+  );
+  app.get(
+    '/api/management/assets/options',
+    send(async (_req, res) => hub.assetManagement.options(res.locals.principal)),
   );
   app.get(
     '/api/management/assets/:id/mcp-keys',

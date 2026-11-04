@@ -1,6 +1,14 @@
 import type { AssetKind } from '@capability-hub/domain/content';
 import type { Policy } from '@capability-hub/domain/policy';
 
+/** 来自已校验的 HTTP 查询；待审筛选沿用候选可见权限，越界页回退到末页。 */
+export interface ManagementAssetListQuery {
+  q?: string;
+  state?: 'all' | 'pending' | 'active' | 'deprecated' | 'blocked';
+  page?: number;
+  page_size?: number;
+}
+
 /**
  * 关键词联想输入，来自管理端 HTTP query（`keywordOptionsQuerySchema` 解析）；
  * 结果只统计调用者有权限看到的关键词，未发布内容不会泄露给非维护者。

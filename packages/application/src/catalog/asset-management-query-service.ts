@@ -4,7 +4,7 @@ import { has } from '@capability-hub/domain/rbac';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
 import { toVersionSnapshot } from './catalog-mapper.js';
-import type { KeywordOptionsQuery } from './queries.js';
+import type { KeywordOptionsQuery, ManagementAssetListQuery } from './queries.js';
 
 /**
  * 管理侧只读查询：可见面以 `asset:maintain` 与 `asset:lifecycle` 为准，和目录可见性
@@ -16,14 +16,38 @@ export class AssetManagementQueryService {
     private readonly access: AssetAccessService,
   ) {}
 
+  /** 先按权限收敛，再筛选、按名称排序并分页；删除末页记录后返回仍有效的最后一页。 */
+  async list(principal: Principal, input: ManagementAssetListQuery = {}) {
+    const query = { q: '', state: 'all', page: 1, page_size: 10, ...input };
+    const words = query.q.normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean);
+    const rows = (await this.options(principal))
+      .filter((asset) => {
+        const text = `${asset.slug} ${asset.kind}`.normalize('NFKC').toLowerCase();
+        return (
+          words.every((word) => text.includes(word)) &&
+          (query.state === 'all' ||
+            (query.state === 'pending'
+              ? asset.pending_requests.length > 0
+              : asset.lifecycle === query.state))
+        );
+      })
+      .sort((a, b) => a.slug.localeCompare(b.slug, 'en') || a.id.localeCompare(b.id));
+    const page = Math.min(query.page, Math.max(1, Math.ceil(rows.length / query.page_size)));
+    return {
+      items: rows.slice((page - 1) * query.page_size, page * query.page_size),
+      total: rows.length,
+      page,
+      page_size: query.page_size,
+    };
+  }
   /**
-   * 资源管理列表，无分页：一次返回当前主体可见的全部资源，适合管理台全量渲染。
+   * 上传与授权表单的完整资源选项，不受维护列表的筛选和页码限制。
    *
    * 只在 `asset:maintain` 通过时才查询 intakes/requests，因此仅有 `asset:lifecycle`
    * 的主体拿到的是空的 `latest_intake`/`pending_requests`，候选数据不外泄；
    * `latest_intake.state` 在 intake 已 ready 时改用对应请求的状态，反映送审进展。
    */
-  async list(principal: Principal) {
+  async options(principal: Principal) {
     return this.context.store.tx(async () =>
       Promise.all(
         (await this.context.store.all('assets'))

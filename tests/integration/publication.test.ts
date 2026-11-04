@@ -5,6 +5,10 @@ import type { PublicationDecisionCommand } from '@capability-hub/application';
 import { publicationDecisionRequestSchema } from '@capability-hub/contracts';
 import type { ScenarioDefinition } from '@capability-hub/contracts';
 import { HubError } from '@capability-hub/domain/errors';
+import type {
+  ManagementAssetListResponse,
+  ManagementAssetResponse,
+} from '@capability-hub/contracts/http';
 import { archive } from '@capability-hub/infrastructure/content';
 import {
   createTestHub,
@@ -18,6 +22,135 @@ import { skillDocument } from '../support/content.js';
 
 const errorCode = (code: string) => (error: unknown) =>
   error instanceof HubError && error.code === code;
+
+test('维护列表按名称稳定分页，删除末页资源后回到有效页，表单选项不被分页截断', async (context) => {
+  const f = await createTestHub(context);
+  const receipts = [];
+  for (let index = 6; index >= 1; index--)
+    receipts.push(
+      await f.hub.intakes.receive(
+        f.admin,
+        Buffer.from('invalid ZIP'),
+        'skill.zip',
+        {
+          target: 'new',
+          kind: 'skill',
+          slug: `page-${index}`,
+          owner_group_id: f.teamId,
+          version_label: '1.0.0',
+        },
+        randomUUID(),
+      ),
+    );
+  const client = await signIn(f);
+  const first = (await client.get('/api/management/assets?page=1&page_size=5').expect(200))
+    .body as ManagementAssetListResponse;
+  assert.equal(first.total, 6);
+  assert.equal(first.page, 1);
+  assert.equal(first.page_size, 5);
+  assert.deepEqual(
+    first.items.map((asset) => asset.slug),
+    ['page-1', 'page-2', 'page-3', 'page-4', 'page-5'],
+  );
+  const last = (await client.get('/api/management/assets?page=2&page_size=5').expect(200))
+    .body as ManagementAssetListResponse;
+  assert.deepEqual(
+    last.items.map((asset) => asset.slug),
+    ['page-6'],
+  );
+  const options = (await client.get('/api/management/assets/options').expect(200))
+    .body as ManagementAssetResponse[];
+  assert.equal(options.length, 6);
+  assert(options.some((asset) => asset.id === last.items[0].id));
+  await f.worker.tick();
+  await f.worker.tick();
+  await f.hub.lifecycle.deleteAsset(
+    f.admin,
+    receipts[0].asset_id,
+    { reason: '清理错误资源' },
+    '"1"',
+    randomUUID(),
+  );
+  const remaining = (await client.get('/api/management/assets?page=2&page_size=5').expect(200))
+    .body as ManagementAssetListResponse;
+  assert.equal(remaining.page, 1);
+  assert.equal(remaining.total, 5);
+  assert.deepEqual(
+    remaining.items.map((asset) => asset.id),
+    first.items.map((asset) => asset.id),
+  );
+});
+
+test('维护列表的搜索、状态和总数只包含有权资源，生命周期权限不泄露待审候选', async (context) => {
+  const f = await createTestHub(context);
+  const pending = await receiveSkill(f, { slug: 'pending-skill' });
+  await submitPublication(f, pending);
+  const blocked = await receiveSkill(f, { slug: 'blocked-skill' });
+  await f.hub.lifecycle.updateState(
+    f.admin,
+    blocked.asset_id,
+    { lifecycle: 'blocked', reason: '待调查' },
+    '"1"',
+  );
+  const role = await f.hub.administration.createRole(f.admin, {
+    name: '生命周期维护',
+    permissions: ['asset:lifecycle'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'asset',
+    scope_id: pending.asset_id,
+  });
+  const admin = await signIn(f);
+  const reader = await signIn(f, 'reader');
+  const matched = (
+    await admin
+      .get('/api/management/assets')
+      .query({ q: 'SKILL pending', state: 'pending' })
+      .expect(200)
+  ).body as ManagementAssetListResponse;
+  assert.equal(matched.total, 1);
+  assert.equal(matched.items[0].id, pending.asset_id);
+  const unavailable = (await admin.get('/api/management/assets?state=blocked').expect(200))
+    .body as ManagementAssetListResponse;
+  assert.deepEqual(
+    unavailable.items.map((asset) => asset.id),
+    [blocked.asset_id],
+  );
+  const permitted = (await reader.get('/api/management/assets').expect(200))
+    .body as ManagementAssetListResponse;
+  assert.equal(permitted.total, 1);
+  assert.equal(permitted.items[0].latest_intake, null);
+  assert.deepEqual(permitted.items[0].pending_requests, []);
+  for (const query of [{ state: 'pending' }, { q: 'blocked' }, { state: 'blocked' }]) {
+    const hidden = (await reader.get('/api/management/assets').query(query).expect(200))
+      .body as ManagementAssetListResponse;
+    assert.equal(hidden.total, 0);
+    assert.equal(hidden.page, 1);
+    assert.deepEqual(hidden.items, []);
+  }
+  const options = (await reader.get('/api/management/assets/options').expect(200))
+    .body as ManagementAssetResponse[];
+  assert.deepEqual(
+    options.map((asset) => asset.id),
+    [pending.asset_id],
+  );
+});
+
+test('维护分页拒绝无效页码、页大小、状态和未知查询参数', async (context) => {
+  const f = await createTestHub(context);
+  const client = await signIn(f);
+  for (const query of [
+    'page=0',
+    'page=1.5',
+    'page_size=100',
+    'state=failed',
+    'unknown=1',
+    'page=1&page=2',
+  ])
+    await client.get('/api/management/assets?' + query).expect(422);
+});
 
 for (const target of ['assets', 'intakes'] as const)
   test(`删除错误资源与 ${target} 列表读取并发时，列表仍返回完整快照`, async (context) => {
@@ -38,7 +171,7 @@ for (const target of ['assets', 'intakes'] as const)
     await f.worker.tick();
     const list = async () =>
       target === 'assets'
-        ? await f.hub.assetManagement.list(f.admin)
+        ? (await f.hub.assetManagement.list(f.admin)).items
         : (await f.hub.intakeQueries.list(f.admin, {})).items;
     const [before] = await Promise.all([
       list(),
@@ -76,7 +209,7 @@ test('首次上传名称错误的资源可删除并释放名称，保留审计�
   assert(!intake.version_id);
   const correct = await receiveSkill(f);
   const client = await signIn(f);
-  const items = (await client.get('/api/management/assets').expect(200)).body as {
+  const items = (await client.get('/api/management/assets').expect(200)).body.items as {
     id: string;
     can_delete: boolean;
   }[];
@@ -102,7 +235,7 @@ test('首次上传名称错误的资源可删除并释放名称，保留审计�
   assert(await f.store.find('audit', 'entity_id', intake.id));
   assert(await f.store.get('versions', correct.version_id));
   assert.deepEqual(await f.blobs.read(intake.payload_ref!), bytes);
-  assert.equal((await client.get('/api/management/assets').expect(200)).body.length, 1);
+  assert.equal((await client.get('/api/management/assets').expect(200)).body.items.length, 1);
   const replacement = await receiveSkill(f, { slug: 'wrong-name' });
   assert.notEqual(replacement.asset_id, receipt.asset_id);
 });
@@ -208,7 +341,7 @@ test('删除错误资源复核所有接收与作业，不能删除排队、扫�
     randomUUID(),
   );
   const rejectDeletion = async () => {
-    assert.equal((await f.hub.assetManagement.list(f.admin))[0].can_delete, false);
+    assert.equal((await f.hub.assetManagement.list(f.admin)).items[0].can_delete, false);
     await assert.rejects(
       () =>
         f.hub.lifecycle.deleteAsset(
@@ -223,7 +356,7 @@ test('删除错误资源复核所有接收与作业，不能删除排队、扫�
   };
   await rejectDeletion();
   await f.worker.tick();
-  assert.equal((await f.hub.assetManagement.list(f.admin))[0].can_delete, true);
+  assert.equal((await f.hub.assetManagement.list(f.admin)).items[0].can_delete, true);
   const queued = await f.hub.jobs.enqueue('intake', receipt.intake_id, {});
   await rejectDeletion();
   const claimed = await f.hub.jobs.claim('deletion-test');
@@ -270,7 +403,7 @@ test('错误资源的删除不能绕过封禁或 Git 来源管理', async (conte
     { lifecycle: 'blocked', reason: '待调查' },
     '"1"',
   );
-  assert.equal((await f.hub.assetManagement.list(f.admin))[0].can_delete, false);
+  assert.equal((await f.hub.assetManagement.list(f.admin)).items[0].can_delete, false);
   await assert.rejects(
     () =>
       f.hub.lifecycle.deleteAsset(
@@ -322,7 +455,7 @@ test('错误资源的删除不能绕过封禁或 Git 来源管理', async (conte
   );
   const migrated = await f.hub.assetAccess.getAsset(receipt.asset_id);
   assert.equal(
-    (await f.hub.assetManagement.list(f.admin)).find((item) => item.id === receipt.asset_id)
+    (await f.hub.assetManagement.list(f.admin)).items.find((item) => item.id === receipt.asset_id)
       ?.can_delete,
     false,
   );
@@ -908,17 +1041,21 @@ test('更新摘要展示当前发布与待审版本，历史审核保持提交�
   assert.equal(next.current_version?.version_label, '1.0.0');
   assert.equal(next.current_version?.content_digest, first.intake.version?.content_digest);
   const request = await submitPublication(f, next);
-  const [managed] = await f.hub.assetManagement.list(f.admin);
+  const {
+    items: [managed],
+  } = await f.hub.assetManagement.list(f.admin);
   assert.equal(managed.current_version?.version_label, '1.0.0');
   assert.deepEqual(managed.pending_requests, [{ id: request.id, version_label: '1.0.1' }]);
   assert.equal(managed.latest_intake?.id, next.id);
   assert.equal(managed.latest_intake?.state, 'pending');
-  assert.deepEqual(await f.hub.assetManagement.list(f.reader), []);
+  assert.deepEqual((await f.hub.assetManagement.list(f.reader)).items, []);
   await f.hub.publications.decide(f.reviewer, request.id, approval(request), '"1"', randomUUID());
   const review = await f.hub.publicationQueries.getReview(f.admin, request.id);
   assert.equal(review.current?.content_digest, first.intake.version?.content_digest);
   assert.equal(review.current?.version_label, '1.0.0');
-  const [published] = await f.hub.assetManagement.list(f.admin);
+  const {
+    items: [published],
+  } = await f.hub.assetManagement.list(f.admin);
   assert.equal(published.current_version?.version_label, '1.0.1');
   assert.equal(published.latest_intake?.state, 'approved');
   assert.deepEqual(published.pending_requests, []);

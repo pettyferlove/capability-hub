@@ -86,6 +86,14 @@ export interface ManagementAssetResponse {
   pending_requests: { id: string; version_label: string }[];
 }
 
+/** 总数与页码基于权限过滤后的匹配集合，items 仅包含当前页。 */
+export interface ManagementAssetListResponse {
+  items: ManagementAssetResponse[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 /** 维护者可设置的请求头及其配置状态，读取接口只返回地址和名称。 */
 export interface McpSharedKeysResponse {
   revision: number;

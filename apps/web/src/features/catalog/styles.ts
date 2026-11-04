@@ -402,15 +402,45 @@ export const feedbackFormStyles = cn(
   '[&_fieldset]:mt-0 [&_fieldset]:mr-0 [&_fieldset]:mb-0 [&_fieldset]:ml-0 [&_fieldset]:min-w-0',
 );
 
-export const managementGridStyles = 'grid grid-cols-2 gap-4 max-[900px]:grid-cols-1';
+export const managementTableStyles = cn(
+  '[&_table]:min-w-220 [&_table]:[table-layout:fixed] [&_td]:py-4',
+  '[&_th:nth-child(1)]:w-[34%] [&_th:nth-child(2)]:w-[16%] [&_th:nth-child(3)]:w-[21%]',
+  '[&_small]:block [&_small]:text-muted-ink [&_small]:text-caption',
+  "[&_[class~='group/table-wrap']]:max-h-none",
+  'max-[760px]:[&_table]:block max-[760px]:[&_table]:min-w-0',
+  'max-[760px]:[&_thead]:absolute max-[760px]:[&_thead]:w-px max-[760px]:[&_thead]:h-px',
+  'max-[760px]:[&_thead]:overflow-hidden max-[760px]:[&_thead]:[clip-path:inset(50%)]',
+  'max-[760px]:[&_tbody]:block max-[760px]:[&_tbody_tr]:grid',
+  'max-[760px]:[&_tbody_tr]:grid-cols-2',
+  "max-[760px]:[&_tbody_tr]:[grid-template-areas:'resource_resource'_'release_intake'_'actions_actions']",
+  'max-[760px]:[&_tbody_tr]:gap-3 max-[760px]:[&_tbody_tr]:p-4',
+  'max-[760px]:[&_tbody_tr]:border-b max-[760px]:[&_tbody_tr]:border-line',
+  'max-[760px]:[&_tbody_tr:last-child]:border-b-0',
+  'max-[760px]:[&_td:nth-child(n)]:w-auto max-[760px]:[&_td:nth-child(n)]:max-w-none',
+  'max-[760px]:[&_td:nth-child(n)]:min-w-0 max-[760px]:[&_td:nth-child(n)]:h-auto',
+  'max-[760px]:[&_td:nth-child(n)]:p-0 max-[760px]:[&_td:nth-child(n)]:border-0',
+  'max-[760px]:[&_td:nth-child(1)]:[grid-area:resource]',
+  'max-[760px]:[&_td:nth-child(2)]:[grid-area:release]',
+  'max-[760px]:[&_td:nth-child(3)]:[grid-area:intake]',
+  'max-[760px]:[&_td:nth-child(4)]:[grid-area:actions]',
+);
 
-export const managementCardStyles = cn(
-  'group/management-card flex flex-col gap-3 min-w-0 [&_h3]:[overflow-wrap:anywhere] [&_h3]:my-1 [&_p]:my-0',
-  '[overflow-wrap:anywhere]',
-  "[&_[class~='group/text-btn']]:min-w-0 [&_[class~='group/text-btn']]:max-w-full",
-  "[&_[class~='group/text-btn']]:whitespace-normal [&_[class~='group/text-btn']]:text-left",
-  "[&_[class~='group/text-btn']_>_svg]:shrink-0",
-  "[&_[class~='group/source-actions']]:mt-auto [&_[class~='group/source-actions']]:pt-5",
+export const managementActionsStyles = cn(
+  'flex flex-wrap items-center gap-2 [&>button]:min-h-8 [&>a]:min-h-8',
+  '[&>button]:px-3 [&>button]:py-1.5 [&>a]:py-1.5',
+  'pointer-coarse:[&>button]:min-h-11 pointer-coarse:[&>a]:min-h-11',
+);
+
+export const managementStatusStyles = cn(
+  'inline-flex max-w-full items-center gap-1.5 rounded-md text-caption leading-5 text-muted-ink [&>svg]:shrink-0',
+  "[&[data-state='approved']]:text-success",
+  "[&:is([data-state='received'],[data-state='fetching'],[data-state='scanning'])]:text-brand",
+  "[&:is([data-state='ready'],[data-state='pending'],[data-state='stale'],[data-state='deprecated'])]:text-warning",
+  "[&:is([data-state='ready'],[data-state='pending'],[data-state='stale'],[data-state='deprecated'])]:bg-warning-soft",
+  "[&:is([data-state='failed'],[data-state='rejected'],[data-state='blocked'])]:text-danger",
+  "[&:is([data-state='failed'],[data-state='rejected'],[data-state='blocked'])]:bg-danger-soft",
+  "[&:is([data-state='ready'],[data-state='pending'],[data-state='stale'],[data-state='deprecated'],[data-state='failed'],[data-state='rejected'],[data-state='blocked'])]:px-1.5",
+  "[&:is([data-state='ready'],[data-state='pending'],[data-state='stale'],[data-state='deprecated'],[data-state='failed'],[data-state='rejected'],[data-state='blocked'])]:py-0.5",
 );
 
 export const conversationInstallStyles = cn(

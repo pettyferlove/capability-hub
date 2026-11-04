@@ -2,6 +2,7 @@ import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { managementAssetListQuerySchema } from '@capability-hub/contracts';
 import { createElement, type ReactNode } from 'react';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
@@ -63,7 +64,7 @@ function page(child: ReactNode) {
 test('上传入口提供 API Key 选项并随文件提交，切换 MCP 后隐藏且重置', async (context) => {
   const submitted: Record<string, unknown>[] = [];
   context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
-    if (path === '/api/management/assets') return Response.json([]);
+    if (path === '/api/management/assets/options') return Response.json([]);
     if (path.startsWith('/api/intakes?'))
       return Response.json({
         items: [],
@@ -105,7 +106,7 @@ test('上传入口提供 API Key 选项并随文件提交，切换 MCP 后隐藏
 test('新 MCP 的团队 Bearer Token 仅在确认领取范围后随接收请求提交', async (context) => {
   const posted: Record<string, unknown>[] = [];
   context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
-    if (path === '/api/management/assets') return Response.json([]);
+    if (path === '/api/management/assets/options') return Response.json([]);
     if (path.startsWith('/api/intakes?'))
       return Response.json({
         items: [],
@@ -296,9 +297,18 @@ test('维护资产显示版本与审核入口，更新链接预选原资产', as
   const first = await publishSkill(f);
   const next = await receiveSkill(f, { assetId: first.intake.asset_id, version: '1.0.1' });
   const request = await submitPublication(f, next);
-  const managed = await f.hub.assetManagement.list(f.admin);
   context.mock.method(globalThis, 'fetch', async (path: string) => {
-    if (path === '/api/management/assets') return Response.json(managed);
+    if (path.startsWith('/api/management/assets?'))
+      return Response.json(
+        await f.hub.assetManagement.list(
+          f.admin,
+          managementAssetListQuerySchema.parse(
+            Object.fromEntries(new URL(path, 'http://hub.test').searchParams),
+          ),
+        ),
+      );
+    if (path === '/api/management/assets/options')
+      return Response.json(await f.hub.assetManagement.options(f.admin));
     if (path.endsWith('/version-plan'))
       return Response.json(await f.hub.intakeQueries.versionPlan(f.admin, first.intake.asset_id));
     if (path.startsWith('/api/intakes?'))
@@ -323,9 +333,12 @@ test('维护资产显示版本与审核入口，更新链接预选原资产', as
     '/review?request=' + request.id,
   );
   assert(screen.getByText('1.0.0'));
+  const table = within(screen.getByRole('table', { name: '维护资产' }));
+  assert.equal(table.getAllByText(/待审核/).length, 1);
+  assert(table.getByText('待审核 · 1 项'));
   const user = userEvent.setup();
   await user.type(screen.getByRole('searchbox', { name: '搜索维护资产' }), 'missing');
-  assert(screen.getByText('没有匹配的资产'));
+  assert(await screen.findByText('没有匹配的资产'));
   view.unmount();
   render(page(createElement(UploadPanel, { initialAssetId: first.intake.asset_id })));
   await screen.findByText(/正在更新/);
@@ -339,6 +352,69 @@ test('维护资产显示版本与审核入口，更新链接预选原资产', as
     screen.getByRole('radio', { name: '已有资产新版本' }).getAttribute('aria-checked'),
     'true',
   );
+});
+
+test('维护列表翻页与页大小请求服务端，搜索和状态筛选重置页码', async (context) => {
+  const f = await createTestHub(context);
+  for (let index = 1; index <= 6; index++) {
+    const receipt = await f.hub.intakes.receive(
+      f.admin,
+      Buffer.from('invalid ZIP'),
+      'skill.zip',
+      {
+        target: 'new',
+        kind: 'skill',
+        slug: `asset-${index}`,
+        owner_group_id: f.teamId,
+        version_label: '1.0.0',
+      },
+      randomUUID(),
+    );
+    if (index === 6)
+      await f.hub.lifecycle.updateState(
+        f.admin,
+        receipt.asset_id,
+        { lifecycle: 'blocked', reason: '待调查' },
+        '"1"',
+      );
+  }
+  const requests: URLSearchParams[] = [];
+  context.mock.method(globalThis, 'fetch', async (path: string) => {
+    const url = new URL(path, 'http://hub.test');
+    assert.equal(url.pathname, '/api/management/assets');
+    requests.push(url.searchParams);
+    return Response.json(
+      await f.hub.assetManagement.list(
+        f.admin,
+        managementAssetListQuerySchema.parse(Object.fromEntries(url.searchParams)),
+      ),
+    );
+  });
+  const user = userEvent.setup();
+  render(page(createElement(ManagementPanel)));
+  await screen.findByRole('table', { name: '维护资产' });
+  await user.click(screen.getByRole('button', { name: /资产维护每页条数/ }));
+  await user.click(screen.getByRole('option', { name: '5 条 / 页' }));
+  await screen.findByText(/第 1–5 条，共 6 条/);
+  assert(!screen.queryByText('asset-6'));
+  await user.click(screen.getByRole('button', { name: '资产维护下一页' }));
+  await screen.findByText('asset-6');
+  assert(!screen.queryByText('asset-1'));
+  assert.equal(requests.at(-1)?.get('page'), '2');
+  assert.equal(requests.at(-1)?.get('page_size'), '5');
+  const search = screen.getByRole('searchbox', { name: '搜索维护资产' });
+  await user.type(search, 'asset-1');
+  await screen.findByText('asset-1');
+  assert.equal(requests.at(-1)?.get('page'), '1');
+  assert.equal(requests.at(-1)?.get('q'), 'asset-1');
+  await user.click(screen.getByRole('button', { name: /维护资产状态/ }));
+  await user.click(screen.getByRole('option', { name: '已封禁' }));
+  await screen.findByText('没有匹配的资产');
+  assert.equal(requests.at(-1)?.get('state'), 'blocked');
+  await user.clear(search);
+  await screen.findByText('asset-6');
+  assert(!screen.queryByText('asset-1'));
+  await screen.findByText(/第 1–1 条，共 1 条/);
 });
 
 test('错误资源删除提供前缀图标，二次确认可取消且保留原因，最终确认才发送请求', async (context) => {
@@ -360,7 +436,7 @@ test('错误资源删除提供前缀图标，二次确认可取消且保留原�
   const managed = await f.hub.assetManagement.list(f.admin);
   const submitted: unknown[] = [];
   context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
-    if (path === '/api/management/assets') return Response.json(managed);
+    if (path.startsWith('/api/management/assets?')) return Response.json(managed);
     if (path === '/api/management/assets/' + receipt.asset_id + '/versions')
       return Response.json([]);
     assert.equal(path, '/api/assets/' + receipt.asset_id);
@@ -430,7 +506,7 @@ test('删除响应丢失后再次确认可恢复成功结果，且只保留一�
   await f.worker.tick();
   let responseLost = false;
   context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
-    if (path === '/api/management/assets')
+    if (path.startsWith('/api/management/assets?'))
       return Response.json(await f.hub.assetManagement.list(f.admin));
     if (path === '/api/management/assets/' + receipt.asset_id + '/versions')
       return Response.json([]);
