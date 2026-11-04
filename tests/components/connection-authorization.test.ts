@@ -2,7 +2,7 @@ import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { test, afterEach } from 'node:test';
 import { createElement } from 'react';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { render, screen, cleanup, within, fireEvent } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { ConnectionAuthorization } from '../../apps/web/src/features/connect/ConnectionAuthorization.js';
 import ConnectPage from '../../apps/web/src/features/connect/ConnectPage.js';
@@ -189,7 +189,7 @@ for (const query of ['authorization=opaque-request', 'code=A1B2C3D4']) {
   });
 }
 
-test('CLI 授权只提交有效授权码，提交期间锁定操作，成功后更换链接可开始新的授权', async (context) => {
+test('CLI 授权码只供核对，批准原请求时锁定操作，更换链接可开始新的授权', async (context) => {
   const pending = deferred<Response>();
   const requests: unknown[] = [];
   context.mock.method(globalThis, 'fetch', (path: string, init: RequestInit) => {
@@ -204,21 +204,16 @@ test('CLI 授权只提交有效授权码，提交期间锁定操作，成功后�
       createElement(ConnectPage, { routeQuery: '?code=' + code }),
     );
   const { rerender } = render(renderPage('a1b2c3d4'));
-  const input = screen.getByRole('textbox', { name: '授权码' }) as HTMLInputElement;
-  assert.equal(input.value, 'A1B2C3D4');
+  const code = screen.getByRole('status', { name: '授权码' });
+  assert.equal(code.textContent, 'A1B2–C3D4');
+  assert.equal(screen.queryByRole('textbox', { name: '授权码' }), null);
   assert(screen.getByText('读者'));
   assert(screen.getByText('只读权限'));
-  await user.clear(input);
-  await user.type(input, 'Z1B2C3D4');
-  assert((screen.getByRole('button', { name: '允许 CLI 登录' }) as HTMLButtonElement).disabled);
-  await user.keyboard('{Enter}');
-  assert.equal(requests.length, 0);
-  await user.clear(input);
-  await user.type(input, 'a1b2c3d4{Enter}');
+  await user.click(screen.getByRole('button', { name: '允许 CLI 登录' }));
   assert.deepEqual(requests, [
     { path: '/api/cli/approve', method: 'POST', body: { code: 'A1B2C3D4' } },
   ]);
-  assert(input.disabled);
+  assert.equal(code.textContent, 'A1B2–C3D4');
   assert.equal(screen.getByRole('button', { name: '正在批准…' }).getAttribute('aria-busy'), 'true');
   assert((screen.getByRole('button', { name: '暂不登录' }) as HTMLButtonElement).disabled);
   pending.resolve(Response.json({ ok: true }));
@@ -229,11 +224,37 @@ test('CLI 授权只提交有效授权码，提交期间锁定操作，成功后�
     '/account?tab=security',
   );
   rerender(renderPage('F1E2D3C4'));
-  assert.equal(
-    (screen.getByRole('textbox', { name: '授权码' }) as HTMLInputElement).value,
-    'F1E2D3C4',
-  );
+  assert.equal(screen.getByRole('status', { name: '授权码' }).textContent, 'F1E2–D3C4');
   assert.equal(screen.queryByRole('heading', { name: 'CLI 登录已批准' }), null);
+});
+
+test('分组授权码复制时保留原始八位码，不带展示分隔符', () => {
+  render(
+    createElement(
+      HubCtx.Provider,
+      { value: state },
+      createElement(ConnectPage, { routeQuery: '?code=a1b2c3d4' }),
+    ),
+  );
+  const clipboard = new Map<string, string>();
+  fireEvent.copy(screen.getByRole('status', { name: '授权码' }), {
+    clipboardData: { setData: (type: string, value: string) => clipboard.set(type, value) },
+  });
+  assert.equal(clipboard.get('text/plain'), 'A1B2C3D4');
+});
+
+test('CLI 授权码链接格式无效时不给出批准入口，引导回到终端重新发起', () => {
+  render(
+    createElement(
+      HubCtx.Provider,
+      { value: state },
+      createElement(ConnectPage, { routeQuery: '?code=1' }),
+    ),
+  );
+  assert(screen.getByRole('heading', { name: '授权码无效或已过期' }));
+  assert(screen.getByText(/请在终端重新发起 CLI 登录/));
+  assert.equal(screen.queryByRole('button', { name: '允许 CLI 登录' }), null);
+  assert.equal(screen.getByRole('link', { name: '返回接入指引' }).getAttribute('href'), '/connect');
 });
 
 test('CLI 临时批准失败保留授权码可重试，授权码失效后结束审批并提示从终端重新发起', async (context) => {
@@ -259,14 +280,12 @@ test('CLI 临时批准失败保留授权码可重试，授权码失效后结束�
   );
   await user.click(screen.getByRole('button', { name: '允许 CLI 登录' }));
   await screen.findByText('服务暂不可用');
-  assert.equal(
-    (screen.getByRole('textbox', { name: '授权码' }) as HTMLInputElement).value,
-    'A1B2C3D4',
-  );
+  assert.equal(screen.getByRole('status', { name: '授权码' }).textContent, 'A1B2–C3D4');
   expired = true;
   await user.click(screen.getByRole('button', { name: '允许 CLI 登录' }));
   await screen.findByRole('heading', { name: '授权码无效或已过期' });
   assert(screen.getByText(/请在终端重新发起 CLI 登录/));
+  assert.equal(screen.queryByRole('status', { name: '授权码' }), null);
   assert.equal(screen.queryByRole('textbox', { name: '授权码' }), null);
   assert.equal(screen.queryByRole('button', { name: '允许 CLI 登录' }), null);
   assert.equal(screen.getByRole('link', { name: '返回接入指引' }).getAttribute('href'), '/connect');

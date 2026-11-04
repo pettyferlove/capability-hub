@@ -38,6 +38,7 @@ export interface CliOptions {
   url?: string;
   configDir?: string;
   interactive?: boolean;
+  animation?: boolean;
   client?: string;
   scope?: string;
   method?: 'oauth' | 'assistant' | 'token';
@@ -279,8 +280,18 @@ export async function runCommand(
     ui.message(
       `${flags.dryRun ? '预览' : '安装'}：${asset.slug} @ ${terminalText(version.version_label)}\n目标：${terminalText(resolve(flags.to, asset.slug))}`,
     );
-  const archive = await ui.task('下载 Skill 归档', '归档下载完成，开始校验', () =>
-    api.archive(path + '/archive'),
+  const archive = await ui.task('下载 Skill 归档', '归档下载完成，开始校验', (update) =>
+    api.archive(
+      path + '/archive',
+      ui.animated
+        ? (received, total) => {
+            const transferred = formatBytes(received);
+            update(
+              `下载 Skill 归档 · ${total === undefined ? transferred : `${transferred} / ${formatBytes(total)}`}`,
+            );
+          }
+        : undefined,
+    ),
   );
   const result = await install({
     slug: asset.slug,
@@ -308,6 +319,12 @@ export async function runCommand(
         ? '预览完成，未写入文件。去掉 --dry-run 可安装。'
         : 'Skill 已校验并安装；请在 Agent 中重新加载技能。',
     );
+}
+
+function formatBytes(value: number): string {
+  return value < 1024 * 1024
+    ? `${(value / 1024).toFixed(1)} KiB`
+    : `${(value / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
 function validateVersion(value: string): string | undefined {

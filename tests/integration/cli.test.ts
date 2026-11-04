@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { HubApiClient } from '../../apps/cli/src/api-client.js';
 import { serveTestHub } from '../support/server.js';
 import { publishSkill, submitPublication } from '../support/application.js';
 
@@ -181,6 +182,106 @@ test('CLI 交互安装需明确选择版本，仍校验下载内容并返回纯 
     (await readFile(join(destination, 'sample-skill/SKILL.md'), 'utf8')).includes('sample-skill'),
   );
   assert.equal((result.stdout + result.stderr).includes(token.token), false);
+});
+
+test('CLI 关闭动效后仍可补全参数，任务状态和结果分开输出', async (context) => {
+  const fixture = await serveTestHub(context);
+  await publishSkill(fixture);
+  const token = await fixture.hub.tokens.issue(fixture.admin, {
+    name: '静态 CLI',
+    scope: 'hub:read',
+  });
+  const destination = join(await realpath(fixture.directory), 'static-skills');
+  const result = await cli(
+    [
+      'add',
+      'sample-skill',
+      '--url',
+      fixture.origin,
+      '--to',
+      destination,
+      '--dry-run',
+      '--no-animation',
+    ],
+    token.token,
+    {
+      terminal: true,
+      environment: { CI: '', TERM: 'xterm', NO_COLOR: '1' },
+      answers: [{ prompt: '选择明确的资源版本', input: '\r' }],
+    },
+  );
+  assert.equal(result.code, 0, result.stderr);
+  const preview: unknown = JSON.parse(result.stdout);
+  assert(preview && typeof preview === 'object' && 'dry_run' in preview);
+  assert.equal(preview.dry_run, true);
+  assert(result.stderr.includes('归档下载完成'));
+  assert.equal((result.stdout + result.stderr).includes(token.token), false);
+});
+
+test('CLI 在授权等待动效中取消以 130 退出，不写配置或凭据', async (context) => {
+  const fixture = await serveTestHub(context);
+  const directory = join(await realpath(fixture.directory), 'cancelled-credentials');
+  const target = join(await realpath(fixture.directory), 'cancelled-mcp.json');
+  const result = await cli(
+    [
+      'connect',
+      '--url',
+      fixture.origin,
+      '--client',
+      'cursor',
+      '--config-dir',
+      directory,
+      '--config-file',
+      target,
+      '--no-browser',
+    ],
+    undefined,
+    {
+      terminal: true,
+      environment: { CI: '', TERM: 'xterm', NO_COLOR: '1' },
+      answers: [{ prompt: '等待浏览器授权', input: '\u0003' }],
+    },
+  );
+  assert.equal(result.code, 130, result.stderr);
+  assert.equal(result.stdout, '');
+  await assert.rejects(readFile(target), { code: 'ENOENT' });
+  await assert.rejects(readdir(directory), { code: 'ENOENT' });
+});
+
+test('CLI 下载进度按接收字节累计，不把压缩或无效长度当成总大小', async (context) => {
+  for (const [headers, totals] of [
+    [{ 'content-length': '7' }, [7, 7, 7]],
+    [{ 'content-length': '4', 'content-encoding': 'gzip' }, [undefined, undefined, undefined]],
+    [{}, [undefined, undefined, undefined]],
+    [{ 'content-length': 'invalid' }, [undefined, undefined, undefined]],
+    [{ 'content-length': '4' }, [4, 4, undefined]],
+    [{ 'content-length': String(121 * 1024 * 1024) }, [undefined, undefined, undefined]],
+  ] as const) {
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(Buffer.from('abc'));
+          controller.enqueue(Buffer.from('defg'));
+          controller.close();
+        },
+      }),
+      { headers },
+    );
+    const request = context.mock.method(globalThis, 'fetch', async () => response);
+    const progress: { received: number; total?: number }[] = [];
+    const bytes = await new HubApiClient('https://hub.example.test').archive(
+      '/archive',
+      (received, total) => {
+        progress.push({ received, total });
+      },
+    );
+    assert.equal(bytes.toString(), 'abcdefg');
+    assert.deepEqual(
+      progress,
+      [0, 3, 7].map((received, i) => ({ received, total: totals[i] })),
+    );
+    request.mock.restore();
+  }
 });
 
 test('CLI 发布包在空缓存和仓库外离线安装，仅安装自身且能通过 HTTP 安装 Skill', async (context) => {

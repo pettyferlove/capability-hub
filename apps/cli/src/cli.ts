@@ -22,6 +22,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     .option('--url <URL>', 'Hub 的 HTTP(S) 根地址')
     .option('--config-dir <PATH>', '独立凭据目录（默认 ~/.config/capability-hub）')
     .option('--no-interactive', '禁用输入向导和进度动画，适用于脚本')
+    .option('--no-animation', '关闭进度动画，保留输入向导和静态状态')
     .addHelpText(
       'after',
       `
@@ -56,7 +57,10 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
 
   async function execute(command: Command, args: string[] = []) {
     const flags = command.optsWithGlobals<CliOptions>();
-    const ui = new CliUi(flags.interactive !== false && !flags.json && command.name() !== 'bridge');
+    const ui = new CliUi(
+      flags.interactive !== false && !flags.json && command.name() !== 'bridge',
+      flags.animation !== false,
+    );
     ui.intro('Capability Hub · ' + command.name());
     await runCommand(command.name(), args, flags, ui);
   }
@@ -153,7 +157,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
 
   program.action(async (_options: CliOptions, command: Command) => {
     const flags = command.opts<CliOptions>();
-    const ui = new CliUi(flags.interactive !== false);
+    const ui = new CliUi(flags.interactive !== false, flags.animation !== false);
     if (!ui.interactive) {
       program.outputHelp();
       return;

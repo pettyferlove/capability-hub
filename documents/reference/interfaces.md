@@ -82,7 +82,7 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 | hub-config       | --url、--client；离线生成配置，可选 --method、--scope、--contribute、--conversation |
 | mcp-config       | NAME、--version、--client；可选 --option、--scope                                   |
 
-`-h` / `help <命令>` 显示参数和示例，`-V` 显示 CLI 版本。终端空命令打开菜单，缺参数时引导输入；版本、安装路径须明确选择。`--no-interactive`、CI、重定向、`--json` 和 `bridge` 禁用向导。JSON、配置和协议写 stdout，提示写 stderr。
+`-h` / `help <命令>` 查看帮助，`-V` 查看版本。终端提供菜单和参数向导，等待时显示计时动效、下载时显示字节进度；`--no-animation` 保留向导和静态状态。`--no-interactive`、CI、重定向、`--json` 和 `bridge` 禁用交互。JSON、配置和协议写 stdout，提示写 stderr。
 
 `--config-dir` 隔离凭据，默认 `~/.config/capability-hub`。读取命令使用登录凭据或 `CAPABILITY_HUB_TOKEN` + 显式 `--url`，两者互斥；`hub-config` 不读取凭据。Hub URL 仅接受无凭据、路径、查询的 HTTP(S) 根地址。下载限制大小，不携带授权跟随重定向。
 

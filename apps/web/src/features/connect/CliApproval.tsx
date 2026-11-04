@@ -3,7 +3,6 @@ import { approveCliLoginRequestSchema } from '@capability-hub/contracts';
 import { ApiError, mutate } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { Glyph } from '../../shared/components/Glyph.js';
-import { InputField } from '../../shared/components/InputField.js';
 import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { UserAvatar } from '../../shared/components/UserAvatar.js';
@@ -13,6 +12,7 @@ import {
   BookOpen,
   CircleCheck,
   Clock3,
+  KeyRound,
   Link,
   LockKeyhole,
   SquareTerminal,
@@ -31,14 +31,15 @@ import {
 /** 网页批准只绑定账号，登录结果由原 CLI 轮询获取；终态不再提供重复批准入口。 */
 export function CliApproval({ initialCode }: { initialCode: string }) {
   const { me } = useHub();
-  const [code, setCode] = useState(initialCode.toUpperCase());
+  const code = initialCode.toUpperCase();
   const [approved, setApproved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Error>();
-  const expired = failure instanceof ApiError && failure.code === 'CLI_LOGIN_EXPIRED';
-  const valid = approveCliLoginRequestSchema.safeParse({ code }).success;
+  const unavailable =
+    !approveCliLoginRequestSchema.safeParse({ code }).success ||
+    (failure instanceof ApiError && failure.code === 'CLI_LOGIN_EXPIRED');
   async function approve() {
-    if (busy || approved || expired || !valid) return;
+    if (busy || approved || unavailable) return;
     setBusy(true);
     setFailure(undefined);
     try {
@@ -60,7 +61,7 @@ export function CliApproval({ initialCode }: { initialCode: string }) {
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-paper px-2 py-0.5">
               <span className="size-1.5 rounded-full bg-brand/65" />
-              {approved ? '已批准' : expired ? '已失效' : busy ? '提交中' : '待确认'}
+              {approved ? '已批准' : unavailable ? '不可用' : busy ? '提交中' : '待确认'}
             </span>
           </div>
           <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-4 md:grid-cols-1 md:content-center md:justify-items-center md:text-center">
@@ -110,9 +111,9 @@ export function CliApproval({ initialCode }: { initialCode: string }) {
           </div>
         )}
       </div>
-      {approved || expired ? (
+      {approved || unavailable ? (
         <div className={consentPaneStyles}>
-          <div role={expired ? 'alert' : 'status'} className="grid content-center gap-4 py-4">
+          <div role={unavailable ? 'alert' : 'status'} className="grid content-center gap-4 py-4">
             <span className="grid size-12 place-items-center rounded-xl bg-brand-soft text-brand">
               {approved ? <CircleCheck size={26} /> : <Clock3 size={26} />}
             </span>
@@ -122,7 +123,7 @@ export function CliApproval({ initialCode }: { initialCode: string }) {
             <p className="text-label leading-relaxed text-muted-ink">
               {approved
                 ? '请回到发起登录的终端，等待 CLI 完成登录。此页面可以关闭。'
-                : '授权码可能已过期或已使用。请在终端重新发起 CLI 登录，并打开新的授权链接。'}
+                : '请在终端重新发起 CLI 登录，并打开新的完整授权链接。'}
             </p>
           </div>
           <div className={cn(consentFooterStyles, 'justify-end')}>
@@ -141,33 +142,43 @@ export function CliApproval({ initialCode }: { initialCode: string }) {
         >
           <div className="grid min-w-0 content-start gap-5">
             <header>
-              <h1 className={pageHeadTitleStyles}>确认 CLI 登录</h1>
-              <p className="mt-1.5 text-label text-muted-ink">
-                核对终端中的授权码，一致后允许登录。
+              <h1 className={pageHeadTitleStyles}>允许 CLI 登录？</h1>
+              <p className="mt-2 text-label leading-relaxed text-muted-ink">
+                确认下方授权码与终端中显示的
+                <strong className="font-semibold text-ink">完全一致</strong>，再允许登录。
               </p>
             </header>
-            <div className="grid w-full max-w-80 gap-2 text-label font-medium">
-              <label htmlFor="cli-approval-code">授权码</label>
-              <InputField
+            <div className="grid gap-3 rounded-2xl border border-line bg-brand-soft/45 p-4 text-left text-label sm:p-5">
+              <label
+                htmlFor="cli-approval-code"
+                className="flex items-center gap-2 font-medium text-muted-ink"
+              >
+                <KeyRound size={16} aria-hidden="true" />
+                授权码
+              </label>
+              <output
                 id="cli-approval-code"
-                icon="key"
-                value={code}
-                disabled={busy}
-                onChange={(event) => {
-                  setCode(event.target.value.toUpperCase());
-                  setFailure(undefined);
-                }}
-                className="font-mono text-2xl tracking-widest"
-                autoComplete="off"
-                spellCheck={false}
-                required
-                pattern="[A-Fa-f0-9]{8}"
-                maxLength={8}
+                className="block py-3 text-center"
                 aria-describedby="cli-code-help"
-              />
-              <span id="cli-code-help" className="text-caption font-normal text-muted-ink">
+                onCopy={(event) => {
+                  event.preventDefault();
+                  event.clipboardData.setData('text/plain', code);
+                }}
+              >
+                <code className="font-mono text-3xl leading-none font-semibold tracking-[0.08em] whitespace-nowrap tabular-nums select-all sm:text-5xl">
+                  {code.slice(0, 4)}
+                  <span
+                    aria-hidden="true"
+                    className="mx-1.5 font-normal tracking-normal text-muted-ink/55 select-none sm:mx-3"
+                  >
+                    –
+                  </span>
+                  {code.slice(4)}
+                </code>
+              </output>
+              <p id="cli-code-help" className="text-caption text-muted-ink">
                 仅批准你本人刚刚发起的登录请求。
-              </span>
+              </p>
             </div>
             <div
               className={cn(
@@ -201,7 +212,7 @@ export function CliApproval({ initialCode }: { initialCode: string }) {
             >
               暂不登录
             </button>
-            <Submit type="submit" busy={busy} disabled={!valid}>
+            <Submit type="submit" busy={busy}>
               {busy ? '正在批准…' : '允许 CLI 登录'} {!busy && <ArrowRight size={15} />}
             </Submit>
           </div>

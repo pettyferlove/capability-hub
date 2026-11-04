@@ -93,22 +93,40 @@ export class HubApiClient {
     return parsed.data;
   }
 
-  async archive(path: string): Promise<Buffer> {
-    return this.readBytes(await this.request(path), 120 * 1024 * 1024);
+  async archive(
+    path: string,
+    onProgress?: (received: number, total?: number) => void,
+  ): Promise<Buffer> {
+    return this.readBytes(await this.request(path), 120 * 1024 * 1024, onProgress);
   }
 
-  private async readBytes(response: Response, maximum: number): Promise<Buffer> {
+  private async readBytes(
+    response: Response,
+    maximum: number,
+    onProgress?: (received: number, total?: number) => void,
+  ): Promise<Buffer> {
     if (!response.body) throw new Error('Hub 返回了空响应');
     const reader = response.body.getReader();
     const chunks: Uint8Array[] = [];
+    const length = Number(response.headers.get('content-length'));
+    // 压缩传输的 Content-Length 不能表示 fetch 解压后的字节数。
+    const total =
+      !response.headers.has('content-encoding') &&
+      Number.isSafeInteger(length) &&
+      length > 0 &&
+      length <= maximum
+        ? length
+        : undefined;
     let size = 0;
     try {
+      onProgress?.(0, total);
       for (;;) {
         const result = await reader.read();
         if (result.done) break;
         size += result.value.length;
         if (size > maximum) throw new Error('Hub 响应超过大小限制');
         chunks.push(result.value);
+        onProgress?.(size, total !== undefined && size <= total ? total : undefined);
       }
       return Buffer.concat(chunks);
     } finally {

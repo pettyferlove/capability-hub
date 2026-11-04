@@ -1,4 +1,5 @@
-import { intro, isCancel, log, select, spinner, text } from '@clack/prompts';
+import { intro, isCancel, log, select, spinner, text, unicode } from '@clack/prompts';
+import type { Key } from 'node:readline';
 import { terminalText } from './api-client.js';
 
 /** 人工取消与执行失败分开退出，主入口将取消映射为 130。 */
@@ -11,8 +12,9 @@ export class CliCancelled extends Error {
 /** 提示只用于人工终端；stdout 始终留给命令结果或 MCP 协议。 */
 export class CliUi {
   readonly interactive: boolean;
+  readonly animated: boolean;
 
-  constructor(enabled = false) {
+  constructor(enabled = false, animation = true) {
     this.interactive =
       enabled &&
       !!process.stdin.isTTY &&
@@ -20,6 +22,7 @@ export class CliUi {
       !!process.stderr.isTTY &&
       (!process.env.CI || /^(false|0)$/i.test(process.env.CI)) &&
       process.env.TERM !== 'dumb';
+    this.animated = this.interactive && animation;
   }
 
   intro(title: string) {
@@ -78,22 +81,47 @@ export class CliUi {
     else process.stderr.write(message + '\n');
   }
 
-  async task<T>(message: string, complete: string, work: () => Promise<T>): Promise<T> {
-    if (!this.interactive) return work();
-    const progress = spinner({
-      output: process.stderr,
-      // Clack 清理显示后恢复 SIGINT 的退出语义，避免取消动画后任务仍在后台继续。
-      onCancel: () => process.kill(process.pid, 'SIGINT'),
-      cancelMessage: '操作已取消',
-    });
-    progress.start(message);
+  async task<T>(
+    message: string,
+    complete: string,
+    work: (update: (message: string) => void) => Promise<T>,
+  ): Promise<T> {
+    const progress = this.animated
+      ? spinner({
+          output: process.stderr,
+          indicator: 'timer',
+          frames: unicode
+            ? ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+            : ['-', '\\', '|', '/'],
+          onCancel: () => process.exit(130),
+          cancelMessage: '操作已取消',
+        })
+      : undefined;
+    const cancelOnKeypress = (_input: string, key: Key) => {
+      if ((key.ctrl && key.name === 'c') || key.name === 'escape') {
+        progress?.cancel('操作已取消');
+        process.exit(130);
+      }
+    };
+    if (progress) {
+      // Clack 将取消按键按成功退出处理，需优先恢复终端并退出 130。
+      process.stdin.prependListener('keypress', cancelOnKeypress);
+      progress.start(message);
+    } else if (this.interactive) log.step(message, { output: process.stderr });
     try {
-      const result = await work();
-      progress.stop(complete);
+      const result = await work((message) => {
+        if (progress) progress.message(terminalText(message));
+        else this.message(terminalText(message));
+      });
+      if (progress) progress.stop(complete);
+      else if (this.interactive) log.success(complete, { output: process.stderr });
       return result;
     } catch (error) {
-      progress.error('未完成：' + message);
+      if (progress) progress.error('未完成：' + message);
+      else if (this.interactive) log.error('未完成：' + message, { output: process.stderr });
       throw error;
+    } finally {
+      process.stdin.off('keypress', cancelOnKeypress);
     }
   }
 }

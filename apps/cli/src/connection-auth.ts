@@ -132,25 +132,34 @@ export async function authorizeConnection(
       resource: url + '/mcp',
       scope: contribute ? 'hub:read hub:contribute' : 'hub:read',
     }).toString();
-    const code = await new Promise<string>((resolve, reject) => {
-      callback = resolve;
-      rejected = reject;
-      timer = setTimeout(() => reject(new Error('授权等待超时，请重新运行 connect')), 600_000);
-      ui.message(
-        `请在浏览器确认连接：\n${authorization.href}\n远程终端需要将本机回调端口 ${address.port} 转发到此环境。`,
-      );
-      if (!noBrowser) {
-        const command =
-          process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? null : 'xdg-open';
-        if (command) {
-          const child = spawn(command, [authorization.href], { stdio: 'ignore' });
-          child.on('error', () => {
-            ui.message('无法自动打开浏览器，请打开上面的授权链接。');
-          });
-          child.unref();
-        }
-      }
-    });
+    ui.message(
+      `请在浏览器确认连接：\n${authorization.href}\n远程终端需要将本机回调端口 ${address.port} 转发到此环境。`,
+    );
+    const code = await ui.task(
+      '等待浏览器授权（最长 10 分钟）',
+      '浏览器授权已确认',
+      (update) =>
+        new Promise<string>((resolve, reject) => {
+          callback = resolve;
+          rejected = reject;
+          timer = setTimeout(() => reject(new Error('授权等待超时，请重新运行 connect')), 600_000);
+          if (!noBrowser) {
+            const command =
+              process.platform === 'darwin'
+                ? 'open'
+                : process.platform === 'win32'
+                  ? null
+                  : 'xdg-open';
+            if (command) {
+              const child = spawn(command, [authorization.href], { stdio: 'ignore' });
+              child.on('error', () => {
+                update('无法自动打开浏览器，请打开上面的授权链接。');
+              });
+              child.unref();
+            }
+          }
+        }),
+    );
     const result = await api.json('/oauth/token', tokens, {
       grant_type: 'authorization_code',
       client_id: registered.client_id,
