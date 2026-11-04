@@ -447,7 +447,15 @@ test('CLI 子进程通过真实 HTTP 搜索和安装已发布内容，撤权后�
   const token = await fixture.hub.tokens.issue(fixture.admin, { name: 'CLI', scope: 'hub:read' });
   const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-cli-'));
   context.after(() => rm(root, { recursive: true, force: true }));
-  const search = await cli(['search', 'sample', '--url', fixture.origin, '--json'], token.token);
+  const query = cliInstallationGuide(fixture.origin)
+    .steps.flatMap((step) => step.command?.split('\n') ?? [])
+    .find((command) => command.startsWith('capability-hub search '));
+  assert(query);
+  const parsed = await execute('sh', [
+    '-c',
+    `capture() { printf '%s\\n' "$@"; }\n${query.replace(/^capability-hub /, 'capture ')}`,
+  ]);
+  const search = await cli([...parsed.stdout.trimEnd().split('\n'), 'sample'], token.token);
   assert.equal(search.code, 0, search.stderr);
   const result: unknown = JSON.parse(search.stdout);
   assert(result && typeof result === 'object' && 'total' in result);

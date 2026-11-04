@@ -55,7 +55,22 @@ test('未配置私有仓库时可直接复制 npm 安装命令，不要求获取
   assert.equal(screen.queryByText(/请联系部署方获取安装方式/), null);
   assert.equal(screen.queryByText('获取 CLI 仓库地址'), null);
   assert.equal(screen.queryByText('仓库需要认证时'), null);
-  assert(screen.getByRole('region', { name: '选择 Hub 授权方式' }));
+  const verification = within(screen.getByRole('region', { name: '验证 CLI 访问' }));
+  await user.click(verification.getByRole('button', { name: '复制' }));
+  assert.equal(
+    await navigator.clipboard.readText(),
+    "capability-hub search --url 'https://hub.example' --json --no-interactive",
+  );
+  const login = screen.getByText('首次使用或授权失效时登录 CLI', { selector: 'summary' });
+  const details = login.closest('details');
+  assert(details);
+  assert.equal(details.open, false);
+  await user.click(login);
+  await user.click(within(details).getByRole('button', { name: '复制' }));
+  assert.equal(
+    await navigator.clipboard.readText(),
+    "capability-hub login --url 'https://hub.example' --no-interactive",
+  );
 });
 
 test('工具清单按需打开，按所需授权分组，关闭后可从原入口继续', async () => {

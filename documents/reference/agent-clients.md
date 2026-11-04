@@ -63,7 +63,7 @@ https://hub.example.com/INSTALL.md
 
 分享邀请只包含接入请求和实例公开链接。`GET /api/hub-share` 返回 `installation_url` 与 `prompt`，`GET /INSTALL.md` 匿名交付 Markdown。
 
-先核对现有连接是否指向同一实例，并在目标客户端用 `search_skills` 检索一次。成功返回空列表也可以复用。需要接入时再确定客户端和项目/用户范围，读取 `/connect/mcp?client=…&scope=…`。
+接入说明按任务与运行能力选择 MCP 或独立 CLI，先验证并复用同一实例的可用通路。MCP 在目标 Agent 调用 `search_skills`；CLI 用显式 `--url` 的 `search --json` 验证。预设表提供快捷配置；未知客户端按自身 Streamable HTTP 与认证能力接入，或用 CLI 搜索、安装 Skill。
 
 接入说明和 MCP 工具发现均指向随产品交付的 [use-capability-hub](../../skills/use-capability-hub/SKILL.md)。资产状态为 `active`、当前版本公开且内容与随附包一致时，才提供该版本的安装链接。目录查询失败时仍交付接入步骤和随附正文。
 
@@ -74,7 +74,7 @@ https://hub.example.com/INSTALL.md
 https://hub.example.com/connect/mcp?client=pi&scope=project
 ```
 
-目标 Agent 必须能访问部署地址。远程 Agent 中的 localhost 指向远程主机；若无法访问说明链接，可使用页面复制的完整指令。若当前客户端不能写入配置或需要重启，Agent 应说明用户需要完成的步骤，不声称已经连接。
+目标运行环境必须能访问部署地址，远程或容器中的 localhost 指向该环境自身。无法读取说明时可转交完整指令；不能写入配置或完成重载时，说明待完成步骤。CLI 可访问不代表 Agent 已连接 MCP。
 
 CLI 的 `hub-config` 不读取本地凭据、不请求 Hub、不写配置文件，可以用于首次接入：
 
@@ -87,14 +87,14 @@ capability-hub hub-config --url https://hub.example.com --client pi --scope user
 
 ## 接入助手与高级入口
 
-实例的 `/connect/cli`、接入页和资源页提供相同的 CLI 安装步骤：准备 Node.js、通过 npm 安装并核对 CLI 版本。配置私有仓库时，安装命令临时覆盖已有 npm 作用域仓库，不改写配置；仓库认证按需进行，与 Hub 授权独立。原生 OAuth 不可用时，在运行 Agent 的同一环境执行：
+实例的 `/connect/cli` 提供安装及独立 CLI 授权步骤；私有仓库参数临时覆盖已有作用域设置，仓库认证与 Hub 授权独立。`login/search/add` 无需客户端标识；CLI 暂无正文读取或贡献命令。接入助手仅适用于表中客户端，在 Agent 运行环境执行：
 
 ```sh
 capability-hub connect --url https://hub.example.com --client cursor --scope project
 capability-hub status --url https://hub.example.com --client cursor
 ```
 
-`connect` 先检查已有配置，再启动仅监听 loopback 的 PKCE 授权回调。默认尝试打开浏览器，也会输出授权链接；`--no-browser` 只输出链接。远程终端需要将提示的回调端口转发到浏览器所在机器；无法建立回调连接时优先使用客户端自身的远程 OAuth 流程。
+`connect` 先检查已有配置，再启动仅监听 loopback 的 PKCE 授权回调。默认尝试打开浏览器，也会输出授权链接；`--no-browser` 只输出链接。远程终端需要转发回调端口；无法建立回调时，按 `/INSTALL.md` 选择可用方式。独立 CLI 的 `login` 使用设备码轮询，无需本机回调。
 
 助手先用临时私有凭据完成工具发现和检索，再合并配置并保存正式凭据；失败时保留原连接并尝试撤销未使用的新授权。不向 stdout、配置文件或对话输出凭据。配置中的 `bridge` 命令通过 stdio 向客户端提供 Hub 工具，通过 HTTP 连接 Hub，并自动刷新凭据。凭据按 Hub 地址和客户端隔离，默认保存在 `~/.config/capability-hub/connections/`，可使用 `--config-dir` 指定位置。相同客户端与 Hub 的不同项目共用该助手连接；不同客户端和原生 OAuth 连接独立撤销。
 

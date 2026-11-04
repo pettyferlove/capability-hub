@@ -5,6 +5,7 @@ import {
   hubMcpClientConfiguration,
   hubMcpConnectionGuide,
   hubShareInvitation,
+  hubInstallationGuide,
   renderMcpClientConfiguration,
   cliInstallationGuide,
   type AgentClient,
@@ -35,6 +36,42 @@ test('CLI 仓库命令保留完整路径和参数边界，地址中的 Shell 表
       encoding: 'utf8',
     });
     assert.deepEqual(output.trimEnd().split('\n'), expected);
+  }
+});
+
+test('两条接入说明的 CLI 查询都绑定当前实例，保留参数边界且无需客户端标识', () => {
+  for (const origin of [
+    'https://hub.example.test/start?token=must-not-reflect',
+    'http://127.0.0.1:4100/',
+    "https://hub'$(printf).example.test/",
+  ]) {
+    const descriptions = [
+      hubInstallationGuide(origin),
+      cliInstallationGuide(origin)
+        .steps.map((step) => step.command ?? '')
+        .join('\n'),
+    ];
+    for (const description of descriptions) {
+      const command = description
+        .split('\n')
+        .find((line) => line.startsWith('capability-hub search '));
+      assert(command);
+      const output = execFileSync(
+        'sh',
+        [
+          '-c',
+          `capture() { printf '%s\\n' "$@"; }\n${command.replace(/^capability-hub /, 'capture ')}`,
+        ],
+        { encoding: 'utf8' },
+      );
+      assert.deepEqual(output.trimEnd().split('\n'), [
+        'search',
+        '--url',
+        new URL(origin).origin,
+        '--json',
+        '--no-interactive',
+      ]);
+    }
   }
 });
 

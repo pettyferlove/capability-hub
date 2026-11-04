@@ -158,7 +158,7 @@ test('目录不可用时仍交付首次接入说明和随附正文', async (cont
     .expect(200);
 });
 
-test('分享邀请使用实例公开地址，通用安装说明匿名分流到现有客户端配置', async (context) => {
+test('分享邀请匿名提供 MCP 与 CLI 路径，未知客户端可读取说明但不能冒用配置预设', async (context) => {
   const fixture = await createTestHub(context, { publicUrl: 'https://hub.example.test' });
   const http = httpClient(fixture);
   const share = await http
@@ -170,13 +170,24 @@ test('分享邀请使用实例公开地址，通用安装说明匿名分流到�
     prompt:
       '请帮我将这个 Capability Hub 接入当前使用的 Agent：\nhttps://hub.example.test/INSTALL.md',
   });
-  const guide = await http.get('/INSTALL.md?token=must-not-reflect').expect(200);
+  const guide = await http.get('/INSTALL.md?client=custom&token=must-not-reflect').expect(200);
   assert.match(guide.headers['content-type'] as string, /text\/markdown/);
   assert.match(guide.text, /^# 接入 Capability Hub/);
   assert.match(guide.text, /无法确定时询问用户/);
   assert.match(guide.text, /联系此 Hub 的管理员/);
   assert.match(guide.text, /配置已生成不代表已连接/);
-  assert(guide.text.includes('https://hub.example.test/connect/cli'));
+  const cliLink = /\]\((https:\/\/[^)]+\/connect\/cli)\)/.exec(guide.text)?.[1];
+  assert(cliLink);
+  const cliUrl = new URL(cliLink);
+  assert.equal(cliUrl.origin, 'https://hub.example.test');
+  const cliGuide = await http
+    .get(cliUrl.pathname)
+    .expect('Content-Type', /text\/markdown/)
+    .expect(200);
+  const query = (text: string) =>
+    text.split('\n').find((line) => line.startsWith('capability-hub search '));
+  assert(query(guide.text));
+  assert.equal(query(guide.text), query(cliGuide.text));
   assert.equal(guide.text.includes('must-not-reflect'), false);
   const links = [...guide.text.matchAll(/\]\((https:\/\/[^)]+\/connect\/mcp\?[^)]+)\)/g)];
   assert.equal(links.length, 16);
@@ -188,6 +199,8 @@ test('分享邀请使用实例公开地址，通用安装说明匿名分流到�
     assert(response.text.includes('OAuth'));
     assert.equal(response.text.includes('CAPABILITY_HUB_TOKEN'), false);
   }
+  for (const path of ['/api/hub-mcp-config', '/connect/mcp'])
+    await http.get(path).query({ client: 'custom' }).expect(422);
   assert.deepEqual(await fixture.hub.tokens.list(fixture.admin.id), []);
   await http.post('/mcp').send({ jsonrpc: '2.0', id: 1, method: 'tools/list' }).expect(401);
 });

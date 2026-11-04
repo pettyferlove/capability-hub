@@ -48,10 +48,17 @@ export function cliInstallationGuide(origin: string, registry?: string): CliInst
         command: `npm install -g @capability-hub/cli${registry ? ` --registry=${shellArgument(registry)} --@capability-hub:registry=${shellArgument(registry)}` : ''}\ncapability-hub --cli-version`,
       },
       {
-        title: '选择 Hub 授权方式',
+        title: '首次使用或授权失效时登录 CLI',
         description:
-          '命令行搜索和安装资源使用下方 login，在浏览器核对授权码并批准。连接 Agent 使用接入页生成的 connect 命令；两者独立授权，无需依次执行。安装 CLI 不会获得 Hub 访问权限。',
-        command: `capability-hub login --url ${shellArgument(new URL(origin).origin)}\ncapability-hub search`,
+          '已有当前实例的有效登录时跳过此步。在浏览器核对授权码并批准，无需本机回调。connect 用于预设客户端的 MCP 接入助手，与 login 独立授权，无需依次执行。',
+        command: `capability-hub login --url ${shellArgument(new URL(origin).origin)} --no-interactive`,
+        optional: true,
+      },
+      {
+        title: '验证 CLI 访问',
+        description:
+          '独立 CLI 搜索和安装 Skill 无需客户端标识。查询成功即说明 CLI 可访问当前实例，空列表也算成功；安装 CLI 不代表已授权，CLI 可访问不代表 Agent 的 MCP 已连接。',
+        command: `capability-hub search --url ${shellArgument(new URL(origin).origin)} --json --no-interactive`,
       },
     ],
     troubleshooting: [
