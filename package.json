@@ -27,7 +27,7 @@
     "maintenance": "node --conditions=development --env-file-if-exists=.env --import tsx scripts/operations/maintenance.ts",
     "restore:import": "node --conditions=development --env-file-if-exists=.env --import tsx scripts/operations/restore-import.ts",
     "test:external": "node scripts/testing/test-external.mjs",
-    "lint": "eslint apps packages scripts bin tests",
+    "lint": "node scripts/checks/check-lint.mjs",
     "test:image": "node scripts/testing/verify-image.mjs",
     "check:documentation": "node --conditions=development --import tsx scripts/checks/check-documentation.mjs",
     "db:generate:sqlite": "drizzle-kit generate --config=scripts/database/drizzle-sqlite.ts",

@@ -16,16 +16,17 @@ CLI 的 `prepack` 自动构建；发布用 `pnpm --filter @capability-hub/cli pu
 
 ## 工程检查：`scripts/checks`
 
-| 脚本                                                                    | 职责与调用方                                                            |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [check-architecture.ts](../../scripts/checks/check-architecture.ts)     | `pnpm check:architecture`；保持原有 TS 入口，检查分层、导出和依赖关系。 |
-| [check-documentation.mjs](../../scripts/checks/check-documentation.mjs) | `pnpm check:documentation`；调用检查函数，输出结果和退出码。            |
-| [check-database.mjs](../../scripts/checks/check-database.mjs)           | `pnpm db:check`；在临时目录编排 Drizzle 检查和迁移树比较。              |
-| [lib/documentation.ts](../../scripts/checks/lib/documentation.ts)       | 可独立测试的 Markdown 链接检查函数。                                    |
-| [lib/migration-files.ts](../../scripts/checks/lib/migration-files.ts)   | 迁移目录摘要和 journal 对应关系校验函数。                               |
-| [lib/style-policy.ts](../../scripts/checks/lib/style-policy.ts)         | 默认测试使用的样式字面量和主题解析函数。                                |
+| 脚本                                                                    | 职责与调用方                                               |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------- |
+| [check-architecture.ts](../../scripts/checks/check-architecture.ts)     | `pnpm check:architecture`；检查分层、导出和依赖关系。      |
+| [check-documentation.mjs](../../scripts/checks/check-documentation.mjs) | `pnpm check:documentation`；检查 Markdown 链接。           |
+| [check-database.mjs](../../scripts/checks/check-database.mjs)           | `pnpm db:check`；在临时目录编排 Drizzle 检查和迁移树比较。 |
+| [check-lint.mjs](../../scripts/checks/check-lint.mjs)                   | `pnpm lint`；分批串行执行 ESLint，失败即停止。             |
+| [lib/documentation.ts](../../scripts/checks/lib/documentation.ts)       | 可独立测试的 Markdown 链接检查函数。                       |
+| [lib/migration-files.ts](../../scripts/checks/lib/migration-files.ts)   | 迁移目录摘要和 journal 对应关系校验函数。                  |
+| [lib/style-policy.ts](../../scripts/checks/lib/style-policy.ts)         | 默认测试使用的样式字面量和主题解析函数。                   |
 
-`lib` 中的模块不自行启动命令或设置退出码。内容上传的风险提示仍属于基础设施包，不放入工程检查脚本。
+`lib` 中的模块不自行启动命令或设置退出码。
 
 ## 数据库生成配置：`scripts/database`
 
