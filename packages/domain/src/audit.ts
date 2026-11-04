@@ -135,6 +135,7 @@ export const auditDefinitions: Record<string, AuditDefinition> = {
   },
   'asset.blocked': { label: '封禁资源', category: 'publication', subject: 'asset' },
   'asset.deprecated': { label: '弃用资源', category: 'publication', subject: 'asset' },
+  'asset.deleted': { label: '删除错误资源', category: 'publication', subject: 'asset' },
   'asset.source_migrated': { label: '迁移资源来源', category: 'publication', subject: 'asset' },
   'version.revoked': { label: '撤销资源版本', category: 'publication', subject: 'version' },
   'content.management_read': { label: '审查内容快照', category: 'content', subject: 'version' },

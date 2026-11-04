@@ -45,7 +45,13 @@ export interface SelectFieldProps extends Omit<
   /** 图标仅辅助辨识；表单值、搜索和无障碍名称仍使用原始文字。 */
   optionIcons?: Readonly<Record<string, IconComponent>>;
 }
-type Option = { kind: 'option'; value: string; label: string; disabled: boolean };
+type Option = {
+  kind: 'option';
+  value: string;
+  label: string;
+  disabled: boolean;
+  className?: string;
+};
 type OptionGroup = { kind: 'group'; key: string; label: string; options: Option[] };
 type SelectEntry = Option | OptionGroup;
 function optionsFrom(children: ReactNode, inheritedDisabled = false, prefix = ''): SelectEntry[] {
@@ -56,6 +62,7 @@ function optionsFrom(children: ReactNode, inheritedDisabled = false, prefix = ''
         value?: string | number;
         disabled?: boolean;
         label?: string;
+        className?: string;
       }>(child)
     )
       return [];
@@ -90,6 +97,7 @@ function optionsFrom(children: ReactNode, inheritedDisabled = false, prefix = ''
         value: String(props.value ?? label),
         label,
         disabled: inheritedDisabled || !!props.disabled,
+        className: props.className,
       },
     ];
   });
@@ -103,7 +111,7 @@ function renderOption(item: Option, icons?: Readonly<Record<string, IconComponen
       id={item.value || '__hub_empty__'}
       textValue={item.label}
       isDisabled={item.disabled}
-      className={hubSelectOptionStyles}
+      className={cn(hubSelectOptionStyles, item.className)}
     >
       {({ isSelected }) => (
         <>
@@ -159,6 +167,7 @@ export function SelectField({
         .filter(Boolean)
         .join(' ') || undefined;
   const SelectedIcon = optionIcons?.[selected];
+  const selectedOption = options.find((option) => option.value === selected);
   return (
     <Select
       ref={root}
@@ -184,11 +193,20 @@ export function SelectField({
       }}
     >
       <Button className={hubSelectTriggerStyles}>
-        <SelectValue className="flex min-w-0 flex-1 items-center gap-2.5">
+        <SelectValue
+          className={cn('flex min-w-0 flex-1 items-center gap-2.5', selectedOption?.className)}
+        >
           {({ selectedText, isPlaceholder }) => (
             <>
               {SelectedIcon && (
-                <SelectedIcon size={16} aria-hidden="true" className="shrink-0 text-muted-ink" />
+                <SelectedIcon
+                  size={16}
+                  aria-hidden="true"
+                  className={cn(
+                    'shrink-0',
+                    selectedOption?.className ? 'text-current' : 'text-muted-ink',
+                  )}
+                />
               )}
               <span className="truncate">{isPlaceholder ? placeholder : selectedText}</span>
             </>

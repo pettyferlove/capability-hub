@@ -76,6 +76,7 @@ export interface ManagementAssetResponse {
   lifecycle: 'active' | 'deprecated' | 'blocked';
   current_release_id: string | null;
   can_submit: boolean;
+  can_delete: boolean;
   can_lifecycle: boolean;
   /** 是否能在目录里看到该资产；受限受众下可能为假。 */
   can_view_catalog: boolean;

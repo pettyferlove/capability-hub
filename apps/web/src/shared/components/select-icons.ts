@@ -33,6 +33,7 @@ import {
   SquareTerminal,
   Tag,
   TimerOff,
+  Trash2,
   UserRound,
   Users,
   WandSparkles,
@@ -74,6 +75,7 @@ export const feedbackStatusIcons = {
   declined: CircleMinus,
 };
 export const managementIcons = {
+  delete: Trash2,
   deprecated: CircleMinus,
   blocked: Ban,
   active: CircleCheck,

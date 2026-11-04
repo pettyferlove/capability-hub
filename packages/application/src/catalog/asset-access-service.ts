@@ -43,6 +43,35 @@ export class AssetAccessService {
   requireMaintenance(principal: Principal, asset: AssetRecord) {
     if (!this.canMaintain(principal, asset)) fail(403, 'FORBIDDEN', '无资产维护权限');
   }
+  /** 仅允许清理无内容版本、接收均失败或取消且无处理中作业的上传资产。 */
+  async canDelete(principal: Principal, asset: AssetRecord) {
+    if (
+      !this.canMaintain(principal, asset) ||
+      asset.lifecycle === 'blocked' ||
+      asset.current_release_id
+    )
+      return false;
+    const source = await this.store.get('sources', asset.source_id);
+    if (
+      source?.kind !== 'upload' ||
+      source.state === 'blocked' ||
+      source.distribution_revoked_at ||
+      (await this.store.find('versions', 'asset_id', asset.id)) ||
+      (await this.store.find('bindings', 'asset_id', asset.id))
+    )
+      return false;
+    const intakes = await this.store.where('intakes', 'asset_id', asset.id);
+    if (
+      !intakes.length ||
+      intakes.some((intake) => !['failed', 'cancelled'].includes(intake.state))
+    )
+      return false;
+    return !(await someAsync(intakes, async (intake) =>
+      (await this.store.where('jobs', 'aggregate_id', intake.id)).some((job) =>
+        ['queued', 'running'].includes(job.state),
+      ),
+    ));
+  }
   /** 要求 `source:manage`（作用域 `{ team, source }`），与资产维护权限互不替代；不满足抛 403。 */
   requireSourceManagement(principal: Principal, s: SourceRecord) {
     this.identity.require(principal, 'source:manage', { team: s.owner_group_id, source: s.id });

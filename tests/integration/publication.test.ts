@@ -5,6 +5,7 @@ import type { PublicationDecisionCommand } from '@capability-hub/application';
 import { publicationDecisionRequestSchema } from '@capability-hub/contracts';
 import type { ScenarioDefinition } from '@capability-hub/contracts';
 import { HubError } from '@capability-hub/domain/errors';
+import { archive } from '@capability-hub/infrastructure/content';
 import {
   createTestHub,
   publishSkill,
@@ -13,9 +14,330 @@ import {
   testPassword,
 } from '../support/application.js';
 import { signIn } from '../support/http.js';
+import { skillDocument } from '../support/content.js';
 
 const errorCode = (code: string) => (error: unknown) =>
   error instanceof HubError && error.code === code;
+
+for (const target of ['assets', 'intakes'] as const)
+  test(`删除错误资源与 ${target} 列表读取并发时，列表仍返回完整快照`, async (context) => {
+    const f = await createTestHub(context);
+    const receipt = await f.hub.intakes.receive(
+      f.admin,
+      Buffer.from('invalid ZIP'),
+      'skill.zip',
+      {
+        target: 'new',
+        kind: 'skill',
+        slug: 'broken',
+        owner_group_id: f.teamId,
+        version_label: '1.0.0',
+      },
+      randomUUID(),
+    );
+    await f.worker.tick();
+    const list = async () =>
+      target === 'assets'
+        ? await f.hub.assetManagement.list(f.admin)
+        : (await f.hub.intakeQueries.list(f.admin, {})).items;
+    const [before] = await Promise.all([
+      list(),
+      f.hub.lifecycle.deleteAsset(
+        f.admin,
+        receipt.asset_id,
+        { reason: '清理错误资源' },
+        '"1"',
+        randomUUID(),
+      ),
+    ]);
+    assert.equal(before.length, 1);
+    assert.deepEqual(await list(), []);
+  });
+
+test('首次上传名称错误的资源可删除并释放名称，保留审计且不影响相同内容的正确资源', async (context) => {
+  const f = await createTestHub(context);
+  const bytes = await archive([{ path: 'SKILL.md', bytes: skillDocument(), executable: false }]);
+  const receipt = await f.hub.intakes.receive(
+    f.admin,
+    bytes,
+    'skill.zip',
+    {
+      target: 'new',
+      kind: 'skill',
+      slug: 'wrong-name',
+      owner_group_id: f.teamId,
+      version_label: '1.0.0',
+    },
+    randomUUID(),
+  );
+  await f.worker.tick();
+  const intake = await f.store.get('intakes', receipt.intake_id);
+  assert.equal(intake?.state, 'failed');
+  assert(!intake.version_id);
+  const correct = await receiveSkill(f);
+  const client = await signIn(f);
+  const items = (await client.get('/api/management/assets').expect(200)).body as {
+    id: string;
+    can_delete: boolean;
+  }[];
+  assert.equal(items.find((item) => item.id === receipt.asset_id)?.can_delete, true);
+  assert.equal(items.find((item) => item.id === correct.asset_id)?.can_delete, false);
+  const key = randomUUID();
+  const remove = () =>
+    client
+      .delete('/api/assets/' + receipt.asset_id)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', key)
+      .send({ reason: '首次上传时资源名称填写错误' });
+  await remove().expect(200, { ok: true });
+  await remove().expect(200, { ok: true });
+  assert.equal(await f.store.get('assets', receipt.asset_id), undefined);
+  assert.equal(await f.store.get('intakes', receipt.intake_id), undefined);
+  assert.equal(await f.store.get('sources', intake.source_id), undefined);
+  assert.deepEqual(await f.store.where('jobs', 'aggregate_id', intake.id), []);
+  const audit = await f.store.where('audit', 'action', 'asset.deleted');
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].subject?.name, 'wrong-name');
+  assert.equal(audit[0].reason, '首次上传时资源名称填写错误');
+  assert(await f.store.find('audit', 'entity_id', intake.id));
+  assert(await f.store.get('versions', correct.version_id));
+  assert.deepEqual(await f.blobs.read(intake.payload_ref!), bytes);
+  assert.equal((await client.get('/api/management/assets').expect(200)).body.length, 1);
+  const replacement = await receiveSkill(f, { slug: 'wrong-name' });
+  assert.notEqual(replacement.asset_id, receipt.asset_id);
+});
+
+test('删除错误资源必须通过当前维护权限、修订号、幂等键和原因校验', async (context) => {
+  const f = await createTestHub(context);
+  const receipt = await f.hub.intakes.receive(
+    f.admin,
+    Buffer.from('invalid ZIP'),
+    'skill.zip',
+    {
+      target: 'new',
+      kind: 'skill',
+      slug: 'broken',
+      owner_group_id: f.teamId,
+      version_label: '1.0.0',
+    },
+    randomUUID(),
+  );
+  await f.worker.tick();
+  const client = await signIn(f);
+  const outsider = await signIn(f, 'reader');
+  const path = '/api/assets/' + receipt.asset_id;
+  for (const check of [
+    {
+      client: outsider,
+      revision: '"1"',
+      key: randomUUID(),
+      reason: '误上传',
+      code: 'FORBIDDEN',
+      status: 403,
+    },
+    {
+      client,
+      revision: '',
+      key: randomUUID(),
+      reason: '误上传',
+      code: 'IF_MATCH_REQUIRED',
+      status: 428,
+    },
+    {
+      client,
+      revision: '"2"',
+      key: randomUUID(),
+      reason: '误上传',
+      code: 'REVISION_CONFLICT',
+      status: 412,
+    },
+    {
+      client,
+      revision: '"1"',
+      key: '',
+      reason: '误上传',
+      code: 'IDEMPOTENCY_REQUIRED',
+      status: 400,
+    },
+  ]) {
+    const response = await check.client
+      .delete(path)
+      .set('If-Match', check.revision)
+      .set('Idempotency-Key', check.key)
+      .send({ reason: check.reason })
+      .expect(check.status);
+    assert.equal(response.body.error.code, check.code);
+    assert(await f.store.get('assets', receipt.asset_id));
+  }
+  for (const body of [{ reason: '   ' }, { reason: '误上传', force: true }])
+    await client
+      .delete(path)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send(body)
+      .expect(422);
+  const role = (await f.store.find('roles', 'key', 'maintainer'))!;
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'asset',
+    scope_id: receipt.asset_id,
+  });
+  await outsider
+    .delete(path)
+    .set('If-Match', '"1"')
+    .set('Idempotency-Key', randomUUID())
+    .send({ reason: '清理错误资源' })
+    .expect(200);
+  assert.deepEqual(await f.store.where('role_bindings', 'scope_id', receipt.asset_id), []);
+});
+
+test('删除错误资源复核所有接收与作业，不能删除排队、扫描中或已经生成版本的资源', async (context) => {
+  const f = await createTestHub(context);
+  const receipt = await f.hub.intakes.receive(
+    f.admin,
+    Buffer.from('invalid ZIP'),
+    'skill.zip',
+    {
+      target: 'new',
+      kind: 'skill',
+      slug: 'retry-skill',
+      owner_group_id: f.teamId,
+      version_label: '1.0.0',
+    },
+    randomUUID(),
+  );
+  const rejectDeletion = async () => {
+    assert.equal((await f.hub.assetManagement.list(f.admin))[0].can_delete, false);
+    await assert.rejects(
+      () =>
+        f.hub.lifecycle.deleteAsset(
+          f.admin,
+          receipt.asset_id,
+          { reason: '清理错误资源' },
+          '"1"',
+          randomUUID(),
+        ),
+      errorCode('ASSET_DELETE_UNAVAILABLE'),
+    );
+  };
+  await rejectDeletion();
+  await f.worker.tick();
+  assert.equal((await f.hub.assetManagement.list(f.admin))[0].can_delete, true);
+  const queued = await f.hub.jobs.enqueue('intake', receipt.intake_id, {});
+  await rejectDeletion();
+  const claimed = await f.hub.jobs.claim('deletion-test');
+  assert.equal(claimed?.id, queued.id);
+  await rejectDeletion();
+  await f.store.put('jobs', { ...claimed!, state: 'cancelled', lease_until: 0 });
+  const next = await f.hub.intakes.receive(
+    f.admin,
+    await archive([{ path: 'SKILL.md', bytes: skillDocument('retry-skill'), executable: false }]),
+    'skill.zip',
+    { target: 'existing', asset_id: receipt.asset_id, version_label: '1.0.0' },
+    randomUUID(),
+  );
+  await rejectDeletion();
+  await f.worker.tick();
+  const ready = await f.hub.intakeQueries.getDetail(f.admin, next.intake_id);
+  assert.equal(ready.state, 'ready');
+  await rejectDeletion();
+  assert(await f.store.get('versions', ready.version_id));
+});
+
+test('错误资源的删除不能绕过封禁或 Git 来源管理', async (context) => {
+  const f = await createTestHub(context, {
+    gitHosts: ['127.0.0.1'],
+    privateGitHosts: ['127.0.0.1'],
+  });
+  const receipt = await f.hub.intakes.receive(
+    f.admin,
+    Buffer.from('invalid ZIP'),
+    'skill.zip',
+    {
+      target: 'new',
+      kind: 'skill',
+      slug: 'blocked-skill',
+      owner_group_id: f.teamId,
+      version_label: '1.0.0',
+    },
+    randomUUID(),
+  );
+  await f.worker.tick();
+  const blocked = await f.hub.lifecycle.updateState(
+    f.admin,
+    receipt.asset_id,
+    { lifecycle: 'blocked', reason: '待调查' },
+    '"1"',
+  );
+  assert.equal((await f.hub.assetManagement.list(f.admin))[0].can_delete, false);
+  await assert.rejects(
+    () =>
+      f.hub.lifecycle.deleteAsset(
+        f.admin,
+        receipt.asset_id,
+        { reason: '清理错误资源' },
+        `"${blocked.revision}"`,
+        randomUUID(),
+      ),
+    errorCode('ASSET_DELETE_UNAVAILABLE'),
+  );
+  const active = await f.hub.lifecycle.updateState(
+    f.admin,
+    receipt.asset_id,
+    { lifecycle: 'active', reason: '调查结束' },
+    `"${blocked.revision}"`,
+  );
+  const source = await f.hub.sources.create(
+    f.admin,
+    {
+      repository_url: 'https://127.0.0.1/team/skills.git',
+      provider: 'generic-git',
+      branch: 'main',
+      owner_group_id: f.teamId,
+      targets: [
+        {
+          slug: 'git-skill',
+          kind: 'skill',
+          path: 'skills/git-skill',
+          category: 'uncategorized',
+          scenario_ids: [],
+          distribution: { mode: 'approved_audience', audience: ['group:' + f.teamId] },
+          applies_to: {},
+        },
+      ],
+    },
+    randomUUID(),
+  );
+  await f.hub.lifecycle.migrateSource(
+    f.admin,
+    receipt.asset_id,
+    {
+      destination_source_id: source.id,
+      destination_source_revision: source.revision,
+      path: 'skills/blocked-skill',
+      reason: '交由 Git 维护',
+    },
+    `"${active.revision}"`,
+  );
+  const migrated = await f.hub.assetAccess.getAsset(receipt.asset_id);
+  assert.equal(
+    (await f.hub.assetManagement.list(f.admin)).find((item) => item.id === receipt.asset_id)
+      ?.can_delete,
+    false,
+  );
+  await assert.rejects(
+    () =>
+      f.hub.lifecycle.deleteAsset(
+        f.admin,
+        receipt.asset_id,
+        { reason: '清理错误资源' },
+        `"${migrated.revision}"`,
+        randomUUID(),
+      ),
+    errorCode('ASSET_DELETE_UNAVAILABLE'),
+  );
+});
 
 function approval(
   request: Awaited<ReturnType<typeof submitPublication>>,

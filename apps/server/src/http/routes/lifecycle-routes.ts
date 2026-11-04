@@ -11,6 +11,19 @@ import { idempotencyKey as key, jsonRoute as send } from '../response.js';
  * 且源与目标都要 `source:share`。`mcp-options` 只返回调用者可读版本的可安装项。
  */
 export function registerLifecycleRoutes(app: Express, { hub }: HttpContext): void {
+  app.delete(
+    '/api/assets/:id',
+    send(
+      async (req, res) =>
+        await hub.lifecycle.deleteAsset(
+          res.locals.principal,
+          z.uuid().parse(req.params.id),
+          req.body,
+          req.get('If-Match'),
+          key(req),
+        ),
+    ),
+  );
   app.patch(
     '/api/assets/:id/usage',
     send(

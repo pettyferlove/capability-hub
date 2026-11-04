@@ -60,6 +60,11 @@ export const btnPrimaryStyles = cn(
 
 export const dangerTextStyles = 'text-danger group/danger-text';
 
+export const btnDangerStyles = cn(
+  'bg-danger-soft text-danger',
+  '[&:not(:disabled):hover]:bg-danger-soft [&:not(:disabled):hover]:text-danger',
+);
+
 export const noticeErrorStyles = 'group/notice-error bg-danger-soft text-danger';
 
 export const panelStyles = cn(
@@ -722,6 +727,8 @@ export const hubSelectOptionStyles = cn(
   'rounded-[7px] [outline:none] cursor-pointer [&_>_span]:[overflow-wrap:anywhere]',
   '[&_>_svg]:shrink-0 [&[data-focused]]:bg-page [&[data-hovered]]:bg-page',
   '[&[data-selected]]:bg-brand-soft [&[data-selected]]:text-brand [&[data-selected]]:font-medium',
+  "[&[class~='group/danger-text']:is([data-selected],[data-focused],[data-hovered])]:bg-danger-soft",
+  "[&[class~='group/danger-text']:is([data-selected],[data-focused],[data-hovered])]:text-danger",
   '[&[data-disabled]]:opacity-[0.45] [&[data-disabled]]:cursor-not-allowed max-[760px]:text-body',
 );
 

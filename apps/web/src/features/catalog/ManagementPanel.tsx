@@ -21,6 +21,9 @@ import {
   sourceActionsStyles,
   btnStyles,
   btnPrimaryStyles,
+  btnDangerStyles,
+  dangerTextStyles,
+  formActionsStyles,
   textBtnStyles,
   sheetScrollStyles,
 } from '../../shared/styles/recipes.js';
@@ -46,9 +49,11 @@ import {
   UploadCloud,
   GitBranch,
   MessageSquare,
+  Trash2,
 } from '../../shared/icons/lucide.js';
-import { useState, type SubmitEvent } from 'react';
-import { mutate } from '../../shared/api/client.js';
+import { browserUuid } from '@capability-hub/logging/browser';
+import { useRef, useState, type SubmitEvent } from 'react';
+import { api, mutate } from '../../shared/api/client.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { Overlay } from '../../shared/components/Overlay.js';
 import { SelectField } from '../../shared/components/SelectField.js';
@@ -278,11 +283,25 @@ function Controls({
     [path, setPath] = useState(''),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteRetry = useRef<{ signature: string; key: string } | null>(null);
   const { data: sources } = useQuery<SourceResponse[]>(
     action === 'migrate' ? '/api/sources' : null,
   );
   async function submit(e: SubmitEvent) {
     e.preventDefault();
+    if (busy) return;
+    if (action === 'delete') {
+      setError('');
+      setConfirmDelete(true);
+      return;
+    }
+    await execute();
+  }
+  function closeDelete() {
+    if (!busy) setConfirmDelete(false);
+  }
+  async function execute() {
     if (busy) return;
     setBusy(true);
     setError('');
@@ -293,6 +312,19 @@ function Controls({
           target_version_id: version,
           reason,
           current_policy_digest: a.current_release.policy_digest,
+        });
+      } else if (action === 'delete') {
+        const body = JSON.stringify({ reason });
+        const signature = JSON.stringify([a.id, a.revision, body]);
+        if (deleteRetry.current?.signature !== signature)
+          deleteRetry.current = { signature, key: browserUuid() };
+        await api('/api/assets/' + a.id, {
+          method: 'DELETE',
+          body,
+          headers: {
+            'If-Match': `"${a.revision}"`,
+            'Idempotency-Key': deleteRetry.current.key,
+          },
         });
       } else if (action === 'revoke')
         await mutate('/api/versions/' + version + '/revoke', { reason });
@@ -447,6 +479,11 @@ function Controls({
                     }}
                   >
                     <option value="">请选择</option>
+                    {a.can_delete && (
+                      <option value="delete" className={dangerTextStyles}>
+                        删除错误资源
+                      </option>
+                    )}
                     {(a.can_submit || a.can_lifecycle) && a.lifecycle === 'active' && (
                       <option value="deprecated">标记弃用</option>
                     )}
@@ -530,6 +567,12 @@ function Controls({
                     回退会创建普通审核申请，不会直接切换当前发布。沿用当前分类和受众，并重新核验旧快照来源授权。
                   </Message>
                 )}
+                {action === 'delete' && (
+                  <Message>
+                    将永久删除「{a.slug}
+                    」及其失败或已取消的接收记录，释放资源名称。操作不可恢复，审计记录会保留。
+                  </Message>
+                )}
                 {action && (
                   <>
                     <label>
@@ -542,9 +585,17 @@ function Controls({
                         placeholder="说明操作依据和影响范围…"
                       />
                     </label>
-                    {error && <Message error>{error}</Message>}
-                    <Submit busy={busy}>
-                      确认{action === 'rollback' ? '提交回退申请' : '执行操作'}
+                    {error && !confirmDelete && <Message error>{error}</Message>}
+                    <Submit
+                      busy={busy}
+                      disabled={action === 'delete' && !reason.trim()}
+                      className={action === 'delete' ? btnDangerStyles : undefined}
+                    >
+                      {action === 'rollback'
+                        ? '确认提交回退申请'
+                        : action === 'delete'
+                          ? '删除资源'
+                          : '确认执行操作'}
                     </Submit>
                   </>
                 )}
@@ -553,6 +604,31 @@ function Controls({
           )}
         </div>
       </div>
+      <Overlay
+        open={confirmDelete}
+        onClose={closeDelete}
+        label="确认删除错误资源"
+        variant="palette"
+      >
+        <DialogTitle title="确认删除错误资源" onClose={closeDelete} />
+        <div className="space-y-4 px-6.5 py-5.5 max-[600px]:p-[17px]">
+          <p>
+            即将永久删除资源 <strong>{a.slug}</strong> 及其失败或已取消的接收记录。操作不可恢复。
+          </p>
+          <p className={subtleStyles}>删除原因：{reason}</p>
+          <Message>资源名称将释放，审计记录会保留。</Message>
+          {error && <Message error>{error}</Message>}
+          <div className={formActionsStyles}>
+            <button type="button" className={btnStyles} disabled={busy} onClick={closeDelete}>
+              取消
+            </button>
+            <Submit type="button" busy={busy} className={btnDangerStyles} onClick={execute}>
+              <Trash2 size={16} aria-hidden="true" />
+              确认永久删除
+            </Submit>
+          </div>
+        </div>
+      </Overlay>
     </>
   );
 }

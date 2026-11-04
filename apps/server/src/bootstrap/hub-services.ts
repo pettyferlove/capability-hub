@@ -160,7 +160,12 @@ export class HubServices {
       this.idempotency,
       this.mcpKeys,
     );
-    this.lifecycle = new AssetLifecycleService(context, this.assetAccess, this.publications);
+    this.lifecycle = new AssetLifecycleService(
+      context,
+      this.assetAccess,
+      this.publications,
+      this.idempotency,
+    );
     this.audit = new AuditService(context, this.assetAccess);
     this.sources = new SourceService(
       context,

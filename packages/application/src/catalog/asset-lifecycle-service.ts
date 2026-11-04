@@ -1,11 +1,13 @@
 import type { Principal } from '@capability-hub/domain/identity';
 import { fail, notFound } from '@capability-hub/domain/errors';
+import { canonical, digest } from '@capability-hub/domain/canonical';
 import { collisionKey, sourcePath } from '@capability-hub/domain/paths';
 import { has } from '@capability-hub/domain/rbac';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { PublicationService } from '../publication/publication-service.js';
 import type { ApplicationContext } from '../shared/application-context.js';
+import type { IdempotencyService } from '../shared/idempotency-service.js';
 import { matchRevision } from '../shared/revision.js';
 import type { AssetAccessService } from './asset-access-service.js';
 
@@ -17,7 +19,65 @@ export class AssetLifecycleService {
     private readonly context: ApplicationContext,
     private readonly assets: AssetAccessService,
     private readonly publications: PublicationService,
+    private readonly idempotency: IdempotencyService,
   ) {}
+  /** 删除失败上传的资产及接收记录；共享 blob 由维护工具按引用回收，审计始终保留。 */
+  async deleteAsset(
+    p: Principal,
+    id: string,
+    body: unknown,
+    etag: string | undefined,
+    key: string | undefined,
+  ) {
+    const b = z
+      .object({ reason: z.string().trim().min(1).max(2000) })
+      .strict()
+      .parse(body);
+    return await this.idempotency.execute(
+      p,
+      'delete-asset/' + id,
+      key,
+      digest(canonical({ ...b, revision: etag ?? null })),
+      async () => {
+        const actor = await this.context.identity.principal(p.id);
+        const asset = await this.assets.getAsset(id);
+        this.assets.requireMaintenance(actor, asset);
+        matchRevision(asset, etag);
+        if (!(await this.assets.canDelete(actor, asset)))
+          fail(
+            409,
+            'ASSET_DELETE_UNAVAILABLE',
+            '仅可删除无内容版本、接收已失败或取消且无处理中作业的未封禁上传资源',
+          );
+        await this.context.store.audit(actor.id, 'asset.deleted', asset.id, b.reason);
+        for (const intake of await this.context.store.where('intakes', 'asset_id', asset.id)) {
+          for (const job of await this.context.store.where('jobs', 'aggregate_id', intake.id))
+            await this.context.store.remove('jobs', job.id);
+          await this.context.store.remove('intakes', intake.id);
+        }
+        for (const grant of await this.context.store.where('role_bindings', 'scope_id', asset.id))
+          if (grant.scope_type === 'asset')
+            await this.context.store.remove('role_bindings', grant.id);
+        await this.context.store.remove('assets', asset.id);
+        if (
+          !(await this.context.store.find('assets', 'source_id', asset.source_id)) &&
+          !(await this.context.store.find('intakes', 'source_id', asset.source_id)) &&
+          !(await this.context.store.find('bindings', 'source_id', asset.source_id)) &&
+          !(await this.context.store.find('versions', 'origin_source_id', asset.source_id))
+        ) {
+          for (const grant of await this.context.store.where(
+            'role_bindings',
+            'scope_id',
+            asset.source_id,
+          ))
+            if (grant.scope_type === 'source')
+              await this.context.store.remove('role_bindings', grant.id);
+          await this.context.store.remove('sources', asset.source_id);
+        }
+        return { ok: true };
+      },
+    );
+  }
   /**
    * 要求 `asset:maintain`（否则 403/`FORBIDDEN`），仅 Skill 可改（否则 422/`NOT_SKILL`）；
    * `etag` 走 {@link matchRevision}，缺头 428/`IF_MATCH_REQUIRED`、不匹配 412/`REVISION_CONFLICT`。

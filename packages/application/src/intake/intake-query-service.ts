@@ -53,84 +53,87 @@ export class IntakeQueryService {
    * 因此 `file_count` 对尚无版本的行返回 `null`。
    */
   async list(principal: Principal, input: IntakeListQuery) {
-    const query = { page: 1, page_size: 5, q: '', state: 'all', ...input };
-    const permitted = await filterAsync(
-      await this.context.store.all('intakes'),
-      async (r) =>
-        r.requested_by === principal.id ||
-        this.assets.canMaintain(principal, await this.assets.getAsset(r.asset_id)),
-    );
-    const processing = (r: IntakeRecord) => ['received', 'fetching', 'scanning'].includes(r.state);
-    const latestPublications = new Map<string, IntakeStatus>();
-    for (const request of (await this.context.store.all('requests')).sort(
-      (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
-    )) {
-      if (!latestPublications.has(request.source_intake_id))
-        latestPublications.set(request.source_intake_id, request.state);
-    }
-    const rows = (
-      await Promise.all(
-        permitted.map(async (r) => {
-          const asset = await this.assets.getAsset(r.asset_id);
+    return this.context.store.tx(async () => {
+      const query = { page: 1, page_size: 5, q: '', state: 'all', ...input };
+      const permitted = await filterAsync(
+        await this.context.store.all('intakes'),
+        async (r) =>
+          r.requested_by === principal.id ||
+          this.assets.canMaintain(principal, await this.assets.getAsset(r.asset_id)),
+      );
+      const processing = (r: IntakeRecord) =>
+        ['received', 'fetching', 'scanning'].includes(r.state);
+      const latestPublications = new Map<string, IntakeStatus>();
+      for (const request of (await this.context.store.all('requests')).sort(
+        (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
+      )) {
+        if (!latestPublications.has(request.source_intake_id))
+          latestPublications.set(request.source_intake_id, request.state);
+      }
+      const rows = (
+        await Promise.all(
+          permitted.map(async (r) => {
+            const asset = await this.assets.getAsset(r.asset_id);
+            return {
+              id: r.id,
+              asset_id: asset.id,
+              asset_slug: asset.slug,
+              kind: asset.kind,
+              version_label: r.version_label,
+              created_at: r.created_at,
+              status:
+                asset.lifecycle !== 'active'
+                  ? asset.lifecycle
+                  : r.state === 'failed' || r.state === 'cancelled'
+                    ? r.state
+                    : r.state === 'ready'
+                      ? (latestPublications.get(r.id) ?? 'ready')
+                      : 'processing',
+              phase: r.phase,
+              source_kind:
+                (await this.context.store.get('sources', r.source_id))?.kind === 'git'
+                  ? 'git'
+                  : 'upload',
+              content_digest: r.content_digest ?? null,
+              file_count: null,
+              error_message: r.error_message ?? r.error_code ?? null,
+            };
+          }),
+        )
+      ).filter((r) =>
+        [r.asset_slug, r.version_label, r.kind]
+          .join(' ')
+          .toLowerCase()
+          .includes(query.q.toLowerCase()),
+      );
+      const counts: Record<string, number> = {};
+      for (const row of rows) counts[row.status] = (counts[row.status] ?? 0) + 1;
+      const filtered = rows
+        .filter((r) => query.state === 'all' || r.status === query.state)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
+      const page = Math.min(query.page, Math.max(1, Math.ceil(filtered.length / query.page_size)));
+      // 只为当前页读取版本快照，避免加载整个列表的内容清单。
+      const records = new Map(permitted.map((r) => [r.id, r]));
+      const items = await Promise.all(
+        filtered.slice((page - 1) * query.page_size, page * query.page_size).map(async (row) => {
+          const versionId = records.get(row.id)?.version_id;
+          const version = versionId ? await this.context.store.get('versions', versionId) : null;
           return {
-            id: r.id,
-            asset_id: asset.id,
-            asset_slug: asset.slug,
-            kind: asset.kind,
-            version_label: r.version_label,
-            created_at: r.created_at,
-            status:
-              asset.lifecycle !== 'active'
-                ? asset.lifecycle
-                : r.state === 'failed' || r.state === 'cancelled'
-                  ? r.state
-                  : r.state === 'ready'
-                    ? (latestPublications.get(r.id) ?? 'ready')
-                    : 'processing',
-            phase: r.phase,
-            source_kind:
-              (await this.context.store.get('sources', r.source_id))?.kind === 'git'
-                ? 'git'
-                : 'upload',
-            content_digest: r.content_digest ?? null,
-            file_count: null,
-            error_message: r.error_message ?? r.error_code ?? null,
+            ...row,
+            content_digest: row.content_digest ?? version?.content_digest ?? null,
+            file_count: version?.manifest.files.length ?? null,
           };
         }),
-      )
-    ).filter((r) =>
-      [r.asset_slug, r.version_label, r.kind]
-        .join(' ')
-        .toLowerCase()
-        .includes(query.q.toLowerCase()),
-    );
-    const counts: Record<string, number> = {};
-    for (const row of rows) counts[row.status] = (counts[row.status] ?? 0) + 1;
-    const filtered = rows
-      .filter((r) => query.state === 'all' || r.status === query.state)
-      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
-    const page = Math.min(query.page, Math.max(1, Math.ceil(filtered.length / query.page_size)));
-    // 只为当前页读取版本快照，避免加载整个列表的内容清单。
-    const records = new Map(permitted.map((r) => [r.id, r]));
-    const items = await Promise.all(
-      filtered.slice((page - 1) * query.page_size, page * query.page_size).map(async (row) => {
-        const versionId = records.get(row.id)?.version_id;
-        const version = versionId ? await this.context.store.get('versions', versionId) : null;
-        return {
-          ...row,
-          content_digest: row.content_digest ?? version?.content_digest ?? null,
-          file_count: version?.manifest.files.length ?? null,
-        };
-      }),
-    );
-    return {
-      items,
-      total: filtered.length,
-      page,
-      page_size: query.page_size,
-      counts,
-      processing_total: permitted.filter(processing).length,
-    };
+      );
+      return {
+        items,
+        total: filtered.length,
+        page,
+        page_size: query.page_size,
+        counts,
+        processing_total: permitted.filter(processing).length,
+      };
+    });
   }
   private async visibleIntake(principal: Principal, id: string) {
     const intake = await this.context.store.get('intakes', id);

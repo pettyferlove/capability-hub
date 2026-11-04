@@ -1,6 +1,7 @@
 import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
+import { randomUUID } from 'node:crypto';
 import { createElement, type ReactNode } from 'react';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
@@ -338,6 +339,132 @@ test('维护资产显示版本与审核入口，更新链接预选原资产', as
     screen.getByRole('radio', { name: '已有资产新版本' }).getAttribute('aria-checked'),
     'true',
   );
+});
+
+test('错误资源删除提供前缀图标，二次确认可取消且保留原因，最终确认才发送请求', async (context) => {
+  const f = await createTestHub(context);
+  const receipt = await f.hub.intakes.receive(
+    f.admin,
+    Buffer.from('invalid ZIP'),
+    'skill.zip',
+    {
+      target: 'new',
+      kind: 'skill',
+      slug: 'broken-skill',
+      owner_group_id: f.teamId,
+      version_label: '1.0.0',
+    },
+    randomUUID(),
+  );
+  await f.worker.tick();
+  const managed = await f.hub.assetManagement.list(f.admin);
+  const submitted: unknown[] = [];
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path === '/api/management/assets') return Response.json(managed);
+    if (path === '/api/management/assets/' + receipt.asset_id + '/versions')
+      return Response.json([]);
+    assert.equal(path, '/api/assets/' + receipt.asset_id);
+    assert.equal(options.method, 'DELETE');
+    assert.equal(new Headers(options.headers).get('If-Match'), '"1"');
+    assert(new Headers(options.headers).get('Idempotency-Key'));
+    submitted.push(JSON.parse(String(options.body)));
+    return Response.json({ ok: true });
+  });
+  const user = userEvent.setup();
+  render(page(createElement(ManagementPanel)));
+  await user.click(await screen.findByRole('button', { name: '版本与管理' }));
+  await user.click(screen.getByRole('tab', { name: '维护设置' }));
+  await user.click(screen.getByRole('button', { name: /操作/ }));
+  const option = screen.getByRole('option', { name: '删除错误资源' });
+  assert(option.querySelector('svg[aria-hidden="true"]'));
+  await user.click(option);
+  assert(screen.getByText(/将永久删除「broken-skill」.*操作不可恢复/));
+  assert.deepEqual(submitted, []);
+  await user.click(screen.getByRole('button', { name: '删除资源' }));
+  assert.deepEqual(submitted, []);
+  await user.type(screen.getByRole('textbox', { name: '操作原因' }), '资源名称填写错误');
+  await user.click(screen.getByRole('button', { name: '删除资源' }));
+  const confirmation = await screen.findByRole('dialog', { name: '确认删除错误资源' });
+  assert(within(confirmation).getByText('broken-skill'));
+  assert(within(confirmation).getByText(/操作不可恢复/));
+  assert(within(confirmation).getByText(/资源名称填写错误/));
+  assert.deepEqual(submitted, []);
+  await user.click(within(confirmation).getByRole('button', { name: '取消' }));
+  await waitFor(() =>
+    assert.equal(screen.queryByRole('dialog', { name: '确认删除错误资源' }), null),
+  );
+  assert.equal(
+    screen.getByRole<HTMLTextAreaElement>('textbox', { name: '操作原因' }).value,
+    '资源名称填写错误',
+  );
+  await user.click(screen.getByRole('button', { name: '删除资源' }));
+  await screen.findByRole('dialog', { name: '确认删除错误资源' });
+  await user.keyboard('{Escape}');
+  await waitFor(() =>
+    assert.equal(screen.queryByRole('dialog', { name: '确认删除错误资源' }), null),
+  );
+  assert.deepEqual(submitted, []);
+  assert(screen.getByRole('dialog', { name: '维护资产' }));
+  await user.click(screen.getByRole('button', { name: '删除资源' }));
+  const finalConfirmation = await screen.findByRole('dialog', { name: '确认删除错误资源' });
+  await user.click(within(finalConfirmation).getByRole('button', { name: '确认永久删除' }));
+  await waitFor(() => assert.equal(screen.queryByRole('dialog', { name: '维护资产' }), null));
+  assert.deepEqual(submitted, [{ reason: '资源名称填写错误' }]);
+});
+
+test('删除响应丢失后再次确认可恢复成功结果，且只保留一次删除审计', async (context) => {
+  const f = await createTestHub(context);
+  const receipt = await f.hub.intakes.receive(
+    f.admin,
+    Buffer.from('invalid ZIP'),
+    'skill.zip',
+    {
+      target: 'new',
+      kind: 'skill',
+      slug: 'broken-skill',
+      owner_group_id: f.teamId,
+      version_label: '1.0.0',
+    },
+    randomUUID(),
+  );
+  await f.worker.tick();
+  let responseLost = false;
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path === '/api/management/assets')
+      return Response.json(await f.hub.assetManagement.list(f.admin));
+    if (path === '/api/management/assets/' + receipt.asset_id + '/versions')
+      return Response.json([]);
+    assert.equal(path, '/api/assets/' + receipt.asset_id);
+    assert.equal(options.method, 'DELETE');
+    const headers = new Headers(options.headers);
+    const result = await f.hub.lifecycle.deleteAsset(
+      f.admin,
+      receipt.asset_id,
+      JSON.parse(String(options.body)),
+      headers.get('If-Match') ?? undefined,
+      headers.get('Idempotency-Key') ?? undefined,
+    );
+    if (!responseLost) {
+      responseLost = true;
+      throw new TypeError('删除响应丢失');
+    }
+    return Response.json(result);
+  });
+  const user = userEvent.setup();
+  render(page(createElement(ManagementPanel)));
+  await user.click(await screen.findByRole('button', { name: '版本与管理' }));
+  await user.click(screen.getByRole('tab', { name: '维护设置' }));
+  await user.click(screen.getByRole('button', { name: /操作/ }));
+  await user.click(screen.getByRole('option', { name: '删除错误资源' }));
+  await user.type(screen.getByRole('textbox', { name: '操作原因' }), '资源名称填写错误');
+  await user.click(screen.getByRole('button', { name: '删除资源' }));
+  const confirmation = await screen.findByRole('dialog', { name: '确认删除错误资源' });
+  await user.click(within(confirmation).getByRole('button', { name: '确认永久删除' }));
+  assert(await within(confirmation).findByText('删除响应丢失'));
+  assert.equal(await f.store.get('assets', receipt.asset_id), undefined);
+  await user.click(within(confirmation).getByRole('button', { name: '确认永久删除' }));
+  await waitFor(() => assert(!screen.queryByRole('dialog', { name: '维护资产' })));
+  assert.equal((await f.store.where('audit', 'action', 'asset.deleted')).length, 1);
 });
 
 test('目录只将维护组受众简写为团队可见，同名个人保留实际可见范围', async (context) => {
