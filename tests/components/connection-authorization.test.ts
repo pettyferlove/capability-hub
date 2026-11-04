@@ -174,16 +174,102 @@ test('需要贡献权限时会显示可用桥接命令并保留客户端管理�
   assert(prompt.includes('MCP: Open User Configuration'));
 });
 
-test('未登录的授权入口保留本次请求，隐藏普通接入表单，登录后能继续', () => {
-  history.replaceState(null, '', '/connect?authorization=opaque-request');
-  render(
-    createElement(HubCtx.Provider, { value: { ...state, me: null } }, createElement(ConnectPage)),
-  );
+for (const query of ['authorization=opaque-request', 'code=A1B2C3D4']) {
+  test(`未登录的授权入口 ${query} 保留本次请求，隐藏普通接入表单，登录后能继续`, () => {
+    const target = '/connect?' + query;
+    history.replaceState(null, '', target);
+    render(
+      createElement(HubCtx.Provider, { value: { ...state, me: null } }, createElement(ConnectPage)),
+    );
+    assert.equal(
+      screen.getByRole('link', { name: '登录并继续' }).getAttribute('href'),
+      '/login?return_to=' + encodeURIComponent(target),
+    );
+    assert.equal(screen.queryByRole('button', { name: '复制 Hub 接入指令' }), null);
+  });
+}
+
+test('CLI 授权只提交有效授权码，提交期间锁定操作，成功后更换链接可开始新的授权', async (context) => {
+  const pending = deferred<Response>();
+  const requests: unknown[] = [];
+  context.mock.method(globalThis, 'fetch', (path: string, init: RequestInit) => {
+    requests.push({ path, method: init.method, body: JSON.parse(String(init.body)) as unknown });
+    return pending.promise;
+  });
+  const user = userEvent.setup();
+  const renderPage = (code: string) =>
+    createElement(
+      HubCtx.Provider,
+      { value: state },
+      createElement(ConnectPage, { routeQuery: '?code=' + code }),
+    );
+  const { rerender } = render(renderPage('a1b2c3d4'));
+  const input = screen.getByRole('textbox', { name: '授权码' }) as HTMLInputElement;
+  assert.equal(input.value, 'A1B2C3D4');
+  assert(screen.getByText('读者'));
+  assert(screen.getByText('只读权限'));
+  await user.clear(input);
+  await user.type(input, 'Z1B2C3D4');
+  assert((screen.getByRole('button', { name: '允许 CLI 登录' }) as HTMLButtonElement).disabled);
+  await user.keyboard('{Enter}');
+  assert.equal(requests.length, 0);
+  await user.clear(input);
+  await user.type(input, 'a1b2c3d4{Enter}');
+  assert.deepEqual(requests, [
+    { path: '/api/cli/approve', method: 'POST', body: { code: 'A1B2C3D4' } },
+  ]);
+  assert(input.disabled);
+  assert.equal(screen.getByRole('button', { name: '正在批准…' }).getAttribute('aria-busy'), 'true');
+  assert((screen.getByRole('button', { name: '暂不登录' }) as HTMLButtonElement).disabled);
+  pending.resolve(Response.json({ ok: true }));
+  await screen.findByRole('heading', { name: 'CLI 登录已批准' });
+  assert.equal(screen.queryByRole('button', { name: '允许 CLI 登录' }), null);
   assert.equal(
-    screen.getByRole('link', { name: '登录并继续' }).getAttribute('href'),
-    '/login?return_to=%2Fconnect%3Fauthorization%3Dopaque-request',
+    screen.getByRole('link', { name: '前往账号安全' }).getAttribute('href'),
+    '/account?tab=security',
   );
-  assert.equal(screen.queryByRole('button', { name: '复制 Hub 接入指令' }), null);
+  rerender(renderPage('F1E2D3C4'));
+  assert.equal(
+    (screen.getByRole('textbox', { name: '授权码' }) as HTMLInputElement).value,
+    'F1E2D3C4',
+  );
+  assert.equal(screen.queryByRole('heading', { name: 'CLI 登录已批准' }), null);
+});
+
+test('CLI 临时批准失败保留授权码可重试，授权码失效后结束审批并提示从终端重新发起', async (context) => {
+  let expired = false;
+  context.mock.method(globalThis, 'fetch', async () =>
+    expired
+      ? Response.json(
+          { error: { code: 'CLI_LOGIN_EXPIRED', message: 'CLI 授权码无效或过期' } },
+          { status: 400 },
+        )
+      : Response.json(
+          { error: { code: 'INTERNAL_ERROR', message: '服务暂不可用' } },
+          { status: 503 },
+        ),
+  );
+  const user = userEvent.setup();
+  render(
+    createElement(
+      HubCtx.Provider,
+      { value: state },
+      createElement(ConnectPage, { routeQuery: '?code=A1B2C3D4' }),
+    ),
+  );
+  await user.click(screen.getByRole('button', { name: '允许 CLI 登录' }));
+  await screen.findByText('服务暂不可用');
+  assert.equal(
+    (screen.getByRole('textbox', { name: '授权码' }) as HTMLInputElement).value,
+    'A1B2C3D4',
+  );
+  expired = true;
+  await user.click(screen.getByRole('button', { name: '允许 CLI 登录' }));
+  await screen.findByRole('heading', { name: '授权码无效或已过期' });
+  assert(screen.getByText(/请在终端重新发起 CLI 登录/));
+  assert.equal(screen.queryByRole('textbox', { name: '授权码' }), null);
+  assert.equal(screen.queryByRole('button', { name: '允许 CLI 登录' }), null);
+  assert.equal(screen.getByRole('link', { name: '返回接入指引' }).getAttribute('href'), '/connect');
 });
 
 const invalidGrant = () =>

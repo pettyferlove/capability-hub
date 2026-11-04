@@ -72,15 +72,19 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 
 ## CLI
 
-| 命令       | 必需参数                                          |
-| ---------- | ------------------------------------------------- |
-| login      | --url，终端显示浏览器批准地址                     |
-| search     | 查询文本，可选 --json                             |
-| add        | NAME、--version、--to；可选 --dry-run、--replace  |
-| hub-config | --url、--client；可选 --scope、--conversation     |
-| mcp-config | NAME、--version、--client，可选 --option、--scope |
+| 命令             | 参数与用途                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| connect / status | --url、--client；[授权接入 / 检查连接](agent-clients.md#接入助手与高级入口)         |
+| bridge           | --url、--client；供 Agent 调用的 stdio MCP 桥接                                     |
+| login            | --url；显示浏览器批准地址，保存 CLI 读取凭据                                        |
+| search           | 可选查询文本、--json；省略查询列出资源                                              |
+| add              | NAME、--version、--to；--dry-run 预览、--replace 备份替换                           |
+| hub-config       | --url、--client；离线生成配置，可选 --method、--scope、--contribute、--conversation |
+| mcp-config       | NAME、--version、--client；可选 --option、--scope                                   |
 
-所有命令支持 --config-dir；hub-config 是离线配置生成，不使用凭据目录或环境令牌。默认凭据位于用户 .config/capability-hub/auth.json。设置 CAPABILITY_HUB_TOKEN 时必须同时提供 --url，且不读取本地凭据。Hub URL 接受 HTTP 或 HTTPS 根地址，禁止控制字符、嵌入凭据和非根路径。JSON/下载有大小限制，重定向不携带授权继续跳转。
+`-h` / `help <命令>` 显示参数和示例，`-V` 显示 CLI 版本。终端空命令打开菜单，缺参数时引导输入；版本、安装路径须明确选择。`--no-interactive`、CI、重定向、`--json` 和 `bridge` 禁用向导。JSON、配置和协议写 stdout，提示写 stderr。
+
+`--config-dir` 隔离凭据，默认 `~/.config/capability-hub`。读取命令使用登录凭据或 `CAPABILITY_HUB_TOKEN` + 显式 `--url`，两者互斥；`hub-config` 不读取凭据。Hub URL 仅接受无凭据、路径、查询的 HTTP(S) 根地址。下载限制大小，不携带授权跟随重定向。
 
 ## OAuth 与客户端连接
 
@@ -89,7 +93,6 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 - `POST /oauth/revoke` 撤销相应连接。资源必须精确为实例公开地址的 `/mcp`；所有授权响应包含 issuer。
 - `GET /api/connections` 与 `DELETE /api/connections/:id` 仅允许网页登录用户查询和撤销自己的连接；不返回客户端秘密或凭据摘要。
 - `GET/POST /api/connections/authorize/:id` 读取请求与确认/拒绝授权；写入必须带网页会话和 CSRF。
-- CLI `connect --url URL --client CLIENT` 完成助手授权、验证与配置；`bridge` 提供 stdio 到 Hub MCP 的连接；`status` 检查连接。配置范围、权限与文件覆盖参数见 [Agent 接入说明](agent-clients.md#接入助手与高级入口)。
 
 OAuth 与个人手动令牌的生命周期分开，详见 [身份安全](../design/identity-security.md#agent-oauth-连接)。
 

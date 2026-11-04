@@ -12,28 +12,176 @@ import { publishSkill, submitPublication } from '../support/application.js';
 
 const execute = promisify(execFile);
 
-function cli(arguments_: string[], token?: string) {
+function cli(
+  arguments_: string[],
+  token?: string,
+  options: {
+    terminal?: boolean;
+    environment?: NodeJS.ProcessEnv;
+    answers?: { prompt: string; input: string }[];
+  } = {},
+) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    const environment = { ...process.env };
+    const environment = { ...process.env, ...options.environment };
     if (token) environment.CAPABILITY_HUB_TOKEN = token;
     else delete environment.CAPABILITY_HUB_TOKEN;
+    const bootstrap = `
+      for (const stream of [process.stdin, process.stdout, process.stderr])
+        Object.defineProperty(stream, 'isTTY', { value: true });
+      process.stdin.setRawMode = () => process.stdin;
+      process.argv = [process.argv[0], 'bin/capability-hub.mjs', ...process.argv.slice(1)];
+      await import('./bin/capability-hub.mjs');
+    `;
     const child = spawn(
       process.execPath,
-      ['--conditions=development', '--import', 'tsx', 'bin/capability-hub.mjs', ...arguments_],
-      { env: environment, stdio: ['ignore', 'pipe', 'pipe'] },
+      [
+        '--conditions=development',
+        '--import',
+        'tsx',
+        ...(options.terminal
+          ? ['--input-type=module', '--eval', bootstrap, '--']
+          : ['bin/capability-hub.mjs']),
+        ...arguments_,
+      ],
+      { env: environment, stdio: ['pipe', 'pipe', 'pipe'], timeout: 15000 },
     );
     let stdout = '',
       stderr = '';
     child.stdout.setEncoding('utf8').on('data', (value: string) => {
       stdout += value;
     });
+    const answers = [...(options.answers ?? [])];
+    let promptOutput = '';
     child.stderr.setEncoding('utf8').on('data', (value: string) => {
       stderr += value;
+      promptOutput += value;
+      if (answers[0] && promptOutput.includes(answers[0].prompt)) {
+        const answer = answers.shift()!;
+        promptOutput = '';
+        if (answers.length) child.stdin.write(answer.input);
+        else child.stdin.end(answer.input);
+      }
     });
+    if (!answers.length) child.stdin.end();
     child.once('error', reject);
-    child.once('exit', (code) => resolve({ code, stdout, stderr }));
+    child.once('close', (code) => resolve({ code, stdout, stderr }));
   });
 }
+
+test('CLI 短帮助、命令帮助和非交互入口不读取凭据或执行命令', async () => {
+  for (const args of [[], ['-h'], ['--help'], ['--no-interactive']]) {
+    const result = await cli(args);
+    assert.equal(result.code, 0, result.stderr);
+    assert(result.stdout.includes('Capability Hub'));
+    assert(result.stdout.includes('connect'));
+    assert.equal(result.stderr, '');
+  }
+  for (const args of [
+    ['connect', '-h'],
+    ['help', 'connect'],
+  ]) {
+    const result = await cli(args);
+    assert.equal(result.code, 0, result.stderr);
+    assert(result.stdout.includes('--client'));
+    assert(result.stdout.includes('--no-browser'));
+    assert(result.stdout.includes('--config-dir'));
+    assert.equal(result.stdout.includes('mcp-config NAME'), false);
+    assert.equal(result.stderr, '');
+  }
+});
+
+test('CLI 拒绝无关选项和多余参数，URL 错误不回显其中的凭据', async () => {
+  for (const args of [
+    ['login', 'extra'],
+    ['search', '--replace'],
+    ['connect', '--client', 'invalid'],
+    ['hub-config', '--scope', 'invalid'],
+    ['conect'],
+    ['hub-config', '--url', 'https://private-token@hub.example.test', '--client', 'pi'],
+  ]) {
+    const result = await cli(args);
+    assert.equal(result.code, 1, JSON.stringify(args));
+    assert.equal(result.stdout, '');
+    assert(result.stderr.length > 0);
+    assert.equal(result.stderr.includes('private-token'), false);
+  }
+  const version = await cli(['-V']);
+  assert.equal(version.code, 0, version.stderr);
+  assert.match(version.stdout.trim(), /^\d+\.\d+\.\d+/);
+});
+
+test('CLI 交互配置向导选择客户端和范围，stdout 仍是完整配置', async () => {
+  const result = await cli(['hub-config'], undefined, {
+    terminal: true,
+    environment: { CI: '', TERM: 'xterm', NO_COLOR: '1' },
+    answers: [
+      { prompt: 'Hub 的 HTTP(S) 根地址', input: 'https://hub.example.test\r' },
+      { prompt: '选择目标 Agent 客户端', input: '\u001b[B'.repeat(4) + '\r' },
+      { prompt: '配置保存在哪个范围', input: '\u001b[B\r' },
+    ],
+  });
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    mcpServers: {
+      'capability-hub': { url: 'https://hub.example.test/mcp', oauth: { scope: 'hub:read' } },
+    },
+  });
+  assert(result.stderr.includes('~/.pi/agent/mcp.json'));
+});
+
+test('CLI 菜单取消退出 130；脚本、JSON 和 bridge 即使连接终端也不询问', async () => {
+  const environment = { CI: '', TERM: 'xterm', NO_COLOR: '1' };
+  const cancelled = await cli([], undefined, {
+    terminal: true,
+    environment,
+    answers: [{ prompt: '你想做什么', input: '\u0003' }],
+  });
+  assert.equal(cancelled.code, 130, cancelled.stderr);
+  assert.equal(cancelled.stdout, '');
+  for (const [args, extra] of [
+    [['connect', '--no-interactive'], {}],
+    [['connect'], { CI: '1' }],
+    [['connect'], { TERM: 'dumb' }],
+    [['search', '--json'], {}],
+    [['bridge'], {}],
+  ] as const) {
+    const result = await cli([...args], 'test-only-token', {
+      terminal: true,
+      environment: { ...environment, ...extra },
+    });
+    assert.equal(result.code, 1, result.stderr);
+    assert.equal(result.stdout, '');
+    assert(result.stderr.includes('--url'));
+    assert.equal(result.stderr.includes('test-only-token'), false);
+  }
+});
+
+test('CLI 交互安装需明确选择版本，仍校验下载内容并返回纯 JSON', async (context) => {
+  const fixture = await serveTestHub(context);
+  await publishSkill(fixture);
+  const token = await fixture.hub.tokens.issue(fixture.admin, {
+    name: '交互 CLI',
+    scope: 'hub:read',
+  });
+  const destination = join(await realpath(fixture.directory), 'interactive-skills');
+  const result = await cli(
+    ['add', 'sample-skill', '--url', fixture.origin, '--to', destination],
+    token.token,
+    {
+      terminal: true,
+      environment: { CI: '', TERM: 'xterm', NO_COLOR: '1' },
+      answers: [{ prompt: '选择明确的资源版本', input: '\r' }],
+    },
+  );
+  assert.equal(result.code, 0, result.stderr);
+  const installed: unknown = JSON.parse(result.stdout);
+  assert(installed && typeof installed === 'object' && 'dry_run' in installed);
+  assert.equal(installed.dry_run, false);
+  assert(
+    (await readFile(join(destination, 'sample-skill/SKILL.md'), 'utf8')).includes('sample-skill'),
+  );
+  assert.equal((result.stdout + result.stderr).includes(token.token), false);
+});
 
 test('CLI 发布包在空缓存和仓库外离线安装，仅安装自身且能通过 HTTP 安装 Skill', async (context) => {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-cli-package-'));

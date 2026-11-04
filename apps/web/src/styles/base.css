@@ -16,6 +16,12 @@
   #root {
     @apply min-w-0;
   }
+  #root:has([data-connection-consent]) {
+    @apply flex min-h-dvh flex-col;
+    > footer {
+      @apply w-full max-[850px]:w-auto;
+    }
+  }
   h1,
   h2 {
     @apply text-balance;

@@ -19,6 +19,7 @@ import {
 } from './connection-config.js';
 import { savePrivateJson } from './private-json.js';
 import { HubApiClient, HubApiError, terminalText } from './api-client.js';
+import { CliUi } from './cli-ui.js';
 
 /**
  * 打开到 Hub MCP 的连接：请求被限制在 `<url>/mcp` 这一路径内，令牌每次请求前换取，
@@ -64,8 +65,13 @@ export async function openHubConnection(url: string, path: string) {
  */
 export async function connectAgent(
   options: ConnectionConfigOptions & { contribute: boolean; noBrowser: boolean },
+  ui = new CliUi(),
 ) {
   const prepared = await prepareConnectionConfig(options);
+  if (ui.interactive)
+    ui.message(
+      `配置位置：${terminalText(prepared.target)}\n申请权限：${options.contribute ? '读取、分享、推荐与反馈' : '只读'}`,
+    );
   const path = connectionFile(options.directory, options.url, options.client);
   let previous: ConnectionCredentials | null;
   try {
@@ -100,6 +106,7 @@ export async function connectAgent(
         options.client,
         options.contribute,
         options.noBrowser,
+        ui,
       );
       if (options.contribute && !pending.scope.split(' ').includes('hub:contribute'))
         throw new Error(
@@ -107,20 +114,25 @@ export async function connectAgent(
         );
       await savePrivateJson(temporary, pending);
     }
-    const client = await openHubConnection(options.url, pending ? temporary : path);
-    let toolCount: number;
-    try {
-      const tools = await client.listTools();
-      toolCount = tools.tools.length;
-      const result = await client.callTool({
-        name: 'search_skills',
-        arguments: { query: '', limit: 1 },
-      });
-      if ('isError' in result && result.isError)
-        throw new Error('Hub 检索验证失败，请检查账号权限');
-    } finally {
-      await client.close();
-    }
+    const toolCount = await ui.task(
+      '验证 Hub 工具发现与检索',
+      'Hub 工具发现与检索已验证',
+      async () => {
+        const client = await openHubConnection(options.url, pending ? temporary : path);
+        try {
+          const tools = await client.listTools();
+          const result = await client.callTool({
+            name: 'search_skills',
+            arguments: { query: '', limit: 1 },
+          });
+          if ('isError' in result && result.isError)
+            throw new Error('Hub 检索验证失败，请检查账号权限');
+          return tools.tools.length;
+        } finally {
+          await client.close();
+        }
+      },
+    );
     let superseded: ConnectionCredentials | null = null;
     await withConnectionLock(path, async () => {
       let latest: ConnectionCredentials | null;
@@ -133,7 +145,7 @@ export async function connectAgent(
       if (latest?.client_id !== previous?.client_id)
         throw new Error('另一接入进程已经更换了此连接，请重新运行 connect；已保留它的授权与配置');
       const backup = await writeConnectionConfig(prepared);
-      if (backup) process.stderr.write(`配置原文已备份到私有目录：${terminalText(backup)}\n`);
+      if (backup) ui.message(`配置原文已备份到私有目录：${terminalText(backup)}`);
       if (pending) {
         await savePrivateJson(path, pending);
         superseded = latest;
@@ -141,8 +153,8 @@ export async function connectAgent(
       committed = true;
     });
     if (superseded) await revokeConnection(options.url, superseded);
-    process.stderr.write(
-      `已授权并验证 Hub：可发现 ${toolCount} 个工具，检索成功。\n配置已保存：${terminalText(prepared.target)}\n请在 Agent 中重新加载 MCP，完成项目信任后继续原来的任务。\n`,
+    ui.message(
+      `已授权并验证 Hub：可发现 ${toolCount} 个工具，检索成功。\n配置已保存：${terminalText(prepared.target)}\n请在 Agent 中重新加载 MCP，完成项目信任后继续原来的任务。`,
     );
   } finally {
     await rm(temporary, { force: true });
@@ -204,12 +216,20 @@ export async function bridgeAgent(url: string, directory: string, agent: AgentCl
 }
 
 /** 只读自检：列出工具数量并打印，用于排查配置是否正确。 */
-export async function checkConnection(url: string, directory: string, agent: AgentClient) {
-  const client = await openHubConnection(url, connectionFile(directory, url, agent));
-  try {
-    const { tools } = await client.listTools();
-    process.stdout.write(`Hub 连接正常，可发现 ${tools.length} 个工具。\n`);
-  } finally {
-    await client.close();
-  }
+export async function checkConnection(
+  url: string,
+  directory: string,
+  agent: AgentClient,
+  ui = new CliUi(),
+) {
+  const count = await ui.task('检查 Hub 连接与工具发现', '连接检查完成', async () => {
+    const client = await openHubConnection(url, connectionFile(directory, url, agent));
+    try {
+      const { tools } = await client.listTools();
+      return tools.length;
+    } finally {
+      await client.close();
+    }
+  });
+  process.stdout.write(`Hub 连接正常，可发现 ${count} 个工具。\n`);
 }

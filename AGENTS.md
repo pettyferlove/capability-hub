@@ -64,8 +64,8 @@ cycles, and `web/src/shared` → `web/src/features` imports are rejected.
 - **Web:** no state library. `shared/api/client.ts` is the only transport (auto `X-CSRF-Token`, auto
   `Idempotency-Key`, 401 → `hub:unauthenticated`); `shared/api/use-query.ts` supplies `useQuery`;
   session lives in `HubCtx`; routing is history-based via `app/use-app-route.ts`.
-- **CLI:** `bin/capability-hub.mjs` → `apps/cli/src/cli.ts` (`parseArgs` dispatch over a typed fetch
-  client). It writes downloaded content only to explicit paths and never executes it.
+- **CLI:** `bin/capability-hub.mjs` → `apps/cli/src/cli.ts` (Commander commands, Clack terminal prompts).
+  JSON/configuration/MCP use stdout; prompts use stderr. Downloads require explicit paths and never execute.
 
 ## Key Directories
 

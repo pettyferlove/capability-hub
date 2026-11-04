@@ -1,6 +1,7 @@
 import { cn } from './cn.js';
 
-export const pageContentStyles = 'min-w-0';
+export const pageContentStyles =
+  'min-w-0 has-[[data-connection-consent]]:flex has-[[data-connection-consent]]:flex-1';
 
 export const brandStyles = cn(
   'group/brand inline-flex items-center gap-2.5 text-ink text-[length:17px] [font-weight:650]',

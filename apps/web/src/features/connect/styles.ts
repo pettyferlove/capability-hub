@@ -125,8 +125,7 @@ export const demoFollowStyles = cn(
   "[[class~='group/conversation-demo-footer']_>_&]:text-caption",
 );
 
-export const connectionAuthorizationStyles =
-  'max-w-160 mt-6 mr-auto mb-6 ml-auto [overflow-wrap:anywhere]';
+export const connectionAuthorizationStyles = 'mx-auto w-full max-w-160 [overflow-wrap:anywhere]';
 
 export const connectOverviewStyles = cn(
   'grid grid-cols-[minmax(248px,_0.85fr)_minmax(0,_1.65fr)] items-stretch gap-[var(--section-gap)]',
@@ -152,9 +151,14 @@ export const connectionStepsStyles = cn(
   'grid-cols-[repeat(3,_minmax(0,_1fr))] gap-4.5 pl-6 max-[600px]:grid-cols-[1fr]',
 );
 
+export const consentPageStyles = cn(
+  'mx-auto grid w-full max-w-225 grid-rows-[minmax(0,2fr)_auto_minmax(0,3fr)]',
+  "before:content-[''] after:content-['']",
+);
+
 export const consentCardStyles = cn(
   'grid min-w-0 overflow-hidden rounded-2xl border border-line bg-paper shadow-[var(--shadow)]',
-  'md:grid-cols-[minmax(0,0.35fr)_minmax(0,0.65fr)] md:grid-rows-[1fr_auto] [overflow-wrap:anywhere]',
+  'md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:grid-rows-[1fr_auto] [overflow-wrap:anywhere]',
 );
 
 export const consentPaneStyles =

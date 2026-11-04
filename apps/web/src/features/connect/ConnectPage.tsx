@@ -4,7 +4,6 @@
  * 依赖 `/api/hub-share` 生成 Hub MCP 配置、`/api/cli/approve` 批准 CLI 登录，
  * 以及 `hubMcpConnectionGuide` / `agentClients` 契约。
  */
-import { InputField } from '../../shared/components/InputField.js';
 import { configurationScopeIcons } from '../../shared/components/select-icons.js';
 import { checkLabelStyles } from '../../shared/styles/recipes.js';
 import {
@@ -18,6 +17,7 @@ import {
   codewrapStyles,
   textBtnStyles,
   installationRouteStyles,
+  pageHeadTitleStyles,
 } from '../../shared/styles/recipes.js';
 import {
   connectionAuthorizationStyles,
@@ -26,6 +26,7 @@ import {
   connectionMethodStyles,
   isActiveStyles,
   connectionStepsStyles,
+  consentPageStyles,
 } from './styles.js';
 import { cn } from '../../shared/styles/cn.js';
 import {
@@ -40,21 +41,18 @@ import { useQuery } from '../../shared/api/use-query.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { ListSkeleton } from '../../shared/components/Skeleton.js';
 import { useState } from 'react';
-import { ArrowRight, ChevronRight, Link, Plug, ShieldCheck } from '../../shared/icons/lucide.js';
+import { ArrowRight, Link, ShieldCheck } from '../../shared/icons/lucide.js';
 import { AgentClientSelect } from '../../shared/components/AgentClientSelect.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { CopyButton } from '../../shared/components/CopyButton.js';
 import { CodeBlock } from '../../shared/components/CodeBlock.js';
 import { PageHead } from '../../shared/components/PageHead.js';
-import { Message } from '../../shared/components/Message.js';
-import { Submit } from '../../shared/components/Submit.js';
-import { mutate } from '../../shared/api/client.js';
-import { errorMessage } from '../../shared/api/error-message.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { loginHref } from '../../shared/navigation/history-route.js';
 import { AccessTokenForm } from '../profile/AccessTokenForm.js';
 import { ConnectedAgents } from '../profile/ConnectedAgents.js';
 import { ConnectionAuthorization } from './ConnectionAuthorization.js';
+import { CliApproval } from './CliApproval.js';
 import { ConversationInstallIntro } from './ConversationInstallIntro.js';
 import { AgentConversationDemo } from './AgentConversationDemo.js';
 import { HubToolbox } from './HubToolbox.js';
@@ -69,43 +67,18 @@ export default function ConnectPage({ routeQuery = location.search }: { routeQue
   const authorization = query.get('authorization');
   const code = query.get('code');
   const approving = !!authorization || !!code;
-  if (authorization && me) {
+  if (approving) {
     return (
-      <div className="mx-auto w-full max-w-5xl">
-        <nav aria-label="面包屑" className="mb-4 flex items-center gap-2 text-label text-muted-ink">
-          <a
-            className="inline-flex min-h-8 items-center gap-2 rounded-md text-inherit hover:text-brand"
-            href="/connect"
-          >
-            <Plug size={15} />
-            接入 Agent
-          </a>
-          <ChevronRight size={13} />
-          <span aria-current="page" className="font-medium text-ink">
-            确认连接
-          </span>
-        </nav>
-        <ConnectionAuthorization key={authorization} requestId={authorization} />
-      </div>
-    );
-  }
-  return (
-    <>
-      <PageHead
-        eyebrow="CAPABILITIES, WHERE YOU WORK"
-        title={approving ? '确认连接' : '连接你的 Agent'}
-        description={
-          approving
-            ? '确认本次请求，让 Agent 以你的身份使用团队能力。'
-            : '把团队的 Skill 与 MCP 带进工作流。连接、授权，开始使用。'
-        }
-      />
-      {approving ? (
-        me && code ? (
-          <CliApproval initialCode={code} />
+      <div className={consentPageStyles} data-connection-consent="">
+        {me ? (
+          authorization ? (
+            <ConnectionAuthorization key={authorization} requestId={authorization} />
+          ) : (
+            <CliApproval key={code} initialCode={code!} />
+          )
         ) : (
           <section className={cn(panelStyles, formStackStyles, connectionAuthorizationStyles)}>
-            <h2>登录后继续授权</h2>
+            <h1 className={pageHeadTitleStyles}>登录后继续授权</h1>
             <p>登录你的 Hub 账号，随后确认本次连接请求。</p>
             <a
               className={cn(btnStyles, btnPrimaryStyles)}
@@ -115,63 +88,26 @@ export default function ConnectPage({ routeQuery = location.search }: { routeQue
               <ArrowRight size={15} />
             </a>
           </section>
-        )
-      ) : (
-        <div className="grid min-w-0 gap-[var(--section-gap)]">
-          <HubConnection />
-          {me && <ConnectedAgents className="my-0" />}
-          <div className={connectOverviewStyles}>
-            <ConversationInstallIntro />
-            <AgentConversationDemo />
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function CliApproval({ initialCode }: { initialCode: string }) {
-  const [code, setCode] = useState(initialCode);
-  const [approved, setApproved] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+        )}
+      </div>
+    );
+  }
   return (
-    <section className={cn(panelStyles, formStackStyles, connectionAuthorizationStyles)}>
-      <h2>确认 CLI 登录</h2>
-      <p>仅批准你自己刚发起的 CLI 登录。核对终端中显示的授权码。</p>
-      <label>
-        授权码
-        <InputField
-          icon="key"
-          value={code}
-          disabled={busy || approved}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          maxLength={8}
-        />
-      </label>
-      {approved ? (
-        <Message>已批准，回到 CLI 等待登录完成。</Message>
-      ) : (
-        <Submit
-          busy={busy}
-          onClick={async () => {
-            setBusy(true);
-            setError('');
-            try {
-              await mutate('/api/cli/approve', { code });
-              setApproved(true);
-            } catch (error) {
-              setError(errorMessage(error));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          确认这是我的 CLI 并批准
-        </Submit>
-      )}
-      {error && <Message error>{error}</Message>}
-    </section>
+    <>
+      <PageHead
+        eyebrow="CAPABILITIES, WHERE YOU WORK"
+        title="连接你的 Agent"
+        description="把团队的 Skill 与 MCP 带进工作流。连接、授权，开始使用。"
+      />
+      <div className="grid min-w-0 gap-[var(--section-gap)]">
+        <HubConnection />
+        {me && <ConnectedAgents className="my-0" />}
+        <div className={connectOverviewStyles}>
+          <ConversationInstallIntro />
+          <AgentConversationDemo />
+        </div>
+      </div>
+    </>
   );
 }
 

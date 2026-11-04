@@ -70,7 +70,7 @@ flowchart LR
 | `pnpm test:external` | 本机 Docker 上的 PostgreSQL、MinIO、SSH Git 和 OpenLDAP        |
 | `pnpm build`         | 类型检查，并编译各包、Web 和运维脚本                           |
 | `pnpm start`         | 用编译产物提供页面、API 和 MCP                                 |
-| `pnpm cli`           | 源码 CLI；省略子命令时打印帮助                                 |
+| `pnpm cli`           | 源码 CLI；终端中省略子命令打开菜单，`-h` 查看帮助              |
 
 `pnpm check` 不包含 `test:external`。本机运行见[本地开发](documents/getting-started/local-development.md)，测试分组见[测试策略](documents/development/testing.md)。
 

@@ -8,6 +8,7 @@ import { agentClients, type AgentClient } from '@capability-hub/contracts';
 import { HubApiClient } from './api-client.js';
 import { savePrivateJson, loadPrivateJson } from './private-json.js';
 import { withFileLock } from './file-lock.js';
+import { CliUi } from './cli-ui.js';
 
 const tokens = z.object({
   access_token: z.string().min(1),
@@ -58,6 +59,7 @@ export async function authorizeConnection(
   client: AgentClient,
   contribute: boolean,
   noBrowser: boolean,
+  ui = new CliUi(),
 ): Promise<ConnectionCredentials> {
   const api = new HubApiClient(url);
   const verifier = randomBytes(32).toString('base64url');
@@ -134,8 +136,8 @@ export async function authorizeConnection(
       callback = resolve;
       rejected = reject;
       timer = setTimeout(() => reject(new Error('授权等待超时，请重新运行 connect')), 600_000);
-      process.stderr.write(
-        `请在浏览器确认连接：\n${authorization.href}\n远程终端需要将本机回调端口 ${address.port} 转发到此环境。\n`,
+      ui.message(
+        `请在浏览器确认连接：\n${authorization.href}\n远程终端需要将本机回调端口 ${address.port} 转发到此环境。`,
       );
       if (!noBrowser) {
         const command =
@@ -143,7 +145,7 @@ export async function authorizeConnection(
         if (command) {
           const child = spawn(command, [authorization.href], { stdio: 'ignore' });
           child.on('error', () => {
-            process.stderr.write('无法自动打开浏览器，请打开上面的授权链接。\n');
+            ui.message('无法自动打开浏览器，请打开上面的授权链接。');
           });
           child.unref();
         }

@@ -13,6 +13,9 @@ export const mainShellStyles = cn(
   'min-h-[calc(100vh_-_150px)] min-[1400px]:pl-7 min-[1400px]:pr-7 max-[850px]:pt-0',
   'max-[850px]:pr-5.5 max-[850px]:pb-12.5 max-[850px]:pl-5.5 max-[600px]:pt-0 max-[600px]:pr-4',
   'max-[600px]:pb-10 max-[600px]:pl-4',
+  'has-[[data-connection-consent]]:flex has-[[data-connection-consent]]:min-h-0',
+  'has-[[data-connection-consent]]:w-full has-[[data-connection-consent]]:flex-1 has-[[data-connection-consent]]:flex-col',
+  'has-[[data-connection-consent]]:py-8 max-[600px]:has-[[data-connection-consent]]:py-6',
 );
 
 export const appFooterStyles = cn(
