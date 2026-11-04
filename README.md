@@ -1,12 +1,12 @@
 # Capability Hub
 
-自托管平台，用来登记、扫描、独立审核并分发 Agent Skill 与 MCP 描述。内容按固定版本发布；之后每次读取都按当前受众决定是否可见。
+自托管平台，用来登记、扫描、独立审核并分发 Agent Skill 与 MCP 描述。内容来自 Skill ZIP、MCP 描述，或已登记 Git 目标的同步。扫描通过不会自动发布；审核通过后按固定版本交付，之后每次读取都按当前受众决定是否可见。
 
 - Web：公开发现、阅读和下载；登录后管理来源、提交发布、审核及账号权限。
 - HTTP / Hub MCP：检索可见资源、读取固定内容、交付安装材料，以及生成客户端配置。
 - CLI：浏览器批准登录，搜索、校验后安装 Skill，或输出 MCP 配置。
 
-Hub 不执行上传的脚本，也不代替客户端连接目标 MCP 服务。扫描通过不会自动发布。
+Hub 不执行上传的脚本，也不代替客户端连接目标 MCP 服务。
 
 ## 快速开始
 
@@ -39,7 +39,7 @@ pnpm cli search TypeScript
 pnpm cli add NAME --version VERSION --to .agents/skills --dry-run
 ```
 
-`add` 只写入 `--to`。先看 dry-run 的文件差异，再去掉该参数安装；目录已存在时需要 `--replace`，旧内容留在输出所示的备份目录。发布、审核和客户端目录见[资源使用与发布](documents/getting-started/workflows.md)。
+`add` 只写入 `--to`。示例里的 `.agents/skills` 只是部分客户端的目录，其他位置见[Agent 客户端接入](documents/reference/agent-clients.md)。先看 dry-run 的文件差异，再去掉该参数安装；目录已存在时需要 `--replace`，旧内容留在输出所示的备份目录。发布和审核见[资源使用与发布](documents/getting-started/workflows.md)。
 
 页面「连接你的 Agent」生成接入说明。CLI 的 `hub-config` 离线生成配置且不写文件，`connect` 在浏览器批准后写入客户端配置。支持的客户端、配置位置和验收边界见[Agent 客户端接入](documents/reference/agent-clients.md)。HTTP、Hub MCP 与 CLI 参数见 [HTTP、MCP 与 CLI](documents/reference/interfaces.md)。
 
@@ -63,14 +63,14 @@ flowchart LR
 
 在仓库根目录执行。
 
-| 命令                 | 作用                                                    |
-| -------------------- | ------------------------------------------------------- |
-| `pnpm check`         | 架构、文档链接、迁移校验、lint、格式、构建和默认测试    |
-| `pnpm test`          | unit、integration、components                           |
-| `pnpm test:external` | 本机 Docker 上的 PostgreSQL、MinIO、SSH Git 和 OpenLDAP |
-| `pnpm build`         | 类型检查，并编译各包、Web 和运维脚本                    |
-| `pnpm start`         | 用编译产物提供页面、API 和 MCP                          |
-| `pnpm cli`           | 源码 CLI；省略子命令时打印帮助                          |
+| 命令                 | 作用                                                           |
+| -------------------- | -------------------------------------------------------------- |
+| `pnpm check`         | 架构、文档链接、迁移校验、lint、格式、类型检查、构建和默认测试 |
+| `pnpm test`          | unit、integration、components                                  |
+| `pnpm test:external` | 本机 Docker 上的 PostgreSQL、MinIO、SSH Git 和 OpenLDAP        |
+| `pnpm build`         | 类型检查，并编译各包、Web 和运维脚本                           |
+| `pnpm start`         | 用编译产物提供页面、API 和 MCP                                 |
+| `pnpm cli`           | 源码 CLI；省略子命令时打印帮助                                 |
 
 `pnpm check` 不包含 `test:external`。本机运行见[本地开发](documents/getting-started/local-development.md)，测试分组见[测试策略](documents/development/testing.md)。
 
