@@ -30,14 +30,6 @@ export function installationMethods(asset: AssetResponse) {
 const shellArgument = (value: string) => `'${value.replaceAll("'", "'\"'\"'")}'`;
 
 /**
- * 会丢弃 `origin` 的路径与查询串，只保留协议与主机，避免把页面深链带进登录参数；
- * 参数经单引号转义，`origin` 非法时 `new URL` 直接抛错。
- */
-export function cliLoginCommand(origin: string): string {
-  return `capability-hub login --url ${shellArgument(new URL(origin).origin)}`;
-}
-
-/**
  * 版本固定为当前发布版，命令可直接粘贴执行；所有变量参数都做单引号转义。
  * Skill 只把 slug 与 `--to` 目录拼进命令，故 `optionId` 被忽略；MCP 必须给出已受支持的
  * `optionId`，否则抛出「请选择受支持的 MCP 安装项」。

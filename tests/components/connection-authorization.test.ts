@@ -4,6 +4,7 @@ import { test, afterEach } from 'node:test';
 import { createElement } from 'react';
 import { render, screen, cleanup, within, fireEvent } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
+import { cliInstallationGuide } from '@capability-hub/contracts';
 import { ConnectionAuthorization } from '../../apps/web/src/features/connect/ConnectionAuthorization.js';
 import ConnectPage from '../../apps/web/src/features/connect/ConnectPage.js';
 import { ConnectedAgents } from '../../apps/web/src/features/profile/ConnectedAgents.js';
@@ -156,9 +157,13 @@ test('连接列表按客户端区分读取和贡献权限，断开操作只针�
 
 test('需要贡献权限时会显示可用桥接命令并保留客户端管理的用户范围', async (context) => {
   history.replaceState(null, '', '/connect?client=vscode&scope=user&permission=contribute');
-  context.mock.method(globalThis, 'fetch', () =>
+  context.mock.method(globalThis, 'fetch', (path: string) =>
     Promise.resolve(
-      Response.json({ installation_url: 'https://hub.example/INSTALL.md', prompt: 'test' }),
+      Response.json(
+        path === '/api/cli-installation'
+          ? cliInstallationGuide('https://hub.example')
+          : { installation_url: 'https://hub.example/INSTALL.md', prompt: 'test' },
+      ),
     ),
   );
   const user = userEvent.setup();
@@ -336,9 +341,13 @@ test('登录后的接入页恢复客户端、范围、贡献权限与手动入�
     '',
     '/connect?client=cursor&scope=user&method=token&permission=contribute',
   );
-  context.mock.method(globalThis, 'fetch', () =>
+  context.mock.method(globalThis, 'fetch', (path: string) =>
     Promise.resolve(
-      Response.json({ installation_url: 'https://hub.example/INSTALL.md', prompt: 'test' }),
+      Response.json(
+        path === '/api/cli-installation'
+          ? cliInstallationGuide('https://hub.example')
+          : { installation_url: 'https://hub.example/INSTALL.md', prompt: 'test' },
+      ),
     ),
   );
   const { container } = render(

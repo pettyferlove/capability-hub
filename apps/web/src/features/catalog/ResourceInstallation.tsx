@@ -12,12 +12,12 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../../shared/api/client.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { CodeBlock } from '../../shared/components/CodeBlock.js';
+import { CliInstallationGuide } from '../../shared/components/CliInstallationGuide.js';
 import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { installationPrompt } from './installation-prompt.js';
 import {
-  cliLoginCommand,
   cliResourceCommand,
   hubMcpConfigurationPrompt,
   installationMethods,
@@ -54,7 +54,7 @@ export function ResourceInstallation({ asset, origin }: { asset: AssetResponse; 
         <h3>CLI 安装</h3>
         <p className={subtleStyles}>使用有访问权限的账号授权 CLI，安装到指定目录。</p>
         <AgentClientSelect value={client} onChange={setClient} />
-        <CliLogin origin={origin} />
+        <CliLogin />
         <CodeBlock
           title="安装到当前项目 · 可修改目标目录"
           code={cliResourceCommand(asset, origin, undefined, client)}
@@ -77,14 +77,11 @@ export function ResourceInstallation({ asset, origin }: { asset: AssetResponse; 
   );
 }
 
-function CliLogin({ origin }: { origin: string }) {
+function CliLogin() {
   return (
     <details className={installationLoginStyles}>
-      <summary>首次使用：授权 CLI</summary>
-      <p className={subtleStyles}>
-        安装部署方提供的 CLI 后运行登录命令，在浏览器核对授权码并确认；后续命令使用保存的授权。
-      </p>
-      <CodeBlock title="CLI 登录" code={cliLoginCommand(origin)} />
+      <summary>首次使用：安装与授权 CLI</summary>
+      <CliInstallationGuide />
     </details>
   );
 }
@@ -164,7 +161,7 @@ function RestrictedMcpInstallation({ asset, origin }: { asset: AssetResponse; or
       )}
       <details className={installationRouteStyles} open>
         <summary>通过 CLI 生成配置</summary>
-        <CliLogin origin={origin} />
+        <CliLogin />
         <CodeBlock
           title={shared ? '生成用户配置 · 含共享密钥' : '生成项目配置 · 保留现有客户端设置'}
           code={cliResourceCommand(asset, origin, optionId, client)}

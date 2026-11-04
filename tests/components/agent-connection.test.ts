@@ -4,12 +4,59 @@ import { afterEach, test } from 'node:test';
 import { createElement } from 'react';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { hubTools } from '@capability-hub/contracts';
+import { cliInstallationGuide, hubTools } from '@capability-hub/contracts';
 import ConnectPage from '../../apps/web/src/features/connect/ConnectPage.js';
 import { HubToolbox } from '../../apps/web/src/features/connect/HubToolbox.js';
+import { CliInstallationGuide } from '../../apps/web/src/shared/components/CliInstallationGuide.js';
 import { HubCtx, type HubState } from '../../apps/web/src/shared/context/HubContext.js';
 
 afterEach(cleanup);
+
+test('CLI 安装可直接复制，仓库认证按需展开且不混入安装命令', async (context) => {
+  const registry = 'https://registry.example/repository/npm/';
+  context.mock.method(globalThis, 'fetch', async () =>
+    Response.json(cliInstallationGuide('https://hub.example', registry)),
+  );
+  const user = userEvent.setup();
+  render(createElement(CliInstallationGuide));
+  const installation = within(await screen.findByRole('region', { name: '安装并验证 CLI' }));
+  await user.click(installation.getByRole('button', { name: '复制' }));
+  assert.equal(
+    await navigator.clipboard.readText(),
+    `npm install -g @capability-hub/cli --registry='${registry}' --@capability-hub:registry='${registry}'\ncapability-hub --cli-version`,
+  );
+  assert.equal(screen.queryByRole('region', { name: '配置 CLI 仓库' }), null);
+  const authentication = screen.getByText('仓库需要认证时', { selector: 'summary' });
+  const details = authentication.closest('details');
+  assert(details);
+  assert.equal(details.open, false);
+  await user.click(authentication);
+  assert.equal(details.open, true);
+  await user.click(within(details).getByRole('button', { name: '复制' }));
+  assert.equal(
+    await navigator.clipboard.readText(),
+    `npm login --scope=@capability-hub --registry='${registry}'`,
+  );
+});
+
+test('未配置私有仓库时可直接复制 npm 安装命令，不要求获取仓库地址或认证', async (context) => {
+  context.mock.method(globalThis, 'fetch', async () =>
+    Response.json(cliInstallationGuide('https://hub.example')),
+  );
+  const user = userEvent.setup();
+  render(createElement(CliInstallationGuide));
+  const installation = within(await screen.findByRole('region', { name: '安装并验证 CLI' }));
+  await user.click(installation.getByRole('button', { name: '复制' }));
+  assert.equal(
+    await navigator.clipboard.readText(),
+    'npm install -g @capability-hub/cli\ncapability-hub --cli-version',
+  );
+  assert.equal(screen.queryByRole('region', { name: '配置 CLI 仓库' }), null);
+  assert.equal(screen.queryByText(/请联系部署方获取安装方式/), null);
+  assert.equal(screen.queryByText('获取 CLI 仓库地址'), null);
+  assert.equal(screen.queryByText('仓库需要认证时'), null);
+  assert(screen.getByRole('region', { name: '选择 Hub 授权方式' }));
+});
 
 test('工具清单按需打开，按所需授权分组，关闭后可从原入口继续', async () => {
   const user = userEvent.setup();
@@ -37,6 +84,8 @@ test('接入页切换 Agent 后同时更新 MCP 配置、CLI 客户端和 Skill 
       return Promise.resolve(
         Response.json({ installation_url: 'https://hub.example/INSTALL.md', prompt: 'test' }),
       );
+    if (path === '/api/cli-installation')
+      return Promise.resolve(Response.json(cliInstallationGuide('https://hub.example')));
     return Promise.resolve(Response.json([]));
   });
   const value: HubState = {
@@ -93,6 +142,7 @@ test('接入页切换 Agent 后同时更新 MCP 配置、CLI 客户端和 Skill 
     assert(prompt.includes(`请为 ${label} 接入 Capability Hub MCP`));
     assert.equal(prompt.includes('CAPABILITY_HUB_TOKEN'), false);
     assert(prompt.includes('OAuth'));
+    assert(prompt.includes('https://hub.example/connect/cli'));
     assert(prompt.includes(path));
     assert.equal(prompt.includes('test-only-csrf'), false);
     assert.equal(

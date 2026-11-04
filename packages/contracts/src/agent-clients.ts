@@ -320,7 +320,7 @@ export function hubMcpConnectionGuide(
     ...(method !== requestedMethod
       ? ['当前适配通过接入助手申请贡献权限。请先确认使用本地桥接。']
       : []),
-    '先安装部署方提供的 Capability Hub CLI，在运行 Agent 的同一环境执行。',
+    `先阅读 ${base}/connect/cli，按此实例的仓库说明安装 Capability Hub CLI；仓库要求认证时由用户在本机完成。在运行 Agent 的同一环境执行。`,
     ...(needsPath
       ? [
           client === 'vscode'

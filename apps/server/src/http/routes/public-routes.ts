@@ -6,6 +6,7 @@ import {
   hubInstallationGuide,
   hubClientSkillPath,
   hubShareInvitation,
+  cliInstallationGuide,
 } from '@capability-hub/contracts';
 import { fail } from '@capability-hub/domain/errors';
 import type { Express } from 'express';
@@ -44,6 +45,37 @@ export function registerPublicRoutes(app: Express, { hub, security }: HttpContex
     hubClientSkillPath,
     send(async (_req, res) => {
       res.type('text/markdown; charset=utf-8').send(await readHubClientSkill());
+    }),
+  );
+  app.get(
+    '/api/cli-installation',
+    send(() => cliInstallationGuide(config.publicUrl, config.cliRegistry)),
+  );
+  app.get(
+    '/connect/cli',
+    send((_req, res) => {
+      const guide = cliInstallationGuide(config.publicUrl, config.cliRegistry);
+      res
+        .type('text/markdown')
+        .send(
+          [
+            '# 安装 Capability Hub CLI',
+            '',
+            ...guide.steps.flatMap((step) => [
+              `## ${step.title}${step.optional ? '（可选）' : ''}`,
+              '',
+              step.description,
+              '',
+              ...(step.command ? ['```sh', step.command, '```', ''] : []),
+            ]),
+            `Agent 接入步骤：${config.publicUrl}/connect。`,
+            '',
+            '## 安装遇到问题',
+            '',
+            ...guide.troubleshooting.map((item) => `- ${item}`),
+            '',
+          ].join('\n'),
+        );
     }),
   );
   app.get(

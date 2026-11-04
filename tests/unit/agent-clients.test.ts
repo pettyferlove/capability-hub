@@ -1,14 +1,42 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
 import {
   hubMcpClientConfiguration,
   hubMcpConnectionGuide,
   hubShareInvitation,
   renderMcpClientConfiguration,
+  cliInstallationGuide,
   type AgentClient,
 } from '@capability-hub/contracts';
 
 const endpoint = 'https://hub.example.test/mcp';
+
+test('CLI 仓库命令保留完整路径和参数边界，地址中的 Shell 表达式不会执行', () => {
+  const registry = "https://registry.example/repository/npm'$(printf injected)/";
+  const guide = cliInstallationGuide(endpoint, registry);
+  const commands = guide.steps.flatMap((step) => step.command?.split('\n') ?? []);
+  for (const [prefix, expected] of [
+    [
+      'npm install',
+      [
+        'install',
+        '-g',
+        '@capability-hub/cli',
+        `--registry=${registry}`,
+        `--@capability-hub:registry=${registry}`,
+      ],
+    ],
+    ['npm login', ['login', '--scope=@capability-hub', `--registry=${registry}`]],
+  ] as const) {
+    const command = commands.find((value) => value.startsWith(prefix));
+    assert(command);
+    const output = execFileSync('sh', ['-c', `npm() { printf '%s\\n' "$@"; }\n${command}`], {
+      encoding: 'utf8',
+    });
+    assert.deepEqual(output.trimEnd().split('\n'), expected);
+  }
+});
 
 test('本机和远程地址的分享邀请只包含接入请求和实例链接', () => {
   for (const hostname of ['127.0.0.1', 'hub.example.test']) {

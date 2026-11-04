@@ -87,7 +87,7 @@ capability-hub hub-config --url https://hub.example.com --client pi --scope user
 
 ## 接入助手与高级入口
 
-原生 OAuth 不可用时，先安装部署方提供的 Capability Hub CLI，再在运行 Agent 的同一环境执行：
+实例的 `/connect/cli`、接入页和资源页提供相同的 CLI 安装步骤：准备 Node.js、通过 npm 安装并核对 CLI 版本。配置私有仓库时，安装命令临时覆盖已有 npm 作用域仓库，不改写配置；仓库认证按需进行，与 Hub 授权独立。原生 OAuth 不可用时，在运行 Agent 的同一环境执行：
 
 ```sh
 capability-hub connect --url https://hub.example.com --client cursor --scope project

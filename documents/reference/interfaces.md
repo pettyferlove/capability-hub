@@ -18,6 +18,7 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 | /api/me/*、/api/tokens、/api/git-credentials             | 个人资料、会话、令牌与仓库凭据         |
 | /api/admin/*                                             | 账号、角色、审计及运行管理             |
 | /api/hub-mcp-config、/connect/mcp                        | 首次接入配置与 Markdown 说明，无秘密值 |
+| /api/cli-installation、/connect/cli                      | 匿名 CLI 安装步骤与 Markdown，无凭据   |
 | /api/hub-share、/INSTALL.md                              | 公开分享邀请与不预选客户端的接入引导   |
 | /connect/skills/use-capability-hub/SKILL.md              | 随产品交付的官方客户端使用指南         |
 | /mcp                                                     | Hub MCP；需要有效身份                  |

@@ -3,10 +3,12 @@ import { test } from 'node:test';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { cliInstallationGuide } from '@capability-hub/contracts';
 import { HubApiClient } from '../../apps/cli/src/api-client.js';
 import { serveTestHub } from '../support/server.js';
 import { publishSkill, submitPublication } from '../support/application.js';
@@ -284,6 +286,96 @@ test('CLI 下载进度按接收字节累计，不把压缩或无效长度当成�
   }
 });
 
+test('CLI 安装命令覆盖已有 npm 作用域仓库，沿用当前仓库认证且不改写配置', async (context) => {
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-cli-registry-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const requests: { path: string; authorization: string | undefined }[] = [];
+  let registry = '';
+  let authenticated = false;
+  const server = createServer((req, res) => {
+    const path = decodeURIComponent(req.url ?? '');
+    requests.push({ path, authorization: req.headers.authorization });
+    if (path !== '/repository/npm/@capability-hub/cli') {
+      res.writeHead(404).end();
+      return;
+    }
+    if (authenticated && req.headers.authorization !== 'Bearer registry-test-token') {
+      res.writeHead(401).end();
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(
+      JSON.stringify({
+        name: '@capability-hub/cli',
+        'dist-tags': { latest: '0.1.0' },
+        versions: {
+          '0.1.0': {
+            name: '@capability-hub/cli',
+            version: '0.1.0',
+            dist: { tarball: `${registry}cli-0.1.0.tgz` },
+          },
+        },
+      }),
+    );
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  context.after(
+    () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  );
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  const origin = `http://127.0.0.1:${address.port}`;
+  registry = `${origin}/repository/npm/`;
+  const command = cliInstallationGuide('https://hub.example', registry)
+    .steps.find((step) => step.command?.startsWith('npm install'))
+    ?.command?.split('\n')[0];
+  assert(command);
+  for (authenticated of [false, true]) {
+    const directory = join(root, authenticated ? 'authenticated' : 'anonymous');
+    await mkdir(join(directory, 'prefix/lib/node_modules'), { recursive: true });
+    const userconfig = join(directory, 'user.npmrc');
+    const globalconfig = join(directory, 'global.npmrc');
+    const configurations: [string, string][] = [
+      [
+        userconfig,
+        `@capability-hub:registry=${origin}/old-user/\n${authenticated ? `//127.0.0.1:${address.port}/repository/npm/:_authToken=registry-test-token\n` : ''}`,
+      ],
+      [globalconfig, `@capability-hub:registry=${origin}/old-global/\n`],
+      [join(directory, '.npmrc'), `@capability-hub:registry=${origin}/old-project/\n`],
+    ];
+    for (const [path, content] of configurations) await writeFile(path, content);
+    requests.length = 0;
+    await execute(
+      'sh',
+      ['-c', `${command} --dry-run --ignore-scripts --no-audit --no-fund --fetch-retries=0`],
+      {
+        cwd: directory,
+        env: {
+          PATH: process.env.PATH,
+          npm_config_userconfig: userconfig,
+          npm_config_globalconfig: globalconfig,
+          npm_config_prefix: join(directory, 'prefix'),
+          npm_config_cache: join(directory, 'cache'),
+          npm_config_update_notifier: 'false',
+        },
+        timeout: 15000,
+      },
+    );
+    assert(requests.length > 0);
+    for (const request of requests) {
+      assert.equal(request.path, '/repository/npm/@capability-hub/cli');
+      assert.equal(request.authorization, authenticated ? 'Bearer registry-test-token' : undefined);
+    }
+    for (const [path, content] of configurations)
+      assert.equal(await readFile(path, 'utf8'), content);
+  }
+});
+
 test('CLI 发布包在空缓存和仓库外离线安装，仅安装自身且能通过 HTTP 安装 Skill', async (context) => {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-cli-package-'));
   context.after(() => rm(root, { recursive: true, force: true }));
@@ -524,6 +616,7 @@ test('CLI 首次接入无需凭据或服务连接，支持用户范围与完整�
   assert(conversation.stdout.includes(result.stdout.trim()));
   assert(conversation.stdout.includes('~/.config/opencode/opencode.json'));
   assert(conversation.stdout.includes('opencode mcp auth capability-hub'));
+  assert(conversation.stdout.includes('https://hub.example.test/connect/cli'));
   assert.equal(conversation.stdout.includes('CAPABILITY_HUB_TOKEN'), false);
   assert.equal(await readFile(join(root, 'auth.json'), 'utf8'), 'invalid credentials');
   const contribution = await cli([

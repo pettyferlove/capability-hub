@@ -244,6 +244,11 @@ export const installationRouteStyles = cn(
   '[&_>_:not(summary)]:my-[12px_0]',
 );
 
+export const installationContentStyles = cn(
+  'grid min-w-0 gap-[var(--space-3)]',
+  "[&_[class~='group/codewrap']]:my-0",
+);
+
 export const connectLayoutStyles = 'group/connect-layout min-w-0';
 
 export const panelHeadingStyles = cn(

@@ -17,6 +17,7 @@ import {
   codewrapStyles,
   textBtnStyles,
   installationRouteStyles,
+  installationContentStyles,
   pageHeadTitleStyles,
 } from '../../shared/styles/recipes.js';
 import {
@@ -46,6 +47,7 @@ import { AgentClientSelect } from '../../shared/components/AgentClientSelect.js'
 import { SelectField } from '../../shared/components/SelectField.js';
 import { CopyButton } from '../../shared/components/CopyButton.js';
 import { CodeBlock } from '../../shared/components/CodeBlock.js';
+import { CliInstallationGuide } from '../../shared/components/CliInstallationGuide.js';
 import { PageHead } from '../../shared/components/PageHead.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { loginHref } from '../../shared/navigation/history-route.js';
@@ -221,12 +223,20 @@ function HubConnection() {
           </li>
         </ol>
         {config.method === 'assistant' && (
-          <>
+          <div className={installationContentStyles}>
             <p className={subtleStyles}>{config.assistant_instruction}</p>
+            <a className={textBtnStyles} href="#cli-installation">
+              查看 CLI 安装步骤
+            </a>
             <CodeBlock title="启动接入助手" code={config.assistant_command} />
-          </>
+          </div>
         )}
-        <div className={cn(codewrapStyles, 'flex items-center justify-between gap-3 p-4')}>
+        <div
+          className={cn(
+            codewrapStyles,
+            'my-0 flex flex-wrap items-center justify-between gap-3 p-4',
+          )}
+        >
           <span>无需复制或保存令牌</span>
           <CopyButton
             key={`${client}:${scope}:${method}:${permission}`}
@@ -250,7 +260,9 @@ function HubConnection() {
         </p>
         <details className={installationRouteStyles}>
           <summary>查看配置 · {config.target_file}</summary>
-          <CodeBlock title={config.target_file} code={config.text} />
+          <div className={installationContentStyles}>
+            <CodeBlock title={config.target_file} code={config.text} />
+          </div>
         </details>
         <details
           className={installationRouteStyles}
@@ -258,32 +270,45 @@ function HubConnection() {
           onToggle={(event) => setManualOpen(event.currentTarget.open)}
         >
           <summary>高级手动接入 · 访问令牌</summary>
-          <p className={subtleStyles}>
-            用于明确需要 Bearer
-            令牌的环境。请由用户在客户端运行环境设置变量，不要把真实值发到对话中。
-          </p>
-          <CodeBlock title="手动令牌配置" code={manual.text} />
-          {me ? (
-            <AccessTokenForm key={client} defaultName={client + ' 手动接入'} />
-          ) : (
-            <a
-              className={btnStyles}
-              href={loginHref(
-                '/connect?' +
-                  new URLSearchParams({ client, scope, method: 'token', permission }).toString(),
-              )}
-            >
-              登录并创建手动令牌
-            </a>
-          )}
+          <div className={installationContentStyles}>
+            <p className={subtleStyles}>
+              用于明确需要 Bearer
+              令牌的环境。请由用户在客户端运行环境设置变量，不要把真实值发到对话中。
+            </p>
+            <CodeBlock title="手动令牌配置" code={manual.text} />
+            {me ? (
+              <AccessTokenForm key={client} defaultName={client + ' 手动接入'} />
+            ) : (
+              <a
+                className={btnStyles}
+                href={loginHref(
+                  '/connect?' +
+                    new URLSearchParams({ client, scope, method: 'token', permission }).toString(),
+                )}
+              >
+                登录并创建手动令牌
+              </a>
+            )}
+          </div>
         </details>
-        <details className={installationRouteStyles}>
+        <details
+          id="cli-installation"
+          className={installationRouteStyles}
+          open={config.method === 'assistant'}
+        >
           <summary>CLI 下载与安装</summary>
-          <p className={subtleStyles}>命令行独立使用时，可运行 login 完成浏览器批准。</p>
-          <CodeBlock
-            title="CLI 使用"
-            code={`capability-hub login --url ${config.hub_url}\ncapability-hub add NAME --version VERSION --to ${agentClients[client].skillDirectory} --dry-run --url ${config.hub_url}\ncapability-hub mcp-config NAME --version VERSION --client ${client} --option OPTION_ID --scope ${scope} --url ${config.hub_url}`}
-          />
+          <div className="grid min-w-0 gap-[var(--space-5)]">
+            <CliInstallationGuide />
+            <div className={installationContentStyles}>
+              <p className={subtleStyles}>
+                完成 CLI 授权后，替换 NAME、VERSION 和 OPTION_ID，再预览 Skill 安装或获取 MCP 配置。
+              </p>
+              <CodeBlock
+                title="CLI 使用"
+                code={`capability-hub add NAME --version VERSION --to ${agentClients[client].skillDirectory} --dry-run --url ${config.hub_url}\ncapability-hub mcp-config NAME --version VERSION --client ${client} --option OPTION_ID --scope ${scope} --url ${config.hub_url}`}
+              />
+            </div>
+          </div>
         </details>
       </section>
     </div>

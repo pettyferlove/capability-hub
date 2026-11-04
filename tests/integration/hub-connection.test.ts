@@ -3,9 +3,55 @@ import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { z } from 'zod';
+import { cliInstallationResponseSchema } from '@capability-hub/contracts';
 import { createTestHub, publishSkill } from '../support/application.js';
 import { serveTestHub } from '../support/server.js';
 import { httpClient } from '../support/http.js';
+
+test('CLI 说明直接提供 npm 安装命令，仅配置私有仓库时附带仓库参数与可选认证', async (context) => {
+  for (const registry of [undefined, 'https://registry.example/repository/npm/']) {
+    const fixture = await createTestHub(context, {
+      publicUrl: 'https://hub.example.test',
+      cliRegistry: registry,
+    });
+    const http = httpClient(fixture);
+    const response = await http
+      .get('/api/cli-installation?registry=https://untrusted.example&token=must-not-reflect')
+      .expect(200);
+    const guide = cliInstallationResponseSchema.parse(response.body);
+    assert.equal(guide.registry_url, registry ?? null);
+    const commands = guide.steps.flatMap((step) => (step.command ? [step.command] : []));
+    assert(
+      commands.includes(
+        `npm install -g @capability-hub/cli${registry ? ` --registry='${registry}' --@capability-hub:registry='${registry}'` : ''}\ncapability-hub --cli-version`,
+      ),
+    );
+    assert.equal(
+      commands.some((command) => command.startsWith('npm config')),
+      false,
+    );
+    const authentication = guide.steps.find((step) => step.command?.startsWith('npm login'));
+    assert.equal(authentication?.optional, registry ? true : undefined);
+    if (registry) {
+      assert(authentication?.command?.includes(registry));
+      assert(authentication?.description.includes('允许匿名下载时跳过此步'));
+    }
+    const markdown = await http
+      .get('/connect/cli?token=must-not-reflect')
+      .expect('Content-Type', /text\/markdown/)
+      .expect(200);
+    for (const step of guide.steps) {
+      assert(markdown.text.includes(step.description));
+      if (step.command) assert(markdown.text.includes(step.command));
+    }
+    for (const text of [JSON.stringify(guide), markdown.text]) {
+      assert.equal(text.includes('must-not-reflect'), false);
+      assert.equal(text.includes('untrusted.example'), false);
+      assert.equal(text.includes('registry.npmjs.org'), false);
+      assert.equal(text.includes('获取 CLI 仓库地址'), false);
+    }
+  }
+});
 
 test('官方正文随实例交付，安装链接只指向当前公开且内容完全匹配的目录版本', async (context) => {
   const fixture = await serveTestHub(context);
@@ -130,6 +176,7 @@ test('分享邀请使用实例公开地址，通用安装说明匿名分流到�
   assert.match(guide.text, /无法确定时询问用户/);
   assert.match(guide.text, /联系此 Hub 的管理员/);
   assert.match(guide.text, /配置已生成不代表已连接/);
+  assert(guide.text.includes('https://hub.example.test/connect/cli'));
   assert.equal(guide.text.includes('must-not-reflect'), false);
   const links = [...guide.text.matchAll(/\]\((https:\/\/[^)]+\/connect\/mcp\?[^)]+)\)/g)];
   assert.equal(links.length, 16);
@@ -176,6 +223,7 @@ test('Hub 首次接入接口匿名交付八种客户端说明，不创建令牌�
       assert(guide.installation_prompt.includes(guide.text));
       assert(guide.installation_prompt.includes(guide.target_file));
       assert(guide.installation_prompt.includes('浏览器'));
+      assert(guide.installation_prompt.includes('https://hub.example.test/connect/cli'));
       const manual = await http
         .get('/api/hub-mcp-config')
         .query({ client, scope, method: 'token' })

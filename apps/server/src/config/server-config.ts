@@ -54,6 +54,7 @@ const configSchema = z
     host: z.string().min(1),
     port: z.number().int().min(1).max(65535),
     publicUrl: z.string().min(1, '必须设置 CAPABILITY_HUB_PUBLIC_URL 为 HTTP(S) 根地址'),
+    cliRegistry: z.string().optional(),
     production: z.boolean(),
     secret: z.union([secretSchema, z.literal('')]),
     gitHosts: z.array(z.string()),
@@ -104,6 +105,20 @@ function validate(config: ServerConfig): void {
   )
     throw new Error('公开地址必须为 HTTP(S) 根地址，不得包含凭据、路径或查询参数');
   config.publicUrl = publicUrl.origin;
+  if (config.cliRegistry !== undefined) {
+    const registry = new URL(config.cliRegistry);
+    if (
+      !['http:', 'https:'].includes(registry.protocol) ||
+      registry.username ||
+      registry.password ||
+      registry.search ||
+      registry.hash ||
+      registry.port === '0'
+    )
+      throw new Error('CLI 仓库地址必须为 HTTP(S) URL，可包含路径，不得包含凭据、查询或片段');
+    if (!registry.pathname.endsWith('/')) registry.pathname += '/';
+    config.cliRegistry = registry.href;
+  }
   if (config.ldap) {
     const url = new URL(config.ldap.url);
     const local = !config.production && ['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname);
@@ -228,6 +243,7 @@ export function loadServerConfig(
     host: environment.CAPABILITY_HUB_HOST ?? '127.0.0.1',
     port: Number(environment.PORT ?? 4100),
     publicUrl: environment.CAPABILITY_HUB_PUBLIC_URL ?? (production ? '' : 'http://127.0.0.1:4100'),
+    cliRegistry: environment.CAPABILITY_HUB_CLI_REGISTRY || undefined,
     production,
     secret: environment.CAPABILITY_HUB_INSTANCE_SECRET ?? '',
     gitHosts: (environment.CAPABILITY_HUB_GIT_HOSTS ?? 'github.com,gitlab.com').split(','),

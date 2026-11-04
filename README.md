@@ -31,7 +31,7 @@ pnpm dev:web
 
 ## 安装与接入
 
-配置部署方提供的 npm 仓库后，执行 `npm install -g @capability-hub/cli`。源码运行用 `pnpm cli`。`login` 显示批准链接和授权码，由浏览器确认；网页登录与终端凭据分开保存。
+从实例的 `/connect/cli` 或接入页“CLI 下载与安装”获取安装步骤，支持匿名下载和按需仓库认证。部署方设置见 [CLI 仓库配置](documents/reference/configuration.md)。源码运行用 `pnpm cli`；`login` 由浏览器批准，独立于 npm 仓库认证。
 
 ```sh
 capability-hub login --url http://127.0.0.1:4100

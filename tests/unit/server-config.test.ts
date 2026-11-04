@@ -29,6 +29,33 @@ test('配置错误在创建数据目录之前报错，校验不会产生半初�
   await assert.rejects(() => lstat(invalid), { code: 'ENOENT' });
 });
 
+test('CLI 仓库保留路径且允许不配置，带凭据或非下载地址在初始化前被拒绝', async (context) => {
+  const dataDir = await directory(context);
+  for (const value of [undefined, ''])
+    assert.equal(
+      loadServerConfig({ dataDir }, { CAPABILITY_HUB_CLI_REGISTRY: value }).cliRegistry,
+      undefined,
+    );
+  for (const registry of ['http://192.168.1.20:4873', 'https://registry.example/repository/npm'])
+    assert.equal(
+      loadServerConfig({ dataDir }, { CAPABILITY_HUB_CLI_REGISTRY: registry }).cliRegistry,
+      registry + '/',
+    );
+  const invalid = join(dataDir, 'invalid');
+  for (const registry of [
+    'not-a-url',
+    'ftp://registry.example/npm/',
+    'https://user:secret@registry.example/npm/',
+    'https://registry.example/npm/?token=secret',
+    'https://registry.example/npm/#secret',
+    'http://registry.example:0/npm/',
+  ])
+    assert.throws(() =>
+      loadServerConfig({ dataDir: invalid }, { CAPABILITY_HUB_CLI_REGISTRY: registry }),
+    );
+  await assert.rejects(() => lstat(invalid), { code: 'ENOENT' });
+});
+
 test('布尔环境变量使用 true/false，未设置时默认启用，显式配置优先', async (context) => {
   const dataDir = await directory(context);
   const defaults = loadServerConfig({ dataDir }, {});
