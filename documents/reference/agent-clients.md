@@ -65,7 +65,7 @@ https://hub.example.com/INSTALL.md
 
 接入说明按任务与运行能力选择 MCP 或独立 CLI，先验证并复用同一实例的可用通路。MCP 在目标 Agent 调用 `search_skills`；CLI 用显式 `--url` 的 `search --json` 验证。预设表提供快捷配置；未知客户端按自身 Streamable HTTP 与认证能力接入，或用 CLI 搜索、安装 Skill。
 
-接入说明和 MCP 工具发现均指向随产品交付的 [use-capability-hub](../../skills/use-capability-hub/SKILL.md)。资产状态为 `active`、当前版本公开且内容与随附包一致时，才提供该版本的安装链接。目录查询失败时仍交付接入步骤和随附正文。
+接入说明和 MCP 工具发现均指向随附的 [use-capability-hub](../../skills/use-capability-hub/SKILL.md) 及参考资料。仅推荐 `active`、当前版本公开且完整清单与摘要均匹配的目录版本；否则按 `/INSTALL.md` 下载并校验随附完整包，目录查询失败也可安装。
 
 也可以把以下说明链接交给 Agent；链接无需登录即可读取，但不包含任何令牌，也不授予 MCP 或资源访问权限：
 

@@ -1,10 +1,24 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { readFile, realpath } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { z } from 'zod';
-import { cliInstallationResponseSchema } from '@capability-hub/contracts';
-import { createTestHub, publishSkill } from '../support/application.js';
+import {
+  cliInstallationResponseSchema,
+  hubClientSkillBundleResponseSchema,
+} from '@capability-hub/contracts';
+import { canonical, digest } from '@capability-hub/domain/canonical';
+import { inspect, unzip } from '@capability-hub/infrastructure/content';
+import { install } from '../../apps/cli/src/install.js';
+import {
+  createTestHub,
+  publishSkill,
+  receiveSkill,
+  submitPublication,
+} from '../support/application.js';
+import { hubClientSkillFiles } from '../support/content.js';
 import { serveTestHub } from '../support/server.js';
 import { httpClient } from '../support/http.js';
 
@@ -53,7 +67,60 @@ test('CLI 说明直接提供 npm 安装命令，仅配置私有仓库时附带�
   }
 });
 
-test('官方正文随实例交付，安装链接只指向当前公开且内容完全匹配的目录版本', async (context) => {
+test('随附 Skill 匿名交付完整清单、附属文件和可校验安装的 ZIP', async (context) => {
+  const fixture = await serveTestHub(context);
+  const http = httpClient(fixture);
+  const base = '/connect/skills/use-capability-hub';
+  const files = await hubClientSkillFiles();
+  assert(files.some((file) => file.path.startsWith('references/')));
+  const bundle = hubClientSkillBundleResponseSchema.parse(
+    (await http.get(`${base}/manifest`).expect(200)).body,
+  );
+  const downloaded = await fetch(fixture.origin + base + '/download');
+  assert.equal(downloaded.status, 200);
+  assert.equal(downloaded.headers.get('content-type'), 'application/zip');
+  assert.match(downloaded.headers.get('content-disposition') ?? '', /use-capability-hub\.zip/);
+  const archive = Buffer.from(await downloaded.arrayBuffer());
+  assert.equal(digest(archive), bundle.artifact_digest);
+  assert.equal(digest(canonical(bundle.manifest)), bundle.content_digest);
+  const unpacked = await unzip(archive);
+  assert.deepEqual(unpacked.map((file) => file.path).sort(), files.map((file) => file.path).sort());
+  const inspected = inspect('skill', unpacked, bundle.slug);
+  assert.deepEqual(inspected.manifest, bundle.manifest);
+  assert.deepEqual(inspected.findings, []);
+  const repeated = await fetch(fixture.origin + base + '/download');
+  assert.equal(digest(Buffer.from(await repeated.arrayBuffer())), bundle.artifact_digest);
+  const to = join(await realpath(fixture.directory), 'bundled-skills');
+  await install({ ...bundle, archive, to, source: { hub_url: fixture.origin } });
+  for (const file of files) {
+    const response = await http
+      .get(`${base}/${file.path}`)
+      .expect('Content-Type', /text\/markdown/)
+      .expect(200);
+    assert.equal(response.text, file.bytes.toString('utf8'));
+    assert.deepEqual(await readFile(join(to, bundle.slug, file.path)), file.bytes);
+  }
+});
+
+test('随附文件入口拒绝越界路径，不读取包外文件或同名目录资产', async (context) => {
+  const fixture = await createTestHub(context);
+  const http = httpClient(fixture);
+  const base = '/connect/skills/use-capability-hub';
+  await publishSkill(fixture, {
+    slug: 'use-capability-hub',
+    files: [
+      ...(await hubClientSkillFiles()),
+      { path: 'private.txt', bytes: Buffer.from('仅目录资产包含的文件'), executable: false },
+    ],
+    distribution: { mode: 'approved_audience', audience: ['organization'] },
+  });
+  for (const path of ['private.txt', '.env', 'references/missing.md'])
+    await http.get(`${base}/${path}`).expect(404);
+  for (const path of ['references%2f..%2f..%2fpackage.json', 'references%5c..%5cpackage.json'])
+    await http.get(`${base}/${path}`).expect(422);
+});
+
+test('官方安装链接只指向当前公开且完整包匹配的目录版本', async (context) => {
   const fixture = await serveTestHub(context);
   const http = httpClient(fixture);
   const name = 'use-capability-hub';
@@ -64,7 +131,7 @@ test('官方正文随实例交付，安装链接只指向当前公开且内容�
     .expect('Content-Type', /text\/markdown/)
     .expect(200);
   assert.equal(raw.text, bytes.toString('utf8'));
-  const files = [{ path: 'SKILL.md', bytes, executable: false }];
+  const files = await hubClientSkillFiles();
   const directory = `${fixture.origin}/skills/${name}/`;
   const token = await fixture.hub.tokens.issue(fixture.reader, {
     name: 'client',
@@ -106,6 +173,33 @@ test('官方正文随实例交付，安装链接只指向当前公开且内容�
           arguments: { version_id: items[0].current_release.version_id },
         });
         assert.equal(z.object({ body: z.string() }).parse(loaded.structuredContent).body, raw.text);
+        for (const file of files.filter((file) => file.path !== 'SKILL.md')) {
+          const reference = await client.callTool({
+            name: 'read_skill_file',
+            arguments: { version_id: version.id, path: file.path },
+          });
+          assert.equal(
+            z.object({ text: z.string() }).parse(reference.structuredContent).text,
+            file.bytes.toString('utf8'),
+          );
+        }
+        const installation = await client.callTool({
+          name: 'install_skill',
+          arguments: { version_id: version.id },
+        });
+        const delivered = z
+          .object({
+            artifact_digest: z.string(),
+            archive_chunk: z.object({ data: z.string(), complete: z.literal(true) }),
+          })
+          .parse(installation.structuredContent);
+        const archive = Buffer.from(delivered.archive_chunk.data, 'base64');
+        assert.equal(digest(archive), delivered.artifact_digest);
+        const unpacked = await unzip(archive);
+        assert.deepEqual(
+          inspect('skill', unpacked, name).manifest,
+          inspect('skill', files, name).manifest,
+        );
       }
     } finally {
       await client.close();
@@ -127,8 +221,41 @@ test('官方正文随实例交付，安装链接只指向当前公开且内容�
   await checkLinks();
   await publishSkill(fixture, { ...next, version: '3.0.0' });
   await checkLinks();
-  const published = await publishSkill(fixture, { ...next, files, version: '4.0.0' });
-  await checkLinks({ label: '4.0.0', id: published.intake.version_id });
+  await publishSkill(fixture, {
+    ...next,
+    version: '4.0.0',
+    files: files.map((file) =>
+      file.path === 'references/cli.md'
+        ? { ...file, bytes: Buffer.concat([file.bytes, Buffer.from('\n不同的附属资料。\n')]) }
+        : file,
+    ),
+  });
+  await checkLinks();
+  const incomplete = await receiveSkill(fixture, {
+    ...next,
+    version: '5.0.0',
+    files: files.filter((file) => file.path !== 'references/cli.md'),
+  });
+  const request = await submitPublication(fixture, incomplete);
+  const scan = incomplete.scan;
+  assert(scan);
+  await fixture.hub.publications.decide(
+    fixture.reviewer,
+    request.id,
+    {
+      decision: 'approve',
+      comment: '构造已审核但缺少附属资料的目录版本',
+      policy_digest: request.policy_digest,
+      accepted_warnings: scan.findings
+        .filter((finding) => finding.severity === 'warning')
+        .map((finding) => ({ finding_id: finding.id, reason: '验证完整包匹配限制' })),
+    },
+    `"${request.revision}"`,
+    randomUUID(),
+  );
+  await checkLinks();
+  const published = await publishSkill(fixture, { ...next, files, version: '6.0.0' });
+  await checkLinks({ label: '6.0.0', id: published.intake.version_id });
   const asset = await fixture.hub.assetAccess.getAsset(next.assetId);
   await fixture.hub.lifecycle.updateState(
     fixture.admin,
@@ -137,10 +264,10 @@ test('官方正文随实例交付，安装链接只指向当前公开且内容�
     `"${asset.revision}"`,
   );
   await checkLinks();
-  assert.equal((await http.get(`/skills/${name}/4.0.0/files/SKILL.md`).expect(200)).text, raw.text);
+  assert.equal((await http.get(`/skills/${name}/6.0.0/files/SKILL.md`).expect(200)).text, raw.text);
 });
 
-test('目录不可用时仍交付首次接入说明和随附正文', async (context) => {
+test('目录不可用时仍交付首次接入说明、随附资料和完整包', async (context) => {
   const origin = 'https://hub.example.test';
   const fixture = await createTestHub(context, { publicUrl: origin });
   const http = httpClient(fixture);
@@ -155,6 +282,19 @@ test('目录不可用时仍交付首次接入说明和随附正文', async (cont
   await http
     .get(path)
     .expect('Content-Type', /text\/markdown/)
+    .expect(200);
+  const manifestPath = '/connect/skills/use-capability-hub/manifest';
+  const downloadPath = '/connect/skills/use-capability-hub/download';
+  assert(guide.text.includes(origin + manifestPath));
+  assert(guide.text.includes(origin + downloadPath));
+  const bundle = hubClientSkillBundleResponseSchema.parse(
+    (await http.get(manifestPath).expect(200)).body,
+  );
+  for (const file of bundle.manifest.files)
+    await http.get(`/connect/skills/use-capability-hub/${file.path}`).expect(200);
+  await http
+    .get(downloadPath)
+    .expect('Content-Type', /application\/zip/)
     .expect(200);
 });
 

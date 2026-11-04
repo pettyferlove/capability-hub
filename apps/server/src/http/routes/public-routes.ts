@@ -4,18 +4,21 @@ import {
   hubConnectionQuerySchema,
   hubMcpConnectionGuide,
   hubInstallationGuide,
-  hubClientSkillPath,
+  hubClientSkillBasePath,
+  hubClientSkillName,
   hubShareInvitation,
   cliInstallationGuide,
 } from '@capability-hub/contracts';
 import { fail } from '@capability-hub/domain/errors';
+import { contentText } from '@capability-hub/domain/files';
+import { safePath } from '@capability-hub/domain/paths';
 import type { Express } from 'express';
 import { loginRequestSchema, setupHttpRequestSchema } from '@capability-hub/contracts';
 import type { HttpContext } from '../context.js';
 import { jsonRoute as send } from '../response.js';
 import {
   publishedHubClientSkillUrl,
-  readHubClientSkill,
+  readHubClientSkillBundle,
 } from '../../integrations/hub-client-skill.js';
 
 /**
@@ -42,9 +45,43 @@ export function registerPublicRoutes(app: Express, { hub, security }: HttpContex
     }),
   );
   app.get(
-    hubClientSkillPath,
+    `${hubClientSkillBasePath}/manifest`,
+    send(async () => {
+      const { slug, manifest, content_digest, artifact_digest } = await readHubClientSkillBundle();
+      return { slug, manifest, content_digest, artifact_digest };
+    }),
+  );
+  app.get(
+    `${hubClientSkillBasePath}/download`,
     send(async (_req, res) => {
-      res.type('text/markdown; charset=utf-8').send(await readHubClientSkill());
+      const bundle = await readHubClientSkillBundle();
+      res.set({
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="${hubClientSkillName}.zip"`,
+      });
+      res.send(bundle.archive);
+    }),
+  );
+  app.get(
+    `${hubClientSkillBasePath}/*path`,
+    send(async (req, res) => {
+      const segments: unknown = req.params.path;
+      const path = safePath(
+        Array.isArray(segments) ? segments.map(String).join('/') : String(segments),
+      );
+      const bundle = await readHubClientSkillBundle();
+      const file = bundle.files.find((file) => file.path === path);
+      if (!file) fail(404, 'NOT_FOUND', '随附 Skill 文件不存在');
+      if (contentText(file.bytes) !== null)
+        res.type(
+          path.endsWith('.md') ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8',
+        );
+      else
+        res.set({
+          'Content-Type': 'application/octet-stream',
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(path.split('/').pop()!)}`,
+        });
+      res.send(file.bytes);
     }),
   );
   app.get(

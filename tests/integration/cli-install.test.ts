@@ -18,7 +18,7 @@ import { install } from '../../apps/cli/src/install.js';
 import { archive, inspect } from '@capability-hub/infrastructure/content';
 import { digest, canonical } from '@capability-hub/domain/canonical';
 import { HubError } from '@capability-hub/domain/errors';
-import { skillDocument } from '../support/content.js';
+import { hubClientSkillFiles, skillDocument } from '../support/content.js';
 import { deferred } from '../support/store.js';
 
 async function installation(context: TestContext, body?: string) {
@@ -70,6 +70,46 @@ test('安装逐字节校验并写入私有目录，dry-run 不创建路径，默
     () => install({ ...input, archive: Buffer.from('tampered') }),
     code('ARTIFACT_DIGEST_MISMATCH'),
   );
+});
+
+test('完整包校验拒绝缺失、多余或被修改的附属文件并保留已有安装', async (context) => {
+  const destination = await installation(context);
+  const files = await hubClientSkillFiles();
+  const reference = files.find((file) => file.path.startsWith('references/'));
+  assert(reference);
+  const inspected = inspect('skill', files, 'use-capability-hub');
+  const bytes = await archive(files);
+  const input = {
+    ...destination,
+    slug: 'use-capability-hub',
+    manifest: inspected.manifest,
+    content_digest: inspected.content_digest,
+    artifact_digest: digest(bytes),
+    archive: bytes,
+  };
+  await install(input);
+  for (const [variant, expected] of [
+    [files.filter((file) => file.path !== reference.path), 'ARCHIVE_MANIFEST_MISMATCH'],
+    [
+      [...files, { path: 'extra.md', bytes: Buffer.from('附加文件'), executable: false }],
+      'ARCHIVE_MANIFEST_MISMATCH',
+    ],
+    [
+      files.map((file) =>
+        file.path === reference.path ? { ...file, bytes: Buffer.from('资料被修改') } : file,
+      ),
+      'FILE_DIGEST_MISMATCH',
+    ],
+  ] as const) {
+    const damaged = await archive([...variant]);
+    await assert.rejects(
+      () =>
+        install({ ...input, archive: damaged, artifact_digest: digest(damaged), replace: true }),
+      code(expected),
+    );
+    for (const file of files)
+      assert.deepEqual(await readFile(join(input.to, input.slug, file.path)), file.bytes);
+  }
 });
 
 test('安装授权失效保持原目录，明确替换保留旧内容备份，锁和暂存目录会清理', async (context) => {

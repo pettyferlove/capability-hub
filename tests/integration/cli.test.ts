@@ -12,6 +12,7 @@ import { cliInstallationGuide } from '@capability-hub/contracts';
 import { HubApiClient } from '../../apps/cli/src/api-client.js';
 import { serveTestHub } from '../support/server.js';
 import { publishSkill, submitPublication } from '../support/application.js';
+import { hubClientSkillFiles } from '../support/content.js';
 
 const execute = promisify(execFile);
 
@@ -439,6 +440,36 @@ test('CLI 发布包在空缓存和仓库外离线安装，仅安装自身且能�
   assert(
     (await readFile(join(destination, 'sample-skill/SKILL.md'), 'utf8')).includes('sample-skill'),
   );
+});
+
+test('CLI 安装官方多文件 Skill 时保留全部参考资料和目录结构', async (context) => {
+  const fixture = await serveTestHub(context);
+  const files = await hubClientSkillFiles();
+  const slug = 'use-capability-hub';
+  await publishSkill(fixture, { slug, files });
+  const token = await fixture.hub.tokens.issue(fixture.reader, {
+    name: '完整 Skill 安装',
+    scope: 'hub:read',
+  });
+  const destination = join(await realpath(fixture.directory), 'client-skills');
+  const result = await cli(
+    [
+      'add',
+      slug,
+      '--version',
+      '1.0.0',
+      '--url',
+      fixture.origin,
+      '--to',
+      destination,
+      '--no-interactive',
+    ],
+    token.token,
+  );
+  assert.equal(result.code, 0, result.stderr);
+  assert(files.some((file) => file.path.startsWith('references/')));
+  for (const file of files)
+    assert.deepEqual(await readFile(join(destination, slug, file.path)), file.bytes);
 });
 
 test('CLI 子进程通过真实 HTTP 搜索和安装已发布内容，撤权后不能再次交付，错误不输出令牌', async (context) => {

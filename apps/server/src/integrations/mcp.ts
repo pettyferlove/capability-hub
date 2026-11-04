@@ -50,9 +50,9 @@ export function createMcp(
               ? `当前连接可搜索和使用资源。提交本地 Skill、推荐或取消推荐资源、上报版本反馈时，请从当前客户端重新申请贡献权限，授权后刷新工具列表。可在 ${hub.config.publicUrl}/connect?permission=contribute 获取接入指令。不要索取访问令牌。`
               : '当前连接支持搜索、使用与贡献，操作受账号权限约束。提交 Skill 前取得用户授权，发布仍需独立审核。',
             `当次使用 Skill 可搜索并加载正文。需要安装、接入目标 MCP 或贡献资源时，可阅读官方使用指南 ${hub.config.publicUrl}${hubClientSkillPath}`,
-            ...(publishedSkillUrl
-              ? [`如需安装该指南，使用本实例已审核的固定版本 ${publishedSkillUrl}`]
-              : []),
+            publishedSkillUrl
+              ? `如需安装该指南，使用本实例已审核的固定版本 ${publishedSkillUrl}`
+              : `如需安装该指南，按 ${hub.config.publicUrl}/INSTALL.md 校验并安装随附完整包，保留全部附属文件。`,
           ].join('\n'),
         },
       );

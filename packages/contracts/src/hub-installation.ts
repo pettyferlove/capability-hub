@@ -1,11 +1,28 @@
 import { z } from 'zod';
 import { agentClientIds, agentClients, hubConnectionCheck } from './agent-clients.js';
+import { manifestSchema } from './content.js';
 
 /** 官方 Skill 的目录名、frontmatter name 与目录发布名称一致。 */
 export const hubClientSkillName = 'use-capability-hub';
 
-/** 随产品交付的正文使用独立路径，目录资产仍由固定版本的受众策略控制。 */
-export const hubClientSkillPath = `/connect/skills/${hubClientSkillName}/SKILL.md`;
+/** 随产品交付的文件与完整包使用独立路径，目录资产仍由固定版本的受众策略控制。 */
+export const hubClientSkillBasePath = `/connect/skills/${hubClientSkillName}`;
+
+/** 正文入口保持稳定，附属资料相对该 URL 解析。 */
+export const hubClientSkillPath = `${hubClientSkillBasePath}/SKILL.md`;
+
+/** 随附 Skill 完整包的文件清单与校验摘要，不依赖目录发布状态。 */
+export const hubClientSkillBundleResponseSchema = z
+  .object({
+    slug: z.literal(hubClientSkillName),
+    manifest: manifestSchema,
+    content_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+    artifact_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  })
+  .strict();
+
+/** {@link hubClientSkillBundleResponseSchema} 的输出侧类型。 */
+export type HubClientSkillBundleResponse = z.infer<typeof hubClientSkillBundleResponseSchema>;
 
 /** 分享 Hub 接入邀请时返回的结构化结果，出现在分享/接入入口的响应里。 */
 export const hubShareResponseSchema = z.object({
@@ -95,7 +112,8 @@ export function hubInstallationGuide(origin: string, publishedSkillUrl?: string)
           `需要持久安装时，可从[本实例已审核的固定版本](${publishedSkillUrl})取得完整包，确认客户端目录后写入。`,
         ]
       : [
-          `如需长期使用这份随附的单文件 Skill，确认目标目录后，将正文保存为该客户端技能目录下的 ${hubClientSkillName}/SKILL.md。已有同名目录时先核对来源和内容。`,
+          `需要持久安装时，下载[随附完整包](${base}${hubClientSkillBasePath}/download)及[校验清单](${base}${hubClientSkillBasePath}/manifest)。先核对 ZIP 的 SHA-256 与 artifact_digest，再核对解包后的文件集合、相对路径、大小、SHA-256 和执行属性与 manifest.files 完全一致；不符时停止并重新获取包与清单。`,
+          `校验通过后，将包内全部文件按原目录结构写入已确认客户端目录下的 ${hubClientSkillName}/，不能只保存 SKILL.md。已有同名目录时先核对来源和差异，替换前备份，完成后核对落盘文件。`,
         ]),
     '',
   ].join('\n');
