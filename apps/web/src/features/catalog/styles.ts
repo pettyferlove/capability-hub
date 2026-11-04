@@ -314,8 +314,8 @@ export const assetCardStyles = cn(
   'focus-visible:[box-shadow:var(--shadow-floating)] motion-safe:focus-visible:-translate-y-0.5',
   'focus-visible:[outline:2px_solid_var(--brand)] focus-visible:[outline-offset:3px]',
   '[&_h3]:line-clamp-2 [&_h3]:font-mono [&_h3]:text-[length:16px] [&_h3]:font-medium',
-  '[&_h3]:leading-[1.35] [&_h3]:tracking-[-0.25px] [&_h3]:[overflow-wrap:anywhere]',
-  '[&>p]:line-clamp-3 [&>p]:my-[13px] [&>p]:text-[length:13px] [&>p]:leading-[1.7]',
+  '[&_h3]:leading-6 [&_h3]:tracking-[-0.25px] [&_h3]:[overflow-wrap:anywhere]',
+  '[&>p]:line-clamp-3 [&>p]:my-3 [&>p]:text-body [&>p]:leading-5',
   '[&>p]:text-muted-ink [&>p]:[overflow-wrap:anywhere]',
 );
 
@@ -334,7 +334,7 @@ export const assetCardPixelRevealStyles = cn(
 export const assetCardTopStyles = 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5';
 
 export const assetCardSubtitleStyles =
-  'mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-caption leading-4 text-muted-ink';
+  'mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-label leading-4 text-muted-ink';
 
 export const cardArrowStyles = cn(
   'mt-0.5 self-start text-muted-ink opacity-60 transition-[translate,color,opacity] duration-200 ease-out motion-reduce:transition-none',
@@ -349,16 +349,17 @@ export const assetVersionStyles =
 
 export const assetCardTagsStyles = cn(
   "mt-auto mb-3.5 items-start empty:mb-0 [&_[class~='group/tag']]:max-w-full",
+  "[&_[class~='group/tag']]:text-label [&_[class~='group/tag']]:leading-4",
   "[&_[class~='group/tag']]:[overflow-wrap:anywhere]",
 );
 
 export const matchReasonStyles = cn(
   'text-brand [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]',
-  'mb-3.5 overflow-hidden leading-[1.6] [overflow-wrap:anywhere]',
+  'mb-3.5 overflow-hidden leading-5 [overflow-wrap:anywhere]',
 );
 
 export const assetCardFootStyles = cn(
-  'flex items-center gap-1.5 text-[length:11px] text-muted-ink border-t [border-top-style:solid] border-t-[color:var(--line)]',
+  'flex items-center gap-1.5 text-label leading-4 text-muted-ink border-t [border-top-style:solid] border-t-[color:var(--line)]',
   'pt-3',
 );
 
@@ -369,14 +370,14 @@ export const assetOwnerStyles = 'group/asset-owner inline-flex items-center flex
 
 export const ownerAvatarStyles = cn(
   'flex items-center justify-center border border-solid border-[color:var(--line)] bg-brand-soft text-brand',
-  'rounded-[50%] font-semibold w-5.5 h-5.5 text-[length:11px]',
+  'rounded-[50%] font-semibold w-5.5 h-5.5 text-label',
   "[[class~='group/asset-owner']_&]:shrink-0",
 );
 
 export const assetOwnerNameStyles = 'overflow-hidden text-ellipsis whitespace-nowrap';
 
 export const audienceLabelStyles =
-  'ml-auto inline-flex max-w-[48%] shrink-0 items-center gap-1 text-caption [&>svg]:shrink-0';
+  'ml-auto inline-flex max-w-[48%] shrink-0 items-center gap-1 text-label [&>svg]:shrink-0';
 
 export const paginationStyles = 'flex justify-center mt-7.5';
 
@@ -401,7 +402,7 @@ export const feedbackFormStyles = cn(
   '[&_fieldset]:mt-0 [&_fieldset]:mr-0 [&_fieldset]:mb-0 [&_fieldset]:ml-0 [&_fieldset]:min-w-0',
 );
 
-export const managementGridStyles = 'grid grid-cols-2 items-start gap-4 max-[900px]:grid-cols-1';
+export const managementGridStyles = 'grid grid-cols-2 gap-4 max-[900px]:grid-cols-1';
 
 export const managementCardStyles = cn(
   'group/management-card flex flex-col gap-3 min-w-0 [&_h3]:[overflow-wrap:anywhere] [&_h3]:my-1 [&_p]:my-0',

@@ -461,7 +461,7 @@ function AssetCard({ asset, searching }: { asset: AssetResponse; searching: bool
           <h3 title={asset.slug}>{asset.slug}</h3>
           <div className={assetCardSubtitleStyles}>
             <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-              <span className={cn(typeLabelStyles, 'text-caption', `group/${asset.kind}`)}>
+              <span className={cn(typeLabelStyles, 'text-label', `group/${asset.kind}`)}>
                 {asset.kind === 'skill' ? 'SKILL' : 'MCP'}
               </span>
               <span className="opacity-60" aria-hidden="true">
