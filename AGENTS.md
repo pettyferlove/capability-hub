@@ -234,7 +234,8 @@ relax package boundaries, RBAC, concurrency, persistence, or test rules.
 - ESM everywhere (`"type": "module"`); dev/test resolution uses `--conditions=development` + `tsx`
   so packages resolve to `src/*.ts`, while production resolves `dist`. Tests import `./x.js` for
   files that are `x.ts` on disk — do not "fix" these specifiers.
-- No bundler for server/cli; Vite only for `apps/web`. drizzle-kit 0.31.11 is pinned for migrations.
+- Server uses tsc; CLI uses esbuild for a single bundle without runtime dependencies; Web uses Vite.
+  drizzle-kit 0.31.11 is pinned for migrations.
 - No CI config in-repo: `pnpm check` is the gate. Then `pnpm test:external`, `docker build`, and
   `pnpm test:image <tag>` for release confidence.
 - `.env` is loaded by child processes via `--env-file-if-exists`; see

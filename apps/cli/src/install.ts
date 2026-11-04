@@ -1,4 +1,4 @@
-import { unzip } from '@capability-hub/infrastructure/content';
+import { unzip } from '@capability-hub/infrastructure/content/zip-archive';
 import type { Manifest } from '@capability-hub/contracts';
 import { manifestFileSchema, manifestSchema, type ManifestFile } from '@capability-hub/contracts';
 import { canonical, digest, sha256, utf8Compare } from '@capability-hub/domain/canonical';

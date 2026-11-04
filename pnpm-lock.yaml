@@ -150,6 +150,9 @@ importers:
       drizzle-kit:
         specifier: 0.31.11
         version: 0.31.11
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       eslint:
         specifier: ^10.13.0
         version: 10.13.0(jiti@2.7.0)
@@ -206,7 +209,7 @@ importers:
         version: 4.6.7
 
   apps/cli:
-    dependencies:
+    devDependencies:
       '@capability-hub/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -222,6 +225,12 @@ importers:
       '@modelcontextprotocol/server':
         specifier: ^2.4.0
         version: 2.4.0
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.2
+      '@types/proper-lockfile':
+        specifier: ^4.1.4
+        version: 4.1.4
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1
@@ -231,22 +240,15 @@ importers:
       smol-toml:
         specifier: ^1.9.1
         version: 1.9.1
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 24.19.2
-      '@types/proper-lockfile':
-        specifier: ^4.1.4
-        version: 4.1.4
       tsx:
         specifier: 'catalog:'
         version: 4.23.15
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.7
 
   apps/server:
     dependencies:

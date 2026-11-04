@@ -61,6 +61,7 @@
     "@types/react-dom": "catalog:",
     "@types/supertest": "^6.0.3",
     "drizzle-kit": "0.31.11",
+    "esbuild": "0.28.2",
     "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-jsdoc": "^65.4.2",

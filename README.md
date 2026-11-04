@@ -31,15 +31,15 @@ pnpm dev:web
 
 ## 安装与接入
 
-本地 CLI 走源码入口。`login` 在终端给出批准链接和授权码，用自己的浏览器确认。网页登录与终端凭据分开保存。
+配置部署方提供的 npm 仓库后，执行 `npm install -g @capability-hub/cli`。源码运行用 `pnpm cli`。`login` 显示批准链接和授权码，由浏览器确认；网页登录与终端凭据分开保存。
 
 ```sh
-pnpm cli login --url http://127.0.0.1:4100
-pnpm cli search TypeScript
-pnpm cli add NAME --version VERSION --to .agents/skills --dry-run
+capability-hub login --url http://127.0.0.1:4100
+capability-hub search TypeScript
+capability-hub add NAME --version VERSION --to .agents/skills --dry-run
 ```
 
-`add` 只写入 `--to`。示例里的 `.agents/skills` 只是部分客户端的目录，其他位置见[Agent 客户端接入](documents/reference/agent-clients.md)。先看 dry-run 的文件差异，再去掉该参数安装；目录已存在时需要 `--replace`，旧内容留在输出所示的备份目录。发布和审核见[资源使用与发布](documents/getting-started/workflows.md)。
+`add` 只写入 `--to`，安装目录见[Agent 客户端接入](documents/reference/agent-clients.md)。先看 dry-run 差异，再去掉该参数安装；目录已存在时需 `--replace`，旧内容保留在输出的备份目录。发布和审核见[资源使用与发布](documents/getting-started/workflows.md)。
 
 页面「连接你的 Agent」生成接入说明。CLI 的 `hub-config` 离线生成配置且不写文件，`connect` 在浏览器批准后写入客户端配置。支持的客户端、配置位置和验收边界见[Agent 客户端接入](documents/reference/agent-clients.md)。HTTP、Hub MCP 与 CLI 参数见 [HTTP、MCP 与 CLI](documents/reference/interfaces.md)。
 

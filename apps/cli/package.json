@@ -1,7 +1,6 @@
 {
   "name": "@capability-hub/cli",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "engines": {
     "node": "24.22.1"
@@ -9,9 +8,10 @@
   "scripts": {
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "node ../../scripts/build/clean-package.mjs && tsc -p tsconfig.build.json"
+    "build": "pnpm typecheck && node ../../scripts/build/clean-package.mjs && node ../../scripts/build/bundle-cli.mjs",
+    "prepack": "pnpm run build"
   },
-  "dependencies": {
+  "devDependencies": {
     "@capability-hub/contracts": "workspace:*",
     "@capability-hub/domain": "workspace:*",
     "@capability-hub/infrastructure": "workspace:*",
@@ -20,29 +20,21 @@
     "jsonc-parser": "^3.3.1",
     "proper-lockfile": "^4.1.2",
     "smol-toml": "^1.9.1",
-    "zod": "catalog:"
-  },
-  "devDependencies": {
+    "zod": "catalog:",
     "@types/node": "catalog:",
     "@types/proper-lockfile": "^4.1.4",
     "tsx": "catalog:",
     "typescript": "catalog:"
   },
   "exports": {
-    "./install": {
-      "development": "./src/install.ts",
-      "types": "./dist/install.d.ts",
-      "default": "./dist/install.js"
-    },
-    "./credentials": {
-      "development": "./src/credentials.ts",
-      "types": "./dist/credentials.d.ts",
-      "default": "./dist/credentials.js"
-    },
     "./run": {
       "development": "./src/main.ts",
-      "types": "./dist/main.d.ts",
       "default": "./dist/main.js"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      "./run": "./dist/main.js"
     }
   },
   "bin": {
@@ -50,7 +42,6 @@
   },
   "files": [
     "dist",
-    "bin",
-    "src"
+    "bin"
   ]
 }

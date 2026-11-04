@@ -14,7 +14,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { install } from '@capability-hub/cli/install';
+import { install } from '../../apps/cli/src/install.js';
 import { archive, inspect } from '@capability-hub/infrastructure/content';
 import { digest, canonical } from '@capability-hub/domain/canonical';
 import { HubError } from '@capability-hub/domain/errors';

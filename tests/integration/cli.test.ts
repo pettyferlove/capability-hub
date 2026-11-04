@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { serveTestHub } from '../support/server.js';
 import { publishSkill, submitPublication } from '../support/application.js';
+
+const execute = promisify(execFile);
 
 function cli(arguments_: string[], token?: string) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
@@ -30,6 +34,71 @@ function cli(arguments_: string[], token?: string) {
     child.once('exit', (code) => resolve({ code, stdout, stderr }));
   });
 }
+
+test('CLI 发布包在空缓存和仓库外离线安装，仅安装自身且能通过 HTTP 安装 Skill', async (context) => {
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-cli-package-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const environment = { ...process.env };
+  delete environment.NODE_OPTIONS;
+  delete environment.NODE_PATH;
+  delete environment.CAPABILITY_HUB_TOKEN;
+  await execute(
+    'pnpm',
+    [
+      '--dir',
+      fileURLToPath(new URL('../../apps/cli/', import.meta.url)),
+      'pack',
+      '--pack-destination',
+      root,
+    ],
+    { cwd: root, env: environment },
+  );
+  const archives = (await readdir(root)).filter((name) => name.endsWith('.tgz'));
+  assert.equal(archives.length, 1);
+  const consumer = join(root, 'consumer');
+  await mkdir(consumer);
+  await writeFile(join(consumer, 'package.json'), '{"name":"cli-consumer","private":true}');
+  const options = { cwd: consumer, env: environment };
+  await execute(
+    'npm',
+    [
+      'install',
+      join(root, archives[0]),
+      '--offline',
+      '--no-audit',
+      '--no-fund',
+      '--cache',
+      join(root, 'cache'),
+    ],
+    options,
+  );
+  const tree = await execute('npm', ['ls', '--all', '--parseable'], options);
+  assert.deepEqual(tree.stdout.trim().split(/\r?\n/), [
+    consumer,
+    join(consumer, 'node_modules/@capability-hub/cli'),
+  ]);
+  const manifest: unknown = JSON.parse(
+    await readFile(join(consumer, 'node_modules/@capability-hub/cli/package.json'), 'utf8'),
+  );
+  assert(manifest && typeof manifest === 'object');
+  assert(!('private' in manifest) || manifest.private !== true);
+  const binary = join(consumer, 'node_modules/.bin/capability-hub');
+  const help = await execute(binary, ['--help'], options);
+  assert(help.stdout.includes('Capability Hub'));
+
+  const fixture = await serveTestHub(context);
+  await publishSkill(fixture);
+  const token = await fixture.hub.tokens.issue(fixture.admin, { name: 'CLI', scope: 'hub:read' });
+  const destination = join(root, 'skills');
+  await execute(
+    binary,
+    ['add', 'sample-skill', '--version', '1.0.0', '--url', fixture.origin, '--to', destination],
+    { ...options, env: { ...environment, CAPABILITY_HUB_TOKEN: token.token } },
+  );
+  assert(
+    (await readFile(join(destination, 'sample-skill/SKILL.md'), 'utf8')).includes('sample-skill'),
+  );
+});
 
 test('CLI 子进程通过真实 HTTP 搜索和安装已发布内容，撤权后不能再次交付，错误不输出令牌', async (context) => {
   const fixture = await serveTestHub(context);

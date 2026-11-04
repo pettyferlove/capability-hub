@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { boundedJson } from '@capability-hub/infrastructure/content';
+import { boundedJson } from '@capability-hub/infrastructure/content/json';
 
 /**
  * Hub 返回非 2xx 时抛出的错误：`status` 是 HTTP 状态码，`code` 是 Hub 错误码，

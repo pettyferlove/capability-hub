@@ -46,6 +46,16 @@
       "types": "./dist/content.d.ts",
       "default": "./dist/content.js"
     },
+    "./content/json": {
+      "development": "./src/content/json.ts",
+      "types": "./dist/content/json.d.ts",
+      "default": "./dist/content/json.js"
+    },
+    "./content/zip-archive": {
+      "development": "./src/content/zip-archive.ts",
+      "types": "./dist/content/zip-archive.d.ts",
+      "default": "./dist/content/zip-archive.js"
+    },
     "./store": {
       "development": "./src/store.ts",
       "types": "./dist/store.d.ts",

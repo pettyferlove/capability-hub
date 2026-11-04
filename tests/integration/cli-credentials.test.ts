@@ -18,7 +18,7 @@ import {
   loadCredentials,
   resolveConsumerCredentials,
   saveCredentials,
-} from '@capability-hub/cli/credentials';
+} from '../../apps/cli/src/credentials.js';
 
 test('凭据原子替换收紧权限，读取拒绝公开文件及祖先符号链接', async (context) => {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-credentials-'));

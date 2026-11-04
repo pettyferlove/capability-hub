@@ -9,7 +9,10 @@
 | 脚本                                                                   | 职责与调用方                                                    |
 | ---------------------------------------------------------------------- | --------------------------------------------------------------- |
 | [clean-package.mjs](../../scripts/build/clean-package.mjs)             | 工作区构建前清理当前包的 `dist`；由各包 build 命令调用。        |
+| [bundle-cli.mjs](../../scripts/build/bundle-cli.mjs)                   | CLI build 使用 esbuild 合并所需代码，不声明运行时依赖。         |
 | [copy-runtime-assets.mjs](../../scripts/build/copy-runtime-assets.mjs) | 复制基础设施包运行所需的数据库迁移资产；由该包 build 命令调用。 |
+
+CLI 的 `prepack` 自动构建；发布用 `pnpm --filter @capability-hub/cli publish --registry=<私服地址>`，不递归发布内部包。`pack --pack-destination <目录>` 可生成离线安装包。
 
 ## 工程检查：`scripts/checks`
 
