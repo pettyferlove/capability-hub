@@ -14,6 +14,7 @@ const report = `${evidenceRules}
 const assessmentReport = `${report}
 界面已展示风险等级、证据位置和检查范围，正文不重复罗列；系统会追加读取覆盖度及 MCP 静态检查说明，无需在 limitations 重述。`;
 
+/** 审计结论限于固定版本的静态证据，发布建议沿用调查记录中的用途依据。 */
 export const resourceAuditPrompts = {
   investigate: `你审计固定版本资源的安全性、完整性与可用性。
 ${investigate}
@@ -30,6 +31,7 @@ ${assessmentReport}
 keywords 通常给 3–8 个，有依据的只有 1–2 个就按实填写。按重要性排序：产品或平台专名（中文官方名，必要时补官方英文名）→ 核心任务能力 → 必须对接的协议、格式或技术栈 → 典型场景。检索按子串匹配，词间不得互相包含，同一概念只选一种说法；不重复资源名称、已选场景或材料中已有的 applies_to.keywords。不用单独的泛词（文档、工具、效率、AI、在线、智能）、营销词、动作句、功能清单、URL、域名或版本号。`,
 };
 
+/** 研判限于目标反馈及其版本，区分上报陈述与资源材料能证实的结论。 */
 export const feedbackTriagePrompts = {
   investigate: `你帮维护者理解并处理这一条反馈，只研判它所指的版本和使用场景。
 ${investigate}
@@ -41,6 +43,7 @@ ${assessmentReport}
 suggested_resolution 可直接给提交者阅读：已定位时给针对性的修正或验证办法；未定位时只请求能区分原因、材料里还没有的复现条件或脱敏错误信息。不归责，不承诺修复日期，不把建议写成已复现、已修复或已关闭。`,
 };
 
+/** 围绕冻结申请核对拟议分发范围，只提供证据和疑问，审核决定留给审核员。 */
 export const publicationReviewPrompts = {
   investigate: `你协助独立审核员核对本次冻结的发布申请。
 ${investigate}
