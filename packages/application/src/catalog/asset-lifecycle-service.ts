@@ -1,4 +1,5 @@
 import type { Principal } from '@capability-hub/domain/identity';
+import type { VersionRecord } from '@capability-hub/domain/models';
 import { fail, notFound } from '@capability-hub/domain/errors';
 import { canonical, digest } from '@capability-hub/domain/canonical';
 import { collisionKey, sourcePath } from '@capability-hub/domain/paths';
@@ -21,7 +22,7 @@ export class AssetLifecycleService {
     private readonly publications: PublicationService,
     private readonly idempotency: IdempotencyService,
   ) {}
-  /** 删除失败上传的资产及接收记录；共享 blob 由维护工具按引用回收，审计始终保留。 */
+  /** 删除从未正式发布的资产；共享 blob 按引用回收，审计始终保留。 */
   async deleteAsset(
     p: Principal,
     id: string,
@@ -43,40 +44,146 @@ export class AssetLifecycleService {
         const asset = await this.assets.getAsset(id);
         this.assets.requireMaintenance(actor, asset);
         matchRevision(asset, etag);
-        if (!(await this.assets.canDelete(actor, asset)))
-          fail(
-            409,
-            'ASSET_DELETE_UNAVAILABLE',
-            '仅可删除无内容版本、接收已失败或取消且无处理中作业的未封禁上传资源',
-          );
+        const blocked = await this.assets.deleteBlockReason(actor, asset);
+        if (blocked) fail(409, 'ASSET_DELETE_UNAVAILABLE', blocked);
         await this.context.store.audit(actor.id, 'asset.deleted', asset.id, b.reason);
-        for (const intake of await this.context.store.where('intakes', 'asset_id', asset.id)) {
-          for (const job of await this.context.store.where('jobs', 'aggregate_id', intake.id))
-            await this.context.store.remove('jobs', job.id);
-          await this.context.store.remove('intakes', intake.id);
+        const sourceIds = new Set([
+          asset.source_id,
+          ...(await this.context.store.where('intakes', 'asset_id', asset.id)).map(
+            (intake) => intake.source_id,
+          ),
+        ]);
+        await this.removeUnpublishedContent(asset.id);
+        const bindings = await this.context.store.where('bindings', 'asset_id', asset.id);
+        for (const binding of bindings) await this.context.store.remove('bindings', binding.id);
+        for (const sourceId of new Set(
+          bindings.filter((binding) => !binding.retired_at).map((binding) => binding.source_id),
+        )) {
+          const source = await this.context.store.get('sources', sourceId);
+          if (source?.kind !== 'git') continue;
+          const targets = (
+            await this.context.store.where('bindings', 'source_id', sourceId)
+          ).filter((binding) => !binding.retired_at);
+          await this.context.store.put('sources', {
+            ...source,
+            state:
+              source.state !== 'blocked' &&
+              !source.distribution_revoked_at &&
+              !targets.some((binding) => binding.enabled)
+                ? 'paused'
+                : source.state,
+            revision: source.revision + 1,
+          });
+          for (const target of targets)
+            await this.publications.invalidatePending(target.asset_id, 'SOURCE_CONFIG_CHANGED');
         }
         for (const grant of await this.context.store.where('role_bindings', 'scope_id', asset.id))
           if (grant.scope_type === 'asset')
             await this.context.store.remove('role_bindings', grant.id);
         await this.context.store.remove('assets', asset.id);
-        if (
-          !(await this.context.store.find('assets', 'source_id', asset.source_id)) &&
-          !(await this.context.store.find('intakes', 'source_id', asset.source_id)) &&
-          !(await this.context.store.find('bindings', 'source_id', asset.source_id)) &&
-          !(await this.context.store.find('versions', 'origin_source_id', asset.source_id))
-        ) {
-          for (const grant of await this.context.store.where(
-            'role_bindings',
-            'scope_id',
-            asset.source_id,
-          ))
-            if (grant.scope_type === 'source')
-              await this.context.store.remove('role_bindings', grant.id);
-          await this.context.store.remove('sources', asset.source_id);
-        }
+        for (const sourceId of sourceIds)
+          if (
+            (await this.context.store.get('sources', sourceId))?.kind === 'upload' &&
+            !(await this.context.store.find('assets', 'source_id', sourceId)) &&
+            !(await this.context.store.find('intakes', 'source_id', sourceId)) &&
+            !(await this.context.store.find('bindings', 'source_id', sourceId)) &&
+            !(await this.context.store.find('versions', 'origin_source_id', sourceId)) &&
+            !(await this.context.store.find('releases', 'policy_source_id', sourceId))
+          ) {
+            for (const grant of await this.context.store.where(
+              'role_bindings',
+              'scope_id',
+              sourceId,
+            ))
+              if (grant.scope_type === 'source')
+                await this.context.store.remove('role_bindings', grant.id);
+            await this.context.store.remove('sources', sourceId);
+          }
         return { ok: true };
       },
     );
+  }
+  /** 单独删除未发布版本，不删除资产；If-Match 使用所属资产的修订号。 */
+  async deleteVersion(
+    p: Principal,
+    id: string,
+    body: unknown,
+    etag: string | undefined,
+    key: string | undefined,
+  ) {
+    const b = z
+      .object({ reason: z.string().trim().min(1).max(2000) })
+      .strict()
+      .parse(body);
+    return await this.idempotency.execute(
+      p,
+      'delete-version/' + id,
+      key,
+      digest(canonical({ ...b, revision: etag ?? null })),
+      async () => {
+        const actor = await this.context.identity.principal(p.id);
+        const version = await this.context.store.get('versions', id);
+        if (!version) notFound();
+        const asset = await this.assets.getAsset(version.asset_id);
+        this.assets.requireMaintenance(actor, asset);
+        matchRevision(asset, etag);
+        const blocked = await this.assets.deleteBlockReason(actor, asset, version);
+        if (blocked) fail(409, 'VERSION_DELETE_UNAVAILABLE', blocked);
+        await this.context.store.audit(actor.id, 'version.deleted', version.id, b.reason);
+        for (const feedback of await this.context.store.where(
+          'asset_feedback',
+          'fixed_version_id',
+          version.id,
+        )) {
+          await this.context.store.put('asset_feedback', {
+            ...feedback,
+            fixed_version_id: null,
+            revision: feedback.revision + 1,
+            updated_by: actor.id,
+            updated_at: now(),
+          });
+          await this.context.store.audit(
+            actor.id,
+            'asset.feedback_updated',
+            feedback.version_id,
+            b.reason,
+            { feedback_id: feedback.id, removed_fixed_version_id: version.id },
+          );
+        }
+        await this.removeUnpublishedContent(asset.id, version);
+        await this.context.store.put('assets', { ...asset, revision: asset.revision + 1 });
+        return { ok: true };
+      },
+    );
+  }
+  private async removeUnpublishedContent(assetId: string, version?: VersionRecord) {
+    const intakes = version
+      ? await this.assets.intakesForVersion(version)
+      : await this.context.store.where('intakes', 'asset_id', assetId);
+    const intakeIds = new Set(intakes.map((intake) => intake.id));
+    for (const request of await this.context.store.where(
+      'requests',
+      version ? 'version_id' : 'asset_id',
+      version?.id ?? assetId,
+    ))
+      await this.context.store.remove('requests', request.id);
+    for (const candidate of version
+      ? [version]
+      : await this.context.store.where('versions', 'asset_id', assetId)) {
+      for (const scan of await this.context.store.where('scans', 'version_id', candidate.id))
+        await this.context.store.remove('scans', scan.id);
+      await this.context.store.remove('versions', candidate.id);
+    }
+    for (const binding of await this.context.store.where('bindings', 'asset_id', assetId))
+      if (binding.last_intake_id && intakeIds.has(binding.last_intake_id)) {
+        delete binding.last_intake_id;
+        await this.context.store.put('bindings', binding);
+      }
+    for (const intake of intakes) {
+      for (const job of await this.context.store.where('jobs', 'aggregate_id', intake.id))
+        await this.context.store.remove('jobs', job.id);
+      await this.context.store.remove('intakes', intake.id);
+    }
   }
   /**
    * 要求 `asset:maintain`（否则 403/`FORBIDDEN`），仅 Skill 可改（否则 422/`NOT_SKILL`）；

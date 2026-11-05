@@ -100,6 +100,7 @@ export class AssetManagementQueryService {
                     .version_label,
                 })),
             );
+            const deleteBlockReason = await this.access.deleteBlockReason(principal, asset);
             return {
               id: asset.id,
               slug: asset.slug,
@@ -110,7 +111,8 @@ export class AssetManagementQueryService {
               source_kind: (await this.context.store.get('sources', asset.source_id))!.kind,
               lifecycle: asset.lifecycle,
               can_submit: this.access.canMaintain(principal, asset),
-              can_delete: await this.access.canDelete(principal, asset),
+              can_delete: deleteBlockReason === null,
+              delete_block_reason: deleteBlockReason,
               can_lifecycle: has(principal, 'asset:lifecycle', this.access.assetContext(asset)),
               can_view_catalog: await this.access.canViewCatalog(principal, asset),
               current_release: release ?? null,
@@ -200,25 +202,32 @@ export class AssetManagementQueryService {
    * `published` 表示该版本仍有发布记录，与 `availability` 不是同一维度。
    */
   async versions(principal: Principal, assetId: string) {
-    const asset = await this.access.getAsset(assetId);
-    if (
-      !this.access.canMaintain(principal, asset) &&
-      !has(principal, 'asset:lifecycle', this.access.assetContext(asset))
-    )
-      fail(403, 'FORBIDDEN', '无资源管理权限');
-    await this.context.store.audit(principal.id, 'asset.management_versions', asset.id);
-    return Promise.all(
-      (await this.context.store.where('versions', 'asset_id', asset.id)).map(async (version) => ({
-        version_id: version.id,
-        version_label: version.version_label,
-        availability: version.availability,
-        content_digest: version.content_digest,
-        published: !!(await this.access.latestReleaseForVersion(version)),
-        contributor: await this.intakeContributor(
-          await this.context.store.get('intakes', version.intake_id),
-        ),
-      })),
-    );
+    return this.context.store.tx(async () => {
+      const asset = await this.access.getAsset(assetId);
+      if (
+        !this.access.canMaintain(principal, asset) &&
+        !has(principal, 'asset:lifecycle', this.access.assetContext(asset))
+      )
+        fail(403, 'FORBIDDEN', '无资源管理权限');
+      await this.context.store.audit(principal.id, 'asset.management_versions', asset.id);
+      return Promise.all(
+        (await this.context.store.where('versions', 'asset_id', asset.id)).map(async (version) => {
+          const deleteBlockReason = await this.access.deleteBlockReason(principal, asset, version);
+          return {
+            version_id: version.id,
+            version_label: version.version_label,
+            availability: version.availability,
+            content_digest: version.content_digest,
+            published: !!(await this.access.latestReleaseForVersion(version)),
+            can_delete: deleteBlockReason === null,
+            delete_block_reason: deleteBlockReason,
+            contributor: await this.intakeContributor(
+              await this.context.store.get('intakes', version.intake_id),
+            ),
+          };
+        }),
+      );
+    });
   }
   /**
    * 候选版本详情：版本不存在抛 404；否则要求资源维护权限，或能审该版本对应的

@@ -33,10 +33,10 @@ import {
   managementStatusStyles,
   managementIntakeLinkStyles,
   managementIntakeStatusStyles,
+  managementVersionRowStyles,
   managementVersionMetaStyles,
   managementContributorStyles,
   managementContributorAvatarStyles,
-  historyListStyles,
 } from './styles.js';
 import { cn } from '../../shared/styles/cn.js';
 import { AssetFeedback } from './AssetFeedback.js';
@@ -439,7 +439,10 @@ function Controls({
     [path, setPath] = useState(''),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<VersionHistoryResponse | 'asset'>();
+  const confirmDelete = !!deleteTarget;
+  const deletingVersion = typeof deleteTarget === 'object' ? deleteTarget : undefined;
+  const deleteTitle = deletingVersion ? '确认删除版本' : '确认删除资源';
   const deleteRetry = useRef<{ signature: string; key: string } | null>(null);
   const { data: sources } = useQuery<SourceResponse[]>(
     action === 'migrate' ? '/api/sources' : null,
@@ -449,38 +452,42 @@ function Controls({
     if (busy) return;
     if (action === 'delete') {
       setError('');
-      setConfirmDelete(true);
+      setDeleteTarget('asset');
       return;
     }
     await execute();
   }
   function closeDelete() {
-    if (!busy) setConfirmDelete(false);
+    if (!busy) setDeleteTarget(undefined);
   }
   async function execute() {
     if (busy) return;
     setBusy(true);
     setError('');
     try {
-      if (action === 'rollback') {
-        if (!a.current_release) throw new Error('该资产尚未发布，无法回退');
-        await mutate('/api/assets/' + a.id + '/rollback-requests', {
-          target_version_id: version,
-          reason,
-          current_policy_digest: a.current_release.policy_digest,
-        });
-      } else if (action === 'delete') {
+      if (deleteTarget) {
+        if (!reason.trim()) throw new Error('请填写删除原因');
+        const path = deletingVersion
+          ? '/api/versions/' + deletingVersion.version_id
+          : '/api/assets/' + a.id;
         const body = JSON.stringify({ reason });
-        const signature = JSON.stringify([a.id, a.revision, body]);
+        const signature = JSON.stringify([path, a.revision, body]);
         if (deleteRetry.current?.signature !== signature)
           deleteRetry.current = { signature, key: browserUuid() };
-        await api('/api/assets/' + a.id, {
+        await api(path, {
           method: 'DELETE',
           body,
           headers: {
             'If-Match': `"${a.revision}"`,
             'Idempotency-Key': deleteRetry.current.key,
           },
+        });
+      } else if (action === 'rollback') {
+        if (!a.current_release) throw new Error('该资产尚未发布，无法回退');
+        await mutate('/api/assets/' + a.id + '/rollback-requests', {
+          target_version_id: version,
+          reason,
+          current_policy_digest: a.current_release.policy_digest,
         });
       } else if (action === 'revoke')
         await mutate('/api/versions/' + version + '/revoke', { reason });
@@ -536,11 +543,11 @@ function Controls({
           className={formStackStyles}
         >
           {tab === 'versions' ? (
-            <>
-              <p className={subtleStyles}>
+            <div className="min-w-0 space-y-2">
+              <p className={cn(subtleStyles, 'm-0')}>
                 当前发布：
                 <VersionLabel value={a.current_version?.version_label ?? '尚未发布'} />
-                。回退历史内容仍需人工审核。
+                {a.current_release && '。回退历史内容仍需人工审核。'}
               </p>
               {versionsError ? (
                 <ErrorState
@@ -552,13 +559,13 @@ function Controls({
               ) : !versions?.length ? (
                 <Empty title="尚无内容版本">接收校验完成后，固定快照会显示在这里。</Empty>
               ) : (
-                <div className={historyListStyles}>
+                <ul aria-label="版本记录" className="m-0 list-none divide-y divide-line p-0">
                   {versions.map((v) => (
-                    <div key={v.version_id}>
-                      <Glyph kind={a.kind} seed={v.content_digest} size={40} />
-                      <div>
+                    <li key={v.version_id} className={managementVersionRowStyles}>
+                      <Glyph kind={a.kind} seed={v.content_digest} size={32} />
+                      <div className="min-w-0">
                         <div className="flex min-w-0 items-center gap-2.5">
-                          <strong className="min-w-0 truncate">
+                          <strong className="min-w-0 truncate text-body font-semibold">
                             <VersionLabel value={v.version_label} />
                           </strong>
                           <span
@@ -591,6 +598,7 @@ function Controls({
                           </span>
                         </div>
                         <div className={managementVersionMetaStyles}>
+                          <Contributor value={v.contributor} showLabel />
                           <span
                             className={cn(monoStyles, 'inline-flex shrink-0 items-center gap-1.5')}
                             title={v.content_digest}
@@ -599,32 +607,65 @@ function Controls({
                             {v.content_digest.replace(/^sha256:/, '').slice(0, 12)}
                           </span>
                         </div>
+                        {a.can_submit && v.delete_block_reason && (
+                          <p className={cn(subtleStyles, 'm-0 mt-1 text-caption')}>
+                            {v.delete_block_reason}
+                          </p>
+                        )}
                       </div>
-                      <span className="flex min-w-0 max-w-[40%] items-center">
-                        <Contributor value={v.contributor} showLabel />
-                      </span>
-                      {a.can_submit &&
-                        a.lifecycle === 'active' &&
-                        a.current_release &&
-                        v.published &&
-                        v.availability !== 'revoked' &&
-                        v.version_id !== a.current_release.version_id && (
+                      {a.can_submit && (
+                        <div
+                          className={cn(
+                            managementActionsStyles,
+                            'justify-end max-[600px]:col-start-2 max-[600px]:justify-start',
+                          )}
+                        >
                           <button
-                            className={textBtnStyles}
+                            type="button"
+                            className={cn(
+                              textBtnStyles,
+                              dangerTextStyles,
+                              'rounded-lg disabled:text-muted-ink [&:not(:disabled):hover]:bg-danger-soft',
+                            )}
+                            disabled={!v.can_delete || busy}
+                            aria-label={'删除版本 ' + v.version_label}
+                            title={v.delete_block_reason ?? undefined}
                             onClick={() => {
-                              setVersion(v.version_id);
-                              setAction('rollback');
-                              setTab('settings');
+                              setReason('');
+                              setError('');
+                              setDeleteTarget(v);
                             }}
                           >
-                            申请回退
+                            <Trash2 size={14} aria-hidden="true" />
+                            删除版本
                           </button>
-                        )}
-                    </div>
+                          {a.lifecycle === 'active' &&
+                            a.current_release &&
+                            v.published &&
+                            v.availability !== 'revoked' &&
+                            v.version_id !== a.current_release.version_id && (
+                              <button
+                                type="button"
+                                className={cn(
+                                  textBtnStyles,
+                                  'rounded-lg [&:not(:disabled):hover]:bg-brand-soft',
+                                )}
+                                onClick={() => {
+                                  setVersion(v.version_id);
+                                  setAction('rollback');
+                                  setTab('settings');
+                                }}
+                              >
+                                申请回退
+                              </button>
+                            )}
+                        </div>
+                      )}
+                    </li>
                   ))}
-                </div>
+                </ul>
               )}
-            </>
+            </div>
           ) : tab === 'feedback' ? (
             <AssetFeedback
               assetId={a.id}
@@ -665,9 +706,9 @@ function Controls({
                     }}
                   >
                     <option value="">请选择</option>
-                    {a.can_delete && (
-                      <option value="delete" className={dangerTextStyles}>
-                        删除错误资源
+                    {a.can_submit && (
+                      <option value="delete" className={dangerTextStyles} disabled={!a.can_delete}>
+                        删除资源
                       </option>
                     )}
                     {(a.can_submit || a.can_lifecycle) && a.lifecycle === 'active' && (
@@ -686,6 +727,9 @@ function Controls({
                     )}
                   </SelectField>
                 </label>
+                {a.can_submit && a.delete_block_reason && (
+                  <p className={subtleStyles}>无法删除资源：{a.delete_block_reason}</p>
+                )}
                 {['revoke', 'rollback'].includes(action) && (
                   <label>
                     固定内容版本
@@ -756,7 +800,7 @@ function Controls({
                 {action === 'delete' && (
                   <Message>
                     将永久删除「{a.slug}
-                    」及其失败或已取消的接收记录，释放资源名称。操作不可恢复，审计记录会保留。
+                    」及其全部未发布版本、接收和审核记录，释放资源名称。操作不可恢复，审计记录会保留。
                   </Message>
                 )}
                 {action && (
@@ -790,25 +834,61 @@ function Controls({
           )}
         </div>
       </div>
-      <Overlay
-        open={confirmDelete}
-        onClose={closeDelete}
-        label="确认删除错误资源"
-        variant="palette"
-      >
-        <DialogTitle title="确认删除错误资源" onClose={closeDelete} />
+      <Overlay open={confirmDelete} onClose={closeDelete} label={deleteTitle} variant="palette">
+        <DialogTitle title={deleteTitle} onClose={closeDelete} />
         <div className="space-y-4 px-6.5 py-5.5 max-[600px]:p-[17px]">
           <p>
-            即将永久删除资源 <strong>{a.slug}</strong> 及其失败或已取消的接收记录。操作不可恢复。
+            即将永久删除{deletingVersion ? '版本' : '资源'} <strong>{a.slug}</strong>
+            {deletingVersion && (
+              <>
+                {' '}
+                · <VersionLabel value={deletingVersion.version_label} />
+              </>
+            )}
+            {deletingVersion
+              ? ' 及关联接收、扫描和审核记录。'
+              : ' 及其全部未发布版本、接收和审核记录。'}
+            操作不可恢复。
           </p>
-          <p className={subtleStyles}>删除原因：{reason}</p>
-          <Message>资源名称将释放，审计记录会保留。</Message>
+          {deletingVersion ? (
+            <label className={formStackStyles}>
+              删除原因
+              <textarea
+                required
+                maxLength={2000}
+                value={reason}
+                disabled={busy}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="说明删除此未发布版本的原因…"
+              />
+            </label>
+          ) : (
+            <p className={subtleStyles}>删除原因：{reason}</p>
+          )}
+          <Message>
+            {deletingVersion
+              ? '资源和其他版本会保留，审计记录会保留。'
+              : '资源名称将释放，审计记录会保留。'}
+          </Message>
+          {(deletingVersion || a.source_kind === 'git') && (
+            <p className={subtleStyles}>
+              {deletingVersion
+                ? '反馈记录会保留，指向此版本的修复版本关联将解除。'
+                : '将解除 Git 同步绑定。同一来源的其他待审申请将失效，需重新同步后提交审核。'}
+            </p>
+          )}
           {error && <Message error>{error}</Message>}
           <div className={formActionsStyles}>
             <button type="button" className={btnStyles} disabled={busy} onClick={closeDelete}>
               取消
             </button>
-            <Submit type="button" busy={busy} className={btnDangerStyles} onClick={execute}>
+            <Submit
+              type="button"
+              busy={busy}
+              disabled={!reason.trim()}
+              className={btnDangerStyles}
+              onClick={execute}
+            >
               <Trash2 size={16} aria-hidden="true" />
               确认永久删除
             </Submit>

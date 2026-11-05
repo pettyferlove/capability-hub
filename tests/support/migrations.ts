@@ -10,7 +10,7 @@ import {
   type RecordStoreOptions,
   type restoreStore,
 } from '@capability-hub/infrastructure/store';
-import { createTestHub, publishSkill } from './application.js';
+import { createTestHub, publishSkill, receiveSkill, submitPublication } from './application.js';
 
 /** 在隔离的部署副本里追加迁移，验证真实执行器，不改工作区或当前数据库。 */
 export async function migrationRuntime(context: TestContext, dialect: 'sqlite' | 'postgresql') {
@@ -136,5 +136,51 @@ export async function assertRecommendationMigration(
     await assert.rejects(() => store.insert('recommendations', { ...retained, id: 'duplicate' }));
   } finally {
     await store.close();
+  }
+}
+
+/** 从禁止全部删除的旧库升级，只放行已结束审核且从未发布的内容清理。 */
+export async function assertUnpublishedDeletionMigration(
+  context: TestContext,
+  runtime: Awaited<ReturnType<typeof migrationRuntime>>,
+  options: RecordStoreOptions,
+) {
+  const fixture = await createTestHub(context);
+  const published = await publishSkill(fixture);
+  const draft = await receiveSkill(fixture, { slug: 'draft' });
+  const cancelled = await submitPublication(fixture, draft);
+  await fixture.hub.publications.cancel(fixture.admin, cancelled.id, { reason: '放弃发布' }, '"1"');
+  const pending = await receiveSkill(fixture, { slug: 'pending' });
+  const request = await submitPublication(fixture, pending);
+  const snapshot = await snapshotStore(fixture.store);
+  const old = await runtime.openBefore(options, 4);
+  try {
+    await runtime.restore(old, snapshot);
+    await assert.rejects(() => old.remove('requests', cancelled.id), /immutable/);
+  } finally {
+    await old.close();
+  }
+  const upgraded = await runtime.open(options);
+  try {
+    assert.deepEqual(
+      await upgraded.get('versions', published.intake.version_id),
+      await fixture.store.get('versions', published.intake.version_id),
+    );
+    await upgraded.tx(async () => {
+      await upgraded.remove('requests', cancelled.id);
+      await upgraded.remove('scans', draft.scan_run_id);
+      await upgraded.remove('versions', draft.version_id);
+      await upgraded.remove('intakes', draft.id);
+    });
+    assert.equal(await upgraded.get('versions', draft.version_id), undefined);
+    for (const intake of [published.intake, pending]) {
+      await assert.rejects(() => upgraded.remove('versions', intake.version_id), /immutable/);
+      await assert.rejects(() => upgraded.remove('scans', intake.scan_run_id), /immutable/);
+    }
+    for (const id of [published.request.id, request.id])
+      await assert.rejects(() => upgraded.remove('requests', id), /immutable/);
+    assert.deepEqual(new Set(await upgraded.all('audit')), new Set(snapshot.audit));
+  } finally {
+    await upgraded.close();
   }
 }

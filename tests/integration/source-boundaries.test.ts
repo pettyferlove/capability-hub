@@ -5,7 +5,12 @@ import { SourceSyncService } from '@capability-hub/application';
 import type { GitRepository } from '@capability-hub/application/ports';
 import { HubError } from '@capability-hub/domain/errors';
 import { archive } from '@capability-hub/infrastructure/content';
-import { createTestHub, publishSkill, testPassword } from '../support/application.js';
+import {
+  createTestHub,
+  publishSkill,
+  submitPublication,
+  testPassword,
+} from '../support/application.js';
 import { skillDocument } from '../support/content.js';
 import { deferred } from '../support/store.js';
 
@@ -196,6 +201,90 @@ test('撤销分发的 Git 来源不能通过编辑恢复同步，旧活动状态
     (await fixture.store.get('jobs', queued.id))?.last_error_code,
     'SOURCE_CONFIG_CHANGED',
   );
+});
+
+test('删除 Git 目标更新来源修订并使其他目标的待审申请失效', async (context) => {
+  const f = await sources(context);
+  const source = await f.sources.create(
+    f.admin,
+    {
+      repository_url: 'https://127.0.0.1/team/deletion.git',
+      provider: 'generic-git',
+      branch: 'main',
+      owner_group_id: f.teamId,
+      targets: ['deleted-skill', 'remaining-skill'].map((slug) => ({
+        slug,
+        kind: 'skill',
+        path: slug,
+        category: 'uncategorized',
+        scenario_ids: [],
+        distribution: { mode: 'approved_audience', audience: ['group:' + f.teamId] },
+        applies_to: {},
+      })),
+    },
+    randomUUID(),
+  );
+  context.mock.method(f.hub.git, 'snapshot', async () => ({
+    commit: 'a'.repeat(40),
+    read: async (path: string) => [
+      { path: 'SKILL.md', bytes: skillDocument(path), executable: false },
+    ],
+    close: () => Promise.resolve(),
+  }));
+  assert.equal((await syncSource(f, source.id)).state, 'succeeded');
+  const survivor = source.targets.find((target) => target.slug === 'remaining-skill')!;
+  const [received] = await f.store.where('intakes', 'asset_id', survivor.asset_id);
+  const intake = await f.hub.intakeQueries.getDetail(f.admin, received.id);
+  assert(intake.version_id && intake.scan_run_id);
+  const request = await submitPublication(f, {
+    ...intake,
+    version_id: intake.version_id,
+    scan_run_id: intake.scan_run_id,
+  });
+  const asset = await f.hub.assetAccess.getAsset('deleted-skill');
+  await f.hub.lifecycle.deleteAsset(
+    f.admin,
+    asset.id,
+    { reason: '移除未发布目标' },
+    `"${asset.revision}"`,
+    randomUUID(),
+  );
+  const remaining = await f.sources.get(f.admin, source.id);
+  assert.equal(remaining.revision, source.revision + 1);
+  assert.equal(remaining.state, 'active');
+  assert.deepEqual(
+    remaining.targets.map((target) => target.asset_id),
+    [survivor.asset_id],
+  );
+  const stale = await f.store.get('requests', request.id);
+  assert.equal(stale?.state, 'stale');
+  assert.equal(stale?.stale_reason, 'SOURCE_CONFIG_CHANGED');
+  assert.equal(stale?.revision, request.revision + 1);
+  await assert.rejects(
+    () => f.sources.patch(f.admin, source.id, { branch: 'next' }, `"${source.revision}"`),
+    code('REVISION_CONFLICT'),
+  );
+});
+
+test('来源读取与删除目标并发时，修订号和目标列表保持同一快照', async (context) => {
+  const f = await sources(context);
+  const source = await f.create('deleted-skill', '.');
+  const asset = await f.hub.assetAccess.getAsset(source.targets[0].asset_id);
+  const [before] = await Promise.all([
+    f.sources.get(f.admin, source.id),
+    f.hub.lifecycle.deleteAsset(
+      f.admin,
+      asset.id,
+      { reason: '清理最后一个未发布目标' },
+      `"${asset.revision}"`,
+      randomUUID(),
+    ),
+  ]);
+  assert.deepEqual(before, source);
+  const after = await f.sources.get(f.admin, source.id);
+  assert.equal(after.revision, source.revision + 1);
+  assert.equal(after.state, 'paused');
+  assert.deepEqual(after.targets, []);
 });
 
 test('同一轮询周期内再次修改 Git 来源也会按新修订同步', async (context) => {

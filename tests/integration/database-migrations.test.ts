@@ -3,7 +3,19 @@ import { test } from 'node:test';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { assertRecommendationMigration, migrationRuntime } from '../support/migrations.js';
+import {
+  assertRecommendationMigration,
+  assertUnpublishedDeletionMigration,
+  migrationRuntime,
+} from '../support/migrations.js';
+
+test('SQLite 升级允许清理未发布内容，保留待审与正式发布证据', async (context) => {
+  const runtime = await migrationRuntime(context, 'sqlite');
+  await assertUnpublishedDeletionMigration(context, runtime, {
+    driver: 'sqlite',
+    path: join(runtime.directory, 'hub.sqlite'),
+  });
+});
 
 test('认证来源迁移保留已有账号与角色绑定，只放开跨来源同名', async (context) => {
   const runtime = await migrationRuntime(context, 'sqlite');

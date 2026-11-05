@@ -23,19 +23,21 @@ export class PublicationQueryService {
    * @param state - 申请状态过滤，默认 `pending`（`approved`/`rejected`/`cancelled`/`stale`）。
    */
   async listRequests(principal: Principal, state = 'pending') {
-    return await Promise.all(
-      (
-        await filterAsync(
-          await this.context.store.all('requests'),
-          async (r) =>
-            r.state === state &&
-            ((await this.assets.canReview(principal, r)) ||
-              this.assets.canMaintain(principal, await this.assets.getAsset(r.asset_id)) ||
-              r.submitted_by === principal.id),
+    return this.context.store.tx(async () =>
+      Promise.all(
+        (
+          await filterAsync(
+            await this.context.store.all('requests'),
+            async (r) =>
+              r.state === state &&
+              ((await this.assets.canReview(principal, r)) ||
+                this.assets.canMaintain(principal, await this.assets.getAsset(r.asset_id)) ||
+                r.submitted_by === principal.id),
+          )
         )
-      )
-        .sort((a, b) => a.created_at.localeCompare(b.created_at))
-        .map(async (r) => await this.describe(principal, r)),
+          .sort((a, b) => a.created_at.localeCompare(b.created_at))
+          .map(async (r) => await this.describe(principal, r)),
+      ),
     );
   }
   private async reviewContext(principal: Principal, request: PublicationRequestRecord) {
@@ -84,13 +86,15 @@ export class PublicationQueryService {
 
   /** 已结束的申请保留历史读取权限，继续执行仍须满足当前审核条件。 */
   async requireAgentAccess(principal: Principal, id: string, mode: 'execute' | 'inspect') {
-    const request = await this.context.store.get('requests', id);
-    if (!request) notFound();
-    const access = await this.reviewContext(principal, request);
-    if (!access.canUseReviewAgent) fail(403, 'FORBIDDEN', '无权访问此申请的审核简报');
-    if (mode === 'execute' && !access.canDecide)
-      fail(409, 'REVIEW_STALE', '申请已处理或审核上下文已变化');
-    return request;
+    return this.context.store.tx(async () => {
+      const request = await this.context.store.get('requests', id);
+      if (!request) notFound();
+      const access = await this.reviewContext(principal, request);
+      if (!access.canUseReviewAgent) fail(403, 'FORBIDDEN', '无权访问此申请的审核简报');
+      if (mode === 'execute' && !access.canDecide)
+        fail(409, 'REVIEW_STALE', '申请已处理或审核上下文已变化');
+      return request;
+    });
   }
 
   /** 基线、扫描和策略差异从同一申请的存储快照读取。 */
@@ -176,8 +180,10 @@ export class PublicationQueryService {
    * 因此不能靠猜 id 探测他人申请。
    */
   async getReview(principal: Principal, id: string) {
-    const request = await this.context.store.get('requests', id);
-    if (!request) notFound();
-    return await this.describe(principal, request);
+    return this.context.store.tx(async () => {
+      const request = await this.context.store.get('requests', id);
+      if (!request) notFound();
+      return await this.describe(principal, request);
+    });
   }
 }

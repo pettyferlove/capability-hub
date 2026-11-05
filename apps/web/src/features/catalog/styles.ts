@@ -455,12 +455,18 @@ export const managementIntakeStatusStyles = cn(
   "[&_[data-state='cancelled']]:bg-page",
 );
 
+export const managementVersionRowStyles = cn(
+  'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 py-3.5',
+  'max-[600px]:grid-cols-[auto_minmax(0,1fr)]',
+);
+
 export const managementVersionMetaStyles =
-  'mt-1 flex min-w-0 items-center text-caption text-muted-ink';
+  'mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-caption leading-5 text-muted-ink';
 
 export const managementContributorStyles = cn(
   'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-line bg-page py-0.5 pl-0.5 pr-2 align-middle text-caption font-medium leading-4 text-ink',
-  "[&[data-compact='true']]:py-0 [&[data-compact='true']]:pl-0 [&[data-compact='true']]:pr-1.5",
+  "[&[data-compact='true']]:border-0 [&[data-compact='true']]:bg-transparent [&[data-compact='true']]:p-0",
+  "[&[data-compact='true']]:font-normal [&[data-compact='true']]:text-muted-ink",
 );
 
 export const managementContributorAvatarStyles =

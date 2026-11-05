@@ -44,20 +44,22 @@ export class SourceService {
    * （`team` = 来源所有者团队，`source` = 来源 id），非 Git 来源或不存在 → 404。
    */
   async get(principal: Principal, id: string) {
-    const source = await this.getSourceRecord(id);
-    this.assets.requireSourceManagement(principal, source);
-    return {
-      ...source,
-      targets: await Promise.all(
-        (await this.store.all('bindings'))
-          .filter((b) => b.source_id === id && !b.retired_at)
-          .map(async (b) => ({
-            ...b,
-            slug: (await this.assets.getAsset(b.asset_id)).slug,
-            kind: (await this.assets.getAsset(b.asset_id)).kind,
-          })),
-      ),
-    };
+    return this.store.tx(async () => {
+      const source = await this.getSourceRecord(id);
+      this.assets.requireSourceManagement(principal, source);
+      return {
+        ...source,
+        targets: await Promise.all(
+          (await this.store.all('bindings'))
+            .filter((b) => b.source_id === id && !b.retired_at)
+            .map(async (b) => ({
+              ...b,
+              slug: (await this.assets.getAsset(b.asset_id)).slug,
+              kind: (await this.assets.getAsset(b.asset_id)).kind,
+            })),
+        ),
+      };
+    });
   }
   /**
    * 列出主体在 `source:manage`（`team` + `source`）范围内可见的 Git 来源，

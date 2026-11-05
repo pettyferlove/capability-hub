@@ -2,7 +2,27 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Pool } from 'pg';
 import { externalDatabase } from '../support/external.js';
-import { assertRecommendationMigration, migrationRuntime } from '../support/migrations.js';
+import {
+  assertRecommendationMigration,
+  assertUnpublishedDeletionMigration,
+  migrationRuntime,
+} from '../support/migrations.js';
+
+test('PostgreSQL 升级允许清理未发布内容，保留待审与正式发布证据', async (context) => {
+  const runtime = await migrationRuntime(context, 'postgresql');
+  const database = await externalDatabase();
+  try {
+    await assertUnpublishedDeletionMigration(context, runtime, {
+      driver: 'postgresql',
+      url: database.url,
+      onPoolError: (error) => {
+        throw error;
+      },
+    });
+  } finally {
+    await database.close();
+  }
+});
 
 test('PostgreSQL 升级按用户和资源合并历史推荐，保留首次推荐', async (context) => {
   const runtime = await migrationRuntime(context, 'postgresql');

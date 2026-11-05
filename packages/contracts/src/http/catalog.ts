@@ -84,6 +84,7 @@ export interface ManagementAssetResponse {
   current_release_id: string | null;
   can_submit: boolean;
   can_delete: boolean;
+  delete_block_reason: string | null;
   can_lifecycle: boolean;
   /** 是否能在目录里看到该资产；受限受众下可能为假。 */
   can_view_catalog: boolean;
@@ -157,6 +158,8 @@ export interface VersionHistoryResponse {
   published_at?: string;
   release_id?: string;
   published?: boolean;
+  can_delete?: boolean;
+  delete_block_reason?: string | null;
   contributor?: IntakeContributorResponse | null;
 }
 

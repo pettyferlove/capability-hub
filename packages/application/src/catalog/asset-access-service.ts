@@ -43,34 +43,85 @@ export class AssetAccessService {
   requireMaintenance(principal: Principal, asset: AssetRecord) {
     if (!this.canMaintain(principal, asset)) fail(403, 'FORBIDDEN', '无资产维护权限');
   }
-  /** 仅允许清理无内容版本、接收均失败或取消且无处理中作业的上传资产。 */
-  async canDelete(principal: Principal, asset: AssetRecord) {
+  /** 重复上传与重扫可能尚未写回 version_id，清理与处理中检查仍须覆盖这些接收。 */
+  async intakesForVersion(version: VersionRecord) {
+    const intakes = await this.store.where('intakes', 'asset_id', version.asset_id);
+    const ids = new Set([
+      version.intake_id,
+      ...intakes
+        .filter(
+          (intake) =>
+            intake.version_id === version.id ||
+            (!intake.version_id && intake.version_label === version.version_label),
+        )
+        .map((intake) => intake.id),
+    ]);
+    let size: number;
+    do {
+      size = ids.size;
+      for (const intake of intakes)
+        if (intake.rescan_of && ids.has(intake.rescan_of)) ids.add(intake.id);
+    } while (ids.size !== size);
+    return intakes.filter((intake) => ids.has(intake.id));
+  }
+  /** 删除资格按正式发布历史判定；展示与写入共用原因，写入仍须在事务中重查。 */
+  async deleteBlockReason(principal: Principal, asset: AssetRecord, version?: VersionRecord) {
+    if (!this.canMaintain(principal, asset)) return '无资源维护权限';
+    if (asset.lifecycle === 'blocked') return '资源已封禁，请先解除封禁';
     if (
-      !this.canMaintain(principal, asset) ||
-      asset.lifecycle === 'blocked' ||
-      asset.current_release_id
+      await this.store.find(
+        'releases',
+        version ? 'version_id' : 'asset_id',
+        version?.id ?? asset.id,
+      )
     )
-      return false;
+      return version
+        ? '该版本曾正式发布，只允许撤销'
+        : '资源存在正式发布历史，可单独清理未发布版本';
     const source = await this.store.get('sources', asset.source_id);
+    if (!source || source.state === 'blocked' || source.distribution_revoked_at)
+      return '来源不可用或分发授权已撤销';
+    const bindings = await this.store.where('bindings', 'asset_id', asset.id);
+    if (!version)
+      for (const binding of bindings) {
+        const boundSource = await this.store.get('sources', binding.source_id);
+        if (
+          !boundSource ||
+          !has(principal, 'source:manage', {
+            source: boundSource.id,
+            team: boundSource.owner_group_id,
+          })
+        )
+          return '删除资源及其同步绑定需要来源管理权限';
+      }
+    const requests = await this.store.where(
+      'requests',
+      version ? 'version_id' : 'asset_id',
+      version?.id ?? asset.id,
+    );
+    if (requests.some((request) => request.state === 'pending')) return '请先撤回待审核申请';
+    if (requests.some((request) => request.state === 'approved')) return '已审核发布的记录必须保留';
+    const intakes = version
+      ? await this.intakesForVersion(version)
+      : await this.store.where('intakes', 'asset_id', asset.id);
     if (
-      source?.kind !== 'upload' ||
-      source.state === 'blocked' ||
-      source.distribution_revoked_at ||
-      (await this.store.find('versions', 'asset_id', asset.id)) ||
-      (await this.store.find('bindings', 'asset_id', asset.id))
+      intakes.some((intake) => !['ready', 'failed', 'cancelled'].includes(intake.state)) ||
+      (await someAsync(
+        [
+          ...new Set([
+            source.id,
+            ...bindings.map((binding) => binding.source_id),
+            ...intakes.map((intake) => intake.id),
+          ]),
+        ],
+        async (id) =>
+          (await this.store.where('jobs', 'aggregate_id', id)).some((job) =>
+            ['queued', 'running'].includes(job.state),
+          ),
+      ))
     )
-      return false;
-    const intakes = await this.store.where('intakes', 'asset_id', asset.id);
-    if (
-      !intakes.length ||
-      intakes.some((intake) => !['failed', 'cancelled'].includes(intake.state))
-    )
-      return false;
-    return !(await someAsync(intakes, async (intake) =>
-      (await this.store.where('jobs', 'aggregate_id', intake.id)).some((job) =>
-        ['queued', 'running'].includes(job.state),
-      ),
-    ));
+      return '接收、扫描或来源同步仍在处理中，请等待结束';
+    return null;
   }
   /** 要求 `source:manage`（作用域 `{ team, source }`），与资产维护权限互不替代；不满足抛 403。 */
   requireSourceManagement(principal: Principal, s: SourceRecord) {

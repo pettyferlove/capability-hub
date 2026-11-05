@@ -110,6 +110,56 @@ test('处理反馈检查维护权限、修订冲突和同资产修复版本，�
   );
 });
 
+test('删除未发布修复版本清除反馈关联并使旧编辑失效，保留处理说明和其他反馈', async (context) => {
+  const f = await createTestHub(context);
+  const { intake } = await publishSkill(f);
+  const candidate = await receiveSkill(f, { assetId: intake.asset_id, version: '1.1.0' });
+  const feedback = await f.hub.feedback.report(f.reader, input(intake.version_id));
+  const resolution = '已增加空数据校验';
+  const resolved = await f.hub.feedback.update(f.admin, feedback.id, {
+    revision: 1,
+    status: 'resolved',
+    resolution,
+    fixed_version_id: candidate.version_id,
+  });
+  const other = await f.hub.feedback.report(f.reader, input(intake.version_id));
+  const untouched = await f.store.get('asset_feedback', other.id);
+  const asset = await f.hub.assetAccess.getAsset(intake.asset_id);
+  const reason = '放弃此修复版本';
+  await f.hub.lifecycle.deleteVersion(
+    f.admin,
+    candidate.version_id,
+    { reason },
+    `"${asset.revision}"`,
+    randomUUID(),
+  );
+  const stored = await f.store.get('asset_feedback', feedback.id);
+  assert(stored);
+  assert.equal(stored.fixed_version_id, null);
+  assert.equal(stored.revision, resolved.revision + 1);
+  assert.equal(stored.updated_by, f.admin.id);
+  assert.equal(stored.status, 'resolved');
+  assert.equal(stored.resolution, resolution);
+  assert.deepEqual(await f.store.get('asset_feedback', other.id), untouched);
+  await assert.rejects(
+    () =>
+      f.hub.feedback.update(f.admin, feedback.id, {
+        revision: resolved.revision,
+        status: 'resolved',
+        resolution,
+        fixed_version_id: candidate.version_id,
+      }),
+    code('REVISION_CONFLICT'),
+  );
+  const audit = (await f.store.where('audit', 'action', 'asset.feedback_updated')).filter(
+    (event) => event.metadata.feedback_id === feedback.id,
+  );
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].actor_id, f.admin.id);
+  assert.equal(audit[0].reason, reason);
+  assert.equal(audit[0].metadata.removed_fixed_version_id, candidate.version_id);
+});
+
 test('反馈和幂等重试重新核验受众，资产封禁后维护者仍可处理', async (context) => {
   const f = await createTestHub(context);
   const { intake } = await publishSkill(f);

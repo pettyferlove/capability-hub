@@ -4,11 +4,10 @@ import type { HttpContext } from '../context.js';
 import { idempotencyKey as key, jsonRoute as send } from '../response.js';
 
 /**
- * 资产生命周期。写操作全部透传 `If-Match`：缺失 428 `IF_MATCH_REQUIRED`、不符 412
- * `REVISION_CONFLICT`；`rollback-requests` 另带 `Idempotency-Key`，避免重复发起回滚。
- * 权限在服务层判定：`usage`/`lifecycle` 需要 `asset:lifecycle` 或维护权，`revoke` 需要
- * `version:revoke` 并要求 1–2000 字原因（写入审计），`migrate-source` 需要 `asset:migrate`
- * 且源与目标都要 `source:share`。`mcp-options` 只返回调用者可读版本的可安装项。
+ * 资产/版本删除、`usage`、`lifecycle` 和 `migrate-source` 校验资产修订号 `If-Match`：
+ * 缺失 428 `IF_MATCH_REQUIRED`、不符 412 `REVISION_CONFLICT`；`revoke` 和
+ * `rollback-requests` 不校验此请求头。删除及 `rollback-requests` 另需 `Idempotency-Key`，
+ * 权限与事务由服务层处理。
  */
 export function registerLifecycleRoutes(app: Express, { hub }: HttpContext): void {
   app.delete(
@@ -34,6 +33,18 @@ export function registerLifecycleRoutes(app: Express, { hub }: HttpContext): voi
           req.body,
           req.get('If-Match'),
         ),
+    ),
+  );
+  app.delete(
+    '/api/versions/:id',
+    send(async (req, res) =>
+      hub.lifecycle.deleteVersion(
+        res.locals.principal,
+        z.uuid().parse(req.params.id),
+        req.body,
+        req.get('If-Match'),
+        key(req),
+      ),
     ),
   );
   app.patch(

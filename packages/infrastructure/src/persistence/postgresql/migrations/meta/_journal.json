@@ -29,6 +29,13 @@
       "when": 1793609329794,
       "tag": "0003_asset_recommendations",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793842518475,
+      "tag": "0004_unpublished_deletion",
+      "breakpoints": true
     }
   ]
 }

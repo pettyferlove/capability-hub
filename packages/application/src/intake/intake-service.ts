@@ -193,7 +193,7 @@ export class IntakeService {
   /**
    * 基于已有接收的固定快照创建再扫描记录，并按规则集做幂等。
    *
-   * 事务外先做可见性/权限预检，事务内重新读取资产与来源后再一次校验；幂等 route 为
+   * 事务外先做可见性/权限预检，事务内重新读取接收、资产与来源后再一次校验；幂等 route 为
    * `rescan/<intakeId>`，摘要包含 {@link contentScanRuleset}，因此规则集升级后同 key 也
    * 不会复用旧响应。已存在同规则集且处于 `received`/`fetching`/`scanning` 的再扫描时直接
    * 返回该记录（不重复入队）；否则把规则集过期的待审请求置为 `stale`
@@ -206,12 +206,14 @@ export class IntakeService {
    * @param key - `Idempotency-Key` 头来源；缺省或超过 200 字符时 400/`IDEMPOTENCY_REQUIRED`
    */
   async rescan(principal: Principal, id: string, key: string | undefined) {
-    const old = await this.context.store.get('intakes', id);
-    if (!old) notFound();
-    const a = await this.assets.getAsset(old.asset_id);
+    const original = await this.context.store.get('intakes', id);
+    if (!original) notFound();
+    const a = await this.assets.getAsset(original.asset_id);
     this.assets.requireMaintenance(principal, a);
-    if (!old.payload_ref && !old.version_id) fail(409, 'NO_CONTENT', '没有可重新扫描的固定内容');
-    const source = (await this.context.store.get('sources', old.source_id))!;
+    if (!original.payload_ref && !original.version_id)
+      fail(409, 'NO_CONTENT', '没有可重新扫描的固定内容');
+    const source = await this.context.store.get('sources', original.source_id);
+    if (!source) notFound();
     this.context.identity.require(principal, 'source:share', {
       source: source.id,
       team: source.owner_group_id,
@@ -222,6 +224,8 @@ export class IntakeService {
       key,
       digest(canonical({ intake_id: id, ruleset: contentScanRuleset })),
       async () => {
+        const old = await this.context.store.get('intakes', id);
+        if (!old) notFound();
         const currentAsset = await this.assets.getAsset(old.asset_id);
         this.assets.requireMaintenance(principal, currentAsset);
         const currentSource = await this.context.store.get('sources', old.source_id);

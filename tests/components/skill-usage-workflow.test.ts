@@ -552,7 +552,7 @@ test('错误资源删除提供前缀图标，二次确认可取消且保留原�
   await user.click(await screen.findByRole('button', { name: '版本与管理' }));
   await user.click(screen.getByRole('tab', { name: '维护设置' }));
   await user.click(screen.getByRole('button', { name: /操作/ }));
-  const option = screen.getByRole('option', { name: '删除错误资源' });
+  const option = screen.getByRole('option', { name: '删除资源' });
   assert(option.querySelector('svg[aria-hidden="true"]'));
   await user.click(option);
   assert(screen.getByText(/将永久删除「broken-skill」.*操作不可恢复/));
@@ -561,29 +561,25 @@ test('错误资源删除提供前缀图标，二次确认可取消且保留原�
   assert.deepEqual(submitted, []);
   await user.type(screen.getByRole('textbox', { name: '操作原因' }), '资源名称填写错误');
   await user.click(screen.getByRole('button', { name: '删除资源' }));
-  const confirmation = await screen.findByRole('dialog', { name: '确认删除错误资源' });
+  const confirmation = await screen.findByRole('dialog', { name: '确认删除资源' });
   assert(within(confirmation).getByText('broken-skill'));
   assert(within(confirmation).getByText(/操作不可恢复/));
   assert(within(confirmation).getByText(/资源名称填写错误/));
   assert.deepEqual(submitted, []);
   await user.click(within(confirmation).getByRole('button', { name: '取消' }));
-  await waitFor(() =>
-    assert.equal(screen.queryByRole('dialog', { name: '确认删除错误资源' }), null),
-  );
+  await waitFor(() => assert.equal(screen.queryByRole('dialog', { name: '确认删除资源' }), null));
   assert.equal(
     screen.getByRole<HTMLTextAreaElement>('textbox', { name: '操作原因' }).value,
     '资源名称填写错误',
   );
   await user.click(screen.getByRole('button', { name: '删除资源' }));
-  await screen.findByRole('dialog', { name: '确认删除错误资源' });
+  await screen.findByRole('dialog', { name: '确认删除资源' });
   await user.keyboard('{Escape}');
-  await waitFor(() =>
-    assert.equal(screen.queryByRole('dialog', { name: '确认删除错误资源' }), null),
-  );
+  await waitFor(() => assert.equal(screen.queryByRole('dialog', { name: '确认删除资源' }), null));
   assert.deepEqual(submitted, []);
   assert(screen.getByRole('dialog', { name: '维护资产' }));
   await user.click(screen.getByRole('button', { name: '删除资源' }));
-  const finalConfirmation = await screen.findByRole('dialog', { name: '确认删除错误资源' });
+  const finalConfirmation = await screen.findByRole('dialog', { name: '确认删除资源' });
   await user.click(within(finalConfirmation).getByRole('button', { name: '确认永久删除' }));
   await waitFor(() => assert.equal(screen.queryByRole('dialog', { name: '维护资产' }), null));
   assert.deepEqual(submitted, [{ reason: '资源名称填写错误' }]);
@@ -632,16 +628,76 @@ test('删除响应丢失后再次确认可恢复成功结果，且只保留一�
   await user.click(await screen.findByRole('button', { name: '版本与管理' }));
   await user.click(screen.getByRole('tab', { name: '维护设置' }));
   await user.click(screen.getByRole('button', { name: /操作/ }));
-  await user.click(screen.getByRole('option', { name: '删除错误资源' }));
+  await user.click(screen.getByRole('option', { name: '删除资源' }));
   await user.type(screen.getByRole('textbox', { name: '操作原因' }), '资源名称填写错误');
   await user.click(screen.getByRole('button', { name: '删除资源' }));
-  const confirmation = await screen.findByRole('dialog', { name: '确认删除错误资源' });
+  const confirmation = await screen.findByRole('dialog', { name: '确认删除资源' });
   await user.click(within(confirmation).getByRole('button', { name: '确认永久删除' }));
   assert(await within(confirmation).findByText('删除响应丢失'));
   assert.equal(await f.store.get('assets', receipt.asset_id), undefined);
   await user.click(within(confirmation).getByRole('button', { name: '确认永久删除' }));
   await waitFor(() => assert(!screen.queryByRole('dialog', { name: '维护资产' })));
   assert.equal((await f.store.where('audit', 'action', 'asset.deleted')).length, 1);
+});
+
+test('版本删除显示范围并要求原因和二次确认，取消不删除，确认后保留资源和其他版本', async (context) => {
+  const f = await createTestHub(context);
+  const published = await publishSkill(f);
+  const draft = await receiveSkill(f, { assetId: published.intake.asset_id, version: '1.0.1' });
+  const pending = await receiveSkill(f, { assetId: published.intake.asset_id, version: '1.0.2' });
+  await submitPublication(f, pending);
+  const submitted: string[] = [];
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path.startsWith('/api/management/assets?'))
+      return Response.json(await f.hub.assetManagement.list(f.admin));
+    if (path === '/api/management/assets/' + draft.asset_id + '/versions')
+      return Response.json(await f.hub.assetManagement.versions(f.admin, draft.asset_id));
+    assert.equal(path, '/api/versions/' + draft.version_id);
+    assert.equal(options.method, 'DELETE');
+    const headers = new Headers(options.headers);
+    assert(headers.get('Idempotency-Key'));
+    submitted.push(path);
+    return Response.json(
+      await f.hub.lifecycle.deleteVersion(
+        f.admin,
+        draft.version_id,
+        JSON.parse(String(options.body)),
+        headers.get('If-Match') ?? undefined,
+        headers.get('Idempotency-Key') ?? undefined,
+      ),
+    );
+  });
+  const user = userEvent.setup();
+  render(page(createElement(ManagementPanel)));
+  await user.click(await screen.findByRole('button', { name: '版本与管理' }));
+  const remove = await screen.findByRole('button', { name: '删除版本 1.0.1' });
+  assert(screen.getByRole<HTMLButtonElement>('button', { name: '删除版本 1.0.0' }).disabled);
+  assert(screen.getByRole<HTMLButtonElement>('button', { name: '删除版本 1.0.2' }).disabled);
+  assert(screen.getByText('该版本曾正式发布，只允许撤销'));
+  assert(screen.getByText('请先撤回待审核申请'));
+  await user.click(remove);
+  const confirmation = await screen.findByRole('dialog', { name: '确认删除版本' });
+  assert(within(confirmation).getByText('1.0.1'));
+  assert(within(confirmation).getByText('资源和其他版本会保留，审计记录会保留。'));
+  assert(within(confirmation).getByText(/反馈记录会保留.*修复版本关联将解除/));
+  assert(
+    within(confirmation).getByRole<HTMLButtonElement>('button', { name: '确认永久删除' }).disabled,
+  );
+  await user.type(within(confirmation).getByRole('textbox', { name: '删除原因' }), '放弃这个草稿');
+  await user.click(within(confirmation).getByRole('button', { name: '取消' }));
+  await waitFor(() => assert(!screen.queryByRole('dialog', { name: '确认删除版本' })));
+  assert.deepEqual(submitted, []);
+  assert(await f.store.get('versions', draft.version_id));
+  await user.click(remove);
+  const confirmed = await screen.findByRole('dialog', { name: '确认删除版本' });
+  await user.type(within(confirmed).getByRole('textbox', { name: '删除原因' }), '放弃这个草稿');
+  await user.click(within(confirmed).getByRole('button', { name: '确认永久删除' }));
+  await waitFor(() => assert(!screen.queryByRole('dialog', { name: '维护资产' })));
+  assert.deepEqual(submitted, ['/api/versions/' + draft.version_id]);
+  assert.equal(await f.store.get('versions', draft.version_id), undefined);
+  assert(await f.store.get('assets', draft.asset_id));
+  assert(await f.store.get('versions', published.intake.version_id));
+  assert(await f.store.get('versions', pending.version_id));
 });
 
 test('目录只将维护组受众简写为团队可见，同名个人保留实际可见范围', async (context) => {
