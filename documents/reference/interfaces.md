@@ -48,14 +48,16 @@ Skill 的上传与提交审核请求均可携带布尔字段 `requires_api_key`�
 | 工具                          | 交付结果                                             |
 | ----------------------------- | ---------------------------------------------------- |
 | search_skills / search_mcp    | 可见固定版本资源及分页                               |
+| get_asset_version             | 按资源名称和版本号定位可读已发布版本及安装项         |
 | load_skill / read_skill_file  | 根正文或指定参考文件                                 |
 | install_skill                 | 固定归档的分段字节、摘要及安装材料；客户端确认后写入 |
 | get_mcp_config / activate_mcp | 客户端配置、变量及连接步骤；Hub 不实际连接目标       |
+| list_share_teams              | 有创建权限的启用团队名称与 ID，供新建 Skill 选择归属 |
 | share_skill                   | 接收 Skill 并进入静态扫描和网页审核流程              |
 | report_asset_feedback         | 上报固定版本的问题或建议，返回编号、状态与详情链接   |
 | rate_asset                    | 按 asset_id 推荐或取消推荐资源                       |
 
-hub:read 不注册贡献工具。hub:contribute 的分享操作需要创建或维护权限，推荐要求当前发布可读，反馈要求指定版本可读。工具调用重新解析当前身份。客户端配置与变量格式见 [Agent 客户端接入](agent-clients.md)。runtime_client_verification 为 false。install_skill 可通过 client 选择建议技能目录。
+hub:read 不注册贡献工具。hub:contribute 的分享操作需要创建或维护权限，推荐要求当前发布可读，反馈要求指定版本可读。工具调用重新解析当前身份，读取只交付可读已发布内容。发布审核、资源删除撤销、权限及共享凭据变更使用网页入口。客户端配置与变量格式见 [Agent 客户端接入](agent-clients.md)。
 
 远程 MCP 服务地址禁止内嵌账号密码，公网建议使用 HTTPS。API Key 和团队 Bearer Token 可由使用者自备或由 Hub 共享。录入、替换共享凭据须再次确认。已登录且可读该版本的用户可从安装配置中复制原值，公开版本对所有登录用户开放。共享值单独提交、加密保存，写入须传 `confirm_sharing: true`。维护接口 `GET/PUT /api/management/assets/:id/mcp-keys` 按地址、头名及认证方式区分绑定，Bearer 使用 `scheme: "bearer"`。写操作需要 If-Match 和 Idempotency-Key。
 

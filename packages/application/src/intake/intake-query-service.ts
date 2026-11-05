@@ -5,6 +5,7 @@ import type { IntakeListQuery, IntakeStatus } from './commands.js';
 import type { IntakeRecord } from '@capability-hub/domain/models';
 import { contentScanRuleset } from '@capability-hub/domain/content';
 import { fail, notFound } from '@capability-hub/domain/errors';
+import { has } from '@capability-hub/domain/rbac';
 import { toVersionSnapshot } from '../catalog/catalog-mapper.js';
 import { toIntakeDetails } from './intake-mapper.js';
 import { createVersionPlan } from './version-plan.js';
@@ -22,6 +23,12 @@ export class IntakeQueryService {
     private readonly context: ApplicationContext,
     private readonly assets: AssetAccessService,
   ) {}
+  /** 归属候选按创建权限筛选，团队成员关系不等于创建权限。 */
+  async shareTeams(principal: Principal) {
+    return (await this.context.store.all('groups'))
+      .filter((group) => group.active && has(principal, 'asset:create', { team: group.id }))
+      .map(({ id, name }) => ({ id, name }));
+  }
   /**
    * 依据当前发布版本与未结束的接收，给出下一个版本号建议与已占用版本。
    *

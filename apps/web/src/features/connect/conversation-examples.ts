@@ -118,6 +118,12 @@ export const conversationExamples: {
       { kind: 'user', text: '把刚才整理的接口审查经验分享给研发团队，也推荐这次用的审查 Skill。' },
       { kind: 'agent', text: '整理好了 api-review-guide，包含鉴权、错误码和兼容性检查清单。' },
       {
+        kind: 'tool',
+        name: 'list_share_teams',
+        input: '查询可分享的团队',
+        result: '研发团队',
+      },
+      {
         kind: 'confirmation',
         title: '提交经验文件',
         text: '向研发团队提交 api-review-guide v1.0.0，并推荐 api-review-checklist？',

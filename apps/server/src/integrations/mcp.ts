@@ -4,6 +4,7 @@ import {
   catalogSearchQuerySchema,
   hubClientSkillPath,
   assetRecommendationRequestSchema,
+  assetSlugSchema,
 } from '@capability-hub/contracts';
 import type { TokenRecord } from '@capability-hub/domain/models';
 import { fail, HubError } from '@capability-hub/domain/errors';
@@ -24,7 +25,7 @@ import {
 const search = {
   query: z.string().max(500),
   scenario_id: z.string().optional(),
-  cursor: z.string().optional(),
+  cursor: catalogSearchQuerySchema.shape.cursor,
   limit: z.number().int().min(1).max(50).default(20),
 };
 
@@ -48,8 +49,9 @@ export function createMcp(
             `邀请同事接入 Hub 时，原样转交公开接口 ${hub.config.publicUrl}/api/hub-share 返回的 prompt。`,
             scope === 'hub:read'
               ? `当前连接可搜索和使用资源。提交本地 Skill、推荐或取消推荐资源、上报版本反馈时，请从当前客户端重新申请贡献权限，授权后刷新工具列表。可在 ${hub.config.publicUrl}/connect?permission=contribute 获取接入指令。不要索取访问令牌。`
-              : '当前连接支持搜索、使用与贡献，操作受账号权限约束。提交 Skill 前取得用户授权，发布仍需独立审核。',
+              : '当前连接支持搜索、使用与贡献，操作受账号权限约束。提交 Skill 前取得用户授权，新建前先调用 list_share_teams 选择归属团队，发布仍需独立审核。',
             `当次使用 Skill 可搜索并加载正文。需要安装、接入目标 MCP 或贡献资源时，可阅读官方使用指南 ${hub.config.publicUrl}${hubClientSkillPath}`,
+            '发布审核、资源删除或撤销、权限和共享密钥变更须在 Hub 网页完成。MCP 读取工具只交付已发布且当前可读的内容。',
             publishedSkillUrl
               ? `如需安装该指南，使用本实例已审核的固定版本 ${publishedSkillUrl}`
               : `如需安装该指南，按 ${hub.config.publicUrl}/INSTALL.md 校验并安装随附完整包，保留全部附属文件。`,
@@ -127,8 +129,26 @@ export function createMcp(
         async ({ _principal, ...b }) => await deliverSkill(hub, _principal, b),
       );
       register(
+        'get_asset_version',
+        '按资源 asset_id 或 slug 与 version_label 解析 Skill/MCP 固定版本；仅返回已发布且当前可读的版本。用 release.version_id 继续读取或安装；MCP 安装项见 installation_options。适用于用户给出的固定版本链接，不会改用最新版本或读取候选内容。',
+        z
+          .object({
+            asset_id: z.uuid().or(assetSlugSchema).describe('资源 asset_id 或 slug'),
+            version_label: z.string().min(1).max(128),
+          })
+          .strict(),
+        async ({ _principal, asset_id, version_label }) =>
+          await hub.catalog.getVersion(_principal, asset_id, version_label),
+      );
+      register(
+        'list_share_teams',
+        '查询当前账号可新建 Skill 的启用团队，返回 teams 中的 id 和 name；只读。新建 share_skill 前按用户意图选择团队，将 id 填入 destination.owner_group_id。多个候选归属不明时让用户选择团队，禁止猜测 ID；空列表请管理员确认团队及创建权限。',
+        z.object({}).strict(),
+        async ({ _principal }) => ({ teams: await hub.intakeQueries.shareTeams(_principal) }),
+      );
+      register(
         'share_skill',
-        '将用户选择的 Skill 文件提交扫描，支持 UTF-8 与 Base64；需要连接的贡献权限和账号的资产维护权限，发布仍需独立审核',
+        '将用户选择的 Skill 文件提交扫描，支持 UTF-8 与 Base64；新建时先调用 list_share_teams 获取 owner_group_id；更新已有上传 Skill 时 destination.asset_id 可填 UUID 或 slug。需要连接的贡献权限，以及目标团队的创建权限或已有资产的维护权限；扫描结果与发布审核在网页查看和处理。',
         skillSharingInput,
         async ({ _principal, ...b }) => await shareSkill(hub, _principal, b),
         true,
@@ -168,7 +188,7 @@ export function createMcp(
       );
       register(
         'read_skill_file',
-        '读取固定版本清单中的文件，按 UTF-8 字符边界分页',
+        '分页读取已发布且可读的固定版本文件：文本按 UTF-8 字符边界返回 text，二进制返回 Base64 data；truncated 为 true 时以 next_offset 续读，不执行内容',
         z
           .object({
             version_id: z.uuid(),
@@ -182,19 +202,26 @@ export function createMcp(
           if ((await hub.assetAccess.getAsset(v.asset_id)).kind !== 'skill')
             fail(422, 'NOT_SKILL', '需要 Skill 版本');
           const { bytes, file } = await hub.content.getFile(_principal, version_id, path);
+          if (offset > bytes.length) fail(422, 'INVALID_OFFSET', '偏移超过文件长度');
           let text: string;
           try {
             text = new TextDecoder('utf8', { fatal: true }).decode(bytes);
             if (text.includes('\0')) throw new Error();
           } catch {
+            const end = Math.min(bytes.length, offset + max_bytes);
             return {
+              version_id,
               path,
               sha256: file.sha256,
               binary: true,
+              encoding: 'base64',
+              data: bytes.subarray(offset, end).toString('base64'),
+              truncated: end < bytes.length,
+              next_offset: end,
               download_url: `${hub.config.publicUrl}/api/versions/${version_id}/files?path=${encodeURIComponent(path)}`,
             };
           }
-          if (offset > bytes.length || (offset < bytes.length && (bytes[offset] & 0xc0) === 0x80))
+          if (offset < bytes.length && (bytes[offset] & 0xc0) === 0x80)
             fail(422, 'INVALID_OFFSET', '偏移必须位于 UTF-8 字符边界');
           let end = Math.min(bytes.length, offset + max_bytes);
           while (end > offset && end < bytes.length && (bytes[end] & 0xc0) === 0x80) end--;
@@ -226,8 +253,8 @@ export function createMcp(
         z
           .object({
             ...search,
-            languages: z.array(z.string().min(1)).max(20).optional(),
-            frameworks: z.array(z.string().min(1)).max(20).optional(),
+            languages: z.array(z.string().min(1).max(128)).max(20).optional(),
+            frameworks: z.array(z.string().min(1).max(128)).max(20).optional(),
           })
           .strict(),
         async ({ _principal, query, ...rest }) =>

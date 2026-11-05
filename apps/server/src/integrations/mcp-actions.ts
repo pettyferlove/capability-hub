@@ -3,9 +3,10 @@ import { archive } from '@capability-hub/infrastructure/content';
 import {
   agentClientSchema,
   agentClients,
+  assetSlugSchema,
   uploadIntakeRequestSchema,
 } from '@capability-hub/contracts';
-import { fail } from '@capability-hub/domain/errors';
+import { fail, notFound } from '@capability-hub/domain/errors';
 import { safePath } from '@capability-hub/domain/paths';
 import { z } from 'zod';
 import type { HubServices } from '../bootstrap/hub-services.js';
@@ -36,7 +37,7 @@ export const skillInstallationInput = z
 
 /**
  * 分享内容的入参：`files` 1–100 个、单文件 ≤512 KiB，`idempotency_key` 必填以避免客户端重试
- * 产生重复版本；`target: new` 需指定归属组，`existing` 需指定资产 id，两者互斥。
+ * 产生重复版本；`target: new` 需指定归属组，`existing` 需指定资产 id 或 slug，两者互斥。
  */
 export const skillSharingInput = z
   .object({
@@ -44,19 +45,24 @@ export const skillSharingInput = z
       z
         .object({
           target: z.literal('new'),
-          slug: z.string().min(1).max(64),
-          owner_group_id: z.uuid(),
+          slug: assetSlugSchema,
+          owner_group_id: z.uuid().describe('从 list_share_teams 返回的 teams 中选择团队 id'),
         })
         .strict(),
-      z.object({ target: z.literal('existing'), asset_id: z.uuid() }).strict(),
+      z
+        .object({
+          target: z.literal('existing'),
+          asset_id: z.uuid().or(assetSlugSchema).describe('已有上传 Skill 的 asset_id 或 slug'),
+        })
+        .strict(),
     ]),
-    version_label: z.string().min(1).max(128),
+    version_label: uploadIntakeRequestSchema.options[0].shape.version_label,
     files: z
       .array(
         z
           .object({
             path: z.string().min(1).max(240),
-            content: z.string().max(524288),
+            content: z.string().max(Math.ceil((512 * 1024) / 3) * 4),
             encoding: z.enum(['utf8', 'base64']).default('utf8'),
             executable: z.boolean().default(false),
           })
@@ -131,16 +137,19 @@ export async function shareSkill(
   principal: Principal,
   input: z.output<typeof skillSharingInput>,
 ) {
+  let destination = input.destination;
+  if (destination.target === 'existing') {
+    const asset = await hub.assetAccess.getAsset(destination.asset_id);
+    // 名称可枚举，不能用错误差异暴露未发布资源。
+    if (!hub.assetAccess.canMaintain(principal, asset)) notFound();
+    if (asset.kind !== 'skill') fail(422, 'NOT_SKILL', '分享目标必须是 Skill');
+    destination = { target: 'existing', asset_id: asset.id };
+  }
   const metadata = uploadIntakeRequestSchema.parse({
-    ...input.destination,
+    ...destination,
     version_label: input.version_label,
-    ...(input.destination.target === 'new' ? { kind: 'skill' } : {}),
+    ...(destination.target === 'new' ? { kind: 'skill' } : {}),
   });
-  if (
-    metadata.target === 'existing' &&
-    (await hub.assetAccess.getAsset(metadata.asset_id)).kind !== 'skill'
-  )
-    fail(422, 'NOT_SKILL', '分享目标必须是 Skill');
   const paths = new Set<string>();
   let total = 0;
   const files = input.files.map((file) => {

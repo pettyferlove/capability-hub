@@ -14,6 +14,8 @@ import {
   ShieldCheck,
   ThumbsUp,
   MessageSquare,
+  Users,
+  History,
   type IconComponent,
 } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
@@ -26,12 +28,14 @@ import {
 
 const icons: Record<(typeof hubTools)[number]['name'], IconComponent> = {
   search_skills: Search,
+  get_asset_version: History,
   load_skill: FileText,
   read_skill_file: FolderOpen,
   search_mcp: Search,
   activate_mcp: Plug,
   get_mcp_config: Settings2,
   install_skill: PackagePlus,
+  list_share_teams: Users,
   share_skill: Share2,
   rate_asset: ThumbsUp,
   report_asset_feedback: MessageSquare,

@@ -7,6 +7,12 @@ export const hubTools = [
     action: 'read',
   },
   {
+    name: 'get_asset_version',
+    title: '定位指定版本',
+    description: '按资源名称和版本号取得可读的已发布版本，继续读取或安装。',
+    action: 'read',
+  },
+  {
     name: 'load_skill',
     title: '加载经验与方法',
     description: '读取 SKILL.md 正文、文件清单和摘要。',
@@ -41,6 +47,12 @@ export const hubTools = [
     title: '安装完整 Skill',
     description: '交付固定版本完整文件与校验信息，由 Agent 确认位置后写入。',
     action: 'client',
+  },
+  {
+    name: 'list_share_teams',
+    title: '查找可分享的团队',
+    description: '查询有资源创建权限的启用团队，取得分享所需的团队名称与 ID。',
+    action: 'read',
   },
   {
     name: 'share_skill',

@@ -81,7 +81,7 @@ for (const version of ['2025-03-26', '2025-06-18', '2025-11-25']) {
     const listed = await rpcResult(await post('tools/list'));
     assert(Array.isArray(listed.tools));
     const names = listed.tools.map((tool: unknown) => object(tool).name);
-    assert.equal(names.length, 7);
+    assert.equal(names.length, 9);
     assert(names.includes('load_skill'));
     assert(!names.includes('share_skill'));
     const loaded = await rpcResult(
@@ -94,6 +94,13 @@ for (const version of ['2025-03-26', '2025-06-18', '2025-11-25']) {
     assert(Array.isArray(loaded.content));
     const content = object(JSON.parse(String(object(loaded.content[0]).text)));
     assert.match(String(content.body), /# 工程实践/);
+    const pinned = await rpcResult(
+      await post('tools/call', {
+        name: 'get_asset_version',
+        arguments: { asset_id: 'sample-skill', version_label: '1.0.0' },
+      }),
+    );
+    assert.equal(object(object(pinned.structuredContent).release).version_id, intake.version_id);
 
     const denied = await rpcMessage(
       await post('tools/call', {
@@ -112,7 +119,12 @@ for (const version of ['2025-03-26', '2025-06-18', '2025-11-25']) {
       await post('tools/list', {}, { bearer: contributor.token }),
     );
     assert(Array.isArray(contributed.tools));
-    assert.equal(contributed.tools.length, 10);
+    assert.equal(contributed.tools.length, 12);
+    const teams = await rpcResult(
+      await post('tools/call', { name: 'list_share_teams', arguments: {} }),
+    );
+    assert.equal(teams.isError, undefined);
+    assert.deepEqual(teams.structuredContent, { teams: [] });
 
     await fixture.hub.tokens.revoke(fixture.reader.id, sha256(token.token));
     const revoked = await post('tools/list');

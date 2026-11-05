@@ -172,6 +172,17 @@ test('接入助手子进程完成浏览器授权回调、私有保存、合并�
     });
     assert.equal(result.isError, undefined);
     assert(JSON.stringify(result).includes('sample-skill'));
+    const pinned = await client.callTool({
+      name: 'get_asset_version',
+      arguments: { asset_id: 'sample-skill', version_label: '1.0.0' },
+    });
+    assert.equal(pinned.isError, undefined);
+    assert(
+      pinned.structuredContent &&
+        typeof pinned.structuredContent === 'object' &&
+        'slug' in pinned.structuredContent,
+    );
+    assert.equal(pinned.structuredContent.slug, 'sample-skill');
     const refreshed = (await loadPrivateJson(path)) as Record<string, unknown>;
     await savePrivateJson(path, { ...refreshed, client_id: 'another-authorization' });
     await assert.rejects(connectionToken(path, fixture.origin, saved.client_id), /重新加载/);

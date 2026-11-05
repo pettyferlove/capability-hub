@@ -3,7 +3,7 @@ import type { CatalogSearchQuery, KeywordSuggestionsQuery } from './queries.js';
 import type { AssetRecord, ReleaseRecord, VersionRecord } from '@capability-hub/domain/models';
 import { filterAsync } from '@capability-hub/domain/async';
 import { canonical, digest, sha256 } from '@capability-hub/domain/canonical';
-import { fail } from '@capability-hub/domain/errors';
+import { fail, notFound } from '@capability-hub/domain/errors';
 import { has } from '@capability-hub/domain/rbac';
 import type { CatalogCursorCodec } from '../ports/index.js';
 import type { ApplicationContext } from '../shared/application-context.js';
@@ -442,6 +442,21 @@ export class CatalogService {
   async getDetail(p: Principal | null, id: string) {
     const { asset, version, release } = await this.access.requirePublishedAsset(p, id);
     return await this.describeAsset(asset, version, release, p);
+  }
+
+  /** 固定版本仍须同时满足当前与历史发布受众；维护权限不能用于读取未发布内容。 */
+  async getVersion(p: Principal | null, id: string, label: string) {
+    return this.context.store.tx(async () => {
+      const asset = await this.access.getAsset(id);
+      const candidate = (await this.context.store.where('versions', 'asset_id', asset.id)).find(
+        (version) => version.version_label === label,
+      );
+      if (!candidate) notFound();
+      const version = await this.access.requireReadableVersion(p, candidate.id);
+      const release = await this.access.latestReleaseForVersion(version);
+      const { current_release, ...detail } = await this.describeAsset(asset, version, release, p);
+      return { ...detail, release: current_release };
+    });
   }
 
   /**

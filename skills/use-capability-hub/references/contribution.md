@@ -5,7 +5,7 @@
 ## 把本地 Skill 分享给团队
 
 1. 确定 `version_label` 和清单，只提交用户选定目录的文件，包含根目录 `SKILL.md` 和全部引用的附属资料，排除凭据和私人记录。超过 100 个文件或解码后总量超过 512 KiB 时改走网页 ZIP 上传。
-2. 用 `share_skill` 新建时，`destination` 取 `target: new`、`slug` 和 `owner_group_id`。归属不明确就到发布页选择。更新已有上传资产则取 `target: existing` 和 `asset_id`。Git 来源的资产从登记来源同步。
+2. 新建前调用 `list_share_teams`，按用户意图选团队，将返回的 `id` 填入 `share_skill` 的 `destination.owner_group_id`，并填 `target: new` 和 `slug`。多个候选归属不明时让用户选名称，禁止猜 ID；空列表请管理员确认团队及创建权限。更新上传资产用 `target: existing`，`asset_id` 可填 UUID 或已知 slug；Git 资产从登记来源同步。
 3. 返回 `submitted_for_scanning` 时报告“已提交扫描”，给出 `publication_url` 供用户选择受众并提交独立审核。
 
 ## 推荐资源或上报版本反馈
