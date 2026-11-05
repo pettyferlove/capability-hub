@@ -152,6 +152,63 @@ test('维护分页拒绝无效页码、页大小、状态和未知查询参数',
     await client.get('/api/management/assets?' + query).expect(422);
 });
 
+test('管理列表显示最近上传人，各版本保留原上传人且重扫不改变归属', async (context) => {
+  const f = await createTestHub(context);
+  const first = await receiveSkill(f);
+  const maintainer = await f.store.find('roles', 'key', 'maintainer');
+  assert(maintainer);
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reviewer.id,
+    role_id: maintainer.id,
+    scope_type: 'asset',
+    scope_id: first.asset_id,
+  });
+  const uploader = await f.hub.identity.principal(f.reviewer.id);
+  const next = await receiveSkill(
+    { ...f, admin: uploader },
+    { assetId: first.asset_id, version: '1.0.1' },
+  );
+  const rescan = await f.hub.intakes.rescan(f.admin, next.id, randomUUID());
+  await f.worker.tick();
+  assert.equal((await f.store.get('intakes', rescan.intake_id))?.state, 'ready');
+  assert.equal((await f.hub.assetManagement.list(f.reader)).total, 0);
+  await assert.rejects(
+    () => f.hub.assetManagement.versions(f.reader, first.asset_id),
+    errorCode('FORBIDDEN'),
+  );
+  const lifecycle = await f.hub.administration.createRole(f.admin, {
+    name: '资源处置',
+    permissions: ['asset:lifecycle'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: lifecycle.id,
+    scope_type: 'asset',
+    scope_id: first.asset_id,
+  });
+  const manager = await f.hub.identity.principal(f.reader.id);
+  const contribution = {
+    source_kind: 'upload',
+    actor: { kind: 'user', name: uploader.display_name, username: uploader.username },
+  };
+  for (const principal of [f.admin, manager]) {
+    const list = await f.hub.assetManagement.list(principal);
+    assert.deepEqual(list.items[0].latest_contributor, contribution);
+    const versions = await f.hub.assetManagement.versions(principal, first.asset_id);
+    assert.deepEqual(
+      versions.find((v) => v.version_id === next.version_id)?.contributor,
+      contribution,
+    );
+    assert.deepEqual(versions.find((v) => v.version_id === first.version_id)?.contributor, {
+      source_kind: 'upload',
+      actor: { kind: 'user', name: f.admin.display_name, username: f.admin.username },
+    });
+  }
+  const managed = (await f.hub.assetManagement.list(manager)).items[0];
+  assert.equal(managed.latest_intake, null);
+  assert.deepEqual(managed.pending_requests, []);
+});
+
 for (const target of ['assets', 'intakes'] as const)
   test(`删除错误资源与 ${target} 列表读取并发时，列表仍返回完整快照`, async (context) => {
     const f = await createTestHub(context);

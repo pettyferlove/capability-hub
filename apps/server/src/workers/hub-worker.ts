@@ -210,6 +210,7 @@ export class HubWorker {
             owner,
             s.id,
             `poll-${s.revision}-${Math.floor(Date.now() / 300000)}`,
+            true,
           );
         } catch (error) {
           this.hub.logs.logger.warn({ event: 'source.poll_failed', source_id: s.id, err: error });

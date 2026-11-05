@@ -223,6 +223,43 @@ test('同一轮询周期内再次修改 Git 来源也会按新修订同步', asy
   }
 });
 
+test('Git 贡献者区分人工同步和系统轮询，后续同步不改写已有版本的发起人', async (context) => {
+  const f = await sources(context);
+  const source = await f.create('attributed-skill', '.');
+  let commit = 'a'.repeat(40);
+  context.mock.method(f.hub.git, 'snapshot', async () => ({
+    commit,
+    read: async () => [
+      { path: 'SKILL.md', bytes: skillDocument('attributed-skill', commit), executable: false },
+    ],
+    close: () => Promise.resolve(),
+  }));
+  const manual = await syncSource(f, source.id);
+  assert.equal(manual.state, 'succeeded');
+  const firstVersionId = manual.result?.targets[0].version_id;
+  assert(firstVersionId);
+  const person = {
+    source_kind: 'git',
+    actor: { kind: 'user', name: f.admin.display_name, username: f.admin.username },
+  };
+  assert.deepEqual((await f.hub.assetManagement.list(f.admin)).items[0].latest_contributor, person);
+  commit = 'b'.repeat(40);
+  const current = await f.store.get('sources', source.id);
+  assert(current?.kind === 'git');
+  await f.store.put('sources', { ...current, next_poll_at: 0 });
+  await f.worker.tick();
+  const system = { source_kind: 'git', actor: { kind: 'system', name: '系统任务' } };
+  assert.deepEqual((await f.hub.assetManagement.list(f.admin)).items[0].latest_contributor, system);
+  const versions = await f.hub.assetManagement.versions(f.admin, source.targets[0].asset_id);
+  assert.equal(versions.length, 2);
+  assert.deepEqual(versions.find((v) => v.version_id === firstVersionId)?.contributor, person);
+  assert.deepEqual(versions.find((v) => v.version_id !== firstVersionId)?.contributor, system);
+  const events = (await f.store.all('audit')).filter(
+    (event) => event.action === 'source.sync_requested',
+  );
+  assert.deepEqual(events.map((event) => event.actor_id).sort(), [f.admin.id, 'system'].sort());
+});
+
 for (const stage of ['读取目标', '保存扫描快照'] as const) {
   test(`Git ${stage}期间轮换凭据会阻止创建版本，同一提交可用新凭据重新接收`, async (context) => {
     const fixture = await sources(context);

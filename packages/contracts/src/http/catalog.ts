@@ -1,4 +1,5 @@
 import type { Applicability, ContentMetadata, InstallationOption, Manifest } from '../content.js';
+import type { AuditActorSnapshot } from '../audit.js';
 import type { ReleaseResponse } from './publication.js';
 import type { Policy } from '../policy.js';
 
@@ -63,6 +64,12 @@ export interface AssetResponse {
   replacement_asset_id?: string | null;
 }
 
+/** 仅管理侧返回原始上传或同步的发起人，重扫不改变版本归属。 */
+export interface IntakeContributorResponse {
+  source_kind: 'upload' | 'git';
+  actor: AuditActorSnapshot;
+}
+
 /** 管理端资产条目，出现在资产管理与导入页；比目录条目多出审核状态与当前发布链路。 */
 export interface ManagementAssetResponse {
   id: string;
@@ -82,6 +89,7 @@ export interface ManagementAssetResponse {
   can_view_catalog: boolean;
   current_release: ReleaseResponse | null;
   current_version: Pick<VersionSnapshotResponse, 'version_label' | 'content_digest'> | null;
+  latest_contributor: IntakeContributorResponse | null;
   latest_intake: { id: string; version_label: string; state: string } | null;
   pending_requests: { id: string; version_label: string }[];
 }
@@ -149,6 +157,7 @@ export interface VersionHistoryResponse {
   published_at?: string;
   release_id?: string;
   published?: boolean;
+  contributor?: IntakeContributorResponse | null;
 }
 
 /** 版本快照，出现在资产详情、审核候选与导入详情；`manifest` 与 `metadata` 来自接收时的冻结结果。 */

@@ -454,7 +454,11 @@ const schemas = {
     z.strictObject({
       ...jobBase,
       kind: z.literal('source_sync'),
-      input: z.strictObject({ requested_by: id, source_revision: revision }),
+      input: z.strictObject({
+        requested_by: id,
+        source_revision: revision,
+        scheduled: z.boolean().optional(),
+      }),
     }),
   ]),
   audit: z.strictObject({

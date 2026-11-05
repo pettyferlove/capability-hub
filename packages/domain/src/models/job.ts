@@ -9,7 +9,7 @@ export interface JobInputMap {
   ai_execution: { execution_id: string };
   intake: Record<string, never>;
   rescan: { version_id: string };
-  source_sync: { requested_by: string; source_revision: number };
+  source_sync: { requested_by: string; source_revision: number; scheduled?: boolean };
 }
 
 /**

@@ -6,6 +6,7 @@
 import { VersionLabel } from '../../shared/components/VersionLabel.js';
 import { shortVersion } from '../../shared/format/version-label.js';
 import { Glyph } from '../../shared/components/Glyph.js';
+import { UserAvatar } from '../../shared/components/UserAvatar.js';
 import { PageTabs } from '../../shared/components/PageTabs.js';
 import { InputField } from '../../shared/components/InputField.js';
 import { intakeStatusIcons, managementIcons } from '../../shared/components/select-icons.js';
@@ -22,11 +23,17 @@ import {
   formActionsStyles,
   textBtnStyles,
   sheetScrollStyles,
+  tagStyles,
+  tagTealStyles,
+  tagRedStyles,
 } from '../../shared/styles/recipes.js';
 import {
   managementTableStyles,
   managementActionsStyles,
   managementStatusStyles,
+  managementVersionMetaStyles,
+  managementContributorStyles,
+  managementContributorAvatarStyles,
   historyListStyles,
 } from './styles.js';
 import { cn } from '../../shared/styles/cn.js';
@@ -39,6 +46,7 @@ import type {
   ManagementAssetListResponse,
   SourceResponse,
   VersionHistoryResponse,
+  IntakeContributorResponse,
 } from '@capability-hub/contracts/http';
 import {
   ArrowRight,
@@ -48,6 +56,12 @@ import {
   Trash2,
   CircleDashed,
   CircleHelp,
+  Bot,
+  UserRound,
+  Fingerprint,
+  CheckCircle2,
+  History,
+  Ban,
   type IconComponent,
 } from '../../shared/icons/lucide.js';
 import { browserUuid } from '@capability-hub/logging/browser';
@@ -84,6 +98,54 @@ function ManagementStatus({ state, label }: { state: string; label?: string }) {
       <Icon size={13} aria-hidden="true" />
       {label ??
         (state === 'unreleased' ? '尚未发布' : state === 'blocked' ? '已封禁' : stateLabel(state))}
+    </span>
+  );
+}
+
+function Contributor({
+  value,
+  showLabel = false,
+}: {
+  value?: IntakeContributorResponse | null;
+  showLabel?: boolean;
+}) {
+  if (!value)
+    return (
+      <span className="block min-w-0 truncate" title="暂无上传或同步记录">
+        暂无记录
+      </span>
+    );
+  const label =
+    value.source_kind === 'git'
+      ? value.actor.kind === 'system'
+        ? '同步'
+        : '同步发起人'
+      : '上传人';
+  const identity =
+    value.actor.name +
+    (value.actor.username && value.actor.username !== value.actor.name
+      ? `（@${value.actor.username}）`
+      : '');
+  const description = `${label}：${identity}`;
+  const SourceIcon = value.source_kind === 'git' ? GitBranch : UploadCloud;
+  const AvatarIcon =
+    value.actor.kind === 'system' ? Bot : value.actor.kind === 'unknown' ? CircleHelp : UserRound;
+  return (
+    <span className={managementContributorStyles} data-compact={showLabel}>
+      {value.actor.kind === 'user' && value.actor.username ? (
+        <UserAvatar identity={value.actor.username} size={showLabel ? 16 : 22} />
+      ) : (
+        <span
+          className={cn(managementContributorAvatarStyles, showLabel ? 'size-4' : 'size-5.5')}
+          aria-hidden="true"
+        >
+          <AvatarIcon size={12} />
+        </span>
+      )}
+      <span className="min-w-0 truncate" title={description}>
+        {showLabel ? description : identity}
+      </span>
+      <SourceIcon size={12} className="shrink-0 text-muted-ink" aria-hidden="true" />
     </span>
   );
 }
@@ -163,7 +225,7 @@ export default function ManagementPanel() {
         {error ? (
           <ErrorState message={error} retry={reload} />
         ) : loading && !data ? (
-          <TableSkeleton label="正在加载可维护资产…" rows={5} columns={4} paginated stackOnMobile />
+          <TableSkeleton label="正在加载可维护资产…" rows={5} columns={5} paginated stackOnMobile />
         ) : !data?.items.length ? (
           <Empty title={filtered ? '没有匹配的资产' : '没有可维护的资产'}>
             {filtered
@@ -179,6 +241,7 @@ export default function ManagementPanel() {
                     <th scope="col">资源</th>
                     <th scope="col">当前发布</th>
                     <th scope="col">最近接收</th>
+                    <th scope="col">最近上传 / 同步</th>
                     <th scope="col">操作</th>
                   </tr>
                 </thead>
@@ -193,11 +256,13 @@ export default function ManagementPanel() {
                             size={32}
                           />
                           <div className="min-w-0 space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <strong className={monoStyles}>{a.slug}</strong>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <strong className={cn(monoStyles, 'min-w-0 truncate')} title={a.slug}>
+                                {a.slug}
+                              </strong>
                               <ManagementStatus state={a.lifecycle} />
                             </div>
-                            <span className={subtleStyles}>
+                            <span className={cn(subtleStyles, 'block truncate')}>
                               {a.kind.toUpperCase()} ·{' '}
                               {a.source_kind === 'git' ? 'Git 同步' : '文件上传'}
                             </span>
@@ -261,6 +326,14 @@ export default function ManagementPanel() {
                             ))}
                           </div>
                         )}
+                      </td>
+                      <td>
+                        <span className="mb-1 block text-caption text-muted-ink min-[761px]:hidden">
+                          最近上传 / 同步
+                        </span>
+                        <div className={subtleStyles}>
+                          <Contributor value={a.latest_contributor} />
+                        </div>
                       </td>
                       <td>
                         <div className={managementActionsStyles}>
@@ -479,22 +552,52 @@ function Controls({
                     <div key={v.version_id}>
                       <Glyph kind={a.kind} seed={v.content_digest} size={40} />
                       <div>
-                        <strong>
-                          <VersionLabel value={v.version_label} />
-                        </strong>
-                        <small>
-                          {v.availability === 'revoked'
-                            ? '已撤销'
-                            : v.version_id === a.current_release?.version_id
-                              ? '当前发布'
-                              : v.published
-                                ? '历史发布'
-                                : '尚未发布'}
-                        </small>
-                        <code title={v.content_digest}>
-                          {v.content_digest.replace(/^sha256:/, '').slice(0, 12)}
-                        </code>
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <strong className="min-w-0 truncate">
+                            <VersionLabel value={v.version_label} />
+                          </strong>
+                          <span
+                            className={cn(
+                              tagStyles,
+                              'shrink-0 gap-1 px-1.5 py-0.5 leading-4',
+                              v.availability === 'revoked'
+                                ? tagRedStyles
+                                : v.version_id === a.current_release?.version_id
+                                  ? tagTealStyles
+                                  : undefined,
+                            )}
+                          >
+                            {v.availability === 'revoked' ? (
+                              <Ban size={12} aria-hidden="true" />
+                            ) : v.version_id === a.current_release?.version_id ? (
+                              <CheckCircle2 size={12} aria-hidden="true" />
+                            ) : v.published ? (
+                              <History size={12} aria-hidden="true" />
+                            ) : (
+                              <CircleDashed size={12} aria-hidden="true" />
+                            )}
+                            {v.availability === 'revoked'
+                              ? '已撤销'
+                              : v.version_id === a.current_release?.version_id
+                                ? '当前发布'
+                                : v.published
+                                  ? '历史发布'
+                                  : '尚未发布'}
+                          </span>
+                        </div>
+                        <div className={managementVersionMetaStyles}>
+                          <span
+                            className={cn(monoStyles, 'inline-flex shrink-0 items-center gap-1.5')}
+                            title={v.content_digest}
+                          >
+                            <Fingerprint size={12} aria-hidden="true" />
+                            {v.content_digest.replace(/^sha256:/, '').slice(0, 12)}
+                          </span>
+                        </div>
                       </div>
+                      <span className="flex min-w-0 max-w-[40%] items-center">
+                        <Contributor value={v.contributor} showLabel />
+                      </span>
                       {a.can_submit &&
                         a.lifecycle === 'active' &&
                         a.current_release &&

@@ -1,7 +1,9 @@
 import type { Principal } from '@capability-hub/domain/identity';
+import type { IntakeRecord } from '@capability-hub/domain/models';
 import { fail, notFound } from '@capability-hub/domain/errors';
 import { has } from '@capability-hub/domain/rbac';
 import type { ApplicationContext } from '../shared/application-context.js';
+import { resolveAuditActor } from '../audit/audit-snapshot.js';
 import type { AssetAccessService } from './asset-access-service.js';
 import { toVersionSnapshot } from './catalog-mapper.js';
 import type { KeywordOptionsQuery, ManagementAssetListQuery } from './queries.js';
@@ -15,6 +17,20 @@ export class AssetManagementQueryService {
     private readonly context: ApplicationContext,
     private readonly access: AssetAccessService,
   ) {}
+
+  private async intakeContributor(intake: IntakeRecord | undefined) {
+    while (intake?.rescan_of) intake = await this.context.store.get('intakes', intake.rescan_of);
+    if (!intake) return null;
+    const source = await this.context.store.get('sources', intake.source_id);
+    if (!source) return null;
+    const job = await this.context.store.get('jobs', intake.source_sync_job_id);
+    const actorId =
+      job?.kind === 'source_sync' && job.input.scheduled ? 'system' : intake.requested_by;
+    return {
+      source_kind: source.kind,
+      actor: await resolveAuditActor(this.context.store, actorId),
+    };
+  }
 
   /** 先按权限收敛，再筛选、按名称排序并分页；删除末页记录后返回仍有效的最后一页。 */
   async list(principal: Principal, input: ManagementAssetListQuery = {}) {
@@ -43,8 +59,8 @@ export class AssetManagementQueryService {
   /**
    * 上传与授权表单的完整资源选项，不受维护列表的筛选和页码限制。
    *
-   * 只在 `asset:maintain` 通过时才查询 intakes/requests，因此仅有 `asset:lifecycle`
-   * 的主体拿到的是空的 `latest_intake`/`pending_requests`，候选数据不外泄；
+   * 仅有 `asset:lifecycle` 的主体可见贡献者，但 `latest_intake`/`pending_requests`
+   * 仍为空，不披露候选详情；
    * `latest_intake.state` 在 intake 已 ready 时改用对应请求的状态，反映送审进展。
    */
   async options(principal: Principal) {
@@ -62,12 +78,11 @@ export class AssetManagementQueryService {
               ? await this.context.store.get('versions', release.version_id)
               : null;
             const canSubmit = this.access.canMaintain(principal, asset);
-            const intakes = canSubmit
-              ? await this.context.store.where('intakes', 'asset_id', asset.id)
-              : [];
-            const latest = intakes.sort(
+            const intakes = await this.context.store.where('intakes', 'asset_id', asset.id);
+            intakes.sort(
               (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
-            )[0];
+            );
+            const latest = canSubmit ? intakes[0] : undefined;
             const requests = canSubmit
               ? await this.context.store.where('requests', 'asset_id', asset.id)
               : [];
@@ -102,6 +117,7 @@ export class AssetManagementQueryService {
               current_version: version
                 ? { version_label: version.version_label, content_digest: version.content_digest }
                 : null,
+              latest_contributor: await this.intakeContributor(intakes.find((r) => !r.rescan_of)),
               latest_intake: latest
                 ? {
                     id: latest.id,
@@ -198,6 +214,9 @@ export class AssetManagementQueryService {
         availability: version.availability,
         content_digest: version.content_digest,
         published: !!(await this.access.latestReleaseForVersion(version)),
+        contributor: await this.intakeContributor(
+          await this.context.store.get('intakes', version.intake_id),
+        ),
       })),
     );
   }

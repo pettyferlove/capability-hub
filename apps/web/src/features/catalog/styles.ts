@@ -403,16 +403,16 @@ export const feedbackFormStyles = cn(
 );
 
 export const managementTableStyles = cn(
-  '[&_table]:min-w-220 [&_table]:[table-layout:fixed] [&_td]:py-4',
-  '[&_th:nth-child(1)]:w-[34%] [&_th:nth-child(2)]:w-[16%] [&_th:nth-child(3)]:w-[21%]',
+  '[&_table]:min-w-280 [&_table]:[table-layout:fixed] [&_td]:py-4',
+  '[&_th:nth-child(1)]:w-[28%] [&_th:nth-child(2)]:w-[12%] [&_th:nth-child(3)]:w-[14%] [&_th:nth-child(4)]:w-[18%]',
   '[&_small]:block [&_small]:text-muted-ink [&_small]:text-caption',
   "[&_[class~='group/table-wrap']]:max-h-none",
   'max-[760px]:[&_table]:block max-[760px]:[&_table]:min-w-0',
   'max-[760px]:[&_thead]:absolute max-[760px]:[&_thead]:w-px max-[760px]:[&_thead]:h-px',
   'max-[760px]:[&_thead]:overflow-hidden max-[760px]:[&_thead]:[clip-path:inset(50%)]',
   'max-[760px]:[&_tbody]:block max-[760px]:[&_tbody_tr]:grid',
-  'max-[760px]:[&_tbody_tr]:grid-cols-2',
-  "max-[760px]:[&_tbody_tr]:[grid-template-areas:'resource_resource'_'release_intake'_'actions_actions']",
+  'max-[760px]:[&_tbody_tr]:[grid-template-columns:minmax(0,1.4fr)_minmax(0,1fr)]',
+  "max-[760px]:[&_tbody_tr]:[grid-template-areas:'resource_contributor'_'release_intake'_'actions_actions']",
   'max-[760px]:[&_tbody_tr]:gap-3 max-[760px]:[&_tbody_tr]:p-4',
   'max-[760px]:[&_tbody_tr]:border-b max-[760px]:[&_tbody_tr]:border-line',
   'max-[760px]:[&_tbody_tr:last-child]:border-b-0',
@@ -422,17 +422,18 @@ export const managementTableStyles = cn(
   'max-[760px]:[&_td:nth-child(1)]:[grid-area:resource]',
   'max-[760px]:[&_td:nth-child(2)]:[grid-area:release]',
   'max-[760px]:[&_td:nth-child(3)]:[grid-area:intake]',
-  'max-[760px]:[&_td:nth-child(4)]:[grid-area:actions]',
+  'max-[760px]:[&_td:nth-child(4)]:[grid-area:contributor] max-[760px]:[&_td:nth-child(4)]:text-right',
+  'max-[760px]:[&_td:nth-child(5)]:[grid-area:actions]',
 );
 
 export const managementActionsStyles = cn(
-  'flex flex-wrap items-center gap-2 [&>button]:min-h-8 [&>a]:min-h-8',
+  'flex flex-wrap items-center gap-2 min-[761px]:flex-nowrap [&>button]:min-h-8 [&>a]:min-h-8',
   '[&>button]:px-3 [&>button]:py-1.5 [&>a]:py-1.5',
   'pointer-coarse:[&>button]:min-h-11 pointer-coarse:[&>a]:min-h-11',
 );
 
 export const managementStatusStyles = cn(
-  'inline-flex max-w-full items-center gap-1.5 rounded-md text-caption leading-5 text-muted-ink [&>svg]:shrink-0',
+  'inline-flex max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md text-caption leading-5 text-muted-ink [&>svg]:shrink-0',
   "[&[data-state='approved']]:text-success",
   "[&:is([data-state='received'],[data-state='fetching'],[data-state='scanning'])]:text-brand",
   "[&:is([data-state='ready'],[data-state='pending'],[data-state='stale'],[data-state='deprecated'])]:text-warning",
@@ -442,6 +443,17 @@ export const managementStatusStyles = cn(
   "[&:is([data-state='ready'],[data-state='pending'],[data-state='stale'],[data-state='deprecated'],[data-state='failed'],[data-state='rejected'],[data-state='blocked'])]:px-1.5",
   "[&:is([data-state='ready'],[data-state='pending'],[data-state='stale'],[data-state='deprecated'],[data-state='failed'],[data-state='rejected'],[data-state='blocked'])]:py-0.5",
 );
+
+export const managementVersionMetaStyles =
+  'mt-1 flex min-w-0 items-center text-caption text-muted-ink';
+
+export const managementContributorStyles = cn(
+  'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-line bg-page py-0.5 pl-0.5 pr-2 align-middle text-caption font-medium leading-4 text-ink',
+  "[&[data-compact='true']]:py-0 [&[data-compact='true']]:pl-0 [&[data-compact='true']]:pr-1.5",
+);
+
+export const managementContributorAvatarStyles =
+  'inline-flex shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand';
 
 export const conversationInstallStyles = cn(
   'group/conversation-install flex flex-col items-stretch gap-3 my-5 [&_>_h3]:mt-0 [&_>_h3]:mr-0',

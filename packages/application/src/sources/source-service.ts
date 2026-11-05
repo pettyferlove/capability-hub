@@ -361,7 +361,7 @@ export class SourceService {
    * 409 `SOURCE_CONFIG_CHANGED`）；当前修订已有可用的 `queued`/`running` 作业时
    * 直接复用其 id（单飞，不重复入队），否则入队并写审计 `source.sync_requested`。
    */
-  async sync(principal: Principal, id: string, key: string | undefined) {
+  async sync(principal: Principal, id: string, key: string | undefined, scheduled = false) {
     const source = await this.get(principal, id);
     if (source.state === 'paused' || source.state === 'blocked')
       fail(409, 'SOURCE_NOT_ACTIVE', '来源已暂停或封锁');
@@ -371,7 +371,13 @@ export class SourceService {
       principal,
       'source-sync/' + id,
       key,
-      digest(canonical({ source_id: id, revision: source.revision })),
+      digest(
+        canonical({
+          source_id: id,
+          revision: source.revision,
+          ...(scheduled ? { scheduled } : {}),
+        }),
+      ),
       async () => {
         const current = await this.get(principal, id);
         if (current.revision !== source.revision)
@@ -392,8 +398,9 @@ export class SourceService {
         const job = await this.jobs.enqueue('source_sync', id, {
           requested_by: principal.id,
           source_revision: source.revision,
+          ...(scheduled ? { scheduled } : {}),
         });
-        await this.store.audit(principal.id, 'source.sync_requested', id);
+        await this.store.audit(scheduled ? 'system' : principal.id, 'source.sync_requested', id);
         return { job_id: job.id, source_revision: source.revision };
       },
     );

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { managementAssetListQuerySchema } from '@capability-hub/contracts';
+import type { IntakeContributorResponse } from '@capability-hub/contracts/http';
 import { createElement, type ReactNode } from 'react';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
@@ -352,6 +353,78 @@ test('维护资产显示版本与审核入口，更新链接预选原资产', as
     screen.getByRole('radio', { name: '已有资产新版本' }).getAttribute('aria-checked'),
     'true',
   );
+});
+
+test('维护列表和版本记录展示上传人、Git 同步发起人及系统任务', async (context) => {
+  const f = await createTestHub(context);
+  const intake = await receiveSkill(f);
+  const assets = await f.hub.assetManagement.list(f.admin);
+  const versions = await f.hub.assetManagement.versions(f.admin, intake.asset_id);
+  const person = { kind: 'user' as const, name: '张三', username: 'zhangsan' };
+  const cases: { contributor: IntakeContributorResponse; identity: string; label: string }[] = [
+    {
+      contributor: { source_kind: 'upload', actor: person },
+      identity: '张三（@zhangsan）',
+      label: '上传人：张三（@zhangsan）',
+    },
+    {
+      contributor: { source_kind: 'git', actor: person },
+      identity: '张三（@zhangsan）',
+      label: '同步发起人：张三（@zhangsan）',
+    },
+    {
+      contributor: { source_kind: 'git', actor: { kind: 'system', name: '系统任务' } },
+      identity: '系统任务',
+      label: '同步：系统任务',
+    },
+    {
+      contributor: {
+        source_kind: 'upload',
+        actor: { kind: 'user', name: 'admin', username: 'admin' },
+      },
+      identity: 'admin',
+      label: '上传人：admin',
+    },
+    {
+      contributor: {
+        source_kind: 'upload',
+        actor: {
+          kind: 'user',
+          name: '这是一位显示名称较长的资源维护者',
+          username: 'long-account-name-for-resource-maintenance',
+        },
+      },
+      identity: '这是一位显示名称较长的资源维护者（@long-account-name-for-resource-maintenance）',
+      label:
+        '上传人：这是一位显示名称较长的资源维护者（@long-account-name-for-resource-maintenance）',
+    },
+  ];
+  let contributor = cases[0].contributor;
+  context.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path.startsWith('/api/management/assets?'))
+      return Response.json({
+        ...assets,
+        items: assets.items.map((asset) => ({
+          ...asset,
+          source_kind: contributor.source_kind,
+          latest_contributor: contributor,
+        })),
+      });
+    assert.equal(path, '/api/management/assets/' + intake.asset_id + '/versions');
+    return Response.json(versions.map((version) => ({ ...version, contributor })));
+  });
+  const user = userEvent.setup();
+  for (const entry of cases) {
+    contributor = entry.contributor;
+    const view = render(page(createElement(ManagementPanel)));
+    const table = within(await screen.findByRole('table', { name: '维护资产' }));
+    assert(table.getByRole('columnheader', { name: '最近上传 / 同步' }));
+    assert.equal(table.getByText(entry.identity).getAttribute('title'), entry.label);
+    await user.click(table.getByRole('button', { name: '版本与管理' }));
+    const dialog = within(screen.getByRole('dialog', { name: '维护资产' }));
+    assert(await dialog.findByText(entry.label));
+    view.unmount();
+  }
 });
 
 test('维护列表翻页与页大小请求服务端，搜索和状态筛选重置页码', async (context) => {
