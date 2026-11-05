@@ -108,6 +108,12 @@ export function registerIntakesRoutes(app: Express, context: HttpContext): void 
     ),
   );
   app.get(
+    '/api/intakes/share-teams',
+    send(async (_req, res) => ({
+      teams: await hub.intakeQueries.shareTeams(res.locals.principal),
+    })),
+  );
+  app.get(
     '/api/management/keywords',
     send(async (req, res) =>
       hub.assetManagement.keywordOptions(

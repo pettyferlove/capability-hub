@@ -14,7 +14,7 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 | /skills/:slug/:version、/mcp-servers/:slug/:version      | 人可读公开资源地址，按匿名权限         |
 | /api/feedback、/api/assets/:id/feedback                  | 私有反馈提交、详情、处理与分页         |
 | /api/management/*                                        | 维护和候选审查                         |
-| /api/intakes、/api/sources、/api/publication-requests    | 接收、来源与审核                       |
+| /api/intakes、/api/sources、/api/publication-requests    | 接收与团队候选、来源、审核             |
 | /api/me/*、/api/tokens、/api/git-credentials             | 个人资料、会话、令牌与仓库凭据         |
 | /api/admin/*                                             | 账号、角色、审计及运行管理             |
 | /api/hub-mcp-config、/connect/mcp                        | 首次接入配置与 Markdown 说明，无秘密值 |
@@ -52,7 +52,7 @@ Skill 的上传与提交审核请求均可携带布尔字段 `requires_api_key`�
 | load_skill / read_skill_file  | 根正文或指定参考文件                                 |
 | install_skill                 | 固定归档的分段字节、摘要及安装材料；客户端确认后写入 |
 | get_mcp_config / activate_mcp | 客户端配置、变量及连接步骤；Hub 不实际连接目标       |
-| list_share_teams              | 有创建权限的启用团队名称与 ID，供新建 Skill 选择归属 |
+| list_share_teams              | 已加入且有创建权限的启用团队名称与 ID                |
 | share_skill                   | 接收 Skill 并进入静态扫描和网页审核流程              |
 | report_asset_feedback         | 上报固定版本的问题或建议，返回编号、状态与详情链接   |
 | rate_asset                    | 按 asset_id 推荐或取消推荐资源                       |

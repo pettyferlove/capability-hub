@@ -23,10 +23,15 @@ export class IntakeQueryService {
     private readonly context: ApplicationContext,
     private readonly assets: AssetAccessService,
   ) {}
-  /** 归属候选按创建权限筛选，团队成员关系不等于创建权限。 */
+  /** 分享归属限所属团队，平台级授权不扩大候选范围。 */
   async shareTeams(principal: Principal) {
     return (await this.context.store.all('groups'))
-      .filter((group) => group.active && has(principal, 'asset:create', { team: group.id }))
+      .filter(
+        (group) =>
+          group.active &&
+          principal.groups.includes(group.id) &&
+          has(principal, 'asset:create', { team: group.id }),
+      )
       .map(({ id, name }) => ({ id, name }));
   }
   /**

@@ -51,7 +51,7 @@ export const hubTools = [
   {
     name: 'list_share_teams',
     title: '查找可分享的团队',
-    description: '查询有资源创建权限的启用团队，取得分享所需的团队名称与 ID。',
+    description: '查询已加入且有创建权限的启用团队，取得分享所需的团队名称与 ID。',
     action: 'read',
   },
   {

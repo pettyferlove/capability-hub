@@ -4,6 +4,11 @@ import type { Policy } from '../policy.js';
 import type { VersionSnapshotResponse, ManagementAssetResponse } from './catalog.js';
 import type { PublicationRequestResponse } from './publication.js';
 
+/** 新建资源的归属候选，仅包含已加入且有创建权限的启用团队。 */
+export interface ShareTeamsResponse {
+  teams: { id: string; name: string }[];
+}
+
 /**
  * 导入处理明细，出现在导入列表与详情；`progress` 与进度接口同源，
  * `state` 是处理机状态，`phase` 是给人看的当前阶段说明。

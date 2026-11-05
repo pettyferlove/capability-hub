@@ -26,10 +26,11 @@ import {
   publishSkill,
   testPassword,
 } from '../support/application.js';
+import { deferred } from '../support/store.js';
 
 afterEach(cleanup);
 
-function page(child: ReactNode) {
+function page(child: ReactNode, refresh = 0, groups = [{ id: 'team', name: '工程团队' }]) {
   return createElement(
     HubCtx.Provider,
     {
@@ -40,7 +41,7 @@ function page(child: ReactNode) {
           auth_provider: 'local',
           display_name: '维护者',
           csrf_token: '',
-          groups: [{ id: 'team', name: '工程团队' }],
+          groups,
           capabilities: {
             can_ai: false,
             can_ai_console: false,
@@ -52,7 +53,7 @@ function page(child: ReactNode) {
           features: { git_hosts: [] },
         },
         reviewCount: 0,
-        refresh: 0,
+        refresh,
         reload: () => {},
         openPalette: () => {},
         logout: async () => {},
@@ -62,10 +63,12 @@ function page(child: ReactNode) {
   );
 }
 
-test('上传入口提供 API Key 选项并随文件提交，切换 MCP 后隐藏且重置', async (context) => {
+test('上传按有效团队候选提交 API Key 声明，切换 MCP 后隐藏且重置', async (context) => {
   const submitted: Record<string, unknown>[] = [];
+  let teamResult = deferred<Response>();
   context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
     if (path === '/api/management/assets/options') return Response.json([]);
+    if (path === '/api/intakes/share-teams') return teamResult.promise;
     if (path.startsWith('/api/intakes?'))
       return Response.json({
         items: [],
@@ -83,18 +86,59 @@ test('上传入口提供 API Key 选项并随文件提交，切换 MCP 后隐藏
     assert.fail('Unexpected fetch: ' + path);
   });
   const user = userEvent.setup();
-  render(page(createElement(UploadPanel)));
+  const groups = [
+    { id: 'other', name: '另一团队' },
+    { id: 'team', name: '工程团队' },
+  ];
+  const panel = createElement(UploadPanel);
+  const view = render(page(panel, 0, groups));
   await user.upload(
     screen.getByLabelText('选择上传文件'),
     new window.File(['zip'], 'auth-skill.zip', { type: 'application/zip' }),
   );
+  const submit = screen.getByRole('button', { name: '上传并校验' }) as HTMLButtonElement;
+  assert.equal(submit.disabled, true);
+  teamResult.resolve(Response.json({ teams: [groups[1]] }));
+  await waitFor(() => assert.equal(submit.disabled, false));
+  await user.click(screen.getByRole('button', { name: /维护团队$/ }));
+  const teams = within(await screen.findByRole('listbox'));
+  assert.equal(teams.queryByRole('option', { name: '另一团队' }), null);
+  await user.click(teams.getByRole('option', { name: '工程团队' }));
   const field = screen.getByRole('checkbox', { name: '使用时需要 API Key' });
   assert.equal((field as HTMLInputElement).checked, false);
   await user.click(field);
   await user.click(screen.getByRole('button', { name: '上传并校验' }));
   await screen.findByText('上传重试测试');
+  assert.equal(submitted[0].owner_group_id, 'team');
   assert.equal(submitted[0].requires_api_key, true);
   assert.equal(submitted[0].kind, 'skill');
+  teamResult = deferred<Response>();
+  view.rerender(page(panel, 1, groups));
+  assert.equal(submit.disabled, true);
+  teamResult.resolve(Response.json({ error: { message: '团队查询失败' } }, { status: 503 }));
+  await screen.findByText(/团队查询失败/);
+  assert.equal(submit.disabled, true);
+  teamResult = deferred<Response>();
+  view.rerender(page(panel, 2, groups));
+  teamResult.resolve(Response.json({ teams: [] }));
+  await screen.findByText(/当前没有可分享团队/);
+  assert.equal(submit.disabled, true);
+  teamResult = deferred<Response>();
+  view.rerender(page(panel, 3, groups));
+  teamResult.resolve(Response.json({ teams: [groups[0]] }));
+  await waitFor(() =>
+    assert.equal(
+      (screen.getByRole('button', { name: /维护团队$/ }) as HTMLButtonElement).disabled,
+      false,
+    ),
+  );
+  assert.equal(submit.disabled, true);
+  assert(screen.getByRole('button', { name: /请选择团队/ }));
+  await user.click(screen.getByRole('button', { name: /维护团队$/ }));
+  await user.click(await screen.findByRole('option', { name: '另一团队' }));
+  await user.click(submit);
+  await waitFor(() => assert.equal(submitted.length, 2));
+  assert.equal(submitted[1].owner_group_id, 'other');
   await user.click(screen.getByRole('radio', { name: 'MCP 服务' }));
   assert.equal(screen.queryByRole('checkbox', { name: '使用时需要 API Key' }), null);
   await user.click(screen.getByRole('radio', { name: 'Skill ZIP' }));
@@ -108,6 +152,8 @@ test('新 MCP 的团队 Bearer Token 仅在确认领取范围后随接收请求�
   const posted: Record<string, unknown>[] = [];
   context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
     if (path === '/api/management/assets/options') return Response.json([]);
+    if (path === '/api/intakes/share-teams')
+      return Response.json({ teams: [{ id: 'team', name: '工程团队' }] });
     if (path.startsWith('/api/intakes?'))
       return Response.json({
         items: [],

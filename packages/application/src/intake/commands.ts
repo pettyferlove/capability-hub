@@ -14,7 +14,7 @@ export type ReceiveIntakeCommand = {
 } &
   /**
    * 新建资产：`slug` 1–64 位已被占用时 409/`SLUG_CONFLICT`；
-   * 调用者需在 `owner_group_id` 上持有 `asset:create`。
+   * 调用者需已加入 `owner_group_id` 对应团队并持有该团队的 `asset:create`。
    */
   (
     | { target: 'new'; slug: string; kind: AssetKind; owner_group_id: string }

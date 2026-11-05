@@ -29,6 +29,7 @@ import { errorMessage } from '../../shared/api/error-message.js';
 import type {
   AssetVersionPlanResponse,
   ManagementAssetResponse,
+  ShareTeamsResponse,
 } from '@capability-hub/contracts/http';
 import { ArrowRight, FileArchive, Plug } from '../../shared/icons/lucide.js';
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
@@ -79,7 +80,7 @@ export function UploadPanel({
   initialAssetId?: string;
   initialIntakeId?: string;
 }) {
-  const { me, refresh, reload } = useHub();
+  const { refresh, reload } = useHub();
   const [target, setTarget] = useState(initialAssetId ? 'existing' : 'new');
   const [assetId, setAssetId] = useState(initialAssetId);
   const [kind, setKind] = useState('skill');
@@ -89,7 +90,7 @@ export function UploadPanel({
   const [versionRefresh, setVersionRefresh] = useState(0);
   const [keywords, setKeywords] = useState<string[]>([]);
   const [requiresApiKey, setRequiresApiKey] = useState(false);
-  const [group, setGroup] = useState(me?.groups[0]?.id ?? '');
+  const [group, setGroup] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [fileSummary, setFileSummary] = useState('');
   const [mcp, setMcp] = useState(emptyMcpEntry);
@@ -112,6 +113,17 @@ export function UploadPanel({
     '/api/management/assets/options',
     refresh,
   );
+  const teamQuery = useQuery<ShareTeamsResponse>(
+    target === 'new' ? '/api/intakes/share-teams' : null,
+    refresh,
+  );
+  const teams = teamQuery.error ? undefined : teamQuery.data?.teams;
+  const ownerGroupId = teams?.some((team) => team.id === group) ? group : '';
+  const teamUnavailable =
+    target === 'new' && (teamQuery.loading || !!teamQuery.error || !ownerGroupId);
+  useEffect(() => {
+    if (!group && !teamQuery.loading && teams?.length) setGroup(teams[0].id);
+  }, [group, teamQuery.loading, teams]);
   const assets = managedAssets?.filter((asset) => asset.source_kind === 'upload');
   const versionQuery = useQuery<AssetVersionPlanResponse>(
     target === 'existing' && assetId ? `/api/management/assets/${assetId}/version-plan` : null,
@@ -233,6 +245,7 @@ export function UploadPanel({
       reading ||
       waitingForVersion ||
       versionUnavailable ||
+      teamUnavailable ||
       !releaseVersion ||
       (needsFile && !file)
     )
@@ -259,7 +272,7 @@ export function UploadPanel({
       target === 'new'
         ? {
             target,
-            owner_group_id: group,
+            owner_group_id: ownerGroupId,
             slug: identity.slug,
             kind,
             version_label: releaseVersion,
@@ -585,19 +598,39 @@ export function UploadPanel({
                       />
                     )}
                     {target === 'new' && (
-                      <label>
-                        维护团队
-                        <SelectField value={group} onValueChange={setGroup} required>
-                          <option value="" disabled>
-                            请选择团队
-                          </option>
-                          {me?.groups.map((team) => (
-                            <option value={team.id} key={team.id}>
-                              {team.name}
+                      <>
+                        <label>
+                          维护团队
+                          <SelectField
+                            value={ownerGroupId}
+                            onValueChange={setGroup}
+                            disabled={teamQuery.loading || !!teamQuery.error || !teams?.length}
+                            required
+                          >
+                            <option value="" disabled>
+                              {teamQuery.loading ? '正在加载团队…' : '请选择团队'}
                             </option>
-                          ))}
-                        </SelectField>
-                      </label>
+                            {teams?.map((team) => (
+                              <option value={team.id} key={team.id}>
+                                {team.name}
+                              </option>
+                            ))}
+                          </SelectField>
+                        </label>
+                        {teamQuery.error ? (
+                          <ErrorState
+                            message={`获取可分享团队失败：${teamQuery.error}`}
+                            retry={reload}
+                          />
+                        ) : (
+                          !teamQuery.loading &&
+                          !teams?.length && (
+                            <Message>
+                              当前没有可分享团队，请联系管理员确认成员关系和创建权限。
+                            </Message>
+                          )
+                        )}
+                      </>
                     )}
                     {kind === 'mcp' && !needsFile && (
                       <label>
@@ -632,6 +665,7 @@ export function UploadPanel({
                       reading ||
                       waitingForVersion ||
                       versionUnavailable ||
+                      teamUnavailable ||
                       !releaseVersion ||
                       (needsFile && !file)
                     }

@@ -142,13 +142,13 @@ export function createMcp(
       );
       register(
         'list_share_teams',
-        '查询当前账号可新建 Skill 的启用团队，返回 teams 中的 id 和 name；只读。新建 share_skill 前按用户意图选择团队，将 id 填入 destination.owner_group_id。多个候选归属不明时让用户选择团队，禁止猜测 ID；空列表请管理员确认团队及创建权限。',
+        '查询当前账号已加入且有创建权限的启用团队，返回 teams 中的 id 和 name；只读。新建 share_skill 前按用户意图选择团队，将 id 填入 destination.owner_group_id。多个候选归属不明时让用户选择团队，禁止猜测 ID；空列表请管理员确认成员关系及创建权限。',
         z.object({}).strict(),
         async ({ _principal }) => ({ teams: await hub.intakeQueries.shareTeams(_principal) }),
       );
       register(
         'share_skill',
-        '将用户选择的 Skill 文件提交扫描，支持 UTF-8 与 Base64；新建时先调用 list_share_teams 获取 owner_group_id；更新已有上传 Skill 时 destination.asset_id 可填 UUID 或 slug。需要连接的贡献权限，以及目标团队的创建权限或已有资产的维护权限；扫描结果与发布审核在网页查看和处理。',
+        '将用户选择的 Skill 文件提交扫描，支持 UTF-8 与 Base64；新建时先调用 list_share_teams 获取 owner_group_id；更新已有上传 Skill 时 destination.asset_id 可填 UUID 或 slug。需要连接的贡献权限；新建须已加入目标团队并有创建权限，更新须有资产维护权限；扫描结果与发布审核在网页查看和处理。',
         skillSharingInput,
         async ({ _principal, ...b }) => await shareSkill(hub, _principal, b),
         true,

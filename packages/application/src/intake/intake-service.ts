@@ -34,7 +34,7 @@ export class IntakeService {
    * 下同 `key` 复用首次响应，请求摘要不同则 409/`IDEMPOTENCY_CONFLICT`；身份快照在事务内
    * 被变更时 409/`AUTH_CONTEXT_CHANGED`。
    *
-   * 权限：`target: 'new'` 需要 `has(principal, 'asset:create', { team: owner_group_id })`；
+   * 权限：`target: 'new'` 需要目标团队成员关系及该团队的 `asset:create` 权限；
    * 写入既有资产需要资产维护权限。仅 `upload` 型来源可接收版本，Git 资产需走来源同步
    * （409/`UPLOAD_SOURCE_REQUIRED`）。封禁资产 409/`ASSET_BLOCKED`，名称占用
    * 409/`SLUG_CONFLICT`，团队无效 422/`INVALID_GROUP`；`automatic` 版本建议已过期时
@@ -66,9 +66,11 @@ export class IntakeService {
       (kind === 'mcp' && filename !== 'server.json')
     )
       fail(422, 'UPLOAD_TYPE', 'Skill 需要 ZIP，MCP 需要 server.json');
-    if (metadata.target === 'new')
+    if (metadata.target === 'new') {
       this.context.identity.require(principal, 'asset:create', { team: metadata.owner_group_id });
-    else this.assets.requireMaintenance(principal, await this.assets.getAsset(metadata.asset_id));
+      if (!principal.groups.includes(metadata.owner_group_id))
+        fail(403, 'FORBIDDEN', '只能向已加入的团队新建资源');
+    } else this.assets.requireMaintenance(principal, await this.assets.getAsset(metadata.asset_id));
     if (metadata.target === 'existing') {
       const asset = await this.assets.getAsset(metadata.asset_id);
       const source = await this.context.store.get('sources', asset.source_id);

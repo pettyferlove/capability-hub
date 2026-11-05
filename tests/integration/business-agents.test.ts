@@ -334,6 +334,10 @@ test('反馈提交自动排队且幂等，采纳后仅写入处理中，效果�
     else process.env.AI_FIXTURE_KEY = previous;
   });
   const f = await createTestHub(t);
+  await f.hub.administration.addMembership(f.admin, {
+    user_id: f.reader.id,
+    group_id: f.teamId,
+  });
   await grantMaintainer(f, f.reader.id);
   const uploader = await f.hub.identity.principal(f.reader.id);
   const { intake } = await publishSkill({ ...f, admin: uploader });
@@ -680,6 +684,10 @@ test('运营中心跨用户分页只列可读执行，业务面板仍只列本�
 
 test('团队维护者的上传自动排队，撤回目标团队授权后公开版本的任务也不可读', async (t) => {
   const f = await createTestHub(t, { ai: frameworkConfig() });
+  await f.hub.administration.addMembership(f.admin, {
+    user_id: f.reader.id,
+    group_id: f.teamId,
+  });
   const grant = await grantMaintainer(f, f.reader.id);
   const uploader = await f.hub.identity.principal(f.reader.id);
   const asUploader = { ...f, admin: uploader };

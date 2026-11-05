@@ -8,6 +8,7 @@ import { skillDocument } from '../support/content.js';
 import { signIn } from '../support/http.js';
 import { agentClientIds } from '@capability-hub/contracts';
 import { digest } from '@capability-hub/domain/canonical';
+import { archive } from '@capability-hub/infrastructure/content';
 
 async function connect(origin: string, token: string) {
   const client = new Client(
@@ -150,8 +151,16 @@ test('官方 MCP 客户端完成协议发现，读取令牌只看到读取工具
   }
 });
 
-test('分享令牌提供提交工具，重复幂等请求只生成一次接收，扫描后仍需独立审核', async (context) => {
+test('分享提交限制所属团队，重复幂等请求只生成一次接收，扫描后仍需独立审核', async (context) => {
   const fixture = await serveTestHub(context);
+  const role = await fixture.store.find('roles', 'key', 'maintainer');
+  assert(role);
+  await fixture.hub.administration.grantRole(fixture.admin, {
+    principal_id: fixture.admin.id,
+    role_id: role.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
   const token = await fixture.hub.tokens.issue(fixture.admin, {
     name: 'contribute',
     scope: 'hub:contribute',
@@ -179,6 +188,32 @@ test('分享令牌提供提交工具，重复幂等请求只生成一次接收�
       ],
       idempotency_key: randomUUID(),
     };
+    const other = await fixture.hub.administration.createGroup(fixture.admin, { name: '其他团队' });
+    const destination = { ...input.destination, owner_group_id: other.id };
+    const denied = await client.callTool({
+      name: 'share_skill',
+      arguments: { ...input, destination },
+    });
+    assert.equal(denied.isError, true);
+    assert.match(JSON.stringify(denied.content), /FORBIDDEN/);
+    const browser = await signIn(fixture);
+    await browser
+      .post('/api/intakes')
+      .set('Idempotency-Key', randomUUID())
+      .field(
+        'metadata',
+        JSON.stringify({ ...destination, kind: 'skill', version_label: input.version_label }),
+      )
+      .attach(
+        'file',
+        await archive([
+          { path: 'SKILL.md', bytes: skillDocument('shared-skill'), executable: false },
+        ]),
+        'skill.zip',
+      )
+      .expect(403);
+    assert.equal((await fixture.store.all('assets')).length, 0);
+    assert.equal((await fixture.store.all('intakes')).length, 0);
     const first = await client.callTool({ name: 'share_skill', arguments: input });
     const repeated = await client.callTool({ name: 'share_skill', arguments: input });
     assert(!first.isError);
@@ -197,7 +232,7 @@ test('分享令牌提供提交工具，重复幂等请求只生成一次接收�
   }
 });
 
-test('分享团队按当前创建权限筛选，排除仅有成员关系和已停用的团队，撤权立即生效', async (context) => {
+test('分享团队要求成员关系和创建权限，停用或撤销成员关系、权限后立即排除', async (context) => {
   const fixture = await serveTestHub(context);
   const { administration } = fixture.hub;
   await administration.addMembership(fixture.admin, {
@@ -206,6 +241,10 @@ test('分享团队按当前创建权限筛选，排除仅有成员关系和已�
   });
   const allowed = await administration.createGroup(fixture.admin, { name: '可创建团队' });
   const disabled = await administration.createGroup(fixture.admin, { name: '停用团队' });
+  await administration.addMembership(fixture.admin, {
+    user_id: fixture.reader.id,
+    group_id: disabled.id,
+  });
   await administration.updateGroup(fixture.admin, disabled.id, { active: false }, '"1"');
   const role = await fixture.store.find('roles', 'key', 'maintainer');
   assert(role);
@@ -215,11 +254,16 @@ test('分享团队按当前创建权限筛选，排除仅有成员关系和已�
   });
   const client = await connect(fixture.origin, token.token);
   context.after(async () => await client.close());
+  const browser = await signIn(fixture, fixture.reader.username);
   const tool = (await client.listTools()).tools.find((entry) => entry.name === 'list_share_teams');
   assert.equal(tool?.annotations?.readOnlyHint, true);
   const empty = await client.callTool({ name: 'list_share_teams', arguments: {} });
   assert(!empty.isError);
   assert.deepEqual(empty.structuredContent, { teams: [] });
+  assert.deepEqual(
+    (await browser.get('/api/intakes/share-teams').expect(200)).body,
+    empty.structuredContent,
+  );
   const binding = await administration.grantRole(fixture.admin, {
     principal_id: fixture.reader.id,
     role_id: role.id,
@@ -232,9 +276,29 @@ test('分享团队按当前创建权限筛选，排除仅有成员关系和已�
     scope_type: 'team',
     scope_id: disabled.id,
   });
+  const nonmember = await client.callTool({ name: 'list_share_teams', arguments: {} });
+  assert(!nonmember.isError);
+  assert.deepEqual(nonmember.structuredContent, { teams: [] });
+  const membership = await administration.addMembership(fixture.admin, {
+    user_id: fixture.reader.id,
+    group_id: allowed.id,
+  });
   const scoped = await client.callTool({ name: 'list_share_teams', arguments: {} });
   assert(!scoped.isError);
   assert.deepEqual(scoped.structuredContent, { teams: [{ id: allowed.id, name: allowed.name }] });
+  assert.deepEqual(
+    (await browser.get('/api/intakes/share-teams').expect(200)).body,
+    scoped.structuredContent,
+  );
+  const memberships = object((await browser.get('/api/me').expect(200)).body).groups;
+  assert(Array.isArray(memberships));
+  assert.deepEqual(
+    new Set(memberships),
+    new Set([
+      { id: fixture.teamId, name: '研发团队' },
+      { id: allowed.id, name: allowed.name },
+    ]),
+  );
   await administration.removeGrant(fixture.admin, 'role_bindings', binding.id);
   const revoked = await client.callTool({ name: 'list_share_teams', arguments: {} });
   assert(!revoked.isError);
@@ -245,13 +309,18 @@ test('分享团队按当前创建权限筛选，排除仅有成员关系和已�
     scope_type: 'platform',
     scope_id: '',
   });
+  await administration.removeGrant(fixture.admin, 'memberships', membership.id);
   const global = await client.callTool({ name: 'list_share_teams', arguments: {} });
   assert(!global.isError);
   const teams = object(global.structuredContent).teams;
   assert(Array.isArray(teams));
   assert.deepEqual(
     new Set(teams.map((team: unknown) => object(team).id)),
-    new Set([fixture.teamId, allowed.id]),
+    new Set([fixture.teamId]),
+  );
+  assert.deepEqual(
+    (await browser.get('/api/intakes/share-teams').expect(200)).body,
+    global.structuredContent,
   );
 });
 
