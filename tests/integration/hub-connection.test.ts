@@ -308,7 +308,7 @@ test('分享邀请匿名提供 MCP 与 CLI 路径，未知客户端可读取说�
   assert.deepEqual(share.body, {
     installation_url: 'https://hub.example.test/INSTALL.md',
     prompt:
-      '请帮我将这个 Capability Hub 接入当前使用的 Agent：\nhttps://hub.example.test/INSTALL.md',
+      '请按照以下安装指南，为当前 Agent 配置 Capability Hub：\nhttps://hub.example.test/INSTALL.md',
   });
   const guide = await http.get('/INSTALL.md?client=custom&token=must-not-reflect').expect(200);
   assert.match(guide.headers['content-type'] as string, /text\/markdown/);

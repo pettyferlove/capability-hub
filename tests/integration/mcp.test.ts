@@ -43,7 +43,7 @@ test('只读连接可以转交公开 Hub 邀请，无需取得 Skill 提交权�
     const installUrl = fixture.origin + '/INSTALL.md';
     assert.deepEqual(await invitation.json(), {
       installation_url: installUrl,
-      prompt: `请帮我将这个 Capability Hub 接入当前使用的 Agent：\n${installUrl}`,
+      prompt: `请按照以下安装指南，为当前 Agent 配置 Capability Hub：\n${installUrl}`,
     });
     assert(!(await client.listTools()).tools.some((tool) => tool.name === 'share_skill'));
   } finally {

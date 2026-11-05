@@ -41,7 +41,7 @@ export function hubShareInvitation(origin: string): HubShareResponse {
   const installation_url = `${new URL(origin).origin}/INSTALL.md`;
   return {
     installation_url,
-    prompt: `请帮我将这个 Capability Hub 接入当前使用的 Agent：\n${installation_url}`,
+    prompt: `请按照以下安装指南，为当前 Agent 配置 Capability Hub：\n${installation_url}`,
   };
 }
 

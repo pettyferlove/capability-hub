@@ -57,7 +57,7 @@ Hub 生成 Streamable HTTP 远程配置和固定版本 npm stdio 配置，不运
 全站顶栏的“分享 Hub”会打开邀请卡，复制以下简短提示词，无需分享者预选客户端或配置范围：
 
 ```text
-请帮我将这个 Capability Hub 接入当前使用的 Agent：
+请按照以下安装指南，为当前 Agent 配置 Capability Hub：
 https://hub.example.com/INSTALL.md
 ```
 

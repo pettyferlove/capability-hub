@@ -80,7 +80,7 @@ test('本机和远程地址的分享邀请只包含接入请求和实例链接',
     const invite = hubShareInvitation(`http://${hostname}:4100/?token=private`);
     assert.equal(
       invite.prompt,
-      `请帮我将这个 Capability Hub 接入当前使用的 Agent：\nhttp://${hostname}:4100/INSTALL.md`,
+      `请按照以下安装指南，为当前 Agent 配置 Capability Hub：\nhttp://${hostname}:4100/INSTALL.md`,
     );
   }
 });

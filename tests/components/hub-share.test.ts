@@ -11,7 +11,7 @@ afterEach(cleanup);
 const invitation = {
   installation_url: 'https://public-hub.example.test/INSTALL.md',
   prompt:
-    '请帮我将这个 Capability Hub 接入当前使用的 Agent：\nhttps://public-hub.example.test/INSTALL.md',
+    '请按照以下安装指南，为当前 Agent 配置 Capability Hub：\nhttps://public-hub.example.test/INSTALL.md',
 };
 
 test('分享弹窗无需选择客户端，复制公开邀请并在关闭后恢复焦点', async (context) => {
