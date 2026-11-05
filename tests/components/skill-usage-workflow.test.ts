@@ -330,13 +330,14 @@ test('维护资产显示版本与审核入口，更新链接预选原资产', as
     first.intake.asset_id,
   );
   assert.equal(
-    screen.getByRole('link', { name: '1.0.1' }).getAttribute('href'),
+    screen.getByRole('link', { name: '查看 1.0.1 的待审核申请' }).getAttribute('href'),
     '/review?request=' + request.id,
   );
   assert(screen.getByText('1.0.0'));
   const table = within(screen.getByRole('table', { name: '维护资产' }));
+  assert.equal(table.getAllByText('1.0.1').length, 1);
   assert.equal(table.getAllByText(/待审核/).length, 1);
-  assert(table.getByText('待审核 · 1 项'));
+  assert(table.getByText('待审核'));
   const user = userEvent.setup();
   await user.type(screen.getByRole('searchbox', { name: '搜索维护资产' }), 'missing');
   assert(await screen.findByText('没有匹配的资产'));
@@ -353,6 +354,33 @@ test('维护资产显示版本与审核入口，更新链接预选原资产', as
     screen.getByRole('radio', { name: '已有资产新版本' }).getAttribute('aria-checked'),
     'true',
   );
+});
+
+test('维护列表保留较早版本的待审入口，不混淆最新接收状态', async (context) => {
+  for (const versions of [['1.0.1'], ['1.0.1', '1.0.2']]) {
+    const f = await createTestHub(context);
+    const first = await publishSkill(f);
+    const pending = [];
+    for (const version of versions) {
+      const intake = await receiveSkill(f, { assetId: first.intake.asset_id, version });
+      pending.push({ version, request: await submitPublication(f, intake) });
+    }
+    await receiveSkill(f, { assetId: first.intake.asset_id, version: '1.0.3' });
+    context.mock.method(globalThis, 'fetch', async (path: string) => {
+      assert(path.startsWith('/api/management/assets?'));
+      return Response.json(await f.hub.assetManagement.list(f.admin));
+    });
+    const view = render(page(createElement(ManagementPanel)));
+    const table = within(await screen.findByRole('table', { name: '维护资产' }));
+    assert(table.getByRole('link', { name: '查看接收 1.0.3' }));
+    assert(table.getByText('待提交审核'));
+    for (const { version, request } of pending) {
+      const link = table.getByRole('link', { name: `查看 ${version} 的待审核申请` });
+      assert.equal(link.textContent, `待审核 · ${version}`);
+      assert.equal(link.getAttribute('href'), '/review?request=' + request.id);
+    }
+    view.unmount();
+  }
 });
 
 test('维护列表和版本记录展示上传人、Git 同步发起人及系统任务', async (context) => {

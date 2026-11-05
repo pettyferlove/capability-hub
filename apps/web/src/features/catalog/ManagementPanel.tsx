@@ -31,6 +31,8 @@ import {
   managementTableStyles,
   managementActionsStyles,
   managementStatusStyles,
+  managementIntakeLinkStyles,
+  managementIntakeStatusStyles,
   managementVersionMetaStyles,
   managementContributorStyles,
   managementContributorAvatarStyles,
@@ -56,6 +58,7 @@ import {
   Trash2,
   CircleDashed,
   CircleHelp,
+  Clock3,
   Bot,
   UserRound,
   Fingerprint,
@@ -289,39 +292,41 @@ export default function ManagementPanel() {
                           最近接收
                         </span>
                         {a.latest_intake ? (
-                          <>
-                            <a
-                              className={textBtnStyles}
-                              aria-label={'查看接收 ' + a.latest_intake.version_label}
-                              href={pageHref('publish', { intake: a.latest_intake.id })}
-                            >
-                              <VersionLabel value={a.latest_intake.version_label} />
-                              <ArrowRight size={13} />
-                            </a>
-                            {!(
-                              a.latest_intake.state === 'pending' && a.pending_requests.length > 0
-                            ) && (
-                              <div className="mt-1">
-                                <ManagementStatus state={a.latest_intake.state} />
-                              </div>
-                            )}
-                          </>
+                          <a
+                            className={managementIntakeLinkStyles}
+                            aria-label={'查看接收 ' + a.latest_intake.version_label}
+                            href={pageHref('publish', { intake: a.latest_intake.id })}
+                          >
+                            <VersionLabel value={a.latest_intake.version_label} />
+                            <ArrowRight size={13} />
+                          </a>
                         ) : (
                           <span className={subtleStyles}>尚无接收</span>
                         )}
-                        {a.pending_requests.length > 0 && (
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <ManagementStatus
-                              state="pending"
-                              label={`待审核 · ${a.pending_requests.length} 项`}
-                            />
+                        {(a.latest_intake || a.pending_requests.length > 0) && (
+                          <div className={managementIntakeStatusStyles}>
+                            {a.latest_intake &&
+                              !(
+                                a.latest_intake.state === 'pending' && a.pending_requests.length > 0
+                              ) && <ManagementStatus state={a.latest_intake.state} />}
                             {a.pending_requests.map((request) => (
                               <a
                                 key={request.id}
-                                className={textBtnStyles}
+                                className={cn(managementStatusStyles, 'min-w-0 hover:underline')}
+                                data-state="pending"
+                                aria-label={`查看 ${shortVersion(request.version_label)} 的待审核申请`}
+                                title={`待审核：${request.version_label}`}
                                 href={pageHref('review', { request: request.id })}
                               >
-                                <VersionLabel value={request.version_label} />
+                                <Clock3 size={13} aria-hidden="true" />
+                                <span className="truncate">
+                                  {a.pending_requests.length === 1 &&
+                                  a.latest_intake?.state === 'pending' &&
+                                  request.version_label === a.latest_intake.version_label
+                                    ? '待审核'
+                                    : `待审核 · ${shortVersion(request.version_label)}`}
+                                </span>
+                                <ArrowRight size={12} aria-hidden="true" />
                               </a>
                             ))}
                           </div>

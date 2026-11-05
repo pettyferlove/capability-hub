@@ -444,6 +444,17 @@ export const managementStatusStyles = cn(
   "[&:is([data-state='ready'],[data-state='pending'],[data-state='stale'],[data-state='deprecated'],[data-state='failed'],[data-state='rejected'],[data-state='blocked'])]:py-0.5",
 );
 
+export const managementIntakeLinkStyles =
+  'inline-flex min-h-6 min-w-0 max-w-full items-center gap-1.5 text-caption font-medium leading-5 text-brand hover:underline [&>span]:truncate [&>svg]:shrink-0';
+
+export const managementIntakeStatusStyles = cn(
+  'mt-1 flex flex-wrap items-center gap-1.5',
+  '[&_[data-state]]:min-h-6 [&_[data-state]]:px-1.5 [&_[data-state]]:py-0.5',
+  "[&_[data-state='approved']]:bg-success-soft",
+  "[&_:is([data-state='received'],[data-state='fetching'],[data-state='scanning'])]:bg-brand-soft",
+  "[&_[data-state='cancelled']]:bg-page",
+);
+
 export const managementVersionMetaStyles =
   'mt-1 flex min-w-0 items-center text-caption text-muted-ink';
 
