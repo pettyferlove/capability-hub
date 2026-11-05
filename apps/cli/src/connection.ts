@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { McpServer, fromJsonSchema, type JsonSchemaType } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
-import { type AgentClient } from '@capability-hub/contracts';
+import { agentClients, type AgentClient } from '@capability-hub/contracts';
 import {
   connectionFile,
   connectionToken,
@@ -69,8 +69,9 @@ export async function connectAgent(
 ) {
   const prepared = await prepareConnectionConfig(options);
   if (ui.interactive)
-    ui.message(
-      `配置位置：${terminalText(prepared.target)}\n申请权限：${options.contribute ? '读取、分享、推荐与反馈' : '只读'}`,
+    ui.step(
+      '连接设置',
+      `Hub 地址  ${options.url}\n客户端    ${agentClients[options.client].label}\n配置范围  ${options.scope === 'user' ? '当前用户' : '当前项目'}\n配置文件  ${terminalText(prepared.target)}\n访问权限  ${options.contribute ? '读取、分享、推荐与反馈' : '只读'}`,
     );
   const path = connectionFile(options.directory, options.url, options.client);
   let previous: ConnectionCredentials | null;
@@ -96,6 +97,7 @@ export async function connectAgent(
       else throw error;
     }
   }
+  if (reuse && ui.interactive) ui.step('连接授权', '复用当前 Hub 与客户端的已有授权');
   let pending: ConnectionCredentials | null = null;
   let committed = false;
   const temporary = path + '.pending-' + randomUUID();
@@ -153,9 +155,15 @@ export async function connectAgent(
       committed = true;
     });
     if (superseded) await revokeConnection(options.url, superseded);
-    ui.message(
-      `已授权并验证 Hub：可发现 ${toolCount} 个工具，检索成功。\n配置已保存：${terminalText(prepared.target)}\n请在 Agent 中重新加载 MCP，完成项目信任后继续原来的任务。`,
+    ui.step(
+      '配置已保存',
+      `${terminalText(prepared.target)}\n${agentClients[options.client].label} · ${toolCount} 个可用工具 · 检索成功`,
     );
+    ui.note(
+      '下一步',
+      `在 ${agentClients[options.client].label} 中重新加载 Hub MCP。\n完成项目信任后，调用 search_skills 搜索资源。`,
+    );
+    ui.outro(`${agentClients[options.client].label} 接入配置已就绪。`);
   } finally {
     await rm(temporary, { force: true });
     if (pending && !committed) await revokeConnection(options.url, pending);
@@ -232,4 +240,5 @@ export async function checkConnection(
     }
   });
   process.stdout.write(`Hub 连接正常，可发现 ${count} 个工具。\n`);
+  if (ui.interactive) ui.outro('连接可用，可以继续在 Agent 中使用 Hub。');
 }

@@ -114,23 +114,49 @@ test('CLI 拒绝无关选项和多余参数，URL 错误不回显其中的凭据
   assert.match(version.stdout.trim(), /^\d+\.\d+\.\d+/);
 });
 
-test('CLI 交互配置向导选择客户端和范围，stdout 仍是完整配置', async () => {
-  const result = await cli(['hub-config'], undefined, {
-    terminal: true,
-    environment: { CI: '', TERM: 'xterm', NO_COLOR: '1' },
-    answers: [
-      { prompt: 'Hub 的 HTTP(S) 根地址', input: 'https://hub.example.test\r' },
-      { prompt: '选择目标 Agent 客户端', input: '\u001b[B'.repeat(4) + '\r' },
-      { prompt: '配置保存在哪个范围', input: '\u001b[B\r' },
-    ],
-  });
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), {
-    mcpServers: {
-      'capability-hub': { url: 'https://hub.example.test/mcp', oauth: { scope: 'hub:read' } },
-    },
-  });
-  assert(result.stderr.includes('~/.pi/agent/mcp.json'));
+test('CLI 分组菜单与配置向导选择正确命令、客户端和范围，stdout 仍是完整配置', async () => {
+  for (const args of [[], ['hub-config']]) {
+    const result = await cli(args, undefined, {
+      terminal: true,
+      environment: { CI: '', TERM: 'xterm', NO_COLOR: '1' },
+      answers: [
+        ...(args.length ? [] : [{ prompt: '你想做什么', input: '\u001b[B'.repeat(5) + '\r' }]),
+        { prompt: 'Hub 的 HTTP(S) 根地址', input: 'https://hub.example.test\r' },
+        { prompt: '选择目标 Agent 客户端', input: '\u001b[B'.repeat(4) + '\r' },
+        { prompt: '配置保存在哪个范围', input: '\u001b[B\r' },
+      ],
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      mcpServers: {
+        'capability-hub': { url: 'https://hub.example.test/mcp', oauth: { scope: 'hub:read' } },
+      },
+    });
+    assert(result.stderr.includes('~/.pi/agent/mcp.json'));
+  }
+});
+
+test('CLI 缺少 Agent 连接凭据时提示 connect，不暴露底层路径或创建凭据', async (context) => {
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-cli-unconnected-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const directory = join(root, 'credentials');
+  for (const command of ['status', 'bridge']) {
+    const result = await cli(
+      [command, '--url', 'http://127.0.0.1:1/', '--client', 'codex', '--config-dir', directory],
+      undefined,
+      {
+        terminal: command === 'status',
+        environment: { CI: '', TERM: 'xterm', NO_COLOR: '1' },
+      },
+    );
+    assert.equal(result.code, 1, result.stderr);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /连接凭据/);
+    assert.match(result.stderr, /capability-hub connect/);
+    assert.match(result.stderr, /--config-dir/);
+    assert.doesNotMatch(result.stderr, /ENOENT|[a-f0-9]{64}\.json/);
+    await assert.rejects(readdir(directory), { code: 'ENOENT' });
+  }
 });
 
 test('CLI 菜单取消退出 130；脚本、JSON 和 bridge 即使连接终端也不询问', async () => {
@@ -247,6 +273,7 @@ test('CLI 在授权等待动效中取消以 130 退出，不写配置或凭据',
   );
   assert.equal(result.code, 130, result.stderr);
   assert.equal(result.stdout, '');
+  assert.doesNotMatch(result.stderr, /\[\d+(?:m \d+)?s\]/);
   await assert.rejects(readFile(target), { code: 'ENOENT' });
   await assert.rejects(readdir(directory), { code: 'ENOENT' });
 });

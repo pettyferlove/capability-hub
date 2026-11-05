@@ -98,7 +98,13 @@ export async function runCommand(
       flags.contribute ? 'contribute' : 'read',
     );
     process.stdout.write((flags.conversation ? guide.installation_prompt : guide.text) + '\n');
-    ui.message(`配置位置：${guide.target_file}\n${guide.notes.join('\n')}`);
+    ui.note('接入说明', `配置位置  ${guide.target_file}\n\n${guide.notes.join('\n')}`);
+    if (ui.interactive)
+      ui.outro(
+        flags.conversation
+          ? '接入说明已生成，可复制给目标 Agent。'
+          : '配置已生成，请按上方说明完成接入。',
+      );
     return;
   }
   if (['connect', 'bridge', 'status'].includes(command)) {
@@ -148,7 +154,8 @@ export async function runCommand(
       verification.password
     )
       throw new Error('Hub 返回了无效的浏览器批准地址');
-    ui.message(`请在浏览器登录并批准：${verification.toString()}\n核对授权码：${login.user_code}`);
+    ui.note('CLI 授权', `请在浏览器登录，核对授权码后批准。\n\n授权码  ${login.user_code}`);
+    ui.link(verification.toString());
     await ui.task('等待浏览器批准登录', 'CLI 登录完成', async () => {
       const expires = Date.now() + login.expires_in * 1000;
       while (Date.now() < expires) {
@@ -164,7 +171,7 @@ export async function runCommand(
       }
       throw new Error('登录等待超时，请重新发起');
     });
-    ui.message('已登录。令牌保存在用户专用 0600 文件。\n下一步：capability-hub search <关键词>');
+    ui.outro('已登录 · 下一步：capability-hub search <关键词>');
     return;
   }
   let slug: string | undefined;
@@ -207,15 +214,16 @@ export async function runCommand(
     if (flags.json) process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     else {
       for (const asset of result.items)
-        process.stdout.write(
-          `${asset.slug}\t${asset.kind}\t${terminalText(asset.current_release.version_label)}\n  ${terminalText(asset.description)}\n`,
-        );
+        ui.resource(asset.slug, asset.kind, asset.current_release.version_label, asset.description);
       if (!result.items.length)
-        ui.message('没有匹配的可见资源。请尝试更短的关键词，或检查当前账号的访问权限。');
-      else if (ui.interactive)
-        ui.message(
-          `显示 ${result.items.length} / ${result.total} 个资源。\n安装 Skill：capability-hub add <名称> --version <版本> --to <目录>\n生成 MCP 配置：capability-hub mcp-config <名称> --version <版本> --client <客户端>`,
+        ui.outro('没有匹配的可见资源。请尝试更短的关键词，或检查当前账号的访问权限。');
+      else if (ui.interactive) {
+        ui.note(
+          '使用资源',
+          '安装 Skill\ncapability-hub add <名称> --version <版本> --to <目录>\n\n生成 MCP 配置\ncapability-hub mcp-config <名称> --version <版本> --client <客户端>',
         );
+        ui.outro(`显示 ${result.items.length} / ${result.total} 个资源`);
+      }
     }
     return;
   }
@@ -267,18 +275,24 @@ export async function runCommand(
       scope,
     });
     process.stdout.write(configuration.text + '\n');
-    ui.message(`配置位置：${terminalText(configuration.target_file)}`);
-    for (const variable of configuration.required_variables)
-      ui.message(terminalText(variable.instruction));
-    for (const note of configuration.notes) ui.message(terminalText(note));
+    ui.note(
+      '客户端配置',
+      [
+        `配置位置  ${terminalText(configuration.target_file)}`,
+        ...configuration.required_variables.map((variable) => terminalText(variable.instruction)),
+        ...configuration.notes.map(terminalText),
+      ].join('\n\n'),
+    );
+    if (ui.interactive) ui.outro('配置已生成，请按上方说明在 Agent 中完成配置。');
     return;
   }
   if (!flags.to) throw new Error('add 必须提供明确 --to PATH');
   const path = `/api/versions/${version.version_id}`;
   const manifest = await api.json(path + '/manifest', manifestResponseSchema);
   if (ui.interactive)
-    ui.message(
-      `${flags.dryRun ? '预览' : '安装'}：${asset.slug} @ ${terminalText(version.version_label)}\n目标：${terminalText(resolve(flags.to, asset.slug))}`,
+    ui.note(
+      flags.dryRun ? '安装预览' : '安装 Skill',
+      `资源名称  ${asset.slug}\n资源版本  ${terminalText(version.version_label)}\n安装目录  ${terminalText(resolve(flags.to, asset.slug))}`,
     );
   const archive = await ui.task('下载 Skill 归档', '归档下载完成，开始校验', (update) =>
     api.archive(
@@ -314,7 +328,7 @@ export async function runCommand(
   });
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   if (ui.interactive)
-    ui.message(
+    ui.outro(
       flags.dryRun
         ? '预览完成，未写入文件。去掉 --dry-run 可安装。'
         : 'Skill 已校验并安装；请在 Agent 中重新加载技能。',

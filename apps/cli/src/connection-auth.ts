@@ -44,7 +44,14 @@ export function connectionFile(directory: string, url: string, client: AgentClie
 
 /** 读到属于其他 Hub 的凭据直接报错，防止把令牌发给地址相同但实例不同的服务。 */
 export async function readConnection(path: string, url: string) {
-  const saved = credentials.parse(await loadPrivateJson(path));
+  const saved = credentials.parse(
+    await loadPrivateJson(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT')
+        error.message =
+          '未找到当前 Hub 的 Agent 连接凭据。请先运行 capability-hub connect 完成授权；login 仅用于 CLI 资源访问。若使用过 --config-dir，请沿用同一目录。';
+      throw error;
+    }),
+  );
   if (saved.url !== url) throw new Error('连接凭据属于其他 Hub，请重新接入');
   return saved;
 }
@@ -132,11 +139,13 @@ export async function authorizeConnection(
       resource: url + '/mcp',
       scope: contribute ? 'hub:read hub:contribute' : 'hub:read',
     }).toString();
-    ui.message(
-      `请在浏览器确认连接：\n${authorization.href}\n远程终端需要将本机回调端口 ${address.port} 转发到此环境。`,
+    ui.step(
+      '浏览器授权',
+      `打开下方链接，在浏览器确认连接后将自动继续。\n有效期  10 分钟 · Ctrl+C 取消\n\n远程终端需将本机回调端口 ${address.port} 转发到此环境。`,
     );
+    ui.link(authorization.href);
     const code = await ui.task(
-      '等待浏览器授权（最长 10 分钟）',
+      '等待浏览器授权',
       '浏览器授权已确认',
       (update) =>
         new Promise<string>((resolve, reject) => {

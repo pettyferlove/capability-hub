@@ -61,13 +61,13 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
       flags.interactive !== false && !flags.json && command.name() !== 'bridge',
       flags.animation !== false,
     );
-    ui.intro('Capability Hub · ' + command.name());
+    ui.intro(command.name());
     await runCommand(command.name(), args, flags, ui);
   }
 
   command(
     'connect',
-    '授权连接 Agent，并验证、写入 MCP 配置',
+    '连接 Agent 并写入 MCP 配置',
     '示例：\n  capability-hub connect --url https://hub.example.com --client codex\n  capability-hub connect --url https://hub.example.com --client cursor --scope user --no-browser\n\n缺少 --url / --client 时可在终端输入。默认仅申请读取权限。\n已有不同配置须显式使用 --replace；验证成功后才写入。',
   )
     .addOption(clientOption())
@@ -80,7 +80,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
 
   command(
     'status',
-    '检查已授权的 Agent 连接与工具发现',
+    '检查 connect 连接与工具发现',
     '示例：\n  capability-hub status --url https://hub.example.com --client codex\n\n需要先完成 connect；此命令不修改配置。',
   )
     .addOption(clientOption())
@@ -88,13 +88,13 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
 
   command(
     'login',
-    '通过浏览器批准 CLI 的资源读取权限',
+    '为 CLI 搜索与安装授权',
     '示例：\n  capability-hub login --url https://hub.example.com\n\n打开终端给出的链接，核对授权码并批准。凭据只保存在私有文件中。\n此登录用于 search、add、mcp-config；Agent 连接请用 connect。',
   ).action(async (_options: CliOptions, command: Command) => execute(command));
 
   command(
     'search',
-    '搜索可见资源；省略查询文本时列出资源',
+    '搜索可见 Skill / MCP 资源',
     '示例：\n  capability-hub search "code review"\n  capability-hub search review --url https://hub.example.com --json\n\n使用 login 保存的凭据，或 CAPABILITY_HUB_TOKEN + --url。\n--json 输出原始结果；此模式不进入交互向导。',
   )
     .argument('[query...]', '查询词；多个词以空格连接')
@@ -105,7 +105,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
 
   command(
     'add',
-    '下载、校验并安装指定版本的 Skill',
+    '下载、校验并安装 Skill',
     '示例：\n  capability-hub add example-skill --version 1.0.0 --to .agents/skills --dry-run\n  capability-hub add example-skill --version 1.0.0 --to .agents/skills\n\n只写入明确指定的 PATH/NAME，不执行内容。缺少参数时可在终端选择版本、输入路径。\n--dry-run 只预览；已有目录须显式 --replace 并保留备份；请先用 --dry-run 核对本地差异。',
   )
     .argument('[name]', 'Skill 资源名称')
@@ -119,7 +119,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
 
   command(
     'hub-config',
-    '离线生成 Hub 自身的 MCP 配置或接入说明',
+    '离线生成 Hub 配置或接入说明',
     '示例：\n  capability-hub hub-config --url https://hub.example.com --client codex\n  capability-hub hub-config --url https://hub.example.com --client pi --scope user --conversation\n\n不读取凭据、不请求 Hub、不写文件。配置或对话说明写到 stdout，提示写到 stderr。',
   )
     .addOption(clientOption())
@@ -135,7 +135,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
 
   command(
     'mcp-config',
-    '为已发布的 MCP 资源生成客户端配置',
+    '生成 MCP 资源的客户端配置',
     '示例：\n  capability-hub mcp-config example-service --version 1.0.0 --client cursor\n  capability-hub mcp-config example-service --version 1.0.0 --client pi --option remote-1 --scope user\n\n使用 CLI 登录凭据或环境令牌。JSON/TOML 写到 stdout，不自动写入客户端。\n有多个受支持的安装项时，须通过 --option 或终端选择明确指定。',
   )
     .argument('[name]', 'MCP 资源名称')
@@ -162,13 +162,25 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
       program.outputHelp();
       return;
     }
-    ui.intro('Capability Hub');
+    ui.intro();
     const selected = await ui.choose(
       '命令',
       '你想做什么？',
-      program.commands
-        .filter((item) => item.name() !== 'bridge')
-        .map((item) => ({ value: item.name(), label: item.name(), hint: item.description() })),
+      [
+        { title: 'Agent 接入', commands: ['connect', 'status'] },
+        { title: 'CLI 资源', commands: ['login', 'search', 'add'] },
+        { title: '配置生成', commands: ['hub-config', 'mcp-config'] },
+      ].flatMap((group) => [
+        { value: group.title, label: group.title, disabled: true },
+        ...program.commands
+          .filter((item) => group.commands.includes(item.name()))
+          .map((item) => ({
+            value: item.name(),
+            label: item.name(),
+            hint: item.description(),
+            gapAfter: item.name() === group.commands.at(-1),
+          })),
+      ]),
     );
     await runCommand(selected, [], flags, ui);
   });
