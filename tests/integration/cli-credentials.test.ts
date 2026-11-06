@@ -23,20 +23,54 @@ import {
 test('凭据原子替换收紧权限，读取拒绝公开文件及祖先符号链接', async (context) => {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-credentials-'));
   context.after(() => rm(root, { recursive: true, force: true }));
-  const path = join(root, 'config/auth.json');
+  const path = join(root, 'config/credentials/auth.json');
   const value = { url: 'https://hub.example.test', token: 'hub_token_for_test' };
   await saveCredentials(path, value);
   assert.deepEqual(await loadCredentials(path), value);
-  assert.equal((await stat(path)).mode & 0o777, 0o600);
-  await chmod(path, 0o644);
-  await assert.rejects(() => loadCredentials(path), /私有普通文件/);
+  if (process.platform !== 'win32') {
+    assert.equal((await stat(path)).mode & 0o777, 0o600);
+    await chmod(path, 0o644);
+    await assert.rejects(() => loadCredentials(path), /私有普通文件/);
+  }
   await saveCredentials(path, value);
-  assert.equal((await stat(path)).mode & 0o777, 0o600);
-  await mkdir(join(root, 'outside'));
-  await symlink(join(root, 'outside'), join(root, 'link'));
-  await assert.rejects(() => saveCredentials(join(root, 'link/child/auth.json'), value));
+  assert.deepEqual(await loadCredentials(path), value);
+  if (process.platform !== 'win32') assert.equal((await stat(path)).mode & 0o777, 0o600);
+  await mkdir(join(root, 'outside/child'), { recursive: true });
+  await symlink(
+    join(root, 'outside'),
+    join(root, 'link'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+  await assert.rejects(
+    () => saveCredentials(join(root, 'link/child/auth.json'), value),
+    /符号链接/,
+  );
   await assert.rejects(() => readFile(join(root, 'outside/child/auth.json')), { code: 'ENOENT' });
+  await saveCredentials(join(root, 'outside/child/auth.json'), value);
+  await assert.rejects(() => loadCredentials(join(root, 'link/child/auth.json')), /符号链接/);
   await writeFile(path, 'x'.repeat(16385), { mode: 0o600 });
+  await assert.rejects(() => loadCredentials(path), /16 KiB/);
+});
+
+test('Windows 凭据读取接受可写及只读文件的模拟权限位，仍拒绝链接和超大文件', async (context) => {
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-windows-credentials-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, 'auth.json');
+  const value = { url: 'https://hub.example.test', token: 'hub_windows_token_for_test' };
+  await saveCredentials(path, value);
+  const link = join(root, 'link.json');
+  await symlink(path, link, 'file');
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  context.after(() => Object.defineProperty(process, 'platform', platform));
+  for (const mode of [0o666, 0o444]) {
+    await chmod(path, mode);
+    assert.deepEqual(await loadCredentials(path), value);
+  }
+  await assert.rejects(() => loadCredentials(link), /链接/);
+  await assert.rejects(() => loadCredentials(root), /普通文件/);
+  await chmod(path, 0o600);
+  await writeFile(path, 'x'.repeat(16385));
   await assert.rejects(() => loadCredentials(path), /16 KiB/);
 });
 

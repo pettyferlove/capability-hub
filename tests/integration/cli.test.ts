@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { cliInstallationGuide } from '@capability-hub/contracts';
 import { HubApiClient } from '../../apps/cli/src/api-client.js';
+import { saveCredentials } from '../../apps/cli/src/credentials.js';
 import { serveTestHub } from '../support/server.js';
 import { publishSkill, submitPublication } from '../support/application.js';
 import { hubClientSkillFiles } from '../support/content.js';
@@ -497,6 +498,29 @@ test('CLI 安装官方多文件 Skill 时保留全部参考资料和目录结构
   assert(files.some((file) => file.path.startsWith('references/')));
   for (const file of files)
     assert.deepEqual(await readFile(join(destination, slug, file.path)), file.bytes);
+});
+
+test('CLI 使用落盘登录凭据执行非交互搜索，返回可解析 JSON 且不输出令牌', async (context) => {
+  const fixture = await serveTestHub(context);
+  await publishSkill(fixture);
+  const token = await fixture.hub.tokens.issue(fixture.admin, { name: 'CLI', scope: 'hub:read' });
+  const directory = join(await realpath(fixture.directory), 'config/cli');
+  await saveCredentials(join(directory, 'auth.json'), { url: fixture.origin, token: token.token });
+  const result = await cli([
+    'search',
+    'sample',
+    '--url',
+    fixture.origin,
+    '--config-dir',
+    directory,
+    '--json',
+    '--no-interactive',
+  ]);
+  assert.equal(result.code, 0, result.stderr);
+  const body: unknown = JSON.parse(result.stdout);
+  assert(body && typeof body === 'object' && 'total' in body);
+  assert.equal(body.total, 1);
+  assert.equal((result.stdout + result.stderr).includes(token.token), false);
 });
 
 test('CLI 子进程通过真实 HTTP 搜索和安装已发布内容，撤权后不能再次交付，错误不输出令牌', async (context) => {
