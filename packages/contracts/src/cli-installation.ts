@@ -27,7 +27,7 @@ export function cliInstallationGuide(origin: string, registry?: string): CliInst
       {
         title: '准备运行环境',
         description:
-          'CLI 支持 Node.js 22.x（22.12.0 及以上）或 24.x，建议使用对应主版本的最新补丁版本。在运行 CLI 或 Agent 的同一环境准备 Node.js 和 npm；独立安装 CLI 无需 pnpm 或项目源码。该环境需要能访问 npm 仓库和 Hub。',
+          'CLI 支持 Node.js 24.x（24.22.0 及以上），建议使用最新补丁版本。在运行 CLI 或 Agent 的同一环境准备 Node.js 和 npm；独立安装 CLI 无需 pnpm 或项目源码。该环境需要能访问 npm 仓库和 Hub。',
         command: 'node --version\nnpm --version',
       },
       ...(registry

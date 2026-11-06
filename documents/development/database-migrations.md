@@ -14,7 +14,7 @@
 
 ## 开发流程
 
-从仓库根目录使用 `.nvmrc` 指定的 Node 和锁定的 pnpm：
+从仓库根目录使用满足 engines 的 Node 和 pnpm：
 
 ```sh
 # 1. 修改两个后端的 schema.ts，随后分别生成带有业务名称的迁移

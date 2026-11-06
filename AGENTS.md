@@ -229,8 +229,9 @@ relax package boundaries, RBAC, concurrency, persistence, or test rules.
 
 ## Runtime/Tooling Preferences
 
-- Node **24.22.1** (`.nvmrc`, `engines`, Dockerfile) and pnpm **10.33.0**; `preinstall` aborts on any
-  other package manager/version (`scripts/setup/require-pnpm.mjs`).
+- Node `>=24.22.0 <25` and pnpm `>=10.33.0 <11` (`engines`); `.nvmrc` selects 24.x. Dockerfile pins
+  Node 24.22.1 and pnpm 10.33.0; `preinstall` rejects other package managers
+  (`scripts/setup/require-pnpm.mjs`).
 - ESM everywhere (`"type": "module"`); dev/test resolution uses `--conditions=development` + `tsx`
   so packages resolve to `src/*.ts`, while production resolves `dist`. Tests import `./x.js` for
   files that are `x.ts` on disk — do not "fix" these specifiers.

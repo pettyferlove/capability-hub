@@ -10,7 +10,7 @@ Hub 不执行上传的脚本，也不代替客户端连接目标 MCP 服务。
 
 ## 快速开始
 
-需要 Node.js **24.22.1**、pnpm **10.33.0**。登记 Git 来源或使用 SSH 凭据时还需要 Git 和 OpenSSH。
+需要 Node.js `>=24.22.0 <25`、pnpm `>=10.33.0 <11`。登记 Git 来源或使用 SSH 凭据时还需要 Git 和 OpenSSH。
 
 ```sh
 nvm use
