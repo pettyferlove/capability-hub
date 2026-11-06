@@ -1,9 +1,10 @@
 import { parseRecord, type RecordMap, type TableName } from '@capability-hub/domain/models';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import type { RecordQueries } from '../record-driver.js';
 import { resourceActivityQuery } from '../resource-activity-query.js';
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy';
 import { sqliteRevision, type sqliteSchema, sqliteTableFor } from './record-schema.js';
+import { audit } from './schema.js';
 
 type Session = Pick<
   SqliteRemoteDatabase<typeof sqliteSchema>,
@@ -90,5 +91,18 @@ export class SqliteQueries implements RecordQueries {
       .from(source)
       .where(range)
       .groupBy(...group);
+  }
+  async summarizeAssetAuditActivity(actions: string[]) {
+    const assetId = sql<string>`coalesce(json_extract(${audit.data}, '$.subject.asset_id'), json_extract(${audit.data}, '$.entity_id'))`;
+    const action = sql<string>`json_extract(${audit.data}, '$.action')`;
+    return await this.db
+      .select({
+        asset_id: assetId,
+        action,
+        occurred_at: sql<string>`max(${audit.occurred_at})`,
+      })
+      .from(audit)
+      .where(inArray(action, actions))
+      .groupBy(assetId, action);
   }
 }

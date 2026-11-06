@@ -69,6 +69,10 @@ export interface RecordStore {
   /** 当前数据库占用的字节数；SQLite 按数据库页计量。 */
   sizeBytes(): Promise<number>;
   summarizeResourceActivity(from: string, through: string): Promise<ResourceActivityBucket[]>;
+  /** 每个资产、每种指定动作只返回最近时间，不读取审计正文。 */
+  summarizeAssetAuditActivity(
+    actions: string[],
+  ): Promise<{ asset_id: string; action: string; occurred_at: string }[]>;
   health(): Promise<void>;
   close(): Promise<void>;
 }

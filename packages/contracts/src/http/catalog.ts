@@ -91,8 +91,10 @@ export interface ManagementAssetResponse {
   current_release: ReleaseResponse | null;
   current_version: Pick<VersionSnapshotResponse, 'version_label' | 'content_digest'> | null;
   latest_contributor: IntakeContributorResponse | null;
+  latest_activity: { occurred_at: string; label: string };
+  needs_attention: boolean;
   latest_intake: { id: string; version_label: string; state: string } | null;
-  pending_requests: { id: string; version_label: string }[];
+  pending_requests: { id: string; version_label: string; context_valid: boolean }[];
 }
 
 /** 总数与页码基于权限过滤后的匹配集合，items 仅包含当前页。 */

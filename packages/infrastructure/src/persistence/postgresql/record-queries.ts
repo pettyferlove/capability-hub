@@ -1,9 +1,10 @@
 import { parseRecord, type RecordMap, type TableName } from '@capability-hub/domain/models';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import type { RecordQueries } from '../record-driver.js';
 import { resourceActivityQuery } from '../resource-activity-query.js';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pgRevision, type pgSchema, pgTableFor } from './record-schema.js';
+import { audit } from './schema.js';
 
 /** 查询对象所需的 drizzle 会话子集：既接受连接池上的 db，也接受事务内的 tx。 */
 export type PostgresSession = Pick<
@@ -90,5 +91,18 @@ export class PgQueries implements RecordQueries {
       .from(source)
       .where(range)
       .groupBy(...group);
+  }
+  async summarizeAssetAuditActivity(actions: string[]) {
+    const assetId = sql<string>`coalesce(${audit.data} -> 'subject' ->> 'asset_id', ${audit.data} ->> 'entity_id')`;
+    const action = sql<string>`${audit.data} ->> 'action'`;
+    return await this.db
+      .select({
+        asset_id: assetId,
+        action,
+        occurred_at: sql<string>`max(${audit.occurred_at})`,
+      })
+      .from(audit)
+      .where(inArray(action, actions))
+      .groupBy(assetId, action);
   }
 }

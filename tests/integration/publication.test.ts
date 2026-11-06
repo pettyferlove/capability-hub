@@ -43,8 +43,9 @@ test('维护列表按名称稳定分页，删除末页资源后回到有效页�
       ),
     );
   const client = await signIn(f);
-  const first = (await client.get('/api/management/assets?page=1&page_size=5').expect(200))
-    .body as ManagementAssetListResponse;
+  const first = (
+    await client.get('/api/management/assets?sort=name&page=1&page_size=5').expect(200)
+  ).body as ManagementAssetListResponse;
   assert.equal(first.total, 6);
   assert.equal(first.page, 1);
   assert.equal(first.page_size, 5);
@@ -52,7 +53,7 @@ test('维护列表按名称稳定分页，删除末页资源后回到有效页�
     first.items.map((asset) => asset.slug),
     ['page-1', 'page-2', 'page-3', 'page-4', 'page-5'],
   );
-  const last = (await client.get('/api/management/assets?page=2&page_size=5').expect(200))
+  const last = (await client.get('/api/management/assets?sort=name&page=2&page_size=5').expect(200))
     .body as ManagementAssetListResponse;
   assert.deepEqual(
     last.items.map((asset) => asset.slug),
@@ -71,14 +72,205 @@ test('维护列表按名称稳定分页，删除末页资源后回到有效页�
     '"1"',
     randomUUID(),
   );
-  const remaining = (await client.get('/api/management/assets?page=2&page_size=5').expect(200))
-    .body as ManagementAssetListResponse;
+  const remaining = (
+    await client.get('/api/management/assets?sort=name&page=2&page_size=5').expect(200)
+  ).body as ManagementAssetListResponse;
   assert.equal(remaining.page, 1);
   assert.equal(remaining.total, 5);
   assert.deepEqual(
     remaining.items.map((asset) => asset.id),
     first.items.map((asset) => asset.id),
   );
+});
+
+test('维护列表按业务变动全局分页，同时间按名称稳定排序，读取不刷新动态', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-01T00:00:00Z') });
+  const f = await createTestHub(context);
+  const intakes = [];
+  for (let index = 1; index <= 6; index++) {
+    context.mock.timers.tick(1000);
+    intakes.push(await receiveSkill(f, { slug: `recent-${index}` }));
+  }
+  const client = await signIn(f);
+  const first = (await client.get('/api/management/assets?page_size=5').expect(200))
+    .body as ManagementAssetListResponse;
+  assert.deepEqual(
+    first.items.map((asset) => asset.slug),
+    ['recent-6', 'recent-5', 'recent-4', 'recent-3', 'recent-2'],
+  );
+  const last = (await client.get('/api/management/assets?page_size=5&page=2').expect(200))
+    .body as ManagementAssetListResponse;
+  assert.equal(last.items[0].slug, 'recent-1');
+  context.mock.timers.tick(1000);
+  const request = await submitPublication(f, intakes[0]);
+  context.mock.timers.tick(1000);
+  await f.hub.publications.decide(
+    f.reviewer,
+    request.id,
+    {
+      decision: 'reject',
+      comment: '请完善使用说明',
+      policy_digest: request.policy_digest,
+      accepted_warnings: [],
+    },
+    '"1"',
+    randomUUID(),
+  );
+  const rejected = (await f.hub.assetManagement.list(f.admin)).items[0];
+  assert.equal(rejected.id, intakes[0].asset_id);
+  assert.deepEqual(rejected.latest_activity, {
+    occurred_at: new Date().toISOString(),
+    label: '审核退回',
+  });
+  context.mock.timers.tick(1000);
+  await f.hub.assetManagement.versions(f.admin, rejected.id);
+  assert.deepEqual(
+    (await f.hub.assetManagement.list(f.admin)).items[0].latest_activity,
+    rejected.latest_activity,
+  );
+  context.mock.timers.tick(1000);
+  for (const intake of [intakes[5], intakes[0]])
+    await f.hub.lifecycle.updateState(
+      f.admin,
+      intake.asset_id,
+      {
+        lifecycle: 'blocked',
+        reason: '调查资源问题',
+      },
+      '"1"',
+    );
+  const blocked = await f.hub.assetManagement.list(f.admin);
+  assert.deepEqual(
+    blocked.items.slice(0, 2).map((asset) => asset.slug),
+    ['recent-1', 'recent-6'],
+  );
+  assert.equal(blocked.items[0].latest_activity.label, '封禁资产');
+});
+
+test('需要处理只包含当前有权推进的版本，后续发布消除历史失败', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-01T00:00:00Z') });
+  const f = await createTestHub(context);
+  for (const state of ['ready', 'pending', 'rejected', 'stale', 'cancelled', 'approved']) {
+    context.mock.timers.tick(1000);
+    const intake = await receiveSkill(f, { slug: `attention-${state}` });
+    if (state === 'ready') continue;
+    context.mock.timers.tick(1000);
+    const request = await submitPublication(f, intake);
+    context.mock.timers.tick(1000);
+    if (state === 'rejected' || state === 'approved')
+      await f.hub.publications.decide(
+        f.reviewer,
+        request.id,
+        {
+          decision: state === 'approved' ? 'approve' : 'reject',
+          comment: '核对使用说明',
+          policy_digest: request.policy_digest,
+          accepted_warnings: [],
+        },
+        '"1"',
+        randomUUID(),
+      );
+    if (state === 'cancelled')
+      await f.hub.publications.cancel(f.admin, request.id, { reason: '主动终止发布' }, '"1"');
+    if (state === 'stale') {
+      await f.store.tx(() =>
+        f.hub.publications.invalidatePending(intake.asset_id, 'SOURCE_CONFIG_CHANGED'),
+      );
+      const asset = (await f.hub.assetManagement.list(f.admin)).items.find(
+        (item) => item.id === intake.asset_id,
+      )!;
+      assert.deepEqual(asset.latest_activity, {
+        occurred_at: new Date().toISOString(),
+        label: '发布申请失效',
+      });
+    }
+  }
+  context.mock.timers.tick(1000);
+  const failed = await f.hub.intakes.receive(
+    f.admin,
+    Buffer.from('invalid ZIP'),
+    'skill.zip',
+    {
+      target: 'new',
+      kind: 'skill',
+      slug: 'attention-failed',
+      owner_group_id: f.teamId,
+      version_label: '1.0.0',
+    },
+    randomUUID(),
+  );
+  assert.equal((await f.hub.assetManagement.list(f.admin, { state: 'processing' })).total, 1);
+  context.mock.timers.tick(1000);
+  await f.worker.tick();
+  const pending = await f.hub.assetManagement.list(f.admin, {
+    state: 'needs_attention',
+    sort: 'name',
+  });
+  assert.deepEqual(
+    pending.items.map((asset) => asset.slug),
+    ['attention-failed', 'attention-ready', 'attention-rejected', 'attention-stale'],
+  );
+  assert.equal(pending.items[0].latest_activity.label, '处理失败');
+  context.mock.timers.tick(1000);
+  await publishSkill(f, { slug: 'attention-failed', assetId: failed.asset_id, version: '1.0.1' });
+  assert(
+    !(await f.hub.assetManagement.list(f.admin, { state: 'needs_attention' })).items.some(
+      (asset) => asset.id === failed.asset_id,
+    ),
+  );
+  const ready = await f.store.find('assets', 'slug', 'attention-ready');
+  assert(ready);
+  await f.hub.lifecycle.updateState(
+    f.admin,
+    ready.id,
+    { lifecycle: 'deprecated', reason: '不再维护' },
+    '"1"',
+  );
+  assert(
+    !(await f.hub.assetManagement.list(f.admin, { state: 'needs_attention' })).items.some(
+      (asset) => asset.id === ready.id,
+    ),
+  );
+  const role = await f.hub.administration.createRole(f.admin, {
+    name: '只维护不共享',
+    permissions: ['asset:maintain'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  const reader = await f.hub.identity.principal(f.reader.id);
+  assert.equal((await f.hub.assetManagement.list(reader, { state: 'needs_attention' })).total, 0);
+});
+
+test('较早版本获批后，较新申请即使仍为待审也会因基线失效进入需要处理', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-01T00:00:00Z') });
+  const f = await createTestHub(context);
+  const first = await receiveSkill(f);
+  const earlier = await submitPublication(f, first);
+  context.mock.timers.tick(1000);
+  const latest = await receiveSkill(f, { assetId: first.asset_id, version: '1.0.1' });
+  await submitPublication(f, latest);
+  context.mock.timers.tick(1000);
+  await f.hub.publications.decide(
+    f.reviewer,
+    earlier.id,
+    {
+      decision: 'approve',
+      comment: '先发布已核对的版本',
+      policy_digest: earlier.policy_digest,
+      accepted_warnings: [],
+    },
+    '"1"',
+    randomUUID(),
+  );
+  const pending = await f.hub.assetManagement.list(f.admin, { state: 'needs_attention' });
+  assert.equal(pending.total, 1);
+  assert.equal(pending.items[0].latest_intake?.id, latest.id);
+  assert.equal(pending.items[0].latest_intake?.state, 'pending');
+  assert.equal(pending.items[0].pending_requests[0].context_valid, false);
 });
 
 test('维护列表的搜索、状态和总数只包含有权资源，生命周期权限不泄露待审候选', async (context) => {
@@ -122,8 +314,16 @@ test('维护列表的搜索、状态和总数只包含有权资源，生命周�
     .body as ManagementAssetListResponse;
   assert.equal(permitted.total, 1);
   assert.equal(permitted.items[0].latest_intake, null);
+  assert.equal(permitted.items[0].latest_activity.label, '新建资产');
+  assert.equal(permitted.items[0].needs_attention, false);
   assert.deepEqual(permitted.items[0].pending_requests, []);
-  for (const query of [{ state: 'pending' }, { q: 'blocked' }, { state: 'blocked' }]) {
+  for (const query of [
+    { state: 'pending' },
+    { state: 'needs_attention' },
+    { state: 'processing' },
+    { q: 'blocked' },
+    { state: 'blocked' },
+  ]) {
     const hidden = (await reader.get('/api/management/assets').query(query).expect(200))
       .body as ManagementAssetListResponse;
     assert.equal(hidden.total, 0);
@@ -146,6 +346,8 @@ test('维护分页拒绝无效页码、页大小、状态和未知查询参数',
     'page=1.5',
     'page_size=100',
     'state=failed',
+    'sort=created_at',
+    'sort=name&sort=recent_activity',
     'unknown=1',
     'page=1&page=2',
   ])
@@ -1531,7 +1733,9 @@ test('更新摘要展示当前发布与待审版本，历史审核保持提交�
     items: [managed],
   } = await f.hub.assetManagement.list(f.admin);
   assert.equal(managed.current_version?.version_label, '1.0.0');
-  assert.deepEqual(managed.pending_requests, [{ id: request.id, version_label: '1.0.1' }]);
+  assert.deepEqual(managed.pending_requests, [
+    { id: request.id, version_label: '1.0.1', context_valid: true },
+  ]);
   assert.equal(managed.latest_intake?.id, next.id);
   assert.equal(managed.latest_intake?.state, 'pending');
   assert.deepEqual((await f.hub.assetManagement.list(f.reader)).items, []);

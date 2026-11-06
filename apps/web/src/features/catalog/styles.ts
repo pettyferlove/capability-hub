@@ -403,8 +403,8 @@ export const feedbackFormStyles = cn(
 );
 
 export const managementTableStyles = cn(
-  '[&_table]:min-w-280 [&_table]:[table-layout:fixed] [&_td]:py-4',
-  '[&_th:nth-child(1)]:w-[28%] [&_th:nth-child(2)]:w-[12%] [&_th:nth-child(3)]:w-[14%] [&_th:nth-child(4)]:w-[18%]',
+  '[&_table]:min-w-320 [&_table]:[table-layout:fixed] [&_td]:py-4',
+  '[&_th:nth-child(1)]:w-[23%] [&_th:nth-child(2)]:w-[10%] [&_th:nth-child(3)]:w-[12%] [&_th:nth-child(4)]:w-[16%] [&_th:nth-child(5)]:w-[17%]',
   '[&_small]:block [&_small]:text-muted-ink [&_small]:text-caption',
   "[&_[class~='group/table-wrap']]:max-h-none",
   'max-[760px]:[&_table]:block max-[760px]:[&_table]:min-w-0',
@@ -412,7 +412,7 @@ export const managementTableStyles = cn(
   'max-[760px]:[&_thead]:overflow-hidden max-[760px]:[&_thead]:[clip-path:inset(50%)]',
   'max-[760px]:[&_tbody]:block max-[760px]:[&_tbody_tr]:grid',
   'max-[760px]:[&_tbody_tr]:[grid-template-columns:minmax(0,1.4fr)_minmax(0,1fr)]',
-  "max-[760px]:[&_tbody_tr]:[grid-template-areas:'resource_contributor'_'release_intake'_'actions_actions']",
+  "max-[760px]:[&_tbody_tr]:[grid-template-areas:'resource_contributor'_'release_intake'_'activity_activity'_'actions_actions']",
   'max-[760px]:[&_tbody_tr]:gap-3 max-[760px]:[&_tbody_tr]:p-4',
   'max-[760px]:[&_tbody_tr]:border-b max-[760px]:[&_tbody_tr]:border-line',
   'max-[760px]:[&_tbody_tr:last-child]:border-b-0',
@@ -423,7 +423,8 @@ export const managementTableStyles = cn(
   'max-[760px]:[&_td:nth-child(2)]:[grid-area:release]',
   'max-[760px]:[&_td:nth-child(3)]:[grid-area:intake]',
   'max-[760px]:[&_td:nth-child(4)]:[grid-area:contributor] max-[760px]:[&_td:nth-child(4)]:text-right',
-  'max-[760px]:[&_td:nth-child(5)]:[grid-area:actions]',
+  'max-[760px]:[&_td:nth-child(5)]:[grid-area:activity]',
+  'max-[760px]:[&_td:nth-child(6)]:[grid-area:actions]',
 );
 
 export const managementActionsStyles = cn(

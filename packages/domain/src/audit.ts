@@ -126,6 +126,7 @@ export const auditDefinitions: Record<string, AuditDefinition> = {
     subject: 'publication',
   },
   'publication.cancelled': { label: '撤回申请', category: 'publication', subject: 'publication' },
+  'publication.stale': { label: '发布申请失效', category: 'publication', subject: 'publication' },
   'asset.active': { label: '恢复资源', category: 'publication', subject: 'asset' },
   'asset.usage_updated': { label: '更新使用要求', category: 'publication', subject: 'asset' },
   'asset.mcp_key_updated': {

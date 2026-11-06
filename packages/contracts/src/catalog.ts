@@ -5,7 +5,10 @@ import { assetCategorySchema, assetKindSchema } from './primitives.js';
 export const managementAssetListQuerySchema = z
   .object({
     q: z.string().trim().max(200).default(''),
-    state: z.enum(['all', 'pending', 'active', 'deprecated', 'blocked']).default('all'),
+    state: z
+      .enum(['all', 'needs_attention', 'processing', 'pending', 'active', 'deprecated', 'blocked'])
+      .default('all'),
+    sort: z.enum(['recent_activity', 'name']).default('recent_activity'),
     page: z
       .string()
       .regex(/^[1-9]\d{0,6}$/)

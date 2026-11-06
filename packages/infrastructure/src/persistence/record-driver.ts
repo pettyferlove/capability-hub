@@ -17,6 +17,7 @@ export type RecordQueries = Pick<
   | 'sizeBytes'
   | 'health'
   | 'summarizeResourceActivity'
+  | 'summarizeAssetAuditActivity'
 >;
 
 /**

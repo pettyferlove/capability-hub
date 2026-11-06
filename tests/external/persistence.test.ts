@@ -15,6 +15,45 @@ import { assertFrozenEvidence } from '../support/evidence.js';
 import { assertProjectTokenUsage } from '../support/token-usage.js';
 import { assertResourceActivity } from '../support/resource-activity.js';
 
+test('PostgreSQL 维护列表按业务事件更新顺序，读取操作不覆盖最近变动', async (context) => {
+  const database = await externalDatabase();
+  try {
+    context.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-01T00:00:00Z') });
+    const f = await createTestHub(context, {
+      database: { driver: 'postgresql', url: database.url, poolSize: 2 },
+    });
+    try {
+      const first = await publishSkill(f, { slug: 'older-skill' });
+      context.mock.timers.tick(1000);
+      const second = await receiveSkill(f, { slug: 'newer-skill' });
+      assert.equal((await f.hub.assetManagement.list(f.admin)).items[0].id, second.asset_id);
+      context.mock.timers.tick(1000);
+      const asset = await f.hub.assetAccess.getAsset(first.intake.asset_id);
+      await f.hub.lifecycle.updateState(
+        f.admin,
+        asset.id,
+        {
+          lifecycle: 'blocked',
+          reason: '暂停分发',
+        },
+        `"${asset.revision}"`,
+      );
+      const expected = { occurred_at: new Date().toISOString(), label: '封禁资产' };
+      context.mock.timers.tick(1000);
+      await f.hub.assetManagement.versions(f.admin, asset.id);
+      const listed = await f.hub.assetManagement.list(f.admin);
+      assert.equal(listed.items[0].id, asset.id);
+      assert.deepEqual(listed.items[0].latest_activity, expected);
+      assert.equal(listed.items[0].needs_attention, false);
+      assert.equal(listed.items[1].needs_attention, true);
+    } finally {
+      await f.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
+
 test('PostgreSQL 和 SQLite 使用相同的资源运营趋势口径', async (context) => {
   const database = await externalDatabase();
   try {

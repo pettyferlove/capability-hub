@@ -553,12 +553,14 @@ export class PublicationService {
   async invalidatePending(assetId: string, reason: string) {
     for (const r of (await this.context.store.all('requests')).filter(
       (r) => r.asset_id === assetId && r.state === 'pending',
-    ))
+    )) {
       await this.context.store.put('requests', {
         ...r,
         state: 'stale',
         stale_reason: reason,
         revision: r.revision + 1,
       });
+      await this.context.store.audit('system', 'publication.stale', r.id, reason);
+    }
   }
 }

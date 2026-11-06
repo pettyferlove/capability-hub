@@ -312,6 +312,96 @@ test('同一轮询周期内再次修改 Git 来源也会按新修订同步', asy
   }
 });
 
+test('无内容变化的 Git 轮询保留维护动态与待办状态', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-01T00:00:00Z') });
+  const f = await sources(context);
+  const source = await f.create('unchanged-skill', '.');
+  let commit = 'a'.repeat(40);
+  let body = '原始内容';
+  context.mock.method(f.hub.git, 'snapshot', async () => ({
+    commit,
+    read: async () => [
+      { path: 'SKILL.md', bytes: skillDocument('unchanged-skill', body), executable: false },
+    ],
+    close: () => Promise.resolve(),
+  }));
+  await syncSource(f, source.id);
+  const [intake] = await f.store.all('intakes');
+  const detail = await f.hub.intakeQueries.getDetail(f.admin, intake.id);
+  assert(detail.version_id && detail.scan_run_id);
+  context.mock.timers.tick(1000);
+  const request = await submitPublication(f, {
+    ...detail,
+    version_id: detail.version_id,
+    scan_run_id: detail.scan_run_id,
+  });
+  await f.hub.publications.decide(
+    f.reviewer,
+    request.id,
+    {
+      decision: 'approve',
+      comment: '已核对',
+      policy_digest: request.policy_digest,
+      accepted_warnings: [],
+    },
+    '"1"',
+    randomUUID(),
+  );
+  const before = (await f.hub.assetManagement.list(f.admin)).items[0].latest_activity;
+  for (const nextCommit of ['b'.repeat(40), 'b'.repeat(40), 'c'.repeat(40)]) {
+    context.mock.timers.tick(1000);
+    commit = nextCommit;
+    const current = await f.store.get('sources', source.id);
+    assert(current?.kind === 'git');
+    await f.store.put('sources', { ...current, next_poll_at: 0 });
+    await f.worker.tick();
+    const asset = (await f.hub.assetManagement.list(f.admin)).items[0];
+    assert.deepEqual(asset.latest_activity, before);
+    assert.equal(asset.needs_attention, false);
+  }
+  assert.equal((await f.store.all('versions')).length, 1);
+  const latest = (await f.hub.assetManagement.list(f.admin)).items[0].latest_intake;
+  assert(latest);
+  const candidate = await f.hub.intakeQueries.getDetail(f.admin, latest.id);
+  assert(candidate.version_id && candidate.scan_run_id);
+  context.mock.timers.tick(1000);
+  const resubmitted = await submitPublication(f, {
+    ...candidate,
+    version_id: candidate.version_id,
+    scan_run_id: candidate.scan_run_id,
+  });
+  await f.hub.publications.decide(
+    f.reviewer,
+    resubmitted.id,
+    {
+      decision: 'reject',
+      comment: '需要补充使用说明',
+      policy_digest: resubmitted.policy_digest,
+      accepted_warnings: [],
+    },
+    '"1"',
+    randomUUID(),
+  );
+  const rejected = (await f.hub.assetManagement.list(f.admin)).items[0];
+  assert.equal(rejected.needs_attention, true);
+  context.mock.timers.tick(1000);
+  commit = 'd'.repeat(40);
+  await syncSource(f, source.id);
+  const unchanged = (await f.hub.assetManagement.list(f.admin)).items[0];
+  assert.deepEqual(unchanged.latest_activity, rejected.latest_activity);
+  assert.equal(unchanged.latest_intake?.state, 'rejected');
+  assert.equal(unchanged.needs_attention, true);
+  context.mock.timers.tick(1000);
+  commit = 'e'.repeat(40);
+  body = '更新后的内容';
+  await syncSource(f, source.id);
+  const after = (await f.hub.assetManagement.list(f.admin)).items[0];
+  assert.equal(after.latest_activity.label, '校验通过');
+  assert(after.latest_activity.occurred_at > before.occurred_at);
+  assert.equal(after.latest_intake?.state, 'ready');
+  assert.equal(after.needs_attention, true);
+});
+
 test('Git 贡献者区分人工同步和系统轮询，后续同步不改写已有版本的发起人', async (context) => {
   const f = await sources(context);
   const source = await f.create('attributed-skill', '.');

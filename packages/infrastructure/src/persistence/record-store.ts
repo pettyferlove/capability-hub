@@ -92,6 +92,9 @@ class DrizzleStore implements RecordStore {
   summarizeResourceActivity(from: string, through: string) {
     return this.execute((queries) => queries.summarizeResourceActivity(from, through));
   }
+  summarizeAssetAuditActivity(actions: string[]) {
+    return this.execute((queries) => queries.summarizeAssetAuditActivity(actions));
+  }
   health(): Promise<void> {
     return this.execute((queries) => queries.health());
   }

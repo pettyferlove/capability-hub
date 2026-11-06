@@ -7,6 +7,24 @@ import { resolveAuditActor } from '../audit/audit-snapshot.js';
 import type { AssetAccessService } from './asset-access-service.js';
 import { toVersionSnapshot } from './catalog-mapper.js';
 import type { KeywordOptionsQuery, ManagementAssetListQuery } from './queries.js';
+import type { PublicationQueryService } from '../publication/publication-query-service.js';
+
+const activityLabels: Record<string, string> = {
+  'publication.submitted': '提交审核',
+  'publication.nominated': '提名为通用',
+  'publication.rejected': '审核退回',
+  'publication.cancelled': '撤回申请',
+  'publication.stale': '发布申请失效',
+  'publication.approved': '审核通过并发布',
+  'version.deleted': '删除未发布版本',
+  'version.revoked': '撤销版本',
+  'asset.usage_updated': '更新使用要求',
+  'asset.mcp_key_updated': '更新共享密钥',
+  'asset.source_migrated': '迁移来源',
+  'asset.active': '恢复活动',
+  'asset.deprecated': '弃用资产',
+  'asset.blocked': '封禁资产',
+};
 
 /**
  * 管理侧只读查询：可见面以 `asset:maintain` 与 `asset:lifecycle` 为准，和目录可见性
@@ -16,6 +34,7 @@ export class AssetManagementQueryService {
   constructor(
     private readonly context: ApplicationContext,
     private readonly access: AssetAccessService,
+    private readonly publicationQueries: PublicationQueryService,
   ) {}
 
   private async intakeContributor(intake: IntakeRecord | undefined) {
@@ -32,9 +51,16 @@ export class AssetManagementQueryService {
     };
   }
 
-  /** 先按权限收敛，再筛选、按名称排序并分页；删除末页记录后返回仍有效的最后一页。 */
+  /** 先按权限和状态收敛，再排序分页；删除末页记录后返回仍有效的最后一页。 */
   async list(principal: Principal, input: ManagementAssetListQuery = {}) {
-    const query = { q: '', state: 'all', page: 1, page_size: 10, ...input };
+    const query = {
+      q: '',
+      state: 'all',
+      sort: 'recent_activity',
+      page: 1,
+      page_size: 10,
+      ...input,
+    };
     const words = query.q.normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean);
     const rows = (await this.options(principal))
       .filter((asset) => {
@@ -42,12 +68,23 @@ export class AssetManagementQueryService {
         return (
           words.every((word) => text.includes(word)) &&
           (query.state === 'all' ||
-            (query.state === 'pending'
-              ? asset.pending_requests.length > 0
-              : asset.lifecycle === query.state))
+            (query.state === 'needs_attention'
+              ? asset.needs_attention
+              : query.state === 'processing'
+                ? ['received', 'fetching', 'scanning'].includes(asset.latest_intake?.state ?? '')
+                : query.state === 'pending'
+                  ? asset.pending_requests.length > 0
+                  : asset.lifecycle === query.state))
         );
       })
-      .sort((a, b) => a.slug.localeCompare(b.slug, 'en') || a.id.localeCompare(b.id));
+      .sort(
+        (a, b) =>
+          (query.sort === 'recent_activity'
+            ? b.latest_activity.occurred_at.localeCompare(a.latest_activity.occurred_at)
+            : 0) ||
+          a.slug.localeCompare(b.slug, 'en') ||
+          a.id.localeCompare(b.id),
+      );
     const page = Math.min(query.page, Math.max(1, Math.ceil(rows.length / query.page_size)));
     return {
       items: rows.slice((page - 1) * query.page_size, page * query.page_size),
@@ -61,11 +98,24 @@ export class AssetManagementQueryService {
    *
    * 仅有 `asset:lifecycle` 的主体可见贡献者，但 `latest_intake`/`pending_requests`
    * 仍为空，不披露候选详情；
-   * `latest_intake.state` 在 intake 已 ready 时改用对应请求的状态，反映送审进展。
+   * `latest_intake.state` 在 intake 已 ready 时改用对应请求的状态；
+   * 无变化的 Git 同步沿用同一候选的最新请求。
    */
   async options(principal: Principal) {
-    return this.context.store.tx(async () =>
-      Promise.all(
+    return this.context.store.tx(async () => {
+      const actions = Object.keys(activityLabels);
+      const events = await this.context.store.summarizeAssetAuditActivity(actions);
+      const activities = new Map<string, typeof events>();
+      for (const event of events.sort(
+        (a, b) =>
+          a.occurred_at.localeCompare(b.occurred_at) ||
+          actions.indexOf(a.action) - actions.indexOf(b.action),
+      )) {
+        const entries = activities.get(event.asset_id) ?? [];
+        entries.push(event);
+        activities.set(event.asset_id, entries);
+      }
+      return Promise.all(
         (await this.context.store.all('assets'))
           .filter(
             (asset) =>
@@ -73,33 +123,120 @@ export class AssetManagementQueryService {
               has(principal, 'asset:lifecycle', this.access.assetContext(asset)),
           )
           .map(async (asset) => {
+            const source = (await this.context.store.get('sources', asset.source_id))!;
             const release = await this.context.store.get('releases', asset.current_release_id);
             const version = release
               ? await this.context.store.get('versions', release.version_id)
               : null;
-            const canSubmit = this.access.canMaintain(principal, asset);
+            const canMaintain = this.access.canMaintain(principal, asset);
             const intakes = await this.context.store.where('intakes', 'asset_id', asset.id);
             intakes.sort(
               (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
             );
-            const latest = canSubmit ? intakes[0] : undefined;
-            const requests = canSubmit
+            const latest = canMaintain ? intakes[0] : undefined;
+            const requests = canMaintain
               ? await this.context.store.where('requests', 'asset_id', asset.id)
               : [];
+            const candidateIntakeIds = new Set<string>();
+            let latestActivity = { occurred_at: asset.created_at, label: '新建资产' };
+            const updateLatestActivity = (occurredAt: string, label: string) => {
+              if (occurredAt >= latestActivity.occurred_at)
+                latestActivity = { occurred_at: occurredAt, label };
+            };
+            if (canMaintain) {
+              const chronological = [...intakes].reverse();
+              for (const [index, intake] of chronological.entries()) {
+                const previous = chronological[index - 1];
+                // 相同内容、规则与来源配置的成功 Git 轮询不构成新的维护动态。
+                const unchanged =
+                  intake.binding_id &&
+                  !intake.rescan_of &&
+                  intake.state === 'ready' &&
+                  previous?.state === 'ready' &&
+                  intake.source_id === previous.source_id &&
+                  intake.binding_id === previous.binding_id &&
+                  intake.content_digest === previous.content_digest &&
+                  intake.source_revision === previous.source_revision &&
+                  intake.processing_ruleset === previous.processing_ruleset;
+                if (!unchanged) candidateIntakeIds.clear();
+                candidateIntakeIds.add(intake.id);
+                if (unchanged) continue;
+                updateLatestActivity(
+                  intake.created_at,
+                  intake.rescan_of ? '重新校验' : '接收新版本',
+                );
+                if (intake.finished_at)
+                  updateLatestActivity(
+                    intake.finished_at,
+                    intake.state === 'ready'
+                      ? '校验通过'
+                      : intake.state === 'failed'
+                        ? '处理失败'
+                        : '处理取消',
+                  );
+              }
+              for (const request of requests) {
+                updateLatestActivity(request.created_at, '提交审核');
+                if (request.decided_at)
+                  updateLatestActivity(
+                    request.decided_at,
+                    request.state === 'approved' ? '审核通过并发布' : '审核退回',
+                  );
+              }
+            }
+            if (release) updateLatestActivity(release.published_at, '审核通过并发布');
+            for (const event of activities.get(asset.id) ?? [])
+              if (
+                canMaintain ||
+                event.action.startsWith('asset.') ||
+                event.action === 'version.revoked'
+              )
+                updateLatestActivity(event.occurred_at, activityLabels[event.action]);
             const latestRequest = requests
-              .filter((r) => r.source_intake_id === latest?.id)
+              .filter((request) => candidateIntakeIds.has(request.source_intake_id))
               .sort(
                 (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
               )[0];
+            const latestState =
+              latest?.state === 'ready' ? (latestRequest?.state ?? latest.state) : latest?.state;
             const pending = await Promise.all(
               requests
-                .filter((r) => r.state === 'pending')
-                .map(async (r) => ({
-                  id: r.id,
-                  version_label: (await this.context.store.get('versions', r.version_id))!
-                    .version_label,
-                })),
+                .filter((request) => request.state === 'pending')
+                .map(async (request) => {
+                  const review = await this.publicationQueries.getReview(principal, request.id);
+                  return {
+                    id: request.id,
+                    version_label: review.candidate.version_label,
+                    context_valid: review.context_valid,
+                  };
+                }),
             );
+            const needsSubmission =
+              ['ready', 'rejected', 'stale'].includes(latestState ?? '') ||
+              pending.some((request) => request.id === latestRequest?.id && !request.context_valid);
+            const latestVersion = await this.context.store.get('versions', latest?.version_id);
+            const alreadyPublished =
+              latest?.state === 'ready' &&
+              release?.version_id === latest.version_id &&
+              !latestRequest;
+            const needsAttention =
+              canMaintain &&
+              asset.lifecycle === 'active' &&
+              source.state !== 'blocked' &&
+              !source.distribution_revoked_at &&
+              latest?.source_id === asset.source_id &&
+              !alreadyPublished &&
+              (latestState === 'failed'
+                ? source.kind === 'upload' ||
+                  has(principal, 'source:manage', this.access.assetContext(asset))
+                : needsSubmission &&
+                  latestVersion?.availability !== 'revoked' &&
+                  has(principal, 'source:share', this.access.assetContext(asset)) &&
+                  !requests.some(
+                    (request) =>
+                      request.version_id === latest?.version_id &&
+                      pending.some((entry) => entry.id === request.id && entry.context_valid),
+                  ));
             const deleteBlockReason = await this.access.deleteBlockReason(principal, asset);
             return {
               id: asset.id,
@@ -108,9 +245,9 @@ export class AssetManagementQueryService {
               requires_api_key: asset.requires_api_key === true,
               owner_group_id: asset.owner_group_id,
               source_id: asset.source_id,
-              source_kind: (await this.context.store.get('sources', asset.source_id))!.kind,
+              source_kind: source.kind,
               lifecycle: asset.lifecycle,
-              can_submit: this.access.canMaintain(principal, asset),
+              can_submit: canMaintain,
               can_delete: deleteBlockReason === null,
               delete_block_reason: deleteBlockReason,
               can_lifecycle: has(principal, 'asset:lifecycle', this.access.assetContext(asset)),
@@ -120,14 +257,13 @@ export class AssetManagementQueryService {
                 ? { version_label: version.version_label, content_digest: version.content_digest }
                 : null,
               latest_contributor: await this.intakeContributor(intakes.find((r) => !r.rescan_of)),
+              latest_activity: latestActivity,
+              needs_attention: needsAttention,
               latest_intake: latest
                 ? {
                     id: latest.id,
                     version_label: latest.version_label,
-                    state:
-                      latest.state === 'ready'
-                        ? (latestRequest?.state ?? latest.state)
-                        : latest.state,
+                    state: latestState!,
                   }
                 : null,
               pending_requests: pending,
@@ -135,8 +271,8 @@ export class AssetManagementQueryService {
               revision: asset.revision,
             };
           }),
-      ),
-    );
+      );
+    });
   }
   /**
    * 发布表单的关键词联想，在单个事务内聚合多个来源。

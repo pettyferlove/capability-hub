@@ -116,7 +116,12 @@ export class HubServices {
     this.profile = new ProfileService(store, this.identity, this.credentials, config.gitHosts);
     this.git = new GitRepositoryAdapter(config, this.credentials);
     this.assetAccess = new AssetAccessService(store, this.identity);
-    this.assetManagement = new AssetManagementQueryService(context, this.assetAccess);
+    this.publicationQueries = new PublicationQueryService(context, this.assetAccess);
+    this.assetManagement = new AssetManagementQueryService(
+      context,
+      this.assetAccess,
+      this.publicationQueries,
+    );
     this.feedback = new AssetFeedbackService(context, this.assetAccess, (version, feedbackId) =>
       this.ai.autoTriage(version, feedbackId),
     );
@@ -153,7 +158,6 @@ export class HubServices {
       this.intakeQueries,
       this.mcpKeys,
     );
-    this.publicationQueries = new PublicationQueryService(context, this.assetAccess);
     this.publications = new PublicationService(
       context,
       this.assetAccess,

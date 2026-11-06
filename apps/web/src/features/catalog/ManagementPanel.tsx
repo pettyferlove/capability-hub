@@ -160,6 +160,7 @@ export default function ManagementPanel() {
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
+  const [sort, setSort] = useState('recent_activity');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   useEffect(() => {
@@ -173,6 +174,7 @@ export default function ManagementPanel() {
   const params = new URLSearchParams({
     q,
     state: filter,
+    sort,
     page: String(page),
     page_size: String(pageSize),
   });
@@ -212,10 +214,25 @@ export default function ManagementPanel() {
             }}
           >
             <option value="all">全部资产</option>
+            <option value="needs_attention">需要处理</option>
+            <option value="processing">处理中</option>
             <option value="pending">待审核</option>
             <option value="active">活动</option>
             <option value="deprecated">已弃用</option>
             <option value="blocked">已封禁</option>
+          </SelectField>
+        </div>
+        <div className="w-44 max-w-full">
+          <SelectField
+            aria-label="维护资产排序"
+            value={sort}
+            onValueChange={(value) => {
+              setSort(value);
+              setPage(1);
+            }}
+          >
+            <option value="recent_activity">最近变动优先</option>
+            <option value="name">名称升序</option>
           </SelectField>
         </div>
       </div>
@@ -228,7 +245,7 @@ export default function ManagementPanel() {
         {error ? (
           <ErrorState message={error} retry={reload} />
         ) : loading && !data ? (
-          <TableSkeleton label="正在加载可维护资产…" rows={5} columns={5} paginated stackOnMobile />
+          <TableSkeleton label="正在加载可维护资产…" rows={5} columns={6} paginated stackOnMobile />
         ) : !data?.items.length ? (
           <Empty title={filtered ? '没有匹配的资产' : '没有可维护的资产'}>
             {filtered
@@ -245,6 +262,7 @@ export default function ManagementPanel() {
                     <th scope="col">当前发布</th>
                     <th scope="col">最近接收</th>
                     <th scope="col">最近上传 / 同步</th>
+                    <th scope="col">最近变动</th>
                     <th scope="col">操作</th>
                   </tr>
                 </thead>
@@ -313,18 +331,24 @@ export default function ManagementPanel() {
                               <a
                                 key={request.id}
                                 className={cn(managementStatusStyles, 'min-w-0 hover:underline')}
-                                data-state="pending"
-                                aria-label={`查看 ${shortVersion(request.version_label)} 的待审核申请`}
-                                title={`待审核：${request.version_label}`}
+                                data-state={request.context_valid ? 'pending' : 'stale'}
+                                aria-label={`查看 ${shortVersion(request.version_label)} 的${request.context_valid ? '待审核' : '需重新提交'}申请`}
+                                title={`${request.context_valid ? '待审核' : '需重新提交'}：${request.version_label}`}
                                 href={pageHref('review', { request: request.id })}
                               >
-                                <Clock3 size={13} aria-hidden="true" />
+                                {request.context_valid ? (
+                                  <Clock3 size={13} aria-hidden="true" />
+                                ) : (
+                                  <CircleHelp size={13} aria-hidden="true" />
+                                )}
                                 <span className="truncate">
                                   {a.pending_requests.length === 1 &&
                                   a.latest_intake?.state === 'pending' &&
                                   request.version_label === a.latest_intake.version_label
-                                    ? '待审核'
-                                    : `待审核 · ${shortVersion(request.version_label)}`}
+                                    ? request.context_valid
+                                      ? '待审核'
+                                      : '需重新提交'
+                                    : `${request.context_valid ? '待审核' : '需重新提交'} · ${shortVersion(request.version_label)}`}
                                 </span>
                                 <ArrowRight size={12} aria-hidden="true" />
                               </a>
@@ -339,6 +363,25 @@ export default function ManagementPanel() {
                         <div className={subtleStyles}>
                           <Contributor value={a.latest_contributor} />
                         </div>
+                      </td>
+                      <td>
+                        <span className="mb-1 block text-caption text-muted-ink min-[761px]:hidden">
+                          最近变动
+                        </span>
+                        <span className="block text-caption">{a.latest_activity.label}</span>
+                        <time
+                          className="block text-caption text-muted-ink"
+                          dateTime={a.latest_activity.occurred_at}
+                        >
+                          {new Date(a.latest_activity.occurred_at).toLocaleString('zh-CN', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: false,
+                          })}
+                        </time>
                       </td>
                       <td>
                         <div className={managementActionsStyles}>

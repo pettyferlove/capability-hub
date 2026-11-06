@@ -381,6 +381,11 @@ test('维护资产显示版本与审核入口，更新链接预选原资产', as
   );
   assert(screen.getByText('1.0.0'));
   const table = within(screen.getByRole('table', { name: '维护资产' }));
+  assert(table.getByRole('columnheader', { name: '最近变动' }));
+  assert(table.getByText('提交审核'));
+  const activityTime = table.getByText('提交审核').closest('td')?.querySelector('time');
+  assert(activityTime?.dateTime);
+  assert(!Number.isNaN(Date.parse(activityTime.dateTime)));
   assert.equal(table.getAllByText('1.0.1').length, 1);
   assert.equal(table.getAllByText(/待审核/).length, 1);
   assert(table.getByText('待审核'));
@@ -400,6 +405,31 @@ test('维护资产显示版本与审核入口，更新链接预选原资产', as
     screen.getByRole('radio', { name: '已有资产新版本' }).getAttribute('aria-checked'),
     'true',
   );
+});
+
+test('维护列表明确提示审核基线失效的待审申请需重新提交', async (context) => {
+  const f = await createTestHub(context);
+  const intake = await receiveSkill(f);
+  const request = await submitPublication(f, intake);
+  const assets = await f.hub.assetManagement.list(f.admin);
+  context.mock.method(globalThis, 'fetch', async () =>
+    Response.json({
+      ...assets,
+      items: assets.items.map((asset) => ({
+        ...asset,
+        needs_attention: true,
+        pending_requests: asset.pending_requests.map((pending) => ({
+          ...pending,
+          context_valid: false,
+        })),
+      })),
+    }),
+  );
+  render(page(createElement(ManagementPanel)));
+  const link = await screen.findByRole('link', { name: '查看 1.0.0 的需重新提交申请' });
+  assert.equal(link.textContent, '需重新提交');
+  assert.equal(link.getAttribute('href'), '/review?request=' + request.id);
+  assert.equal(within(screen.getByRole('table', { name: '维护资产' })).queryByText('待审核'), null);
 });
 
 test('维护列表保留较早版本的待审入口，不混淆最新接收状态', async (context) => {
@@ -501,7 +531,7 @@ test('维护列表和版本记录展示上传人、Git 同步发起人及系统�
   }
 });
 
-test('维护列表翻页与页大小请求服务端，搜索和状态筛选重置页码', async (context) => {
+test('维护列表翻页与页大小请求服务端，搜索、状态和排序切换重置页码', async (context) => {
   const f = await createTestHub(context);
   for (let index = 1; index <= 6; index++) {
     const receipt = await f.hub.intakes.receive(
@@ -540,6 +570,10 @@ test('维护列表翻页与页大小请求服务端，搜索和状态筛选重�
   const user = userEvent.setup();
   render(page(createElement(ManagementPanel)));
   await screen.findByRole('table', { name: '维护资产' });
+  assert.equal(requests.at(-1)?.get('sort'), 'recent_activity');
+  await user.click(screen.getByRole('button', { name: /维护资产排序/ }));
+  await user.click(screen.getByRole('option', { name: '名称升序' }));
+  await waitFor(() => assert.equal(requests.at(-1)?.get('sort'), 'name'));
   await user.click(screen.getByRole('button', { name: /资产维护每页条数/ }));
   await user.click(screen.getByRole('option', { name: '5 条 / 页' }));
   await screen.findByText(/第 1–5 条，共 6 条/);
@@ -549,10 +583,17 @@ test('维护列表翻页与页大小请求服务端，搜索和状态筛选重�
   assert(!screen.queryByText('asset-1'));
   assert.equal(requests.at(-1)?.get('page'), '2');
   assert.equal(requests.at(-1)?.get('page_size'), '5');
+  await user.click(screen.getByRole('button', { name: /维护资产排序/ }));
+  await user.click(screen.getByRole('option', { name: '最近变动优先' }));
+  await waitFor(() => assert.equal(requests.at(-1)?.get('page'), '1'));
+  assert.equal(requests.at(-1)?.get('sort'), 'recent_activity');
+  await screen.findByText(/第 1–5 条，共 6 条/);
+  await user.click(screen.getByRole('button', { name: '资产维护下一页' }));
+  await screen.findByText(/第 6–6 条，共 6 条/);
   const search = screen.getByRole('searchbox', { name: '搜索维护资产' });
   await user.type(search, 'asset-1');
   await screen.findByText('asset-1');
-  assert.equal(requests.at(-1)?.get('page'), '1');
+  await waitFor(() => assert.equal(requests.at(-1)?.get('page'), '1'));
   assert.equal(requests.at(-1)?.get('q'), 'asset-1');
   await user.click(screen.getByRole('button', { name: /维护资产状态/ }));
   await user.click(screen.getByRole('option', { name: '已封禁' }));
@@ -562,6 +603,10 @@ test('维护列表翻页与页大小请求服务端，搜索和状态筛选重�
   await screen.findByText('asset-6');
   assert(!screen.queryByText('asset-1'));
   await screen.findByText(/第 1–1 条，共 1 条/);
+  await user.click(screen.getByRole('button', { name: /维护资产状态/ }));
+  await user.click(screen.getByRole('option', { name: '需要处理' }));
+  await screen.findByText('没有匹配的资产');
+  assert.equal(requests.at(-1)?.get('state'), 'needs_attention');
 });
 
 test('错误资源删除提供前缀图标，二次确认可取消且保留原因，最终确认才发送请求', async (context) => {

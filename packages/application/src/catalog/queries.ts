@@ -4,7 +4,9 @@ import type { Policy } from '@capability-hub/domain/policy';
 /** 来自已校验的 HTTP 查询；待审筛选沿用候选可见权限，越界页回退到末页。 */
 export interface ManagementAssetListQuery {
   q?: string;
-  state?: 'all' | 'pending' | 'active' | 'deprecated' | 'blocked';
+  state?:
+    'all' | 'needs_attention' | 'processing' | 'pending' | 'active' | 'deprecated' | 'blocked';
+  sort?: 'recent_activity' | 'name';
   page?: number;
   page_size?: number;
 }
