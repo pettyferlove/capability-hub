@@ -46,7 +46,7 @@ import { Submit } from '../../shared/components/Submit.js';
 import { Glyph } from '../../shared/components/Glyph.js';
 import { GradientText } from '../../shared/components/react-bits/GradientText.js';
 import { SpotlightCard } from '../../shared/components/react-bits/SpotlightCard.js';
-import { Threads } from '../../shared/components/react-bits/Threads.js';
+import { GradientAscii } from '../../shared/components/react-bits/GradientAscii.js';
 
 const loginMethods: { id: LoginProvider; label: string }[] = [
   { id: 'local', label: '本地账号' },
@@ -99,7 +99,7 @@ export default function LoginPage({
   return (
     <div className={authLayoutStyles}>
       <section className={authStoryStyles} aria-labelledby="auth-story-title">
-        <Threads paused={backgroundPaused} />
+        <GradientAscii paused={backgroundPaused} />
         <a href="/discover" className={cn(brandStyles, 'relative w-fit')}>
           <Glyph seed="capability-hub" kind="skill" size={34} />
           <span>

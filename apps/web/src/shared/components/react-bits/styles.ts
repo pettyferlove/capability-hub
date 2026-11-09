@@ -14,7 +14,5 @@ export const spotlightCardStyles = cn(
   '[@media(hover:hover)]:hover:before:opacity-100 motion-reduce:before:hidden forced-colors:before:hidden',
 );
 
-export const threadsStyles = cn(
-  'pointer-events-none absolute inset-0 -z-10 block size-full opacity-30',
-  '[mask-image:linear-gradient(to_bottom,transparent,var(--mask-solid)_25%,var(--mask-solid)_85%,transparent)]',
-);
+export const gradientAsciiStyles =
+  'pointer-events-none absolute inset-0 -z-10 block size-full opacity-70 max-[760px]:opacity-40';

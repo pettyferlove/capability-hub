@@ -35,7 +35,7 @@ export const authLinksStyles =
 
 export const authAnimationStyles = cn(
   'hidden min-h-8 items-center gap-1.5 rounded-lg border-0 bg-transparent px-2 text-xs text-muted-ink hover:text-brand',
-  'motion-safe:group-has-[[data-threads-ready]]/auth-story:inline-flex',
+  'motion-safe:group-has-[[data-background-ready]]/auth-story:inline-flex',
 );
 
 export const authFormStyles = cn(
