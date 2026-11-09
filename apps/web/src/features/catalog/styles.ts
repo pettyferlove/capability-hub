@@ -151,10 +151,8 @@ export const discoverStyles = 'group/discover';
 
 export const discoverHeroStyles = 'relative isolate flex overflow-hidden pb-2';
 
-export const heroDotsStyles = cn(
-  'absolute top-0 right-0 bottom-0 left-0 z-[-2] opacity-[var(--hero-dot-opacity)]',
-  '[mask-image:radial-gradient(ellipse_closest-side_at_70%_50%,_black,_transparent)]',
-);
+export const heroDotsStyles =
+  '[mask-image:radial-gradient(ellipse_closest-side_at_70%_50%,_black,_transparent)]';
 
 export const heroOrbStyles = cn(
   'absolute top-0 right-0 bottom-0 left-auto w-[min(60%,_560px)]',

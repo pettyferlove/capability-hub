@@ -105,6 +105,8 @@ import { categoryLabel } from '../../shared/format/labels.js';
 import { assetHref } from '../../shared/navigation/history-route.js';
 import { CatalogMotionItem } from './CatalogMotionItem.js';
 import { CatalogEmptyState } from './CatalogEmptyState.js';
+import { DotGrid } from '../../shared/components/react-bits/DotGrid.js';
+import { SpotlightCard } from '../../shared/components/react-bits/SpotlightCard.js';
 
 /** 目录发现页正文：筛选变化即重置游标，翻页只追加当前条件的结果。 */
 export default function DiscoverPage() {
@@ -182,7 +184,7 @@ export default function DiscoverPage() {
   return (
     <div className={discoverStyles}>
       <section className={discoverHeroStyles}>
-        <div className={cn(dotgridStyles, heroDotsStyles)} />
+        <DotGrid className={heroDotsStyles} />
         <div className={heroOrbStyles} />
         <div className={heroCopyStyles}>
           <PageHead
@@ -446,7 +448,7 @@ function AssetCard({ asset, searching }: { asset: AssetResponse; searching: bool
   ].slice(0, 2);
 
   return (
-    <a href={assetHref(asset.slug)} className={assetCardStyles}>
+    <SpotlightCard href={assetHref(asset.slug)} className={assetCardStyles}>
       <span aria-hidden="true" className={cn(dotgridStyles, assetCardCornerDotsStyles)} />
       <div className={assetCardTopStyles}>
         <span className={cn(assetSymbolStyles, `group/${asset.kind}`)} aria-hidden="true">
@@ -515,6 +517,6 @@ function AssetCard({ asset, searching }: { asset: AssetResponse; searching: bool
           <span className="truncate">{ownerOnly ? '团队可见' : release.visibility_label}</span>
         </span>
       </div>
-    </a>
+    </SpotlightCard>
   );
 }

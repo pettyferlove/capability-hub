@@ -6,6 +6,7 @@ import {
 } from '@capability-hub/contracts';
 import { useQuery } from '../../../shared/api/use-query.js';
 import { ErrorState } from '../../../shared/components/ErrorState.js';
+import { CountUp } from '../../../shared/components/react-bits/CountUp.js';
 import { QueryRegion } from '../../../shared/components/QueryRegion.js';
 import { Segmented } from '../../../shared/components/Segmented.js';
 import { TablePagination } from '../../../shared/components/TablePagination.js';
@@ -39,6 +40,8 @@ const dimensions: { id: Dimension; label: string }[] = [
   { id: 'by_user', label: '用户' },
 ];
 const number = new Intl.NumberFormat('zh-CN');
+// CountUp 需要引用稳定的格式化函数，不能直接传入未绑定的 `number.format`。
+const formatCount = (value: number) => number.format(value);
 const observedTime = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai',
   dateStyle: 'short',
@@ -272,7 +275,9 @@ export function TokenUsagePanel() {
                 ).map(([label, value]) => (
                   <div key={label}>
                     <span>{label}</span>
-                    <strong>{number.format(value)}</strong>
+                    <strong>
+                      <CountUp value={value} format={formatCount} />
+                    </strong>
                   </div>
                 ))}
               </div>

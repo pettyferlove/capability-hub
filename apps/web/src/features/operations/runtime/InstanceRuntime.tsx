@@ -9,6 +9,7 @@ import { panelStyles, subtleStyles } from '../../../shared/styles/recipes.js';
 import { operationsGridStyles } from '../styles.js';
 import { OperationsStorage } from './OperationsStorage.js';
 import { operationsCardsStyles, operationsFailuresStyles } from './styles.js';
+import { CountUp } from '../../../shared/components/react-bits/CountUp.js';
 
 function p95Duration(http: OperationsResponse['http']) {
   if (!http.requests) return '—';
@@ -40,7 +41,9 @@ export function InstanceRuntime({ data }: { data: OperationsResponse }) {
       <div className={operationsCardsStyles}>
         <div>
           <span>HTTP 请求</span>
-          <strong>{total}</strong>
+          <strong>
+            <CountUp value={total} />
+          </strong>
           <small>
             成功率 {total ? ((successful / total) * 100).toFixed(1) + '%' : '—'} · 平均{' '}
             {data.http.mean_duration_ms ?? '—'} ms

@@ -9,6 +9,7 @@ import { ErrorState } from '../../../shared/components/ErrorState.js';
 import { QueryRegion } from '../../../shared/components/QueryRegion.js';
 import { OverviewSkeleton } from '../OperationsSkeleton.js';
 import { operationsRevealStyles } from '../styles.js';
+import { CountUp } from '../../../shared/components/react-bits/CountUp.js';
 import { RefreshCw } from '../../../shared/icons/lucide.js';
 import {
   btnStyles,
@@ -27,6 +28,8 @@ const periods = [
   { id: '30', label: '近 30 天' },
 ];
 const number = new Intl.NumberFormat('zh-CN');
+// CountUp 需要引用稳定的格式化函数，不能直接传入未绑定的 `number.format`。
+const formatCount = (value: number) => number.format(value);
 const time = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai',
   dateStyle: 'short',
@@ -57,7 +60,7 @@ function Trend({
       <figcaption>
         <h3>{label}</h3>
         <strong className="text-2xl tabular-nums">
-          {number.format(series.reduce((a, b) => a + b, 0))}
+          <CountUp value={series.reduce((a, b) => a + b, 0)} format={formatCount} />
         </strong>
         <span className="ml-1 text-caption text-muted-ink">{unit}</span>
         <p className="text-caption text-muted-ink">

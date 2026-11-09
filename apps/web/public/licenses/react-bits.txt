@@ -1,8 +1,12 @@
-React Bits — GradientText / SpotlightCard / Gradient ASCII
+React Bits — GradientText / SpotlightCard / Gradient ASCII / Dot Grid / Count Up / Shiny Text / Decrypted Text
 https://github.com/DavidHDev/react-bits
 https://reactbits.dev/text-animations/gradient-text
 https://reactbits.dev/components/spotlight-card
 https://reactbits.dev/backgrounds/gradient-ascii
+https://reactbits.dev/backgrounds/dot-grid
+https://reactbits.dev/text-animations/count-up
+https://reactbits.dev/text-animations/shiny-text
+https://reactbits.dev/text-animations/decrypted-text
 
 MIT + Commons Clause License Condition v1.0
 

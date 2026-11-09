@@ -1,6 +1,7 @@
 import { emptyStyles, emptyIconStyles } from '../styles/recipes.js';
 import { ShieldCheck } from '../icons/lucide.js';
 import type { ReactNode } from 'react';
+import { ShinyText } from './react-bits/ShinyText.js';
 
 /**
  * 空态占位：说明 + 可选图标与操作，用于「没有数据」而不是「加载失败」的场景，
@@ -23,7 +24,9 @@ export function Empty({
   return (
     <div className={emptyStyles}>
       <span className={emptyIconStyles}>{icon ?? <ShieldCheck size={28} />}</span>
-      <h3>{title}</h3>
+      <h3>
+        <ShinyText>{title}</ShinyText>
+      </h3>
       <p>{children}</p>
       {action}
     </div>

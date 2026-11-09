@@ -45,6 +45,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '../../../shared/api/use-query.js';
 import { Empty } from '../../../shared/components/Empty.js';
+import { CountUp } from '../../../shared/components/react-bits/CountUp.js';
 import { ErrorState } from '../../../shared/components/ErrorState.js';
 import { Overlay } from '../../../shared/components/Overlay.js';
 import { SelectField } from '../../../shared/components/SelectField.js';
@@ -130,7 +131,9 @@ export function AuditPanel() {
           >
             <div>
               <span>匹配事件</span>
-              <strong className={tnumStyles}>{data.total}</strong>
+              <strong className={tnumStyles}>
+                <CountUp value={data.total} />
+              </strong>
               <small>全部符合条件的记录</small>
             </div>
             <div className={data.summary.failures ? hasFailuresStyles : ''}>
@@ -138,7 +141,9 @@ export function AuditPanel() {
                 <CircleAlert size={14} />
                 操作失败
               </span>
-              <strong className={tnumStyles}>{data.summary.failures}</strong>
+              <strong className={tnumStyles}>
+                <CountUp value={data.summary.failures} />
+              </strong>
               <small>已记录的失败操作</small>
             </div>
             <div>
@@ -146,7 +151,9 @@ export function AuditPanel() {
                 <ShieldCheck size={14} />
                 账号与权限
               </span>
-              <strong className={tnumStyles}>{data.summary.identity}</strong>
+              <strong className={tnumStyles}>
+                <CountUp value={data.summary.identity} />
+              </strong>
               <small>登录、授权和账号变更</small>
             </div>
             <div>
@@ -154,7 +161,9 @@ export function AuditPanel() {
                 <Download size={14} />
                 资源下载
               </span>
-              <strong className={tnumStyles}>{data.summary.downloads}</strong>
+              <strong className={tnumStyles}>
+                <CountUp value={data.summary.downloads} />
+              </strong>
               <small>已记录的下载请求</small>
             </div>
           </div>

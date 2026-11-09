@@ -16,3 +16,13 @@ export const spotlightCardStyles = cn(
 
 export const gradientAsciiStyles =
   'pointer-events-none absolute inset-0 -z-10 block size-full opacity-70 max-[760px]:opacity-40';
+
+export const dotGridStyles =
+  'pointer-events-none absolute inset-0 z-[-2] block size-full forced-colors:hidden';
+
+export const shinyTextStyles = cn(
+  'bg-clip-text text-transparent [background-size:250%_100%] [background-position:0%_50%]',
+  '[background-image:linear-gradient(110deg,var(--ink)_40%,var(--brand)_50%,var(--ink)_60%)]',
+  'motion-safe:[animation:react-bits-shine_1.6s_var(--ease-out)_0.2s_both]',
+  'forced-colors:bg-none forced-colors:text-ink',
+);
