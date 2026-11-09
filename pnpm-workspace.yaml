@@ -36,3 +36,6 @@ catalog:
   '@modelcontextprotocol/server': '2.4.0'
   '@modelcontextprotocol/node': '2.1.2'
   'ai': '7.0.159'
+
+allowBuilds:
+  esbuild: set this to true or false

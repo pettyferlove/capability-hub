@@ -1,45 +1,56 @@
 import { cn } from '../../shared/styles/cn.js';
 
 export const authLayoutStyles =
-  'min-h-screen grid grid-cols-[1.05fr_1fr] max-[600px]:grid-cols-[1fr]';
+  'grid min-h-dvh grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-4 bg-paper p-4 max-[760px]:grid-cols-1 max-[760px]:gap-0 max-[760px]:p-0';
 
 export const authStoryStyles = cn(
-  'group/auth-story relative flex flex-col justify-between bg-brand-soft pt-[45px] pr-[55px]',
-  "pb-[45px] pl-[55px] overflow-hidden after:[content:''] after:absolute after:w-112.5 after:h-112.5",
-  'after:border after:border-solid after:border-[color:color-mix(in_srgb,_var(--brand),_transparent_85%)] after:rounded-[50%]',
-  'after:bottom-[-200px] after:right-[-150px]',
-  'after:[box-shadow:0_0_0_45px_color-mix(in_srgb,_var(--brand),_transparent_98%),_0_0_0_90px_color-mix(in_srgb,_var(--brand),_transparent_98%)]',
-  'after:pointer-events-none max-[850px]:pt-[35px] max-[850px]:pr-[35px] max-[850px]:pb-[35px]',
-  'max-[850px]:pl-[35px] max-[600px]:pt-[25px] max-[600px]:pr-[25px] max-[600px]:pb-7',
-  "max-[600px]:pl-[25px] max-[600px]:[&_[class~='group/brand']]:text-[length:17px]",
+  'group/auth-story relative isolate flex min-w-0 flex-col justify-between overflow-hidden rounded-3xl bg-brand-soft p-[clamp(28px,3.5vw,56px)]',
+  '[background-image:radial-gradient(ellipse_at_top_left,color-mix(in_srgb,var(--paper)_65%,transparent),transparent_70%)]',
+  'max-[760px]:rounded-none max-[760px]:px-6 max-[760px]:py-7',
 );
 
 export const authPitchStyles = cn(
-  'mt-15 mr-0 mb-15 ml-0 relative z-[1] [&_h1]:text-[length:49px]',
-  '[&_h1]:leading-[1.4] [&_h1]:tracking-[-1.8px] [&_h1]:[font-weight:650] [&_h1]:mt-5 [&_h1]:mr-0',
-  '[&_h1]:mb-5 [&_h1]:ml-0 [&_h1_span]:text-brand [&_>_p]:text-muted-ink [&_>_p]:leading-[1.95]',
-  '[&_>_p]:text-[length:15px] max-[850px]:[&_h1]:text-[length:39px] max-[600px]:mt-8',
-  'max-[600px]:mr-0 max-[600px]:mb-0 max-[600px]:ml-0 max-[600px]:[&_h1]:text-[length:31px]',
-  'max-[600px]:[&_h1]:leading-[1.4] max-[600px]:[&_h1]:mt-3 max-[600px]:[&_h1]:mr-0',
-  'max-[600px]:[&_h1]:mb-3 max-[600px]:[&_h1]:ml-0 max-[600px]:[&_h1]:tracking-[-0.7px]',
-  'max-[600px]:[&_>_p]:text-[length:12px]',
+  'relative my-10 w-full max-w-136 self-center [&_h1]:my-6 [&_h1]:text-[clamp(32px,4vw,52px)]',
+  '[&_h1]:font-semibold [&_h1]:leading-[1.35] [&_h1]:tracking-[-0.04em]',
+  'max-[760px]:mb-0 max-[760px]:mt-8 max-[760px]:max-w-none max-[760px]:[&_h1]:my-3 max-[760px]:[&_h1]:text-[30px]',
 );
 
+export const authEyebrowStyles = 'font-mono text-[10px] font-medium tracking-[0.2em] text-brand';
+
+export const authResourcesStyles =
+  'mt-8 grid grid-cols-2 gap-3 max-[1000px]:grid-cols-1 max-[760px]:hidden';
+
+export const authResourceStyles = cn(
+  'border-brand/15 bg-paper/60 p-4 [box-shadow:0_6px_24px_color-mix(in_srgb,var(--shadow-ink)_3%,transparent)]',
+  '[&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_p]:text-xs [&_p]:leading-6 [&_p]:text-muted-ink',
+  'max-[1000px]:grid max-[1000px]:grid-cols-[auto_1fr] max-[1000px]:gap-x-4 max-[1000px]:py-4',
+  'max-[1000px]:[&_h2]:mb-0 max-[1000px]:[&_p]:col-start-2',
+);
+
+export const authResourceIconStyles =
+  'mb-4 inline-flex size-10 items-center justify-center rounded-xl border border-brand/10 bg-brand-soft text-brand max-[1000px]:row-span-2 max-[1000px]:mb-0';
+
 export const authLinksStyles =
-  'flex flex-wrap gap-5 text-[length:12px] text-muted-ink [&_a:hover]:text-brand max-[600px]:hidden';
+  'relative flex flex-wrap gap-6 text-xs [&_a]:inline-flex [&_a]:min-h-8 [&_a]:items-center [&_a]:gap-1.5 [&_a]:text-muted-ink [&_a:hover]:text-brand max-[760px]:hidden';
+
+export const authAnimationStyles = cn(
+  'hidden min-h-8 items-center gap-1.5 rounded-lg border-0 bg-transparent px-2 text-xs text-muted-ink hover:text-brand',
+  'motion-safe:group-has-[[data-threads-ready]]/auth-story:inline-flex',
+);
 
 export const authFormStyles = cn(
-  'flex items-center justify-center pt-10 pr-[55px] pb-10 pl-[55px] bg-paper max-[850px]:pt-[35px]',
-  'max-[850px]:pr-[35px] max-[850px]:pb-[35px] max-[850px]:pl-[35px] max-[600px]:pt-7.5',
-  'max-[600px]:pr-[25px] max-[600px]:pb-10 max-[600px]:pl-[25px]',
+  'flex min-w-0 items-center justify-center px-[clamp(24px,4vw,64px)] py-12',
+  'max-[760px]:px-6 max-[760px]:py-9',
 );
 
 export const authCardStyles = cn(
-  'group/auth-card w-full max-w-87.5 [&_h2]:text-[length:27px] [&_h2]:mt-0 [&_h2]:mb-[9px]',
-  '[&_h2]:tracking-[-0.7px] max-[600px]:max-w-110 max-[600px]:[&_h2]:text-[length:25px]',
-  "[&_>_p[class~='group/subtle']]:text-[length:12px] [&_>_p[class~='group/subtle']]:leading-[1.8]",
-  "[&_>_p[class~='group/subtle']]:mb-[25px]",
+  'w-full max-w-96 [&_h2]:mb-3 [&_h2]:text-[28px] [&_h2]:tracking-[-0.035em] max-[760px]:[&_h2]:text-2xl',
+  "[&_>_p[class~='group/subtle']]:mb-8 [&_>_p[class~='group/subtle']]:leading-7",
 );
 
+export const authWelcomeStyles = 'mb-2 text-sm font-medium text-brand';
+
+export const authSubmitStyles = 'mt-2 min-h-11 w-full justify-center gap-3';
+
 export const authFootStyles =
-  'text-[length:12px] text-muted-ink leading-[1.9] mt-[25px] pt-5 border-t [border-top-style:solid] border-t-[color:var(--line)]';
+  'mb-3 mt-7 border-t border-line pt-6 text-xs leading-6 text-muted-ink';

@@ -13,9 +13,15 @@ import {
   authFormStyles,
   authCardStyles,
   authFootStyles,
+  authEyebrowStyles,
+  authResourcesStyles,
+  authResourceStyles,
+  authResourceIconStyles,
+  authWelcomeStyles,
+  authSubmitStyles,
+  authAnimationStyles,
 } from './styles.js';
 import {
-  dotgridStyles,
   brandStyles,
   desktopOnlyStyles,
   subtleStyles,
@@ -24,13 +30,23 @@ import {
 } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
-import { ArrowRight } from '../../shared/icons/lucide.js';
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Pause,
+  Play,
+  Plug,
+  Sparkles,
+} from '../../shared/icons/lucide.js';
 import { useState, type SubmitEvent } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { Message } from '../../shared/components/Message.js';
 import { PasswordField } from '../../shared/components/PasswordField.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { Glyph } from '../../shared/components/Glyph.js';
+import { GradientText } from '../../shared/components/react-bits/GradientText.js';
+import { SpotlightCard } from '../../shared/components/react-bits/SpotlightCard.js';
+import { Threads } from '../../shared/components/react-bits/Threads.js';
 
 const loginMethods: { id: LoginProvider; label: string }[] = [
   { id: 'local', label: '本地账号' },
@@ -55,6 +71,7 @@ export default function LoginPage({
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const [method, setMethod] = useState<LoginProvider>('local');
+  const [backgroundPaused, setBackgroundPaused] = useState(false);
   const provider = initialized && ldapEnabled ? method : 'local';
   const directoryLogin = provider === 'ldap';
   async function submit(e: SubmitEvent<HTMLFormElement>) {
@@ -81,33 +98,72 @@ export default function LoginPage({
   }
   return (
     <div className={authLayoutStyles}>
-      <section className={cn(authStoryStyles, dotgridStyles)}>
-        <a href="/discover" className={brandStyles}>
+      <section className={authStoryStyles} aria-labelledby="auth-story-title">
+        <Threads paused={backgroundPaused} />
+        <a href="/discover" className={cn(brandStyles, 'relative w-fit')}>
           <Glyph seed="capability-hub" kind="skill" size={34} />
           <span>
             Capability Hub<small>能力共享中心</small>
           </span>
         </a>
         <div className={authPitchStyles}>
-          <h1>
-            发现与共享
+          <p className={authEyebrowStyles}>AGENT SKILLS & MCP</p>
+          <h1 id="auth-story-title">
+            发现好工具，
             <br />
-            <span>Skills 和 MCP 服务</span>
+            <GradientText>共享好能力。</GradientText>
           </h1>
-          <p>
-            查找并安装 Skill，配置 MCP 服务接入。
+          <p className="max-w-96 text-base leading-7 text-muted-ink max-[760px]:text-sm max-[760px]:leading-6">
+            让 Skills 和 MCP 服务成为团队的共同积累。
             <br className={desktopOnlyStyles} />
-            发布和管理资源，与团队共享。
+            从发现、接入到分享，在这里连接你的工作流。
           </p>
+          <div className={authResourcesStyles}>
+            <SpotlightCard className={authResourceStyles}>
+              <span className={authResourceIconStyles} aria-hidden="true">
+                <Sparkles size={21} />
+              </span>
+              <h2>Agent Skills</h2>
+              <p>沉淀经验，复用每一次好实践。</p>
+            </SpotlightCard>
+            <SpotlightCard className={authResourceStyles}>
+              <span className={authResourceIconStyles} aria-hidden="true">
+                <Plug size={21} />
+              </span>
+              <h2>MCP 服务</h2>
+              <p>连接工具，扩展 Agent 的能力。</p>
+            </SpotlightCard>
+          </div>
         </div>
-        <nav className={authLinksStyles} aria-label="资源导航">
-          <a href="/discover">资源目录</a>
-          <a href="/connect">安装与接入</a>
-        </nav>
+        <div className="relative flex flex-wrap items-center justify-between gap-x-5 gap-y-2 max-[760px]:mt-4">
+          <nav className={authLinksStyles} aria-label="资源导航">
+            <a href="/discover">
+              资源目录
+              <ArrowUpRight size={14} aria-hidden="true" />
+            </a>
+            <a href="/connect">
+              安装与接入
+              <ArrowUpRight size={14} aria-hidden="true" />
+            </a>
+          </nav>
+          <button
+            type="button"
+            className={authAnimationStyles}
+            onClick={() => setBackgroundPaused((value) => !value)}
+          >
+            {backgroundPaused ? (
+              <Play size={13} aria-hidden="true" />
+            ) : (
+              <Pause size={13} aria-hidden="true" />
+            )}
+            {backgroundPaused ? '播放背景动效' : '暂停背景动效'}
+          </button>
+        </div>
       </section>
-      <section className={authFormStyles}>
+      <section className={authFormStyles} aria-labelledby="auth-form-title">
         <div className={authCardStyles}>
-          <h2>{initialized ? '登录' : '初始化平台'}</h2>
+          <p className={authWelcomeStyles}>{initialized ? '欢迎回来' : '开始使用'}</p>
+          <h2 id="auth-form-title">{initialized ? '登录 Capability Hub' : '初始化平台'}</h2>
           <p className={subtleStyles}>
             {initialized
               ? directoryLogin
@@ -193,7 +249,7 @@ export default function LoginPage({
               </label>
             )}
             {error && <Message error>{error}</Message>}
-            <Submit busy={busy}>
+            <Submit busy={busy} className={authSubmitStyles}>
               {initialized ? (directoryLogin ? '登录 LDAP 账号' : '登录本地账号') : '创建并进入'}
               <ArrowRight size={17} />
             </Submit>
@@ -207,6 +263,7 @@ export default function LoginPage({
           </p>
           <a className={textBtnStyles} href="/discover">
             浏览公开资源
+            <ArrowUpRight size={14} aria-hidden="true" />
           </a>
         </div>
       </section>
