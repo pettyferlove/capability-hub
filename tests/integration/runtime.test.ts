@@ -16,7 +16,7 @@ import { assertResourceActivity } from '../support/resource-activity.js';
 
 const operationsPath = '/api/admin/operations';
 
-test('只为有效页面提供 HTML，未知页面和非法页签返回 404', async (context) => {
+test('有效页面返回入口，浏览器打开未知地址得到 404 入口，接口与资源请求保持 JSON 404', async (context) => {
   const directory = await mkdtemp(join(tmpdir(), 'hub-operations-web-'));
   context.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(join(directory, 'index.html'), '<!doctype html><title>Hub</title>');
@@ -42,7 +42,19 @@ test('只为有效页面提供 HTML，未知页面和非法页签返回 404', as
     '/operations?tab=agents&tab=usage',
     '/operations-missing',
   ])
-    await client.get(path).set('Accept', 'text/html').expect(404);
+    await client
+      .get(path)
+      .set('Accept', 'text/html,application/xhtml+xml,*/*;q=0.8')
+      .expect(404, /<title>Hub<\/title>/);
+  for (const [path, accept] of [
+    ['/operations-missing', 'application/json'],
+    ['/operations-missing', '*/*'],
+    ['/health/missing', 'text/html'],
+    ['/assets/missing.js', '*/*'],
+  ]) {
+    const response = await client.get(path).set('Accept', accept).expect(404);
+    assert.equal(response.body.error.code, 'NOT_FOUND');
+  }
 });
 
 test('运营总览按发布、分发和反馈提交日计数，只向平台审计员提供汇总', async (context) => {

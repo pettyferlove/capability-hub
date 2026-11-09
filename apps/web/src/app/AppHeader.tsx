@@ -24,7 +24,7 @@ import { Bot, Compass, Search, ShieldCheck, UploadCloud } from '../shared/icons/
 import { useEffect, useRef, useState } from 'react';
 import { Button } from 'react-aria-components';
 import { Glyph } from '../shared/components/Glyph.js';
-import type { HubPage } from '@capability-hub/contracts/web-pages';
+import type { HubRoute } from '../shared/navigation/history-route.js';
 import { AvatarMenu } from './AvatarMenu.js';
 import { useHub } from '../shared/context/HubContext.js';
 import { loginHref } from '../shared/navigation/history-route.js';
@@ -52,7 +52,7 @@ export function AppHeader({
   onSearch,
   returnTo = '/discover',
 }: {
-  page: HubPage;
+  page: HubRoute['page'];
   /** 待审核数量；0 时隐藏角标，只表示前端已知的数量，不代表全部队列。 */
   reviewCount: number;
   theme: ReturnType<typeof useTheme>;

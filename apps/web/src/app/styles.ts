@@ -3,6 +3,28 @@ import { cn } from '../shared/styles/cn.js';
 export const bootErrorStyles =
   'max-w-150 pt-12.5 pr-5 pb-12.5 pl-5 mt-auto mr-auto mb-auto ml-auto';
 
+export const notFoundStyles = cn(
+  'relative isolate flex min-h-[min(560px,70vh)] flex-col items-center justify-center gap-3 overflow-hidden',
+  'rounded-[20px] border border-solid border-[color:var(--line)] bg-paper px-6 py-16 text-center',
+  '[&_h1]:text-[length:28px] [&_h1]:font-semibold [&_h1]:tracking-[-0.03em]',
+  'max-[600px]:py-12 max-[600px]:[&_h1]:text-2xl',
+);
+
+export const notFoundTextStyles = 'max-w-110 text-body leading-6 text-muted-ink';
+
+export const notFoundDotsStyles =
+  '[mask-image:radial-gradient(ellipse_closest-side_at_50%_45%,var(--mask-solid),transparent)]';
+
+export const notFoundDigitsStyles = 'mb-3 h-auto w-[min(300px,80%)]';
+
+export const notFoundPixelStyles =
+  'origin-center [transform-box:fill-box] motion-safe:animate-[agent-dot-in_380ms_var(--ease-out)_both]';
+
+export const notFoundPathStyles =
+  'rounded-md bg-page px-1.5 py-0.5 font-mono text-[length:12px] text-ink [overflow-wrap:anywhere]';
+
+export const notFoundActionsStyles = 'mt-3 flex flex-wrap items-center justify-center gap-3';
+
 export const skipLinkStyles = cn(
   'fixed top-[-100px] left-5 z-[100] bg-brand text-on-brand pt-2.5 pr-5 pb-2.5 pl-5 rounded-[10px]',
   '[&:focus]:top-2.5',

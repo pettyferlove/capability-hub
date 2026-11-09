@@ -668,8 +668,11 @@ export const hubShowcaseDialogStyles = cn(
   'focus-visible:[outline-offset:-2px] focus-visible:rounded-[24px]',
 );
 
-export const pageHeadStyles =
-  'group/page-head flex items-start justify-between gap-3 pb-4 max-[850px]:pt-4 [&>button]:shrink-0';
+// 桌面端主区域已有 `--page-inset` 顶部留白而窄屏为 0，窄屏的标题上方留白由这里补足。
+export const pageHeadStyles = cn(
+  'group/page-head flex items-start justify-between gap-3 pt-4 pb-6 [&>button]:shrink-0',
+  'max-[850px]:pt-8 max-[600px]:pt-6 max-[600px]:pb-4',
+);
 
 export const pageHeadTitleStyles =
   'origin-left text-title leading-tight font-semibold tracking-[-0.015em] max-[600px]:text-2xl motion-reduce:transform-none!';

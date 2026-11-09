@@ -2,18 +2,19 @@ import { hubPageFor, type HubPage } from '@capability-hub/contracts/web-pages';
 
 /** 一次导航解析出的路由形状，是 `<App>` 渲染分支的唯一判据。 */
 export interface HubRoute {
-  page: HubPage;
+  /** `not-found` 表示地址不属于任何页面；服务端对这类导航返回 404 状态的同一入口。 */
+  page: HubPage | 'not-found';
   /** 解码后的资源 slug；有值表示详情抽屉叠加在 {@link HubRoute.page} 之上而不是独立页面。 */
   asset?: string;
   /** 原始查询串，已去掉前导 `?` 且不做解码；空串表示没有参数，避免到处判空 `undefined`。 */
   query: string;
 }
 
-/** 资源标识只解码一次，非法路径回到可用的目录页面。 */
+/** 资源标识只解码一次，非法资源路径回到可用的目录页面，未知页面交给 404 页。 */
 export function parseHistoryRoute(pathname: string, search = ''): HubRoute {
   const query = search.replace(/^\?/, '');
   const page = hubPageFor(pathname + (query ? '?' + query : ''));
-  if (!page) return { page: 'discover', query: '' };
+  if (!page) return { page: 'not-found', query: '' };
   const assetMatch = /^\/asset\/([^/]+)\/?$/.exec(pathname);
   if (assetMatch) {
     try {

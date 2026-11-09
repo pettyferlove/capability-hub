@@ -26,6 +26,7 @@ import { AppHeader } from './AppHeader.js';
 import OperationsCenter from '../features/operations/OperationsCenter.js';
 import { CommandPalette } from './CommandPalette.js';
 import { PageBoundary } from './PageBoundary.js';
+import { NotFoundPage } from './NotFoundPage.js';
 
 const AssetSheet = lazy(() => import('../features/catalog/AssetSheet.js'));
 const Publish = lazy(() => import('../features/publishing/PublishPage.js'));
@@ -91,7 +92,10 @@ export default function App() {
     if (me && view.page === 'login') navigate(loginReturnPath(view.query), { replace: true });
   }, [me, view.page, view.query]);
   const accountTab = new URLSearchParams(view.query).get('tab') ?? 'profile';
-  const placeholder = view.page === 'operations' ? undefined : pagePlaceholders[view.page];
+  const placeholder =
+    view.page === 'operations' || view.page === 'not-found'
+      ? undefined
+      : pagePlaceholders[view.page];
   if (loading)
     return (
       <LoadingScope scopeKey={pageScrollKey}>
@@ -170,6 +174,7 @@ export default function App() {
                 {view.page === 'connect' && <Connect routeQuery={view.query} />}
                 {view.page === 'account' && <Account query={view.query} />}
                 {view.page === 'operations' && <OperationsCenter query={view.query} />}
+                {view.page === 'not-found' && <NotFoundPage />}
               </div>
             </Suspense>
           </PageBoundary>
