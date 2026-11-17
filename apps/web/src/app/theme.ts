@@ -16,7 +16,7 @@ function currentAppearance(): Appearance {
   const palette = root.getAttribute('data-palette');
   const mode = root.getAttribute('data-theme');
   return {
-    palette: isThemePalette(palette) ? palette : 'graphite',
+    palette: isThemePalette(palette) ? palette : 'cobalt',
     mode: isThemeMode(mode) ? mode : 'system',
   };
 }

@@ -32,15 +32,15 @@ afterEach(() => {
 
 test('外观偏好只接受已注册配色和模式，损坏或缺失字段回到默认值', () => {
   for (const input of [null, 'null', '42', '[]', '{broken']) {
-    assert.deepEqual(parseAppearance(input), { palette: 'graphite', mode: 'system' });
+    assert.deepEqual(parseAppearance(input), { palette: 'cobalt', mode: 'system' });
   }
   assert.deepEqual(parseAppearance('{"palette":"unknown","mode":"dark"}'), {
-    palette: 'graphite',
+    palette: 'cobalt',
     mode: 'dark',
   });
-  window.localStorage.setItem(appearanceStorageKey, '{"palette":"sand","mode":"dark"}');
+  window.localStorage.setItem(appearanceStorageKey, '{"palette":"ochre","mode":"dark"}');
   initializeAppearance();
-  assert.equal(document.documentElement.dataset.palette, 'sand');
+  assert.equal(document.documentElement.dataset.palette, 'ochre');
   assert.equal(document.documentElement.dataset.theme, 'dark');
   assert(document.documentElement.classList.contains('dark'));
 });
@@ -60,9 +60,9 @@ test('五套配色独立于明暗模式，支持键盘选择、关闭焦点恢�
     assert.deepEqual(readAppearance(), { palette: palette.id, mode: 'dark' });
   }
   await user.keyboard('{ArrowUp}');
-  assert.equal(document.documentElement.dataset.palette, 'sand');
+  assert.equal(document.documentElement.dataset.palette, 'ochre');
   await user.click(screen.getByRole('radio', { name: '浅色' }));
-  assert.equal(document.documentElement.dataset.palette, 'sand');
+  assert.equal(document.documentElement.dataset.palette, 'ochre');
   assert(document.documentElement.classList.contains('light'));
   await user.keyboard('{Escape}');
   assert.equal(screen.queryByRole('dialog'), null);
@@ -72,7 +72,7 @@ test('五套配色独立于明暗模式，支持键盘选择、关闭焦点恢�
   initializeAppearance();
   render(createElement(AppearanceControls));
   await user.click(screen.getByRole('button', { name: '外观设置' }));
-  assert.equal((screen.getByRole('radio', { name: '暖砂' }) as HTMLInputElement).checked, true);
+  assert.equal((screen.getByRole('radio', { name: '赭石' }) as HTMLInputElement).checked, true);
   assert.equal((screen.getByRole('radio', { name: '浅色' }) as HTMLInputElement).checked, true);
 });
 
@@ -83,16 +83,16 @@ test('其他标签页修改外观后同步，跟随系统不会留下固定明�
     window.dispatchEvent(
       new domWindow.StorageEvent('storage', {
         key: appearanceStorageKey,
-        newValue: '{"palette":"forest","mode":"dark"}',
+        newValue: '{"palette":"malachite","mode":"dark"}',
       }),
     );
   });
   await user.click(screen.getByRole('button', { name: '外观设置' }));
-  assert.equal((screen.getByRole('radio', { name: '松绿' }) as HTMLInputElement).checked, true);
+  assert.equal((screen.getByRole('radio', { name: '石绿' }) as HTMLInputElement).checked, true);
   await user.click(screen.getByRole('radio', { name: '跟随系统' }));
   assert.equal(document.documentElement.getAttribute('data-theme'), null);
-  assert.equal(document.documentElement.dataset.palette, 'forest');
-  assert.deepEqual(readAppearance(), { palette: 'forest', mode: 'system' });
+  assert.equal(document.documentElement.dataset.palette, 'malachite');
+  assert.deepEqual(readAppearance(), { palette: 'malachite', mode: 'system' });
 });
 
 test('浏览器禁用偏好存储时，仍可打开面板并切换本次外观', async () => {
@@ -106,6 +106,6 @@ test('浏览器禁用偏好存储时，仍可打开面板并切换本次外观',
   const user = userEvent.setup();
   render(createElement(AppearanceControls));
   await user.click(screen.getByRole('button', { name: '外观设置' }));
-  await user.click(screen.getByRole('radio', { name: '海蓝' }));
-  assert.equal(document.documentElement.dataset.palette, 'ocean');
+  await user.click(screen.getByRole('radio', { name: '石青' }));
+  assert.equal(document.documentElement.dataset.palette, 'azurite');
 });

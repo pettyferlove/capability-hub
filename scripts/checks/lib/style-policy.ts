@@ -63,7 +63,7 @@ export function fixedColorLines(filename: string, text: string): number[] {
 /**
  * 解析主题 CSS 里的调色板：按带 `color-scheme: light|dark` 的规则分组，
  * 收集其中的 `--*` 十六进制变量，
- * 并把三位写法展开成六位以便逐项对比。没有 `data-palette` 的规则按默认 `graphite` 记名。
+ * 并把三位写法展开成六位以便逐项对比。没有 `data-palette` 的规则按默认 `cobalt` 记名。
  * 供比对每套调色板在两套模式下是否定义了同一批变量，这类差异人工核对容易漏。
  */
 export function readThemePalettes(text: string) {
@@ -84,7 +84,7 @@ export function readThemePalettes(text: string) {
       );
     }
     palettes.push({
-      name: rule.selector.match(/data-palette\s*=\s*['"]([^'"]+)['"]/)?.[1] ?? 'graphite',
+      name: rule.selector.match(/data-palette\s*=\s*['"]([^'"]+)['"]/)?.[1] ?? 'cobalt',
       mode,
       colors,
     });
