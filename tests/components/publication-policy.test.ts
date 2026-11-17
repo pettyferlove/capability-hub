@@ -55,7 +55,11 @@ test('发布表单显示并保留全部指定受众，移除一个团队不会�
     return createElement(
       HubCtx.Provider,
       { value: state },
-      createElement(PublicationPolicyFields, { value: policy, onChange: setPolicy }),
+      createElement(PublicationPolicyFields, {
+        value: policy,
+        ownerGroupId: teams[0].id,
+        onChange: setPolicy,
+      }),
     );
   }
   const user = userEvent.setup();
@@ -84,6 +88,7 @@ test('场景读取失败显示具体错误，不能误导为尚未登记场景',
       HubCtx.Provider,
       { value: state },
       createElement(PublicationPolicyFields, {
+        ownerGroupId: teams[0].id,
         value: {
           category: 'scenario',
           scenario_ids: [],

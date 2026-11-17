@@ -542,6 +542,7 @@ export function IntakeDetail({
                 <h4 className="font-semibold">分发设置</h4>
                 <PublicationPolicyFields
                   categoryHint={hint('category')}
+                  ownerGroupId={i.asset_owner_group_id}
                   value={value}
                   onChange={(next) => {
                     if (

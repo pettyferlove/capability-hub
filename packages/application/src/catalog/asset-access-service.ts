@@ -129,7 +129,8 @@ export class AssetAccessService {
   }
   /**
    * 审查权限的作用域随请求范围扩大：通用类别、新场景定义、公开/组织或跨组受众要求全局
-   * `review:decide`；场景类别要求覆盖全部 `scenario_ids`；其余仅限资产所属团队。
+   * `review:decide`；场景类别要求覆盖全部 `scenario_ids`；其余按资产所属团队、来源或资产匹配。
+   * 网页 `features/review/review-scope.ts` 按同一规则生成提示，两处须同步修改。
    */
   async canReview(
     principal: Principal,
@@ -150,7 +151,7 @@ export class AssetAccessService {
       return allowed();
     if (request.category === 'scenario')
       return allowed() || request.scenario_ids.every((id: string) => allowed({ scenario: id }));
-    return allowed({ team: a.owner_group_id });
+    return allowed(this.assetContext(a));
   }
   /**
    * 候选内容只对维护者或该版本待审请求的审查者可见，否则抛 403/`FORBIDDEN`；
@@ -243,7 +244,7 @@ export class AssetAccessService {
       await Promise.all(
         distribution.audience.map(async (id: string) => {
           if (id === 'public') return '公开';
-          if (id === 'organization') return '登录用户';
+          if (id === 'organization') return '所有登录用户';
           const [kind, value] = id.split(':');
           return (
             (kind === 'group'

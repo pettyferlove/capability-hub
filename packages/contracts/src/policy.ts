@@ -19,7 +19,7 @@ export const distributionPolicySchema = z
       new Set(v.audience).size !== v.audience.length ||
       (v.audience.some((id) => id === 'public' || id === 'organization') && v.audience.length !== 1)
     )
-      c.addIssue({ code: 'custom', message: '受众重复，或公开、全部登录用户与其他受众混用' });
+      c.addIssue({ code: 'custom', message: '受众重复，或公开、所有登录用户与其他受众混用' });
   });
 
 /**

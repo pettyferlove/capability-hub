@@ -7,6 +7,7 @@ import { PublicationScenarioFields } from './PublicationScenarioFields.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { Message } from '../../shared/components/Message.js';
+import { reviewScope, type PlatformReviewReason } from '../review/review-scope.js';
 
 /**
  * 发布策略字段：受众是 `public`、`organization`、团队与成员 id 的混选，未知 id 用占位名保留展示而不是
@@ -16,10 +17,13 @@ export function PublicationPolicyFields({
   value,
   onChange,
   categoryHint,
+  ownerGroupId,
 }: {
   value: PublicationDraftPolicy;
   categoryHint?: ReactNode;
   onChange: (v: PublicationDraftPolicy) => void;
+  /** 资产所属团队；受众超出该团队时只能由平台审核者审核。 */
+  ownerGroupId: string;
 }) {
   const { me } = useHub();
   const update = (v: Partial<PublicationDraftPolicy>) => onChange({ ...value, ...v });
@@ -35,6 +39,8 @@ export function PublicationPolicyFields({
   for (const id of audience)
     if (!['public', 'organization'].includes(id) && !audienceOptions.has(id))
       audienceOptions.set(id, `${id.startsWith('group:') ? '团队' : '成员'} ${id.split(':')[1]}`);
+  const review = reviewScope(value, ownerGroupId);
+  const platformReasons: PlatformReviewReason[] = review.kind === 'platform' ? review.reasons : [];
   return (
     <div className={policyFieldsStyles}>
       <div>
@@ -58,8 +64,12 @@ export function PublicationPolicyFields({
         </label>
         {categoryHint}
       </div>
+      {platformReasons.includes('general') && <Message>通用分类只能由平台审核者审核。</Message>}
       {value.category === 'scenario' && (
         <PublicationScenarioFields value={value} onChange={update} />
+      )}
+      {review.kind === 'scenario' && (
+        <Message>场景分类由负责所选场景的审核者或平台审核者审核。</Message>
       )}
       <label>
         可见范围
@@ -111,14 +121,17 @@ export function PublicationPolicyFields({
             ))}
           </div>
           {!audience.length && <Message error>请至少选择一个受众。</Message>}
+          {platformReasons.includes('outside') && (
+            <Message>受众包含所属团队以外的团队或成员，只能由平台审核者审核。</Message>
+          )}
         </fieldset>
       )}
       {value.distribution.audience.includes('organization') && (
-        <Message>所有登录用户均可读取。需要来源共享授权，且只能由全平台审核者审核。</Message>
+        <Message>所有登录用户均可读取。需要来源共享授权，且只能由平台审核者审核。</Message>
       )}
       {value.distribution.audience.includes('public') && (
         <Message>
-          公开后任何人都可浏览、下载并通过对话安装。需要来源共享授权，且只能由全平台审核者审核。
+          公开后任何人都可浏览、下载并通过对话安装。需要来源共享授权，且只能由平台审核者审核。
         </Message>
       )}
       <small>分类用于发现，可见范围决定谁能读取。所有内容均需独立人工审核。</small>

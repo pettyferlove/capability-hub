@@ -224,6 +224,7 @@ export class IntakeQueryService {
     return {
       ...toIntakeDetails(intake),
       asset_slug: asset.slug,
+      asset_owner_group_id: asset.owner_group_id,
       current_release_id: release?.id ?? null,
       current_version: currentVersion
         ? {

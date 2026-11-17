@@ -368,7 +368,11 @@ export function SourceEditor({
                       : '填写具体的 server.json 路径，路径不支持通配符。'}
                   </small>
                 </label>
-                <PublicationPolicyFields value={t} onChange={(v) => update(i, v)} />
+                <PublicationPolicyFields
+                  value={t}
+                  ownerGroupId={group}
+                  onChange={(v) => update(i, v)}
+                />
                 <KeywordField
                   value={t.applies_to.keywords ?? []}
                   onChange={(keywords) => update(i, { applies_to: { ...t.applies_to, keywords } })}

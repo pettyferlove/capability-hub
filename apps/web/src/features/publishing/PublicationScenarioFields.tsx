@@ -152,7 +152,7 @@ export function PublicationScenarioFields({
         添加新场景
       </button>
       <small className={subtleStyles}>
-        新场景随本次发布提交平台审核。通过后，名称和说明可供其他维护者复用。
+        新场景随本次发布交由平台审核者审核。通过后，名称和说明可供其他维护者复用。
       </small>
     </fieldset>
   );

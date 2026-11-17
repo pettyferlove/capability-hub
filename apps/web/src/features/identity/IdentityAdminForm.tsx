@@ -335,7 +335,7 @@ export function IdentityAdminForm({
                 value={scope}
                 onValueChange={(nextValue) => setScope(nextValue)}
               >
-                <option value="platform">全平台</option>
+                <option value="platform">平台</option>
                 <option value="team">指定团队</option>
                 <option value="source">指定来源</option>
                 <option value="asset">指定资产</option>
@@ -368,7 +368,9 @@ export function IdentityAdminForm({
               <Message>
                 {scope === 'platform'
                   ? '此授权允许审核所有团队的申请，包括公开和面向所有登录用户的发布申请。'
-                  : '此授权不能用于审核公开或面向所有登录用户的发布申请，这类申请需要“全平台”作用域。'}
+                  : scope === 'scenario'
+                    ? '此授权仅能审核只涉及该场景且只对所属团队可见的申请；审核其他申请需选择“平台”。'
+                    : '此授权仅能审核未分类且只对所属团队可见的申请；审核其他申请需选择“平台”。'}
               </Message>
             )}
           </>

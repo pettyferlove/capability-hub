@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import type { PublicationDecisionCommand } from '@capability-hub/application';
 import { publicationDecisionRequestSchema } from '@capability-hub/contracts';
-import type { ScenarioDefinition } from '@capability-hub/contracts';
+import type { PublicationDraftPolicy, ScenarioDefinition } from '@capability-hub/contracts';
 import { HubError } from '@capability-hub/domain/errors';
 import type {
   ManagementAssetListResponse,
@@ -19,6 +19,7 @@ import {
 } from '../support/application.js';
 import { signIn } from '../support/http.js';
 import { skillDocument } from '../support/content.js';
+import { reviewScope, type ReviewScope } from '../../apps/web/src/features/review/review-scope.js';
 
 const errorCode = (code: string) => (error: unknown) =>
   error instanceof HubError && error.code === code;
@@ -1623,6 +1624,100 @@ test('团队审核者只能审查自己有权审核的申请版本，不能借�
   );
   const detail = await fixture.hub.intakeQueries.getDetail(scoped, first.intake.id);
   assert.equal(detail.version?.id, first.intake.version_id);
+});
+
+test('审核范围提示与实际审核授权一致，团队、来源和资产范围的审核者只能审核所属团队内部的未分类申请', async (context) => {
+  const f = await createTestHub(context);
+  const team = 'group:' + f.teamId;
+  const intake = await receiveSkill(f);
+  const request = await submitPublication(f, intake, {
+    mode: 'approved_audience',
+    audience: [team],
+  });
+  const asset = await f.hub.assetAccess.getAsset(intake.asset_id);
+  const covered = await f.hub.administration.createScenario(f.admin, { name: '发布检查' });
+  const other = await f.hub.administration.createScenario(f.admin, { name: '代码评审' });
+  const role = await f.store.find('roles', 'key', 'reviewer');
+  assert(role);
+  const reviewer = async (
+    scope_type: 'team' | 'source' | 'asset' | 'scenario',
+    scope_id: string,
+  ) => {
+    const user = await f.hub.administration.createUser(f.admin, {
+      username: `${scope_type}-reviewer`,
+      display_name: `${scope_type} 审核者`,
+      password: testPassword,
+      group_ids: [],
+    });
+    await f.hub.administration.grantRole(f.admin, {
+      principal_id: user.id,
+      role_id: role.id,
+      scope_type,
+      scope_id,
+    });
+    return f.hub.identity.principal(user.id);
+  };
+  const scoped = [
+    await reviewer('team', f.teamId),
+    await reviewer('source', asset.source_id),
+    await reviewer('asset', asset.id),
+  ];
+  const scenarioReviewer = await reviewer('scenario', covered.id);
+  const audience = (...ids: string[]) => ({ mode: 'approved_audience' as const, audience: ids });
+  const cases: (PublicationDraftPolicy & { kind: ReviewScope['kind'] })[] = [
+    { kind: 'team', category: 'uncategorized', scenario_ids: [], distribution: audience(team) },
+    {
+      kind: 'scenario',
+      category: 'scenario',
+      scenario_ids: [covered.id],
+      distribution: audience(team),
+    },
+    {
+      kind: 'scenario',
+      category: 'scenario',
+      scenario_ids: [covered.id, other.id],
+      distribution: audience(team),
+    },
+    { kind: 'platform', category: 'general', scenario_ids: [], distribution: audience(team) },
+    {
+      kind: 'platform',
+      category: 'scenario',
+      scenario_ids: [covered.id],
+      proposed_scenarios: [{ name: '上线检查', description: '上线前核对配置与回滚方案' }],
+      distribution: audience(team),
+    },
+    {
+      kind: 'platform',
+      category: 'uncategorized',
+      scenario_ids: [],
+      distribution: audience('public'),
+    },
+    {
+      kind: 'platform',
+      category: 'uncategorized',
+      scenario_ids: [],
+      distribution: audience('organization'),
+    },
+    {
+      kind: 'platform',
+      category: 'uncategorized',
+      scenario_ids: [],
+      distribution: audience(team, 'principal:' + f.reader.id),
+    },
+  ];
+  for (const { kind, ...policy } of cases) {
+    const label = JSON.stringify(policy);
+    assert.equal(reviewScope(policy, asset.owner_group_id).kind, kind, label);
+    const candidate = { ...request, ...policy };
+    for (const principal of scoped)
+      assert.equal(await f.hub.assetAccess.canReview(principal, candidate), kind === 'team', label);
+    assert.equal(
+      await f.hub.assetAccess.canReview(scenarioReviewer, candidate),
+      kind === 'scenario' && policy.scenario_ids.every((id) => id === covered.id),
+      label,
+    );
+    assert(await f.hub.assetAccess.canReview(f.reviewer, candidate), label);
+  }
 });
 
 for (const scenario of [

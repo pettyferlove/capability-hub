@@ -346,8 +346,8 @@ export class PublicationService {
    * 审核决策入口，approve 时在同一事务内写入发布记录、推进版本可用性、
    * 更新资产 `current_release_id` 与申请状态，任一失败整体回滚。
    * 权限走 `canReview`：通用范围、含 `public`/`organization` 或跨团队的受众要求平台级
-   * `review:decide`；`scenario` 分类要求覆盖全部场景的 `review:decide`；其余按
-   * `review:decide` + 资产 owner 团队。提交者与通用提名的来源共享者都不得自审，
+   * `review:decide`；`scenario` 分类要求覆盖全部场景的 `review:decide`；其余按资产所属
+   * 团队、来源或资产范围的 `review:decide`。提交者与通用提名的来源共享者都不得自审，
    * 否则 403/`SELF_REVIEW`；越权 403/`FORBIDDEN`。
    * 批准前先确认文件的 blob 与归档/清单存在（503/`BLOB_MISSING`），刻意放在取写事务锁之前。
    * 由 `IdempotencyService.execute` 包裹（route `decision/<id>`），摘要只含决策体，

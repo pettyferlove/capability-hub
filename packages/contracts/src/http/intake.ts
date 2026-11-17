@@ -53,6 +53,7 @@ export interface IntakeDetails {
  */
 export interface IntakeResponse extends IntakeDetails {
   asset_slug: string;
+  asset_owner_group_id: string;
   current_release_id: string | null;
   current_version: ManagementAssetResponse['current_version'];
   asset_lifecycle: ManagementAssetResponse['lifecycle'];
