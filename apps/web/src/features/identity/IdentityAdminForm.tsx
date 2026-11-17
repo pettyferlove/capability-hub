@@ -137,11 +137,13 @@ export function IdentityAdminForm({
       团队
       <SelectField name="group_id" required>
         <option value="">请选择团队</option>
-        {data.groups.map((g) => (
-          <option key={g.id} value={g.id}>
-            {g.name}
-          </option>
-        ))}
+        {data.groups
+          .filter((g) => !g.ldap_entry_uuid)
+          .map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
       </SelectField>
     </label>
   );
@@ -268,6 +270,7 @@ export function IdentityAdminForm({
               </SelectField>
             </label>
             {groupSelect}
+            <Message>企业部门成员在登录时自动同步，请在企业目录中调整部门归属。</Message>
           </>
         )}
         {['role', 'edit-role'].includes(kind) && (

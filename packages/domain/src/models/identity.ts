@@ -12,6 +12,8 @@ export interface UserRecord extends VersionedRecord {
   /** 本地账号保存 scrypt 哈希；LDAP 账号仅保存目录条目标识。 */
   password_hash: string | null;
   ldap_entry_uuid?: string;
+  /** 默认维护者授权被撤销后，不因目录登录重新补发。 */
+  ldap_maintainer_binding_id?: string;
   /** 停用后不再能登录，且其令牌与连接鉴权立即失效；数据保留。 */
   active: boolean;
   created_at: IsoDateTime;
@@ -28,6 +30,7 @@ export interface GroupRecord extends VersionedRecord {
   name: string;
   /** 停用团队不再出现在受众可选范围，也不会因成员关系获得任何授权。 */
   active: boolean;
+  ldap_entry_uuid?: string;
 }
 
 /**

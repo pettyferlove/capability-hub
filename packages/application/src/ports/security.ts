@@ -14,10 +14,11 @@ export interface PasswordHasher {
   verify(password: string, hash: string): Promise<boolean>;
 }
 
-/** 条目标识在更名后保持稳定，显示名仅在首次建号时使用。 */
+/** 条目标识在更名后保持稳定，显示名仅在首次建号时使用，部门在每次登录时同步。 */
 export interface DirectoryIdentity {
   entryUuid: string;
   displayName: string;
+  department?: { entryUuid: string; displayName: string };
 }
 
 /** 用户凭据无效时返回空，目录连接或服务账号故障单独报错。 */

@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { AuthenticationService } from '@capability-hub/application';
-import type { DirectoryAuthenticator } from '@capability-hub/application/ports';
+import type { DirectoryAuthenticator, DirectoryIdentity } from '@capability-hub/application/ports';
 import { sha256 } from '@capability-hub/domain/canonical';
+import { has } from '@capability-hub/domain/rbac';
 import { HubError } from '@capability-hub/domain/errors';
 import { ScryptPasswordHasher } from '@capability-hub/infrastructure/security';
 import {
@@ -141,7 +142,11 @@ test('场景管理员合并词条后按目标检索，历史发布和场景审�
   assert.equal((await f.hub.catalog.search(null, {})).total, 1);
 });
 
-function directoryLogin(hub: TestHub['hub'], authenticator: DirectoryAuthenticator) {
+function directoryLogin(
+  hub: TestHub['hub'],
+  authenticator: DirectoryAuthenticator,
+  defaultRoles = ['reader'],
+) {
   return new AuthenticationService(
     hub.store,
     hub.identity,
@@ -149,20 +154,25 @@ function directoryLogin(hub: TestHub['hub'], authenticator: DirectoryAuthenticat
     new ScryptPasswordHasher(),
     {
       authenticator,
-      defaultRoles: ['reader'],
+      defaultRoles,
     },
   );
 }
 
 test('目录认证不能抢先初始化平台，并与校验期间创建的同名本地账号各自建号', async (context) => {
   const { hub, store } = await createTestApplication(context);
-  const identity = { entryUuid: randomUUID(), displayName: '目录成员' };
+  const identity = {
+    entryUuid: randomUUID(),
+    displayName: '目录成员',
+    department: { entryUuid: randomUUID(), displayName: 'Engineering' },
+  };
   const auth = directoryLogin(hub, { authenticate: async () => identity });
   await assert.rejects(
     () => auth.login('member', testPassword, 'test', 'ldap'),
     code('INVALID_CREDENTIALS'),
   );
   assert.equal((await store.all('users')).length, 0);
+  assert.deepEqual(await store.all('groups'), []);
   const user = await hub.authentication.setup({
     username: 'owner',
     password: testPassword,
@@ -219,6 +229,225 @@ test('同一目录条目更名保留账号，复用旧 uid 的其他条目不能
     () => hub.authentication.login('owner', testPassword, 'test', 'ldap'),
     code('LDAP_DISABLED'),
   );
+});
+
+test('同一 OU 共用部门团队，部门更名保留团队且不接管同名本地团队', async (context) => {
+  const fixture = await createTestHub(context);
+  const local = await fixture.hub.administration.createGroup(fixture.admin, {
+    name: 'Engineering',
+  });
+  const department = { entryUuid: randomUUID(), displayName: 'Engineering' };
+  const identities: Record<string, string> = {
+    first: randomUUID(),
+    second: randomUUID(),
+  };
+  const auth = directoryLogin(fixture.hub, {
+    authenticate: async (username) => ({
+      entryUuid: identities[username],
+      displayName: username,
+      department,
+    }),
+  });
+  const users = await Promise.all(
+    ['first', 'second'].map((username) => auth.login(username, testPassword, 'test', 'ldap')),
+  );
+  const group = await fixture.store.find('groups', 'ldap_entry_uuid', department.entryUuid);
+  assert(group);
+  assert.notEqual(group.id, local.id);
+  for (const user of users)
+    assert.deepEqual((await fixture.hub.identity.principal(user.id)).groups, [group.id]);
+  department.displayName = 'Platform';
+  await auth.login('first', testPassword, 'test', 'ldap');
+  assert.equal((await fixture.store.get('groups', group.id))?.name, 'Platform');
+  assert.equal((await fixture.store.get('groups', local.id))?.name, 'Engineering');
+  assert.equal(
+    (await fixture.store.find('groups', 'ldap_entry_uuid', department.entryUuid))?.id,
+    group.id,
+  );
+});
+
+test('部门调动迁移自动维护授权，保留手工团队和手工授权', async (context) => {
+  const fixture = await createTestHub(context);
+  let department = { entryUuid: randomUUID(), displayName: 'Engineering' };
+  const entryUuid = randomUUID();
+  const auth = directoryLogin(
+    fixture.hub,
+    { authenticate: async () => ({ entryUuid, displayName: '成员', department }) },
+    ['maintainer', 'reader'],
+  );
+  const user = await auth.login('member', testPassword, 'test', 'ldap');
+  const previous = await fixture.store.find('groups', 'ldap_entry_uuid', department.entryUuid);
+  assert(previous);
+  await fixture.hub.administration.addMembership(fixture.admin, {
+    user_id: user.id,
+    group_id: fixture.teamId,
+  });
+  const role = await fixture.store.find('roles', 'key', 'maintainer');
+  assert(role);
+  const manual = await fixture.hub.administration.grantRole(fixture.admin, {
+    principal_id: user.id,
+    role_id: role.id,
+    scope_type: 'team',
+    scope_id: fixture.teamId,
+  });
+  department = { entryUuid: randomUUID(), displayName: 'Platform' };
+  await auth.login('member', testPassword, 'test', 'ldap');
+  const next = await fixture.store.find('groups', 'ldap_entry_uuid', department.entryUuid);
+  assert(next);
+  const principal = await fixture.hub.identity.principal(user.id);
+  assert.deepEqual(new Set(principal.groups), new Set([fixture.teamId, next.id]));
+  assert(!has(principal, 'asset:maintain', { team: previous.id }));
+  assert(has(principal, 'asset:maintain', { team: next.id }));
+  assert(has(principal, 'asset:maintain', { team: fixture.teamId }));
+  assert.deepEqual(await fixture.store.get('role_bindings', manual.id), manual);
+  assert(await fixture.store.get('groups', previous.id));
+});
+
+test('撤销默认维护授权后，部门调动和重新登录不会补发权限', async (context) => {
+  const fixture = await createTestHub(context);
+  const entryUuid = randomUUID();
+  let department = { entryUuid: randomUUID(), displayName: 'Engineering' };
+  const auth = directoryLogin(
+    fixture.hub,
+    { authenticate: async () => ({ entryUuid, displayName: '成员', department }) },
+    ['maintainer', 'reader'],
+  );
+  const user = await auth.login('member', testPassword, 'test', 'ldap');
+  assert(user.ldap_maintainer_binding_id);
+  await fixture.hub.administration.removeGrant(
+    fixture.admin,
+    'role_bindings',
+    user.ldap_maintainer_binding_id,
+  );
+  department = { entryUuid: randomUUID(), displayName: 'Platform' };
+  await auth.login('member', testPassword, 'test', 'ldap');
+  const group = await fixture.store.find('groups', 'ldap_entry_uuid', department.entryUuid);
+  assert(group);
+  const principal = await fixture.hub.identity.principal(user.id);
+  assert.deepEqual(principal.groups, [group.id]);
+  assert(!has(principal, 'asset:maintain', { team: group.id }));
+  assert.equal(
+    await fixture.store.get('role_bindings', user.ldap_maintainer_binding_id),
+    undefined,
+  );
+});
+
+test('无 OU 的目录账号不创建个人团队，也不获得平台维护权限', async (context) => {
+  const fixture = await createTestHub(context);
+  const identity = { entryUuid: randomUUID(), displayName: '成员' };
+  const auth = directoryLogin(fixture.hub, { authenticate: async () => identity }, [
+    'maintainer',
+    'reader',
+  ]);
+  const user = await auth.login('member', testPassword, 'test', 'ldap');
+  const principal = await fixture.hub.identity.principal(user.id);
+  assert.deepEqual(principal.groups, []);
+  assert(!has(principal, 'asset:maintain', { team: fixture.teamId }));
+  const bindings = await fixture.store.where('role_bindings', 'principal_id', user.id);
+  const roles = await Promise.all(
+    bindings.map((binding) => fixture.store.get('roles', binding.role_id)),
+  );
+  assert.deepEqual(
+    roles.map((role) => role?.key),
+    ['reader'],
+  );
+  assert.deepEqual(
+    (await fixture.store.all('groups')).filter((group) => group.ldap_entry_uuid),
+    [],
+  );
+});
+
+test('部门信息消失后移除旧部门归属和自动维护权限，保留部门团队', async (context) => {
+  const fixture = await createTestHub(context);
+  const entryUuid = randomUUID();
+  let department: DirectoryIdentity['department'] = {
+    entryUuid: randomUUID(),
+    displayName: 'Engineering',
+  };
+  const auth = directoryLogin(
+    fixture.hub,
+    { authenticate: async () => ({ entryUuid, displayName: '成员', department }) },
+    ['maintainer', 'reader'],
+  );
+  const user = await auth.login('member', testPassword, 'test', 'ldap');
+  const group = await fixture.store.find('groups', 'ldap_entry_uuid', department.entryUuid);
+  assert(group);
+  department = undefined;
+  await auth.login('member', testPassword, 'test', 'ldap');
+  const principal = await fixture.hub.identity.principal(user.id);
+  assert.deepEqual(principal.groups, []);
+  assert(!has(principal, 'asset:maintain', { team: group.id }));
+  assert(await fixture.store.get('groups', group.id));
+});
+
+test('目录部门的名称和成员不能手工改写，拒绝操作不改变归属', async (context) => {
+  const fixture = await createTestHub(context);
+  const department = { entryUuid: randomUUID(), displayName: 'Engineering' };
+  const identity = { entryUuid: randomUUID(), displayName: '成员', department };
+  const user = await directoryLogin(fixture.hub, {
+    authenticate: async () => identity,
+  }).login('member', testPassword, 'test', 'ldap');
+  const group = await fixture.store.find('groups', 'ldap_entry_uuid', department.entryUuid);
+  assert(group);
+  const membership = await fixture.store.find('memberships', 'user_id', user.id);
+  assert(membership);
+  await assert.rejects(
+    () =>
+      fixture.hub.administration.addMembership(fixture.admin, {
+        user_id: fixture.reader.id,
+        group_id: group.id,
+      }),
+    code('DIRECTORY_MEMBERSHIP_MANAGED'),
+  );
+  await assert.rejects(
+    () =>
+      fixture.hub.administration.createUser(fixture.admin, {
+        username: 'manual-member',
+        display_name: '本地成员',
+        password: testPassword,
+        group_ids: [group.id],
+      }),
+    code('DIRECTORY_MEMBERSHIP_MANAGED'),
+  );
+  await assert.rejects(
+    () => fixture.hub.administration.removeGrant(fixture.admin, 'memberships', membership.id),
+    code('DIRECTORY_MEMBERSHIP_MANAGED'),
+  );
+  await assert.rejects(
+    () =>
+      fixture.hub.administration.updateGroup(fixture.admin, group.id, { name: 'Manual' }, '"1"'),
+    code('DIRECTORY_GROUP_MANAGED'),
+  );
+  assert.deepEqual(await fixture.store.get('memberships', membership.id), membership);
+  assert.deepEqual(await fixture.store.get('groups', group.id), group);
+  assert.equal(await fixture.hub.identity.userForLogin('manual-member', 'local'), undefined);
+  assert.deepEqual((await fixture.hub.identity.principal(fixture.reader.id)).groups, []);
+});
+
+test('停用目录部门后登录不会重新启用团队或恢复维护授权', async (context) => {
+  const fixture = await createTestHub(context);
+  const identity = {
+    entryUuid: randomUUID(),
+    displayName: '成员',
+    department: { entryUuid: randomUUID(), displayName: 'Engineering' },
+  };
+  const auth = directoryLogin(fixture.hub, { authenticate: async () => identity }, [
+    'maintainer',
+    'reader',
+  ]);
+  const user = await auth.login('member', testPassword, 'test', 'ldap');
+  const group = await fixture.store.find(
+    'groups',
+    'ldap_entry_uuid',
+    identity.department.entryUuid,
+  );
+  assert(group);
+  await fixture.hub.administration.updateGroup(fixture.admin, group.id, { active: false }, '"1"');
+  await auth.login('member', testPassword, 'test', 'ldap');
+  assert.equal((await fixture.store.get('groups', group.id))?.active, false);
+  const principal = await fixture.hub.identity.principal(user.id);
+  assert.deepEqual(principal.groups, []);
+  assert(!has(principal, 'asset:maintain', { team: group.id }));
 });
 
 test('一个来源的登录失败不会锁住同名另一账号，另一来源的成功也不会清除锁定', async (context) => {

@@ -59,6 +59,8 @@ export interface GroupResponse {
   revision: number;
   name: string;
   active: boolean;
+  /** 名称与成员关系由 LDAP / AD 同步，不能在 Hub 手工修改。 */
+  ldap_entry_uuid?: string;
 }
 
 /** 用户与组的成员关系；删除关系即移除该用户在此组内的所有作用域权限。 */

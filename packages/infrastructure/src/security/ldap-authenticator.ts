@@ -60,30 +60,17 @@ export class LdapAuthenticator implements DirectoryAuthenticator {
       const accountName = attributes[usernameAttribute.toLowerCase()];
       if (typeof accountName !== 'string' || accountName.toLowerCase() !== username)
         return undefined;
+      const department = await this.department(client, entry.dn);
       try {
         await client.bind(entry.dn, password);
-        const uuid = attributes[uuidAttribute.toLowerCase()];
-        let entryUuid: string;
-        if (activeDirectory) {
-          if (!Buffer.isBuffer(uuid) || uuid.length !== 16)
-            throw new Error('AD 条目缺少有效的 objectGUID');
-          // AD GUID 的前三段按小端存储，其余字节保持原序。
-          entryUuid = [
-            uuid.readUInt32LE(0).toString(16).padStart(8, '0'),
-            uuid.readUInt16LE(4).toString(16).padStart(4, '0'),
-            uuid.readUInt16LE(6).toString(16).padStart(4, '0'),
-            uuid.toString('hex', 8, 10),
-            uuid.toString('hex', 10, 16),
-          ].join('-');
-        } else {
-          if (typeof uuid !== 'string' || !/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(uuid))
-            throw new Error('LDAP 条目缺少 entryUUID');
-          entryUuid = uuid.toLowerCase();
-        }
+        const identifier = directoryIdentifier(
+          attributes[uuidAttribute.toLowerCase()],
+          activeDirectory,
+        );
         // 防止查询与用户绑定之间同名 DN 被删除重建。
         const confirmed = await client.search(entry.dn, {
           scope: 'base',
-          filter: new EqualityFilter({ attribute: uuidAttribute, value: uuid }),
+          filter: new EqualityFilter({ attribute: uuidAttribute, value: identifier.filterValue }),
           attributes: ['1.1'],
         });
         if (confirmed.searchEntries.length !== 1) return undefined;
@@ -95,8 +82,9 @@ export class LdapAuthenticator implements DirectoryAuthenticator {
             ? attributes.displayname
             : commonName;
         return {
-          entryUuid,
+          entryUuid: identifier.entryUuid,
           displayName: (typeof name === 'string' && name.trim().slice(0, 80)) || username,
+          ...(department ? { department } : {}),
         };
       } catch (error) {
         if (error instanceof InvalidCredentialsError || error instanceof NoSuchObjectError)
@@ -108,4 +96,84 @@ export class LdapAuthenticator implements DirectoryAuthenticator {
       throw new HubError(503, 'LDAP_UNAVAILABLE', 'LDAP 目录服务暂时不可用', {}, true);
     }
   }
+
+  private async department(
+    client: Client,
+    userDn: string,
+  ): Promise<DirectoryIdentity['department']> {
+    const activeDirectory = this.options.directoryType === 'ad';
+    const uuidAttribute = activeDirectory ? 'objectGUID' : 'entryUUID';
+    const parts = distinguishedNameParts(userDn);
+    const baseDepth = distinguishedNameParts(this.options.baseDn).length;
+    for (let index = 1; parts.length - index >= baseDepth; index++) {
+      const { searchEntries, searchReferences } = await client.search(
+        parts.slice(index).join(','),
+        {
+          scope: 'base',
+          timeLimit: 5,
+          filter: new EqualityFilter({ attribute: 'objectClass', value: 'organizationalUnit' }),
+          attributes: ['description', 'ou', uuidAttribute],
+          explicitBufferAttributes: activeDirectory ? ['objectGUID'] : [],
+        },
+      );
+      if (searchReferences.length) throw new Error('LDAP 部门查询返回转介');
+      const entry = searchEntries[0];
+      if (!entry) continue;
+      const attributes = Object.fromEntries(
+        Object.entries(entry).map(([key, value]) => [key.toLowerCase(), value] as const),
+      );
+      const displayName = directoryText(attributes.description) ?? directoryText(attributes.ou);
+      if (!displayName) throw new Error('LDAP 部门缺少名称');
+      return {
+        entryUuid: directoryIdentifier(attributes[uuidAttribute.toLowerCase()], activeDirectory)
+          .entryUuid,
+        displayName: displayName.slice(0, 80),
+      };
+    }
+    return undefined;
+  }
+}
+
+function directoryIdentifier(
+  value: unknown,
+  activeDirectory: boolean,
+): { entryUuid: string; filterValue: Buffer | string } {
+  if (activeDirectory) {
+    if (!Buffer.isBuffer(value) || value.length !== 16)
+      throw new Error('AD 条目缺少有效的 objectGUID');
+    // AD GUID 的前三段按小端存储，其余字节保持原序。
+    return {
+      entryUuid: [
+        value.readUInt32LE(0).toString(16).padStart(8, '0'),
+        value.readUInt16LE(4).toString(16).padStart(4, '0'),
+        value.readUInt16LE(6).toString(16).padStart(4, '0'),
+        value.toString('hex', 8, 10),
+        value.toString('hex', 10, 16),
+      ].join('-'),
+      filterValue: value,
+    };
+  }
+  if (typeof value !== 'string' || !/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(value))
+    throw new Error('LDAP 条目缺少 entryUUID');
+  return { entryUuid: value.toLowerCase(), filterValue: value };
+}
+
+function distinguishedNameParts(dn: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  for (let index = 0; index < dn.length; index++) {
+    if (dn[index] === '\\') index++;
+    else if (dn[index] === ',') {
+      parts.push(dn.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(dn.slice(start));
+  return parts;
+}
+
+function directoryText(value: unknown): string | undefined {
+  if (Array.isArray(value))
+    return value.find((item): item is string => typeof item === 'string' && !!item.trim())?.trim();
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }

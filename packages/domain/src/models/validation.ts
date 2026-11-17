@@ -212,6 +212,7 @@ const schemas = {
       display_name: text,
       password_hash: text.nullable(),
       ldap_entry_uuid: z.guid().optional(),
+      ldap_maintainer_binding_id: id.optional(),
       active: z.boolean(),
       created_at: date,
       avatar_color: text.optional(),
@@ -220,7 +221,12 @@ const schemas = {
       email: text.optional(),
     })
     .refine((user) => (user.password_hash === null) === (user.ldap_entry_uuid !== undefined)),
-  groups: z.strictObject({ ...versioned, name: text, active: z.boolean() }),
+  groups: z.strictObject({
+    ...versioned,
+    name: text,
+    active: z.boolean(),
+    ldap_entry_uuid: z.guid().optional(),
+  }),
   memberships: z.strictObject({ ...base, user_id: id, group_id: id }),
   roles: z.strictObject({
     ...versioned,

@@ -55,7 +55,9 @@ test('OpenLDAP 并发首次登录共用账号和团队，撤销的维护者角�
     .post('/auth/login')
     .send({ ...login, username: 'LDAP-DEMO' })
     .expect(200);
-  assert.equal((await clients[0].get('/api/me').expect(200)).body.capabilities.can_publish, false);
+  const repeated = (await clients[0].get('/api/me').expect(200)).body as MeResponse;
+  assert.equal(repeated.capabilities.can_publish, false);
+  assert.deepEqual(repeated.groups, me.groups);
 });
 
 test('AD 使用 sAMAccountName 登录并以二进制 objectGUID 识别同一账号', async (context) => {
@@ -77,12 +79,20 @@ test('AD 使用 sAMAccountName 登录并以二进制 objectGUID 识别同一账�
   assert.equal(first.id, second.id);
   assert.equal(first.auth_provider, 'ldap');
   assert.equal(first.display_name, 'AD Demo');
+  assert.deepEqual(
+    first.groups.map((group) => group.name),
+    ['Platform'],
+  );
+  assert.equal(
+    (await fixture.store.get('groups', first.groups[0].id))?.ldap_entry_uuid,
+    '11111111-2222-4333-8444-555555555555',
+  );
   const user = await fixture.hub.identity.activeUser(first.id);
   assert.equal(user.ldap_entry_uuid, '00112233-4455-6677-8899-aabbccddeeff');
   assert.equal(user.password_hash, null);
 });
 
-test('目录密码只在 OpenLDAP 校验，错误凭据不建号，只读默认角色不建团队', async (context) => {
+test('目录密码只在 OpenLDAP 校验，只读账号同步部门但不授维护权限', async (context) => {
   const fixture = await createTestHub(context, { ldap: directory(['reader']) });
   const client = httpClient(fixture);
   for (const credentials of [
@@ -96,7 +106,10 @@ test('目录密码只在 OpenLDAP 校验，错误凭据不建号，只读默认�
   assert.equal(await fixture.store.find('users', 'username', login.username), undefined);
   await client.post('/auth/login').send(login).expect(200);
   const me = (await client.get('/api/me').expect(200)).body as MeResponse;
-  assert.deepEqual(me.groups, []);
+  assert.deepEqual(
+    me.groups.map((group) => group.name),
+    ['Engineering'],
+  );
   assert.equal(me.capabilities.can_publish, false);
   client.set('X-CSRF-Token', me.csrf_token);
   const user = await fixture.hub.identity.activeUser(me.id);
@@ -120,6 +133,18 @@ test('目录密码只在 OpenLDAP 校验，错误凭据不建号，只读默认�
     .expect(200);
   await client.post('/auth/login').send(login).expect(401);
   await client.get('/api/me').expect(401);
+});
+
+test('用户搜索基准不包含 OU 时，不越界同步上级部门或授维护权限', async (context) => {
+  const ldap = directory();
+  const fixture = await createTestHub(context, {
+    ldap: { ...ldap, baseDn: 'uid=ldap-demo,' + ldap.baseDn },
+  });
+  const client = httpClient(fixture);
+  await client.post('/auth/login').send(login).expect(200);
+  const me = (await client.get('/api/me').expect(200)).body as MeResponse;
+  assert.deepEqual(me.groups, []);
+  assert.equal(me.capabilities.can_publish, false);
 });
 
 test('目录绑定故障只影响显式 LDAP 登录，未知来源被拒绝', async (context) => {

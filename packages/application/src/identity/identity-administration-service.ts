@@ -98,8 +98,12 @@ export class IdentityAdministrationService {
       this.identity.require(await this.identity.principal(p.id), 'identity:manage');
       if (await this.identity.userForLogin(b.username, 'local'))
         fail(409, 'USERNAME_CONFLICT', '账号已存在');
-      for (const id of b.group_ids)
-        if (!(await this.store.get('groups', id))?.active) fail(422, 'INVALID_GROUP', '团队无效');
+      for (const id of b.group_ids) {
+        const group = await this.store.get('groups', id);
+        if (!group?.active) fail(422, 'INVALID_GROUP', '团队无效');
+        if (group.ldap_entry_uuid)
+          fail(409, 'DIRECTORY_MEMBERSHIP_MANAGED', '部门成员关系由 LDAP / AD 同步');
+      }
       const u = await this.store.insert('users', {
         id: randomUUID(),
         username: b.username,
@@ -314,11 +318,11 @@ export class IdentityAdministrationService {
   async addMembership(principal: Principal, body: unknown) {
     return await this.mutate(principal, async () => {
       const b = z.object({ user_id: z.uuid(), group_id: z.uuid() }).strict().parse(body);
-      if (
-        !(await this.store.get('users', b.user_id)) ||
-        !(await this.store.get('groups', b.group_id))
-      )
+      const group = await this.store.get('groups', b.group_id);
+      if (!(await this.store.get('users', b.user_id)) || !group)
         fail(422, 'INVALID_MEMBERSHIP', '成员或团队不存在');
+      if (group.ldap_entry_uuid)
+        fail(409, 'DIRECTORY_MEMBERSHIP_MANAGED', '部门成员关系由 LDAP / AD 同步');
       const r = await this.store.insert('memberships', { id: randomUUID(), ...b });
       await this.store.audit(principal.id, 'identity.membership_added', r.id);
       return r;
@@ -336,6 +340,12 @@ export class IdentityAdministrationService {
       this.identity.require(await this.identity.principal(p.id), 'identity:manage');
       const row = await this.store.get(table, id);
       if (!row) fail(404, 'NOT_FOUND', '授权不存在');
+      if (
+        table === 'memberships' &&
+        'group_id' in row &&
+        (await this.store.get('groups', row.group_id))?.ldap_entry_uuid
+      )
+        fail(409, 'DIRECTORY_MEMBERSHIP_MANAGED', '部门成员关系由 LDAP / AD 同步');
       await this.store.audit(p.id, 'identity.grant_removed', id);
       await this.store.remove(table, id);
       await this.guardLastAdmin();
@@ -445,7 +455,7 @@ export class IdentityAdministrationService {
     });
   }
   /**
-   * 局部更新团队名称或启停。停用后，该团队授予的绑定与成员关系在下一次
+   * 本地团队可改名，目录团队仅可启停。停用后，该团队授予的绑定与成员关系在下一次
    * {@link IdentityService.principal} 重建时全部失效（鉴权不受历史快照影响）。
    * 需 `identity:manage`；不存在抛 404，`etag` 缺失 428、不符 412。
    * 写审计 `identity.group_updated`，并在事务末尾校验仍保留有效平台管理员（409/`LAST_ADMIN`）。
@@ -461,6 +471,8 @@ export class IdentityAdministrationService {
       const g = await this.store.get('groups', id);
       if (!g) fail(404, 'NOT_FOUND', '团队不存在');
       matchRevision(g, etag);
+      if (g.ldap_entry_uuid && b.name !== undefined && b.name !== g.name)
+        fail(409, 'DIRECTORY_GROUP_MANAGED', '部门名称由 LDAP / AD 同步');
       const next = await this.store.put('groups', { ...g, ...b, revision: g.revision + 1 });
       await this.guardLastAdmin();
       await this.store.audit(p.id, 'identity.group_updated', id, '', {

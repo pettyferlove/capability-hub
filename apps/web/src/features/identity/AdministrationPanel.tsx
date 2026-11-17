@@ -132,6 +132,7 @@ export function AdministrationPanel({ tab }: { tab: string }) {
       </div>
     );
   if (!data) return null;
+  const directoryGroupIds = new Set(data.groups.filter((g) => g.ldap_entry_uuid).map((g) => g.id));
   const person = (id: string) => {
     const user = data.users.find((u) => u.id === id);
     return user
@@ -177,13 +178,17 @@ export function AdministrationPanel({ tab }: { tab: string }) {
                             .map((m) => (
                               <span className={tagStyles} key={m.id}>
                                 {person(m.group_id)}
-                                <button
-                                  className={memberRemoveBtnStyles}
-                                  aria-label={'移出团队 ' + person(m.group_id)}
-                                  onClick={() => remove('/api/admin/memberships/' + m.id)}
-                                >
-                                  移出
-                                </button>
+                                {directoryGroupIds.has(m.group_id) ? (
+                                  <small className="text-muted-ink">自动同步</small>
+                                ) : (
+                                  <button
+                                    className={memberRemoveBtnStyles}
+                                    aria-label={'移出团队 ' + person(m.group_id)}
+                                    onClick={() => remove('/api/admin/memberships/' + m.id)}
+                                  >
+                                    移出
+                                  </button>
+                                )}
                               </span>
                             ))}
                         </div>
@@ -251,9 +256,14 @@ export function AdministrationPanel({ tab }: { tab: string }) {
                       >
                         {Array.from(g.name)[0]}
                       </span>
-                      <strong className="min-w-0 flex-1 break-words text-body font-medium [overflow-wrap:anywhere]">
-                        {g.name}
-                      </strong>
+                      <div className="min-w-0 flex-1">
+                        <strong className="block break-words text-body font-medium [overflow-wrap:anywhere]">
+                          {g.name}
+                        </strong>
+                        {g.ldap_entry_uuid && (
+                          <small className="text-caption text-muted-ink">企业部门 · 自动同步</small>
+                        )}
+                      </div>
                       <span className="inline-flex shrink-0 items-center gap-1.5 text-caption text-muted-ink">
                         <AppIcon icon={usersRoundIcon} size={14} aria-hidden="true" />
                         {data.memberships.filter((m) => m.group_id === g.id).length} 位成员

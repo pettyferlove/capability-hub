@@ -34,8 +34,9 @@ Compose 的宿主机监听地址和端口默认取 `CAPABILITY_HUB_HOST` 和 `PO
 
 - `CAPABILITY_HUB_LDAP_URL` 为空时禁用目录登录。默认仅开发回环地址允许 `ldap://`，远程或生产连接需使用 `ldaps://` 并校验证书；确需明文时显式设置 `CAPABILITY_HUB_LDAP_ALLOW_INSECURE=true`，账号密码将在网络中明文传输。私有 CA 通过 `NODE_EXTRA_CA_CERTS` 加载。
 - `CAPABILITY_HUB_LDAP_DIRECTORY_TYPE` 默认 `ldap`，读取 `uid`、`cn`、`entryUUID`；微软 AD 设置为 `ad`，读取 `sAMAccountName`、`displayName`（缺失时用 `cn`）、二进制 `objectGUID`。登录页填写短账号名，不含域名。
-- `CAPABILITY_HUB_LDAP_BASE_DN` 限定用户搜索子树。`CAPABILITY_HUB_LDAP_BIND_DN` 和 `CAPABILITY_HUB_LDAP_BIND_PASSWORD` 提供查询身份，AD 可填写 `账号@域名`。子树内登录名须唯一，查询账号须能读取上述属性，用户绑定后须能按唯一标识读取本条目。
-- `CAPABILITY_HUB_LDAP_DEFAULT_ROLES` 接受逗号分隔的内置角色键，默认 `maintainer,reader`。仅需使用者时填 `reader`。维护者绑定到首次登录时新建的个人维护团队。其余角色按平台范围授予，包括显式配置的 `reviewer` 或 `admin`。配置在重启后生效，仅影响之后首次建号的用户。
+- `CAPABILITY_HUB_LDAP_BASE_DN` 限定用户及部门搜索范围。`CAPABILITY_HUB_LDAP_BIND_DN` 和 `CAPABILITY_HUB_LDAP_BIND_PASSWORD` 提供查询身份，AD 可填写 `账号@域名`；须能读取用户属性，以及 OU 的 `description`、`ou` 和唯一标识。登录名在子树内须唯一，用户绑定后须能按唯一标识读取本条目。
+- 每次成功登录按最近一层 OU 的 `entryUUID` / `objectGUID` 同步共享部门团队，名称优先取 `description`，否则取 `ou`，重名时附加目录标识；不越过搜索范围，也不全量导入部门。同步只调整目录部门归属，手工团队、已有个人团队及资源保留。目录部门名称和成员只读，团队启停仍由 Hub 管理。
+- `CAPABILITY_HUB_LDAP_DEFAULT_ROLES` 接受逗号分隔的内置角色键，默认 `maintainer,reader`，只在首次建号时授予。`maintainer` 限定到部门团队，缺少 OU 时不建团队或授予维护权；其余角色按平台范围授予。部门调动仅迁移仍存在的默认维护授权，已撤销的角色不补发，手工授权不变。配置在重启后生效。
 
 ## AI 配置
 

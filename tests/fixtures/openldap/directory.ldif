@@ -13,6 +13,8 @@ userPassword: hub-reader-local
 dn: ou=people,dc=hub,dc=test
 objectClass: organizationalUnit
 ou: people
+description: Engineering
+entryUUID: 00000000-0000-4000-8000-000000000010
 
 dn: uid=ldap-demo,ou=people,dc=hub,dc=test
 objectClass: inetOrgPerson
@@ -22,7 +24,14 @@ sn: Demo
 entryUUID: 7cb751c8-71ae-4a73-ada2-8be9c2dd05f5
 userPassword: hub-demo-local
 
-dn: cn=ad-demo,ou=people,dc=hub,dc=test
+dn: ou=Platform\, Product,ou=people,dc=hub,dc=test
+objectClass: organizationalUnit
+objectClass: adDepartmentFixture
+ou: Platform, Product
+description: Platform
+objectGUID:: ERERESIiM0OERFVVVVVVVQ==
+
+dn: cn=ad-demo,ou=Platform\, Product,ou=people,dc=hub,dc=test
 objectClass: inetOrgPerson
 objectClass: adUserFixture
 cn: ad-demo
