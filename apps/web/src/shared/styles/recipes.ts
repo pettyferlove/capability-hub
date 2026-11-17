@@ -404,7 +404,7 @@ export const codeblockStyles = cn(
 export const copyInvitationStyles = 'group/copy-invitation';
 
 export const kfocusStyles =
-  'focus-visible:[outline:2px_solid_var(--focus)] focus-visible:[outline-offset:2px]';
+  'focus-visible:[outline:2px_solid_var(--muted-ink)] focus-visible:[outline-offset:2px]';
 
 export const tableToolbarStyles = cn(
   '[&_>_span_small]:tabular-nums min-h-11 flex items-center justify-between gap-4 flex-wrap pt-2',

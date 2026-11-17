@@ -127,7 +127,7 @@ export function Segmented<T extends string>({
             className={cn(
               kfocusStyles,
               'relative inline-flex min-h-8 cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-[12px] leading-5 transition-colors',
-              on ? 'text-foreground' : 'text-muted hover:text-foreground',
+              on ? 'text-ink' : 'text-muted-ink hover:text-ink',
             )}
           >
             <span className="relative z-10 inline-flex items-center justify-center gap-1.5 whitespace-nowrap">

@@ -74,7 +74,7 @@ export function FeedbackDetail({
         ref={result}
         tabIndex={-1}
         aria-label="处理结果"
-        className="mt-4 space-y-2 rounded-xl border border-separator bg-page p-4"
+        className="mt-4 space-y-2 rounded-xl border border-line bg-page p-4"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h5 className="font-semibold">处理结果</h5>

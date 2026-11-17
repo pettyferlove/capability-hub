@@ -375,7 +375,7 @@ export const digestPanelStyles = cn(
 );
 
 export const reviewDecisionDockStyles = cn(
-  'sticky bottom-4 z-10 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-separator bg-paper px-4 py-2.5',
+  'sticky bottom-4 z-10 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-line bg-paper px-4 py-2.5',
   '[box-shadow:var(--shadow)] max-[600px]:bottom-2.5 max-[600px]:px-3',
   "[&_[class~='group/btn-primary']]:min-h-9 [&_[class~='group/btn-primary']]:text-label",
 );

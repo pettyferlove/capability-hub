@@ -132,9 +132,11 @@ Operations: `pnpm backup`, `restore:import`, `restore:check`, `maintenance`, `ac
   registered before them are anonymous by design. Never reorder blindly.
 - **Data access:** only through `RecordStore`/`AiStore`/`BlobStorage`/`GitRepository` ports; `tx()` for
   atomic writes; no SQL in routes or use cases.
-- **Web:** Tailwind CSS v4 utilities; long/reused combinations in `features/*/styles.ts` or
-  `shared/styles/`, merged with `cn()`; colors, radii, and fonts only from `styles/theme.css`
-  semantic variables; icons only via `shared/icons` (`AppIcon`, `lucide.ts`, `client-icons.ts`).
+- **Web:** React Aria (`react-aria-components`, `react-aria` hooks) for interaction and
+  accessibility, Tailwind CSS v4 utilities for styling; no third-party component library.
+  Long/reused combinations in `features/*/styles.ts` or `shared/styles/`, merged with `cn()`;
+  colors, radii, and fonts only from `styles/theme.css` semantic variables; icons only via
+  `shared/icons` (`AppIcon`, `lucide.ts`, `client-icons.ts`).
 - **Migrations:** exactly one initial migration per backend; applied migrations are immutable —
   fixes require a new migration. Keep `--> statement-breakpoint`, SQLite `STRICT`, PostgreSQL
   `DEFERRABLE INITIALLY DEFERRED`, triggers; no `CREATE INDEX CONCURRENTLY`. Never reformat

@@ -96,7 +96,7 @@ export function PublicationScenarioFields({
         const existing = scenarios?.find((s) => s.name === item.name.trim());
         const remaining = drafts.filter((_, i) => i !== index);
         return (
-          <div className="grid gap-2 rounded-xl border border-separator bg-paper p-3" key={index}>
+          <div className="grid gap-2 rounded-xl border border-line bg-paper p-3" key={index}>
             <label>
               新场景名称
               <input

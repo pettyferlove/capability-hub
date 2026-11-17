@@ -369,43 +369,8 @@
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  /* 派生色和 HeroUI 使用同一语义来源，包括 Portal 弹层。 */
+  /* 派生色只引用语义源色，Portal 弹层同样继承。 */
   :root {
-    --accent: var(--brand);
-    --accent-hover: var(--brand-hover);
-    --accent-foreground: var(--on-brand);
-    --accent-soft: var(--brand-soft);
-    --accent-soft-hover: color-mix(in srgb, var(--brand) 15%, var(--paper));
-    --accent-soft-foreground: var(--brand);
-    --focus: var(--muted-ink);
-    --background: var(--page);
-    --foreground: var(--ink);
-    --surface: var(--paper);
-    --surface-foreground: var(--ink);
-    --surface-secondary: color-mix(in srgb, var(--line) 40%, var(--paper));
-    --surface-secondary-foreground: var(--ink);
-    --surface-tertiary: var(--page);
-    --surface-tertiary-foreground: var(--ink);
-    --surface-hover: var(--page);
-    --overlay: var(--paper);
-    --overlay-foreground: var(--ink);
-    --muted: var(--muted-ink);
-    --border: var(--control-border);
-    --separator: var(--line);
-    --field-background: var(--paper);
-    --field-foreground: var(--ink);
-    --field-placeholder: var(--muted-ink);
-    --field-hover: var(--paper);
-    --field-border: var(--control-border);
-    --field-border-hover: var(--control-border);
-    --field-border-focus: var(--control-border);
-    --field-focus: var(--muted-ink);
-    --field-shadow: none;
-    --danger-foreground: var(--paper);
-    --warning-foreground: var(--paper);
-    --success-foreground: var(--paper);
-    --default: var(--surface-secondary);
-    --default-foreground: var(--ink);
     --glyph-skill: var(--brand);
     --glyph-mcp: var(--warning);
     --glyph-off: var(--line);
@@ -421,7 +386,6 @@
     --shadow-color: color-mix(in srgb, var(--shadow-ink) 8%, transparent);
     --shadow: 0 2px 8px var(--shadow-color);
     --shadow-floating: 0 8px 28px color-mix(in srgb, var(--shadow-ink) 16%, transparent);
-    --overlay-shadow: var(--shadow-floating);
   }
 
   /* 身份色使用灰调；点阵底色在组件内混合当前主题的纸色。 */
@@ -470,9 +434,6 @@
   --color-code-key: var(--code-key);
   --color-code-str: var(--code-str);
   --color-mask-solid: var(--mask-solid);
-  --color-accent-soft: var(--accent-soft);
-  --color-accent-soft-foreground: var(--accent-soft-foreground);
-  --color-surface: var(--surface);
   --color-code-control: var(--code-control);
   --color-code-control-hover: var(--code-control-hover);
 }

@@ -234,7 +234,7 @@ export function SelectField({
                 id={`${groupId}-${entry.key}`}
                 aria-label={entry.label}
               >
-                <Header className="px-2.5 py-1.5 text-[11px] font-medium text-muted">
+                <Header className="px-2.5 py-1.5 text-[11px] font-medium text-muted-ink">
                   {entry.label}
                 </Header>
                 {entry.options.map((option) => renderOption(option, optionIcons))}

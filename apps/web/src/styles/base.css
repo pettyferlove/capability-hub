@@ -1,4 +1,11 @@
 @layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--line);
+  }
   html {
     @apply font-sans [scrollbar-gutter:stable] overscroll-y-none;
     font-size: 15px;

@@ -338,7 +338,7 @@ export const paletteSearchStyles = cn(
 
 export const kbdStyles = cn(
   'font-mono text-[length:11px] pt-px pr-1.5 pb-px pl-1.5 rounded-[6px]',
-  'border border-solid border-[color:var(--border)] text-muted bg-surface',
+  'border border-solid border-[color:var(--line)] text-muted-ink bg-paper',
 );
 
 export const paletteResultsStyles = cn(

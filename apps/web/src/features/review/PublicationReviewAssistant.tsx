@@ -229,7 +229,7 @@ export function PublicationReviewAssistant({
         'flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5',
         request.can_decide
           ? 'flex-[1_1_21rem]'
-          : 'rounded-xl border border-separator bg-paper px-4 py-2.5',
+          : 'rounded-xl border border-line bg-paper px-4 py-2.5',
       )}
     >
       <div className="flex min-w-0 flex-[1_1_13rem] items-center">

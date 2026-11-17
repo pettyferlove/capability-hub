@@ -75,7 +75,7 @@ export function Overlay({
                   aria-label={label}
                   className={cn(
                     overlaySheetStyles,
-                    'absolute bottom-0 right-0 top-0 flex flex-col overflow-hidden bg-background shadow-overlay sm:rounded-l-[28px]',
+                    'absolute bottom-0 right-0 top-0 flex flex-col overflow-hidden bg-page shadow-[var(--shadow-floating)] sm:rounded-l-[28px]',
                     size === 'wide' ? overlaySheetWideStyles : '',
                     size === 'workspace' && 'w-full max-w-[760px] lg:w-[60vw] lg:overflow-visible',
                   )}
@@ -113,7 +113,7 @@ export function Overlay({
                             hubShowcaseDialogStyles,
                             'pointer-events-auto w-full max-h-full overflow-y-auto',
                           )
-                        : 'pointer-events-auto w-full max-w-[620px] overflow-hidden rounded-[22px] border border-separator bg-overlay shadow-overlay'
+                        : 'pointer-events-auto w-full max-w-[620px] overflow-hidden rounded-[22px] border border-line bg-paper shadow-[var(--shadow-floating)]'
                     }
                     initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: -8 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}

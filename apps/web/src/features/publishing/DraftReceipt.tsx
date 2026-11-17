@@ -58,7 +58,7 @@ export function DraftReceipt({
       const token = document.createElement('span');
       token.setAttribute('aria-hidden', 'true');
       token.className =
-        'pointer-events-none fixed top-0 left-0 z-[90] max-w-36 truncate rounded-full bg-brand px-3 py-1.5 text-caption font-semibold text-on-brand shadow-overlay';
+        'pointer-events-none fixed top-0 left-0 z-[90] max-w-36 truncate rounded-full bg-brand px-3 py-1.5 text-caption font-semibold text-on-brand shadow-[var(--shadow-floating)]';
       token.textContent = value;
       document.body.appendChild(token);
       tokens.push(token);

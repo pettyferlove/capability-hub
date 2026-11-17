@@ -64,7 +64,7 @@ export function AgentSignal({
             complete: 'bg-success-soft ring-success/20',
             waiting: 'bg-warning-soft ring-warning/20',
             error: 'bg-danger-soft ring-danger/20',
-            idle: 'bg-page ring-separator',
+            idle: 'bg-page ring-line',
           }[signal],
         )}
       >

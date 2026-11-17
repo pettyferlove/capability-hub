@@ -182,7 +182,7 @@ export function ReviewAuditEvidence({
   return (
     <section
       aria-label="版本资源审计"
-      className="mb-3 min-w-0 overflow-hidden rounded-2xl border border-separator bg-paper"
+      className="mb-3 min-w-0 overflow-hidden rounded-2xl border border-line bg-paper"
     >
       <ReviewAuditActivity
         status={task?.status}
@@ -201,7 +201,7 @@ export function ReviewAuditEvidence({
         {!active && (
           <button
             type="button"
-            className="group/audit-retry inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-separator bg-paper px-2.5 text-label font-medium whitespace-nowrap text-brand hover:border-brand/40 hover:bg-brand-soft disabled:opacity-50"
+            className="group/audit-retry inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-line bg-paper px-2.5 text-label font-medium whitespace-nowrap text-brand hover:border-brand/40 hover:bg-brand-soft disabled:opacity-50"
             disabled={busy || record === undefined || !models.data?.profiles.length}
             onClick={() => void start()}
           >
@@ -219,7 +219,7 @@ export function ReviewAuditEvidence({
         )}
       </ReviewAuditActivity>
       {task?.result && !report && (
-        <p className="border-t border-separator px-3.5 py-2 text-caption text-warning">
+        <p className="border-t border-line px-3.5 py-2 text-caption text-warning">
           这份报告与候选内容不匹配，请重新审计。
         </p>
       )}
@@ -255,7 +255,7 @@ export function ReviewAuditEvidence({
         </div>
       )}
       {report && (
-        <details className="group/evidence border-t border-separator text-caption">
+        <details className="group/evidence border-t border-line text-caption">
           <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 font-medium text-brand hover:bg-brand-soft/50 focus-visible:-outline-offset-2 [&::-webkit-details-marker]:hidden">
             <FileText aria-hidden="true" size={14} />
             查看审计发现与文件依据

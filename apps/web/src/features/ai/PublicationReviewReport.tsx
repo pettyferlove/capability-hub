@@ -40,7 +40,7 @@ export function PublicationReviewReport({
     }
   return (
     <div className="space-y-4 break-words" aria-label="发布审核简报">
-      <section className="space-y-2 rounded-xl border border-separator bg-page p-4">
+      <section className="space-y-2 rounded-xl border border-line bg-page p-4">
         <h3 className="font-semibold">本次分发变化</h3>
         <p>
           {fieldText(before.visibility_label ?? '首次发布')} →{' '}
@@ -85,7 +85,7 @@ export function PublicationReviewReport({
       </section>
       <BusinessAssessment value={value} onEvidence={onEvidence} />
       {Array.isArray(report.warnings) && report.warnings.length > 0 && (
-        <details className="rounded-xl border border-separator p-4" open>
+        <details className="rounded-xl border border-line p-4" open>
           <summary className="cursor-pointer font-semibold">
             本次扫描告警 · {report.warnings.length} 项
           </summary>

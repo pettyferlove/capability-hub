@@ -274,7 +274,7 @@ export function AgentBrief({
       onClick={onStart}
       className={cn(
         'inline-flex min-h-9 shrink-0 items-center gap-1 whitespace-nowrap px-2.5 font-semibold text-brand hover:underline underline-offset-4 focus-visible:outline-brand disabled:opacity-60',
-        !side && 'border-l border-separator',
+        !side && 'border-l border-line',
       )}
     >
       <Plus size={14} />
@@ -311,7 +311,7 @@ export function AgentBrief({
       <section
         aria-label="Agent 任务简报"
         className={cn(
-          'pointer-events-auto flex max-h-[calc(100dvh_-_40px)] w-[400px] max-w-full flex-col overflow-hidden rounded-3xl border border-separator bg-paper text-ink shadow-overlay',
+          'pointer-events-auto flex max-h-[calc(100dvh_-_40px)] w-[400px] max-w-full flex-col overflow-hidden rounded-3xl border border-line bg-paper text-ink shadow-[var(--shadow-floating)]',
           signal === 'working' && 'border-brand/20',
           signal === 'waiting' && 'border-warning/30',
         )}
@@ -364,10 +364,7 @@ export function AgentBrief({
             </p>
           )}
           {reported && (
-            <section
-              aria-label="研判结论"
-              className="border-t border-separator px-4 py-3 text-caption"
-            >
+            <section aria-label="研判结论" className="border-t border-line px-4 py-3 text-caption">
               <div className="mb-2 flex items-center gap-2">
                 <span
                   className={cn(
@@ -389,7 +386,7 @@ export function AgentBrief({
             </section>
           )}
           {trail.length > 0 && (
-            <section aria-label="最近动作" className="border-t border-separator px-4 py-3">
+            <section aria-label="最近动作" className="border-t border-line px-4 py-3">
               <h3 className="mb-2.5 flex items-center justify-between text-caption font-medium text-muted-ink">
                 最近动作
                 {toolCount > 0 && <span className="font-normal">共 {toolCount} 次查阅</span>}
@@ -398,7 +395,7 @@ export function AgentBrief({
             </section>
           )}
         </div>
-        <footer className="flex shrink-0 items-center gap-2 border-t border-separator bg-page/40 px-3 py-2.5">
+        <footer className="flex shrink-0 items-center gap-2 border-t border-line bg-page/40 px-3 py-2.5">
           <button
             type="button"
             ref={toggleRef}
@@ -428,11 +425,11 @@ export function AgentBrief({
     <section
       aria-label="Agent 任务简报"
       className={cn(
-        'pointer-events-auto relative flex max-w-full items-center bg-paper text-ink shadow-overlay',
+        'pointer-events-auto relative flex max-w-full items-center bg-paper text-ink shadow-[var(--shadow-floating)]',
         orbOnly
           ? 'size-11 justify-center rounded-full'
           : cn(
-              'w-[min(372px,calc(100vw_-_32px))] gap-1 rounded-[28px] border border-separator p-1.5',
+              'w-[min(372px,calc(100vw_-_32px))] gap-1 rounded-[28px] border border-line p-1.5',
               wash,
             ),
       )}

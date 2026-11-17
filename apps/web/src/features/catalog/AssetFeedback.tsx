@@ -181,7 +181,7 @@ export function AssetFeedback({ assetId, versionId }: { assetId: string; version
                             <li key={feedback.id}>
                               <button
                                 type="button"
-                                className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 rounded-xl border border-separator bg-paper p-4 text-left hover:bg-page focus-visible:outline-brand"
+                                className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 rounded-xl border border-line bg-paper p-4 text-left hover:bg-page focus-visible:outline-brand"
                                 onClick={() => {
                                   setSelected(feedback.id);
                                   setReceipt('');

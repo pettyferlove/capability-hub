@@ -41,12 +41,12 @@ export function PublicationFooter({
           toggle.current?.focus();
         }
       }}
-      className="relative z-[76] shrink-0 border-t border-separator bg-paper px-4 py-3 sm:px-6"
+      className="relative z-[76] shrink-0 border-t border-line bg-paper px-4 py-3 sm:px-6"
     >
       {open && notices.length > 0 && (
         <section
           aria-label="提交前待核对"
-          className="absolute inset-x-3 bottom-full z-10 mb-2 max-h-[35dvh] space-y-1 overflow-y-auto rounded-xl border border-separator bg-paper p-2 shadow-overlay"
+          className="absolute inset-x-3 bottom-full z-10 mb-2 max-h-[35dvh] space-y-1 overflow-y-auto rounded-xl border border-line bg-paper p-2 shadow-[var(--shadow-floating)]"
         >
           {notices.map((item) => (
             <button

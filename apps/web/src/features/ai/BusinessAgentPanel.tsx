@@ -297,7 +297,7 @@ function BusinessWorkspace({
             }
           }}
           className={cn(
-            'pointer-events-auto order-first flex h-[min(780px,calc(100dvh_-_112px))] lg:h-[min(780px,calc(100dvh_-_40px))] min-h-0 max-w-full w-[min(560px,calc(100vw_-_32px))] flex-col overflow-hidden rounded-2xl border border-brand/25 bg-paper shadow-overlay',
+            'pointer-events-auto order-first flex h-[min(780px,calc(100dvh_-_112px))] lg:h-[min(780px,calc(100dvh_-_40px))] min-h-0 max-w-full w-[min(560px,calc(100vw_-_32px))] flex-col overflow-hidden rounded-2xl border border-brand/25 bg-paper shadow-[var(--shadow-floating)]',
             wide && 'w-[min(800px,calc(100vw_-_32px))]',
             !open && 'hidden',
           )}
@@ -335,7 +335,7 @@ function BusinessWorkspace({
             </button>
           </header>
 
-          <details className="shrink-0 border-b border-separator bg-page/50">
+          <details className="shrink-0 border-b border-line bg-page/50">
             <summary className="cursor-pointer px-4 py-2 text-caption font-medium text-muted-ink">
               {readOnly ? '研判任务记录' : '任务记录与模型设置'}
             </summary>

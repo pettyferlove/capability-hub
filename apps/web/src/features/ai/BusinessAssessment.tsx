@@ -72,7 +72,7 @@ export function BusinessAssessment({
       </section>
       {!review && suggestion && <SuggestionPreview fields={suggestion} />}
       {!review && !suggestion && !report.feedback_id && report.approved === true && (
-        <p className="rounded-xl border border-separator p-3 text-caption text-muted-ink">
+        <p className="rounded-xl border border-line p-3 text-caption text-muted-ink">
           这份历史报告未包含分类、关键词和共享目的的建议。
         </p>
       )}

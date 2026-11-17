@@ -7,7 +7,6 @@ import { cn } from '../shared/styles/cn.js';
 import { bootErrorStyles, skipLinkStyles, mainShellStyles, appFooterStyles } from './styles.js';
 import { pageContentStyles } from '../shared/styles/recipes.js';
 import type { ReviewResponse } from '@capability-hub/contracts/http';
-import { Toast } from '@heroui/react/toast';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import Login from '../features/auth/LoginPage.js';
 import Discover from '../features/catalog/DiscoverPage.js';
@@ -126,7 +125,6 @@ export default function App() {
     );
   return (
     <LoadingScope scopeKey={pageScrollKey}>
-      <Toast.Provider placement="bottom end" />
       <HubCtx.Provider
         key={me?.id ?? 'anonymous'}
         value={{ me, reviewCount, refresh, reload, openPalette: () => setPalette(true), logout }}
