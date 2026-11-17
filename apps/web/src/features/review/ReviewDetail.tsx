@@ -754,9 +754,9 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
                   : r.context_valid === false
                     ? '内容、来源或策略上下文已变化，请刷新并重新提交申请。'
                     : r.distribution.audience.includes('public')
-                      ? '这是公开发布申请，需要由“全平台”作用域的独立审核者处理；同团队的“指定团队”审核权限也不适用。'
+                      ? '公开发布申请需要全平台审核权限，团队审核权限不适用。'
                       : r.distribution.audience.includes('organization')
-                        ? '面向所有登录用户的申请，需要由“全平台”作用域的独立审核者处理；“指定团队”审核权限不适用。'
+                        ? '面向所有登录用户的发布申请需要全平台审核权限，团队审核权限不适用。'
                         : '当前账号的审核权限不覆盖此申请。'}
               </p>
               {(r.nomination || r.category === 'scenario') && r.submitted_by === me?.id && (

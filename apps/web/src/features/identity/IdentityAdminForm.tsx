@@ -366,7 +366,9 @@ export function IdentityAdminForm({
               .find((role) => role.id === roleId)
               ?.permissions.includes('review:decide') && (
               <Message>
-                公开或面向所有登录用户的申请，须由“全平台”作用域的独立审核者处理；“指定团队”审核权限不适用。全平台审核权限覆盖所有团队，请按职责授予。
+                {scope === 'platform'
+                  ? '此授权允许审核所有团队的申请，包括公开和面向所有登录用户的发布申请。'
+                  : '此授权不能用于审核公开或面向所有登录用户的发布申请，这类申请需要“全平台”作用域。'}
               </Message>
             )}
           </>
