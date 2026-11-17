@@ -114,11 +114,13 @@ export function PublicationPolicyFields({
         </fieldset>
       )}
       {value.distribution.audience.includes('organization') && (
-        <Message>所有登录用户可读取；需要来源共享授权与平台审核。</Message>
+        <Message>
+          所有登录用户均可读取。需要来源共享授权，并由“全平台”作用域的独立审核者处理；“指定团队”审核权限不适用。
+        </Message>
       )}
       {value.distribution.audience.includes('public') && (
         <Message>
-          公开后任何人都可浏览、下载并通过对话安装。需要来源共享授权与独立平台审核。
+          公开后任何人都可浏览、下载并通过对话安装。需要来源共享授权，并由“全平台”作用域的独立审核者处理；同团队的“指定团队”审核权限也不适用。
         </Message>
       )}
       <small>分类用于发现，可见范围决定谁能读取。所有内容均需独立人工审核。</small>

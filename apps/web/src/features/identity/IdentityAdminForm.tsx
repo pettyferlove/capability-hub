@@ -52,6 +52,7 @@ export function IdentityAdminForm({
       kind === 'edit-role' ? (user?.permissions ?? []) : [],
     ),
     [scope, setScope] = useState('platform'),
+    [roleId, setRoleId] = useState(data.roles[0]?.id ?? ''),
     [scenarioAction, setScenarioAction] = useState('edit');
   const { data: sources } = useQuery<SourceResponse[]>('/api/sources');
   const { data: assets } = useQuery<ManagementAssetResponse[]>('/api/management/assets/options');
@@ -319,7 +320,7 @@ export function IdentityAdminForm({
             </label>
             <label>
               角色
-              <SelectField name="role_id" required>
+              <SelectField name="role_id" required value={roleId} onValueChange={setRoleId}>
                 {data.roles.map((r) => (
                   <option value={r.id} key={r.id}>
                     {r.name}
@@ -360,6 +361,13 @@ export function IdentityAdminForm({
                   ))}
                 </SelectField>
               </label>
+            )}
+            {data.roles
+              .find((role) => role.id === roleId)
+              ?.permissions.includes('review:decide') && (
+              <Message>
+                公开或面向所有登录用户的申请，须由“全平台”作用域的独立审核者处理；“指定团队”审核权限不适用。全平台审核权限覆盖所有团队，请按职责授予。
+              </Message>
             )}
           </>
         )}
