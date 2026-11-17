@@ -2,19 +2,23 @@ import { cn } from '../../shared/styles/cn.js';
 
 export const accountPageStyles = "group/account-page [&>nav[class~='group/page-tabs']]:mb-6";
 
-export const memberRemoveBtnStyles = cn(
-  'inline-flex items-center ml-[5px] pt-0 pr-1 pb-0 pl-1 border-0',
-  'border-l [border-left-style:solid] border-l-[color:var(--line)] [background:none] text-muted-ink text-[length:11px]',
-  'leading-[1.4] hover:text-danger',
+export const memberTableStyles = cn(
+  "[[class~='group/data-table']_&]:[table-layout:fixed]",
+  "[[class~='group/data-table']_&]:min-w-160",
 );
 
-export const tableActionsStyles = cn(
-  'flex gap-3 whitespace-nowrap',
-  "[[class~='group/data-table']_[class~='group/table-cell-actions']_&]:justify-center",
-  "[[class~='group/data-table']_[class~='group/table-cell-actions']_&]:flex-nowrap",
-  "[[class~='group/data-table']_&]:items-center [[class~='group/data-table']_&]:flex-wrap",
-  "[[class~='group/data-table']_&]:gap-[2px_12px]",
+export const memberTeamStyles = 'min-w-0 max-w-full gap-2';
+
+export const memberTeamMetaStyles =
+  'shrink-0 whitespace-nowrap border-l border-line pl-2 text-caption leading-4 text-muted-ink';
+
+export const memberRemoveBtnStyles = cn(
+  memberTeamMetaStyles,
+  'inline-flex items-center border-y-0 border-r-0 bg-transparent py-0 pr-0 hover:text-danger',
 );
+
+export const memberActionsStyles =
+  'grid grid-cols-[2.5rem_6.5rem] items-center justify-center gap-2 [&_>_*]:justify-self-start';
 
 export const directoryCardStyles = 'flex min-h-64 flex-col gap-5';
 
@@ -25,6 +29,12 @@ export const directoryIconStyles =
 
 export const directoryListStyles =
   'm-0 list-none overflow-hidden rounded-xl border border-line bg-page p-0 [&_>_li+li]:border-t [&_>_li+li]:border-line';
+
+export const directoryRowStyles =
+  'grid min-h-18 min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-3';
+
+export const directoryMemberCountStyles =
+  'inline-flex min-w-18 items-center justify-end gap-1.5 whitespace-nowrap text-caption tabular-nums text-muted-ink';
 
 export const directoryEmptyStyles =
   'flex min-h-32 flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line bg-page px-4 py-5 text-center text-body leading-relaxed';

@@ -23,7 +23,12 @@ import {
 } from '../../shared/styles/recipes.js';
 import {
   memberRemoveBtnStyles,
-  tableActionsStyles,
+  memberTableStyles,
+  memberTeamStyles,
+  memberTeamMetaStyles,
+  memberActionsStyles,
+  directoryRowStyles,
+  directoryMemberCountStyles,
   directoryCardStyles,
   directoryHeaderStyles,
   directoryIconStyles,
@@ -155,7 +160,13 @@ export function AdministrationPanel({ tab }: { tab: string }) {
               </button>
             </div>
             <DataTable label="账号">
-              <table>
+              <table className={memberTableStyles}>
+                <colgroup>
+                  <col className="w-[26%]" />
+                  <col />
+                  <col className="w-20" />
+                  <col className="w-48" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>成员</th>
@@ -168,29 +179,41 @@ export function AdministrationPanel({ tab }: { tab: string }) {
                   {data.users.map((u) => (
                     <tr key={u.id}>
                       <td>
-                        <strong>{u.display_name}</strong>
-                        <small className={monoStyles}>{accountLoginLabel(u)}</small>
+                        <strong className="block truncate" title={u.display_name}>
+                          {u.display_name}
+                        </strong>
+                        <small
+                          className={cn(monoStyles, 'block truncate')}
+                          title={accountLoginLabel(u)}
+                        >
+                          {accountLoginLabel(u)}
+                        </small>
                       </td>
                       <td>
                         <div className={chipsStyles}>
                           {data.memberships
                             .filter((m) => m.user_id === u.id)
-                            .map((m) => (
-                              <span className={tagStyles} key={m.id}>
-                                {person(m.group_id)}
-                                {directoryGroupIds.has(m.group_id) ? (
-                                  <small className="text-muted-ink">自动同步</small>
-                                ) : (
-                                  <button
-                                    className={memberRemoveBtnStyles}
-                                    aria-label={'移出团队 ' + person(m.group_id)}
-                                    onClick={() => remove('/api/admin/memberships/' + m.id)}
-                                  >
-                                    移出
-                                  </button>
-                                )}
-                              </span>
-                            ))}
+                            .map((m) => {
+                              const teamName = person(m.group_id);
+                              return (
+                                <span className={cn(tagStyles, memberTeamStyles)} key={m.id}>
+                                  <span className="min-w-0 truncate text-ink" title={teamName}>
+                                    {teamName}
+                                  </span>
+                                  {directoryGroupIds.has(m.group_id) ? (
+                                    <span className={memberTeamMetaStyles}>自动同步</span>
+                                  ) : (
+                                    <button
+                                      className={memberRemoveBtnStyles}
+                                      aria-label={'移出团队 ' + teamName}
+                                      onClick={() => remove('/api/admin/memberships/' + m.id)}
+                                    >
+                                      移出
+                                    </button>
+                                  )}
+                                </span>
+                              );
+                            })}
                         </div>
                       </td>
                       <td className={tableCellStatusStyles}>
@@ -199,7 +222,7 @@ export function AdministrationPanel({ tab }: { tab: string }) {
                         </span>
                       </td>
                       <td className={tableCellActionsStyles}>
-                        <div className={tableActionsStyles}>
+                        <div className={memberActionsStyles}>
                           <button className={textBtnStyles} onClick={() => toggle(u)}>
                             {u.active ? '停用' : '启用'}
                           </button>
@@ -249,22 +272,25 @@ export function AdministrationPanel({ tab }: { tab: string }) {
               {data.groups.length ? (
                 <ul className={directoryListStyles} aria-label="维护团队列表">
                   {data.groups.map((g) => (
-                    <li key={g.id} className="flex min-w-0 items-center gap-3 px-3.5 py-3">
+                    <li key={g.id} className={directoryRowStyles}>
                       <span
                         className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-body font-semibold text-brand"
                         aria-hidden="true"
                       >
                         {Array.from(g.name)[0]}
                       </span>
-                      <div className="min-w-0 flex-1">
-                        <strong className="block break-words text-body font-medium [overflow-wrap:anywhere]">
+                      <div className="min-w-0">
+                        <strong
+                          className="block break-words text-body font-medium leading-5 [overflow-wrap:anywhere]"
+                          title={g.name}
+                        >
                           {g.name}
                         </strong>
-                        {g.ldap_entry_uuid && (
-                          <small className="text-caption text-muted-ink">企业部门 · 自动同步</small>
-                        )}
+                        <small className="mt-0.5 block text-caption leading-4 text-muted-ink">
+                          {g.ldap_entry_uuid ? '企业部门 · 自动同步' : '手动管理'}
+                        </small>
                       </div>
-                      <span className="inline-flex shrink-0 items-center gap-1.5 text-caption text-muted-ink">
+                      <span className={directoryMemberCountStyles}>
                         <AppIcon icon={usersRoundIcon} size={14} aria-hidden="true" />
                         {data.memberships.filter((m) => m.group_id === g.id).length} 位成员
                       </span>
