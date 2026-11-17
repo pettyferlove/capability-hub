@@ -49,8 +49,8 @@ import { SpotlightCard } from '../../shared/components/react-bits/SpotlightCard.
 import { GradientAscii } from '../../shared/components/react-bits/GradientAscii.js';
 
 const loginMethods: { id: LoginProvider; label: string }[] = [
-  { id: 'local', label: '本地账号' },
   { id: 'ldap', label: 'LDAP 账号' },
+  { id: 'local', label: '本地账号' },
 ];
 
 /**
@@ -70,7 +70,7 @@ export default function LoginPage({
 }) {
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
-  const [method, setMethod] = useState<LoginProvider>('local');
+  const [method, setMethod] = useState<LoginProvider>(ldapEnabled ? 'ldap' : 'local');
   const [backgroundPaused, setBackgroundPaused] = useState(false);
   const provider = initialized && ldapEnabled ? method : 'local';
   const directoryLogin = provider === 'ldap';
@@ -231,7 +231,9 @@ export default function LoginPage({
               name="password"
               minimum={initialized ? 1 : 12}
               autoComplete={initialized ? `section-${provider} current-password` : 'new-password'}
-              placeholder={initialized ? '请输入密码' : '至少 12 位'}
+              placeholder={
+                initialized ? (directoryLogin ? '请输入企业账号密码' : '请输入密码') : '至少 12 位'
+              }
             />
             {!initialized && (
               <PasswordField label="确认密码" name="confirm_password" placeholder="再次输入密码" />
@@ -250,7 +252,7 @@ export default function LoginPage({
             )}
             {error && <Message error>{error}</Message>}
             <Submit busy={busy} className={authSubmitStyles}>
-              {initialized ? (directoryLogin ? '登录 LDAP 账号' : '登录本地账号') : '创建并进入'}
+              {initialized ? (directoryLogin ? '登录企业账号' : '登录本地账号') : '创建并进入'}
               <ArrowRight size={17} />
             </Submit>
           </form>

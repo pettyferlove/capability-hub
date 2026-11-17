@@ -32,7 +32,7 @@ test('内网 HTTP 浏览器缺少 randomUUID 时仍能启动日志并发起写�
     assert.match(key, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });
 
-test('切换登录方式清空上一组凭据和错误，只提交当前选择的来源', async (context) => {
+test('LDAP 登录默认在首位，切换方式清空凭据和错误并只提交当前来源', async (context) => {
   const submitted: unknown[] = [];
   context.mock.method(globalThis, 'fetch', (_path: string, options: RequestInit) => {
     submitted.push(JSON.parse(String(options.body)));
@@ -44,27 +44,31 @@ test('切换登录方式清空上一组凭据和错误，只提交当前选择�
   render(
     createElement(LoginPage, { initialized: true, ldapEnabled: true, onLogin: async () => {} }),
   );
+  assert.deepEqual(
+    screen.getAllByRole('radio').map((radio) => radio.textContent),
+    ['LDAP 账号', '本地账号'],
+  );
   assert.equal(
-    screen.getByRole('radio', { name: '本地账号' }).getAttribute('aria-checked'),
+    screen.getByRole('radio', { name: 'LDAP 账号' }).getAttribute('aria-checked'),
     'true',
   );
   await user.type(screen.getByRole('textbox', { name: '账号' }), 'same-name');
-  await user.type(screen.getByLabelText('密码', { exact: true }), 'local-secret');
-  await user.click(screen.getByRole('button', { name: '登录本地账号' }));
+  await user.type(screen.getByLabelText('密码', { exact: true }), 'directory-secret');
+  await user.click(screen.getByRole('button', { name: '登录企业账号' }));
   assert(await screen.findByText('账号或密码错误'));
-  await user.click(screen.getByRole('radio', { name: 'LDAP 账号' }));
+  await user.click(screen.getByRole('radio', { name: '本地账号' }));
   assert.equal(screen.queryByText('账号或密码错误'), null);
   const username = screen.getByRole<HTMLInputElement>('textbox', { name: '账号' });
   const password = screen.getByLabelText<HTMLInputElement>('密码', { exact: true });
   assert.equal(username.value, '');
   assert.equal(password.value, '');
   await user.type(username, 'same-name');
-  await user.type(password, 'directory-secret');
-  await user.click(screen.getByRole('button', { name: '登录 LDAP 账号' }));
+  await user.type(password, 'local-secret');
+  await user.click(screen.getByRole('button', { name: '登录本地账号' }));
   assert(await screen.findByText('账号或密码错误'));
   assert.deepEqual(submitted, [
-    { provider: 'local', username: 'same-name', password: 'local-secret' },
     { provider: 'ldap', username: 'same-name', password: 'directory-secret' },
+    { provider: 'local', username: 'same-name', password: 'local-secret' },
   ]);
 });
 
