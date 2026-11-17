@@ -21,3 +21,13 @@ cn: LDAP Demo
 sn: Demo
 entryUUID: 7cb751c8-71ae-4a73-ada2-8be9c2dd05f5
 userPassword: hub-demo-local
+
+dn: cn=ad-demo,ou=people,dc=hub,dc=test
+objectClass: inetOrgPerson
+objectClass: adUserFixture
+cn: ad-demo
+sn: Demo
+displayName: AD Demo
+sAMAccountName: ad-demo
+objectGUID:: MyIRAFVEd2aImaq7zN3u/w==
+userPassword: hub-demo-local

@@ -104,7 +104,7 @@ test('非法布尔环境变量在创建实例目录前报错并指出变量名',
   await assert.rejects(() => lstat(dataDir), { code: 'ENOENT' });
 });
 
-test('LDAP 仅允许本机开发使用明文连接，默认角色按内置键校验并去重', async (context) => {
+test('LDAP 默认仅允许开发回环明文连接，默认角色按内置键校验并去重', async (context) => {
   const dataDir = await directory(context);
   const env = {
     CAPABILITY_HUB_LDAP_URL: 'ldap://127.0.0.1:1389',
@@ -141,6 +141,41 @@ test('LDAP 仅允许本机开发使用明文连接，默认角色按内置键校
       .ldap?.url,
     'ldaps://directory.example',
   );
+});
+
+test('远程或生产明文 LDAP 仅在显式授权后启用，授权不绕过 URL 与目录类型校验', async (context) => {
+  const root = await directory(context);
+  const dataDir = join(root, 'invalid');
+  const env = {
+    CAPABILITY_HUB_LDAP_URL: 'ldap://directory.example:389',
+    CAPABILITY_HUB_LDAP_BASE_DN: 'ou=people,dc=example,dc=com',
+    CAPABILITY_HUB_LDAP_BIND_DN: 'reader@example.com',
+    CAPABILITY_HUB_LDAP_BIND_PASSWORD: 'fixture',
+    CAPABILITY_HUB_LDAP_DIRECTORY_TYPE: 'ad',
+  };
+  for (const value of [undefined, 'false', '', 'TRUE', '1'])
+    assert.throws(() =>
+      loadServerConfig({ dataDir }, { ...env, CAPABILITY_HUB_LDAP_ALLOW_INSECURE: value }),
+    );
+  const allowed = { ...env, CAPABILITY_HUB_LDAP_ALLOW_INSECURE: 'true' };
+  for (const overrides of [
+    { CAPABILITY_HUB_LDAP_DIRECTORY_TYPE: 'unknown' },
+    { CAPABILITY_HUB_LDAP_URL: 'https://directory.example' },
+    { CAPABILITY_HUB_LDAP_URL: 'ldap://user:pass@directory.example' },
+    { CAPABILITY_HUB_LDAP_URL: 'ldap://directory.example/users' },
+  ])
+    assert.throws(() => loadServerConfig({ dataDir }, { ...allowed, ...overrides }));
+  await assert.rejects(() => lstat(dataDir), { code: 'ENOENT' });
+  for (const production of [false, true]) {
+    const overrides = {
+      dataDir: root,
+      production,
+      publicUrl: 'https://hub.example',
+      secret: 'ab'.repeat(32),
+    };
+    assert.throws(() => loadServerConfig(overrides, env));
+    assert.equal(loadServerConfig(overrides, allowed).ldap?.url, env.CAPABILITY_HUB_LDAP_URL);
+  }
 });
 
 test('开发实例创建私有密钥并在再次打开时复用，显式配置的密钥不会落盘', async (context) => {

@@ -13,6 +13,8 @@ function directory(defaultRoles = ['maintainer', 'reader']) {
     baseDn: 'ou=people,dc=hub,dc=test',
     bindDn: 'cn=hub-reader,dc=hub,dc=test',
     bindPassword: 'hub-reader-local',
+    directoryType: 'ldap' as const,
+    allowInsecure: false,
     defaultRoles,
   };
 }
@@ -54,6 +56,30 @@ test('OpenLDAP 并发首次登录共用账号和团队，撤销的维护者角�
     .send({ ...login, username: 'LDAP-DEMO' })
     .expect(200);
   assert.equal((await clients[0].get('/api/me').expect(200)).body.capabilities.can_publish, false);
+});
+
+test('AD 使用 sAMAccountName 登录并以二进制 objectGUID 识别同一账号', async (context) => {
+  const fixture = await createTestHub(context, {
+    ldap: { ...directory(['reader']), directoryType: 'ad' },
+  });
+  const clients = [httpClient(fixture), httpClient(fixture)];
+  await Promise.all(
+    clients.map((client) =>
+      client
+        .post('/auth/login')
+        .send({ ...login, username: 'ad-demo' })
+        .expect(200),
+    ),
+  );
+  const responses = await Promise.all(clients.map((client) => client.get('/api/me').expect(200)));
+  const first = responses[0].body as MeResponse;
+  const second = responses[1].body as MeResponse;
+  assert.equal(first.id, second.id);
+  assert.equal(first.auth_provider, 'ldap');
+  assert.equal(first.display_name, 'AD Demo');
+  const user = await fixture.hub.identity.activeUser(first.id);
+  assert.equal(user.ldap_entry_uuid, '00112233-4455-6677-8899-aabbccddeeff');
+  assert.equal(user.password_hash, null);
 });
 
 test('目录密码只在 OpenLDAP 校验，错误凭据不建号，只读默认角色不建团队', async (context) => {

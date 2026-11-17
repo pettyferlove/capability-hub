@@ -1,7 +1,7 @@
 FROM debian:bookworm-slim
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends slapd ldap-utils \
     && rm -rf /var/lib/apt/lists/*
-COPY slapd.conf directory.ldif /fixture/
+COPY slapd.conf directory.ldif ad.schema /fixture/
 RUN install -d -o openldap -g openldap /fixture/data \
     && slapadd -f /fixture/slapd.conf -l /fixture/directory.ldif \
     && chown -R openldap:openldap /fixture/data

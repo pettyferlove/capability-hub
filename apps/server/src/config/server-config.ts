@@ -45,6 +45,8 @@ const ldapSchema = z.strictObject({
   baseDn: z.string().trim().min(1),
   bindDn: z.string().trim().min(1),
   bindPassword: z.string().min(1),
+  directoryType: z.enum(['ldap', 'ad']),
+  allowInsecure: z.boolean(),
   defaultRoles: z.array(z.string().refine((key) => builtinRoles.some((role) => role.key === key))),
 });
 const configSchema = z
@@ -123,7 +125,10 @@ function validate(config: ServerConfig): void {
     const url = new URL(config.ldap.url);
     const local = !config.production && ['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname);
     if (
-      !(url.protocol === 'ldaps:' || (url.protocol === 'ldap:' && local)) ||
+      !(
+        url.protocol === 'ldaps:' ||
+        (url.protocol === 'ldap:' && (local || config.ldap.allowInsecure))
+      ) ||
       !url.hostname ||
       url.port === '0' ||
       url.username ||
@@ -132,7 +137,9 @@ function validate(config: ServerConfig): void {
       url.search ||
       url.hash
     )
-      throw new Error('LDAP 需要 LDAPS 服务地址；仅本机开发可使用明文 LDAP');
+      throw new Error(
+        'LDAP 默认需要 LDAPS；非本机开发的明文连接须显式设置 CAPABILITY_HUB_LDAP_ALLOW_INSECURE=true',
+      );
     config.ldap.defaultRoles = [...new Set(config.ldap.defaultRoles)];
   }
   for (const host of config.gitHosts) {
@@ -226,6 +233,8 @@ export function loadServerConfig(
           baseDn: environment.CAPABILITY_HUB_LDAP_BASE_DN,
           bindDn: environment.CAPABILITY_HUB_LDAP_BIND_DN,
           bindPassword: environment.CAPABILITY_HUB_LDAP_BIND_PASSWORD,
+          directoryType: environment.CAPABILITY_HUB_LDAP_DIRECTORY_TYPE ?? 'ldap',
+          allowInsecure: flag(environment, 'CAPABILITY_HUB_LDAP_ALLOW_INSECURE', false),
           defaultRoles: (environment.CAPABILITY_HUB_LDAP_DEFAULT_ROLES ?? 'maintainer,reader')
             .split(',')
             .map((role) => role.trim()),

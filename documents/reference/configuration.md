@@ -32,8 +32,9 @@ Compose 的宿主机监听地址和端口默认取 `CAPABILITY_HUB_HOST` 和 `PO
 
 ## LDAP 登录
 
-- `CAPABILITY_HUB_LDAP_URL` 为空时仅启用本地登录。正式目录使用 `ldaps://` 并校验证书，私有 CA 可通过 Node 的 `NODE_EXTRA_CA_CERTS` 加载。开发模式允许连接本机回环地址的 `ldap://` 服务。
-- `CAPABILITY_HUB_LDAP_BASE_DN` 限定用户搜索子树。`CAPABILITY_HUB_LDAP_BIND_DN` 和 `CAPABILITY_HUB_LDAP_BIND_PASSWORD` 提供只读查询身份，需能读取 `uid`、`cn` 和 `entryUUID`。同一搜索子树内的 `uid` 须唯一，用户绑定后须能按自己的 `entryUUID` 查询本条目。
+- `CAPABILITY_HUB_LDAP_URL` 为空时禁用目录登录。默认仅开发回环地址允许 `ldap://`，远程或生产连接需使用 `ldaps://` 并校验证书；确需明文时显式设置 `CAPABILITY_HUB_LDAP_ALLOW_INSECURE=true`，账号密码将在网络中明文传输。私有 CA 通过 `NODE_EXTRA_CA_CERTS` 加载。
+- `CAPABILITY_HUB_LDAP_DIRECTORY_TYPE` 默认 `ldap`，读取 `uid`、`cn`、`entryUUID`；微软 AD 设置为 `ad`，读取 `sAMAccountName`、`displayName`（缺失时用 `cn`）、二进制 `objectGUID`。登录页填写短账号名，不含域名。
+- `CAPABILITY_HUB_LDAP_BASE_DN` 限定用户搜索子树。`CAPABILITY_HUB_LDAP_BIND_DN` 和 `CAPABILITY_HUB_LDAP_BIND_PASSWORD` 提供查询身份，AD 可填写 `账号@域名`。子树内登录名须唯一，查询账号须能读取上述属性，用户绑定后须能按唯一标识读取本条目。
 - `CAPABILITY_HUB_LDAP_DEFAULT_ROLES` 接受逗号分隔的内置角色键，默认 `maintainer,reader`。仅需使用者时填 `reader`。维护者绑定到首次登录时新建的个人维护团队。其余角色按平台范围授予，包括显式配置的 `reviewer` 或 `admin`。配置在重启后生效，仅影响之后首次建号的用户。
 
 ## AI 配置

@@ -167,7 +167,7 @@ export default function LoginPage({
           <p className={subtleStyles}>
             {initialized
               ? directoryLogin
-                ? '输入组织目录中的用户名和密码。'
+                ? '使用企业账号和密码登录。'
                 : '输入你的 Hub 本地账号和密码。'
               : '创建平台管理员账号和首个维护团队。'}
           </p>
@@ -223,7 +223,7 @@ export default function LoginPage({
                 minLength={initialized ? 1 : 3}
                 maxLength={64}
                 autoComplete={initialized ? `section-${provider} username` : 'username'}
-                placeholder={directoryLogin ? '请输入目录用户名' : '请输入账号'}
+                placeholder={directoryLogin ? '请输入企业账号' : '请输入账号'}
               />
             </label>
             <PasswordField
@@ -257,7 +257,7 @@ export default function LoginPage({
           <p className={authFootStyles}>
             {initialized
               ? directoryLogin
-                ? '目录账号首次登录后自动开通，密码由 LDAP 目录管理。'
+                ? '企业账号首次登录后自动开通，密码由企业统一管理。'
                 : '如需开通账号或重置密码，请联系平台管理员。'
               : '初始化完成后，请添加其他审核人员；发布者不能审核自己的提交。'}
           </p>
