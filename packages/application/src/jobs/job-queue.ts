@@ -61,25 +61,18 @@ export class JobQueue {
   ): Promise<JobRecord[]> {
     if (activeIds.length >= this.concurrency) return [];
     return await this.store.tx(async () => {
-      const rows = await this.store.all('jobs');
       const timestamp = Date.now();
       // 本机可能还在清理已结束租约的任务，它与其他 Worker 的有效租约均占用名额。
       const occupied = new Set(activeIds);
-      for (const row of rows)
-        if (row.state === 'running' && row.lease_until > timestamp) occupied.add(row.id);
+      for (const id of await this.store.listRunningJobIds(timestamp)) occupied.add(id);
       const slots = Math.min(limit, this.concurrency - occupied.size);
       if (slots <= 0) return [];
-      const ready = rows
-        .filter(
-          (j) =>
-            (!kinds || kinds.includes(j.kind)) &&
-            !occupied.has(j.id) &&
-            !j.cancel_requested &&
-            ((j.state === 'queued' && j.run_after <= timestamp) ||
-              (j.state === 'running' && j.lease_until <= timestamp)),
-        )
-        .sort((a, b) => a.run_after - b.run_after)
-        .slice(0, slots);
+      const ready = await this.store.listReadyJobs({
+        now: timestamp,
+        limit: slots,
+        excludeIds: [...occupied],
+        kinds,
+      });
       const claimed: JobRecord[] = [];
       for (const job of ready)
         claimed.push(
@@ -136,9 +129,7 @@ export class JobQueue {
   /** 取消一旦提交，仍在读取的执行者也不能写回结果。 */
   async cancelRequested(onCancel: (job: JobRecord) => void | Promise<void>) {
     return await this.store.tx(async () => {
-      const cancelled = (await this.store.all('jobs')).filter(
-        (job) => job.cancel_requested && ['queued', 'running'].includes(job.state),
-      );
+      const cancelled = await this.store.listCancellationRequestedJobs();
       for (const job of cancelled) {
         await this.store.put('jobs', {
           ...job,

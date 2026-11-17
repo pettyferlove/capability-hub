@@ -1,10 +1,16 @@
-import { parseRecord, type RecordMap, type TableName } from '@capability-hub/domain/models';
-import { eq, inArray, sql } from 'drizzle-orm';
+import type { ReadyJobsQuery } from '@capability-hub/application/ports';
+import {
+  parseRecord,
+  type GitSourceRecord,
+  type RecordMap,
+  type TableName,
+} from '@capability-hub/domain/models';
+import { and, eq, inArray, not, sql } from 'drizzle-orm';
 import type { RecordQueries } from '../record-driver.js';
 import { resourceActivityQuery } from '../resource-activity-query.js';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pgRevision, type pgSchema, pgTableFor } from './record-schema.js';
-import { audit } from './schema.js';
+import { audit, jobs, sources } from './schema.js';
 
 /** 查询对象所需的 drizzle 会话子集：既接受连接池上的 db，也接受事务内的 tx。 */
 export type PostgresSession = Pick<
@@ -34,6 +40,60 @@ export class PgQueries implements RecordQueries {
     const relation = pgTableFor(table);
     const rows = await this.db.select({ data: relation.data }).from(relation).orderBy(relation.id);
     return rows.map((row) => parseRecord(table, row.data));
+  }
+  async listRunningJobIds(now: number): Promise<string[]> {
+    const rows = await this.db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(
+        sql`${jobs.data} ->> 'state' = 'running' and (${jobs.data} ->> 'lease_until')::bigint > ${now}`,
+      )
+      .orderBy(jobs.id);
+    return rows.map((row) => row.id);
+  }
+  async listReadyJobs(query: ReadyJobsQuery): Promise<RecordMap['jobs'][]> {
+    if (query.limit <= 0 || query.kinds?.length === 0) return [];
+    const runAfter = sql`(${jobs.data} ->> 'run_after')::bigint`;
+    const rows = await this.db
+      .select({ data: jobs.data })
+      .from(jobs)
+      .where(
+        and(
+          sql`(${jobs.data} ->> 'cancel_requested')::boolean = false`,
+          sql`((${jobs.data} ->> 'state' = 'queued' and ${runAfter} <= ${query.now})
+            or (${jobs.data} ->> 'state' = 'running' and (${jobs.data} ->> 'lease_until')::bigint <= ${query.now}))`,
+          query.excludeIds.length ? not(inArray(jobs.id, query.excludeIds)) : undefined,
+          query.kinds ? inArray(sql`${jobs.data} ->> 'kind'`, query.kinds) : undefined,
+        ),
+      )
+      .orderBy(runAfter, jobs.id)
+      .limit(query.limit);
+    return rows.map((row) => parseRecord('jobs', row.data));
+  }
+  async listCancellationRequestedJobs(): Promise<RecordMap['jobs'][]> {
+    const rows = await this.db
+      .select({ data: jobs.data })
+      .from(jobs)
+      .where(
+        sql`(${jobs.data} ->> 'cancel_requested')::boolean = true and ${jobs.data} ->> 'state' in ('queued', 'running')`,
+      )
+      .orderBy(jobs.id);
+    return rows.map((row) => parseRecord('jobs', row.data));
+  }
+  async listDueSources(now: number): Promise<GitSourceRecord[]> {
+    const rows = await this.db
+      .select({ data: sources.data })
+      .from(sources)
+      .where(
+        sql`${sources.data} ->> 'kind' = 'git'
+          and ${sources.data} ->> 'state' = 'active'
+          and ${sources.data} ->> 'distribution_revoked_at' is null
+          and (${sources.data} ->> 'next_poll_at')::bigint <= ${now}`,
+      )
+      .orderBy(sources.id);
+    return rows
+      .map((row) => parseRecord('sources', row.data))
+      .filter((source): source is GitSourceRecord => source.kind === 'git');
   }
   async where<K extends TableName>(
     table: K,

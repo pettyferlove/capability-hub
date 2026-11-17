@@ -38,6 +38,122 @@ test('两个连接争最后一个空位时，AI 与内容的有效租约合计�
   assert.equal(next.attempt, 1);
 });
 
+test('领取只返回到期且未取消的指定类型，按时间和标识排序并遵守批次上限', async (context) => {
+  const { store } = await createSqliteStore(context);
+  const queue = new JobQueue(store);
+  const time = Date.now();
+  context.mock.method(Date, 'now', () => time);
+  const tied = [
+    await queue.enqueue('intake', randomUUID(), {}),
+    await queue.enqueue('intake', randomUUID(), {}),
+  ].sort((left, right) => left.id.localeCompare(right.id));
+  for (const job of tied) await store.put('jobs', { ...job, run_after: time - 1 });
+  const expiredId = randomUUID();
+  const expired = await queue.enqueue('ai_execution', expiredId, { execution_id: expiredId });
+  await store.put('jobs', {
+    ...expired,
+    state: 'running',
+    run_after: time + 1000,
+    lease_until: time,
+    lease_epoch: 2,
+    attempt: 2,
+  });
+  const future = await queue.enqueue('intake', randomUUID(), {});
+  await store.put('jobs', { ...future, run_after: time + 1 });
+  const live = await queue.enqueue('intake', randomUUID(), {});
+  await store.put('jobs', { ...live, state: 'running', lease_until: time + 1 });
+  const cancelling = await queue.enqueue('intake', randomUUID(), {});
+  await store.put('jobs', {
+    ...cancelling,
+    state: 'running',
+    lease_until: time + 1,
+    cancel_requested: true,
+  });
+  const cancelled = await queue.enqueue('intake', randomUUID(), {});
+  await store.put('jobs', { ...cancelled, cancel_requested: true });
+  for (const state of ['succeeded', 'failed', 'cancelled'] as const) {
+    const historical = await queue.enqueue('intake', randomUUID(), {});
+    await store.put('jobs', { ...historical, state, run_after: time - 1000 });
+  }
+  assert.deepEqual(await queue.claimBatch('worker', { kinds: [] }), []);
+  assert.deepEqual(await queue.claimBatch('worker', { kinds: ['source_sync'] }), []);
+  const first = await queue.claimBatch('worker', { kinds: ['intake'], limit: 1 });
+  assert.deepEqual(
+    first.map((job) => job.id),
+    [tied[0].id],
+  );
+  const remaining = await queue.claimBatch('worker');
+  assert.deepEqual(
+    remaining.map((job) => job.id),
+    [tied[1].id, expired.id],
+  );
+  assert.equal(remaining[1].lease_epoch, 3);
+  assert.equal(remaining[1].attempt, 3);
+  assert.equal((await store.get('jobs', future.id))?.state, 'queued');
+  assert.equal((await store.get('jobs', cancelled.id))?.state, 'queued');
+});
+
+test('本机仍在清理的已结束或过期任务继续占位，且不会重复领取过期任务', async (context) => {
+  const { store } = await createSqliteStore(context);
+  const queue = new JobQueue(store, 3);
+  const time = Date.now();
+  context.mock.method(Date, 'now', () => time);
+  const expired = await queue.enqueue('intake', randomUUID(), {});
+  await store.put('jobs', {
+    ...expired,
+    state: 'running',
+    run_after: time - 1,
+    lease_until: time,
+  });
+  const finished = await queue.enqueue('intake', randomUUID(), {});
+  await store.put('jobs', { ...finished, state: 'succeeded' });
+  const live = await queue.enqueue('intake', randomUUID(), {});
+  await store.put('jobs', { ...live, state: 'running', lease_until: time + 1 });
+  const ready = await queue.enqueue('intake', randomUUID(), {});
+  assert.deepEqual(await queue.claimBatch('worker', { activeIds: [expired.id, finished.id] }), []);
+  const claimed = await queue.claimBatch('worker', { activeIds: [expired.id, live.id] });
+  assert.deepEqual(
+    claimed.map((job) => job.id),
+    [ready.id],
+  );
+  assert.equal((await store.get('jobs', expired.id))?.lease_epoch, expired.lease_epoch);
+});
+
+test('取消请求仅处理排队和运行任务，保留终态历史且不重复通知', async (context) => {
+  const { store } = await createSqliteStore(context);
+  const queue = new JobQueue(store);
+  const pending: string[] = [];
+  const historical: string[] = [];
+  for (const state of ['queued', 'running', 'succeeded', 'failed', 'cancelled'] as const) {
+    const job = await queue.enqueue('intake', randomUUID(), {});
+    await store.put('jobs', { ...job, state, cancel_requested: true });
+    if (state === 'queued' || state === 'running') pending.push(job.id);
+    else historical.push(job.id);
+  }
+  const untouched = await queue.enqueue('intake', randomUUID(), {});
+  const notified: string[] = [];
+  await queue.cancelRequested((job) => {
+    notified.push(job.id);
+  });
+  await queue.cancelRequested((job) => {
+    notified.push(job.id);
+  });
+  assert.deepEqual(notified, pending.sort());
+  for (const id of pending) {
+    const job = await store.get('jobs', id);
+    assert(job);
+    assert.equal(job.state, 'cancelled');
+    assert.equal(job.lease_until, 0);
+    assert(job.finished_at);
+  }
+  for (const id of historical) {
+    const job = await store.get('jobs', id);
+    assert.equal(job?.finished_at, undefined);
+    assert.equal(job?.last_error_code, undefined);
+  }
+  assert.equal((await store.get('jobs', untouched.id))?.state, 'queued');
+});
+
 test('五个共享名额可混跑 AI 和扫描，第六项在一个扫描结束后补位', { timeout: 20000 }, async (t) => {
   const provider = await providerFixture('openai', 'text', true);
   t.after(provider.close);

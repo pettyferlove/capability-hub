@@ -1,6 +1,6 @@
 import { auditDefinitions } from '@capability-hub/domain/audit';
 import type { RecordMap, TableName } from '@capability-hub/domain/models';
-import type { RecordStore } from '@capability-hub/application/ports';
+import type { ReadyJobsQuery, RecordStore } from '@capability-hub/application/ports';
 import { randomUUID } from 'node:crypto';
 import { resolveAuditActor, resolveAuditSubject } from '@capability-hub/application/audit';
 import type { RecordDriver, RecordQueries } from './record-driver.js';
@@ -34,6 +34,18 @@ class DrizzleStore implements RecordStore {
   }
   all<K extends TableName>(table: K): Promise<RecordMap[K][]> {
     return this.execute((queries) => queries.all(table));
+  }
+  listRunningJobIds(now: number) {
+    return this.execute((queries) => queries.listRunningJobIds(now));
+  }
+  listReadyJobs(query: ReadyJobsQuery) {
+    return this.execute((queries) => queries.listReadyJobs(query));
+  }
+  listCancellationRequestedJobs() {
+    return this.execute((queries) => queries.listCancellationRequestedJobs());
+  }
+  listDueSources(now: number) {
+    return this.execute((queries) => queries.listDueSources(now));
   }
   where<K extends TableName>(
     table: K,

@@ -1,4 +1,12 @@
-import type { RecordMap, TableName } from '@capability-hub/domain/models';
+import type { GitSourceRecord, JobKind, RecordMap, TableName } from '@capability-hub/domain/models';
+
+/** 就绪筛选复用租约检查的时间快照，并限制返回剩余名额。 */
+export interface ReadyJobsQuery {
+  now: number;
+  limit: number;
+  excludeIds: readonly string[];
+  kinds?: readonly JobKind[];
+}
 
 /** 北京时间的日桶只返回计数，审计明细和反馈正文留在各自读取边界内。 */
 export interface ResourceActivityBucket {
@@ -33,6 +41,11 @@ export interface RecordStore {
     id: string | null | undefined,
   ): Promise<RecordMap[K] | undefined>;
   all<K extends TableName>(table: K): Promise<RecordMap[K][]>;
+  /** 调度查询在数据库内筛选，历史任务正文不进入轮询路径。 */
+  listRunningJobIds(now: number): Promise<string[]>;
+  listReadyJobs(query: ReadyJobsQuery): Promise<RecordMap['jobs'][]>;
+  listCancellationRequestedJobs(): Promise<RecordMap['jobs'][]>;
+  listDueSources(now: number): Promise<GitSourceRecord[]>;
   /** 无索引保证，返回顺序由驱动决定，需要稳定顺序时调用方自行排序。 */
   where<K extends TableName>(
     table: K,

@@ -183,13 +183,7 @@ export class HubWorker {
     });
   }
   private async pollSources() {
-    for (const s of (await this.hub.store.all('sources')).filter(
-      (s) =>
-        s.kind === 'git' &&
-        s.state === 'active' &&
-        !s.distribution_revoked_at &&
-        s.next_poll_at <= Date.now(),
-    )) {
+    for (const s of await this.hub.store.listDueSources(Date.now())) {
       const owner = (
         await Promise.all(
           (await this.hub.store.all('users'))

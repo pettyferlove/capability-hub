@@ -2,9 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { openRecordStore, snapshotStore, restoreStore } from '@capability-hub/infrastructure/store';
+import { JobQueue } from '@capability-hub/application';
 import { MinioBlobStore } from '@capability-hub/infrastructure/content';
 import { HubError } from '@capability-hub/domain/errors';
-import type { PublicationRequestRecord } from '@capability-hub/domain/models';
+import type {
+  GitSourceRecord,
+  JobRecord,
+  PublicationRequestRecord,
+} from '@capability-hub/domain/models';
 import type { OperationsResponse } from '@capability-hub/contracts/http';
 import { createTestHub, publishSkill, receiveSkill } from '../support/application.js';
 import { frameworkConfig } from '../support/ai-framework.js';
@@ -83,6 +88,200 @@ test('PostgreSQL 的项目 Token 总量、时间边界和分布与 SQLite 一致
     } finally {
       await f.close();
     }
+  } finally {
+    await database.close();
+  }
+});
+
+test('PostgreSQL 调度查询按数值时间、状态和取消标记筛选并稳定限量', async () => {
+  const database = await externalDatabase();
+  const poolErrors: Error[] = [];
+  const onPoolError = (error: Error) => {
+    poolErrors.push(error);
+  };
+  try {
+    const store = await openRecordStore({ driver: 'postgresql', url: database.url, onPoolError });
+    try {
+      const timestamp = Date.parse('2026-11-03T00:00:00Z');
+      const base = {
+        kind: 'intake' as const,
+        aggregate_id: randomUUID(),
+        input: {},
+        state: 'queued' as const,
+        attempt: 0,
+        run_after: 10,
+        lease_epoch: 0,
+        lease_until: 0,
+        cancel_requested: false,
+        created_at: new Date(timestamp).toISOString(),
+      };
+      const jobs: JobRecord[] = [
+        { ...base, id: 'ready-b' },
+        { ...base, id: 'ready-a' },
+        { ...base, id: 'earliest', run_after: 9 },
+        { ...base, id: 'boundary', run_after: timestamp },
+        { ...base, id: 'future', run_after: timestamp + 1 },
+        {
+          ...base,
+          id: 'expired',
+          state: 'running',
+          run_after: timestamp + 2,
+          lease_until: timestamp,
+        },
+        { ...base, id: 'live', state: 'running', lease_until: timestamp + 1 },
+        { ...base, id: 'cancel-queued', cancel_requested: true },
+        {
+          ...base,
+          id: 'cancel-running',
+          state: 'running',
+          cancel_requested: true,
+          lease_until: timestamp + 1,
+        },
+        ...(['succeeded', 'failed', 'cancelled'] as const).map((state) => ({
+          ...base,
+          id: state,
+          state,
+          cancel_requested: true,
+        })),
+        { ...base, id: 'ai', kind: 'ai_execution', input: { execution_id: randomUUID() } },
+      ];
+      for (const job of jobs) await store.insert('jobs', job);
+      assert.deepEqual(await store.listRunningJobIds(timestamp), ['cancel-running', 'live']);
+      const query = { now: timestamp, limit: 20, excludeIds: [] };
+      assert.deepEqual(
+        (await store.listReadyJobs(query)).map((job) => job.id),
+        ['earliest', 'ai', 'ready-a', 'ready-b', 'boundary', 'expired'],
+      );
+      assert.deepEqual(
+        (
+          await store.listReadyJobs({
+            ...query,
+            kinds: ['intake'],
+            excludeIds: ['earliest'],
+            limit: 2,
+          })
+        ).map((job) => job.id),
+        ['ready-a', 'ready-b'],
+      );
+      assert.deepEqual(await store.listReadyJobs({ ...query, kinds: [] }), []);
+      assert.deepEqual(
+        (await store.listCancellationRequestedJobs()).map((job) => job.id),
+        ['cancel-queued', 'cancel-running'],
+      );
+      const group = await store.insert('groups', {
+        id: randomUUID(),
+        revision: 1,
+        active: true,
+        name: '调度来源',
+      });
+      const source: GitSourceRecord = {
+        id: 'due-b',
+        revision: 1,
+        kind: 'git',
+        owner_group_id: group.id,
+        state: 'active',
+        generation: 1,
+        created_at: base.created_at,
+        provider: 'git',
+        canonical_url: 'https://example.com/repo.git',
+        repository_identity: 'example.com/repo',
+        branch: 'main',
+        credential_ref: null,
+        next_poll_at: timestamp,
+      };
+      for (const record of [
+        source,
+        { ...source, id: 'due-a', next_poll_at: 9 },
+        { ...source, id: 'future-source', next_poll_at: timestamp + 1 },
+        { ...source, id: 'paused-source', state: 'paused' as const },
+        { ...source, id: 'blocked-source', state: 'blocked' as const },
+        { ...source, id: 'auth-source', state: 'auth_error' as const },
+        { ...source, id: 'revoked-source', distribution_revoked_at: base.created_at },
+      ])
+        await store.insert('sources', record);
+      await store.insert('sources', {
+        id: 'upload-source',
+        revision: 1,
+        kind: 'upload',
+        owner_group_id: group.id,
+        state: 'active',
+        generation: 1,
+        created_at: base.created_at,
+      });
+      assert.deepEqual(
+        (await store.listDueSources(timestamp)).map((record) => record.id),
+        ['due-a', 'due-b'],
+      );
+    } finally {
+      await store.close();
+    }
+    assert.deepEqual(poolErrors, []);
+  } finally {
+    await database.close();
+  }
+});
+
+test('PostgreSQL 两连接争最后一个共享名额且取消事务保留有效租约', async () => {
+  const database = await externalDatabase();
+  const poolErrors: Error[] = [];
+  const onPoolError = (error: Error) => {
+    poolErrors.push(error);
+  };
+  try {
+    const first = await openRecordStore({ driver: 'postgresql', url: database.url, onPoolError });
+    try {
+      const second = await openRecordStore({
+        driver: 'postgresql',
+        url: database.url,
+        onPoolError,
+      });
+      try {
+        const queue = new JobQueue(first, 2);
+        const competing = new JobQueue(second, 2);
+        await queue.enqueue('intake', randomUUID(), {});
+        for (const id of [randomUUID(), randomUUID()])
+          await queue.enqueue('ai_execution', id, { execution_id: id });
+        const content = await queue.claim('first', ['intake']);
+        assert(content);
+        const claimed = (
+          await Promise.all([
+            queue.claimBatch('first', { kinds: ['ai_execution'] }),
+            competing.claimBatch('second', { kinds: ['ai_execution'] }),
+          ])
+        ).flat();
+        assert.equal(claimed.length, 1);
+        assert.equal(claimed[0].attempt, 1);
+        assert.equal(claimed[0].lease_epoch, 1);
+        await first.put('jobs', { ...content, cancel_requested: true });
+        assert.deepEqual(await competing.claimBatch('second'), []);
+        const rollback = new Error('取消回调回滚');
+        await assert.rejects(
+          () =>
+            queue.cancelRequested(() => {
+              throw rollback;
+            }),
+          rollback,
+        );
+        assert.equal((await second.get('jobs', content.id))?.state, 'running');
+        assert.deepEqual(await competing.claimBatch('second'), []);
+        const cancelled: string[] = [];
+        await queue.cancelRequested((job) => {
+          cancelled.push(job.id);
+        });
+        assert.deepEqual(cancelled, [content.id]);
+        assert.equal((await second.get('jobs', content.id))?.state, 'cancelled');
+        assert.deepEqual(await second.listCancellationRequestedJobs(), []);
+        const next = await competing.claim('second');
+        assert(next);
+        assert.notEqual(next.id, claimed[0].id);
+        assert.equal((await first.listRunningJobIds(Date.now())).length, 2);
+      } finally {
+        await second.close();
+      }
+    } finally {
+      await first.close();
+    }
+    assert.deepEqual(poolErrors, []);
   } finally {
     await database.close();
   }

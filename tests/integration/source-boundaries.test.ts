@@ -52,6 +52,47 @@ async function syncSource(fixture: Awaited<ReturnType<typeof sources>>, sourceId
   return job;
 }
 
+test('自动轮询只返回已到期且未暂停或撤销的 Git 来源', async (context) => {
+  const fixture = await sources(context);
+  const created = await fixture.create('poll-boundaries', '.');
+  const source = await fixture.store.get('sources', created.id);
+  assert(source?.kind === 'git');
+  const now = Date.now();
+  const dueIds: string[] = [];
+  for (const [state, offset, revoked] of [
+    ['active', -1, false],
+    ['active', 0, false],
+    ['active', 1, false],
+    ['paused', -1, false],
+    ['blocked', -1, false],
+    ['auth_error', -1, false],
+    ['active', -1, true],
+  ] as const) {
+    const id = randomUUID();
+    await fixture.store.insert('sources', {
+      ...source,
+      id,
+      state,
+      next_poll_at: now + offset,
+      ...(revoked ? { distribution_revoked_at: new Date(now).toISOString() } : {}),
+    });
+    if (state === 'active' && offset <= 0 && !revoked) dueIds.push(id);
+  }
+  await fixture.store.insert('sources', {
+    id: randomUUID(),
+    kind: 'upload',
+    owner_group_id: fixture.teamId,
+    state: 'active',
+    generation: 1,
+    revision: 1,
+    created_at: new Date(now).toISOString(),
+  });
+  assert.deepEqual(
+    (await fixture.store.listDueSources(now)).map((item) => item.id),
+    dueIds.sort(),
+  );
+});
+
 test('账号停用永久撤销已有网页会话和个人令牌，重新启用也不能恢复旧凭据', async (context) => {
   const fixture = await createTestHub(context);
   const user = await fixture.hub.identity.activeUser(fixture.reader.id);
