@@ -64,7 +64,7 @@ export class HubAiServices {
     content: AssetContentService,
     config: ServerConfig,
     private readonly evidence: AgentEvidenceService,
-    publications: PublicationQueryService,
+    private readonly publications: PublicationQueryService,
   ) {
     const aiStore = createAiStore(store);
     this.recheckResources = async (principal, execution, mode = 'execute') => {
@@ -240,6 +240,39 @@ export class HubAiServices {
     await this.principal(principal);
     const { default_profile, profiles } = this.runtime.config;
     return { default_profile, profiles: profiles.map(({ id, label }) => ({ id, label })) };
+  }
+
+  async ensurePublicationReview(principal: Principal, requestId: string) {
+    // 查找与入队共享写事务，避免并发打开时创建多份首报。
+    return this.runtime.store.tx(async () => {
+      await this.publications.requireAgentAccess(principal, requestId, 'execute');
+      let after: { position: number; id: string } | undefined;
+      for (;;) {
+        const rows = await this.runtime.store.list('ai_executions', {
+          owner_id: principal.id,
+          lookup_key: 'publication-review',
+          descending: true,
+          after,
+          limit: 100,
+        });
+        const existing = rows.find(({ payload }) => {
+          const input = payload.input;
+          return (
+            input &&
+            typeof input === 'object' &&
+            !Array.isArray(input) &&
+            input.publication_request_id === requestId
+          );
+        });
+        if (existing) return existing;
+        if (rows.length < 100) break;
+        const last = rows[rows.length - 1];
+        after = { position: last.position, id: last.id };
+      }
+      return this.runtime.submit(principal.id, 'publication-review', {
+        publication_request_id: requestId,
+      });
+    });
   }
 
   private async hasPendingSubmission(ownerId: string, versionId: string) {

@@ -1462,6 +1462,71 @@ test('审核简报绑定申请的基线和扫描，同版本扩大受众仍有�
     .expect(409);
 });
 
+test('首份审核简报跨请求并发复用同一任务，历史不重跑且按申请和人员隔离', async (t) => {
+  const f = await createTestHub(t, { ai: frameworkConfig('http://127.0.0.1:1/v1') });
+  const intake = await receiveSkill(f);
+  const request = await submitPublication(f, intake);
+  const reviewer = await signIn(f, f.reviewer.username);
+  const start = (client: typeof reviewer, requestId: string, reuse = true) =>
+    client
+      .post('/api/ai/executions')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        operation_id: 'publication-review',
+        input: { publication_request_id: requestId },
+        ...(reuse && { reuse_existing: true }),
+      });
+  await start(await signIn(f), request.id).expect(403);
+  await start(await signIn(f, f.reader.username), request.id).expect(403);
+  const [first, concurrent] = await Promise.all([
+    start(reviewer, request.id).expect(200),
+    start(reviewer, request.id).expect(200),
+  ]);
+  assert.equal(concurrent.body.id, first.body.id);
+  assert.equal(first.body.status, 'queued');
+
+  await reviewer
+    .post(`/api/ai/executions/${first.body.id}/cancel`)
+    .set('Idempotency-Key', randomUUID())
+    .set('If-Match', first.headers.etag)
+    .send({})
+    .expect(200);
+  const stopped = (await start(reviewer, request.id).expect(200)).body;
+  assert.equal(stopped.id, first.body.id);
+  assert.equal(stopped.status, 'cancelled');
+  const retry = (await start(reviewer, request.id, false).expect(201)).body;
+  assert.notEqual(retry.id, stopped.id);
+  const listed = aiExecutionListResponseSchema.parse(
+    (
+      await reviewer
+        .get('/api/ai/executions')
+        .query({ publication_request_id: request.id })
+        .expect(200)
+    ).body,
+  );
+  assert.deepEqual(listed.items.map((item) => item.id).sort(), [stopped.id, retry.id].sort());
+
+  const role = await f.store.find('roles', 'key', 'reviewer');
+  assert(role);
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  const peer = await signIn(f, f.reader.username);
+  const other = (await start(peer, request.id).expect(200)).body;
+  assert.equal(other.owner_id, f.reader.id);
+  assert(![stopped.id, retry.id].includes(other.id));
+
+  await f.hub.publications.cancel(f.admin, request.id, { reason: '更新共享申请' }, '"1"');
+  await start(reviewer, request.id).expect(409);
+  const next = await submitPublication(f, intake);
+  const manual = (await start(reviewer, next.id, false).expect(201)).body;
+  assert.notEqual(manual.id, retry.id);
+  assert.equal((await start(reviewer, next.id).expect(200)).body.id, manual.id);
+});
+
 test('审核助手要求独立审核及目标范围的 AI 权限，撤权后简报、事件与提交重放均受限', async (t) => {
   const f = await createTestHub(t, { ai: frameworkConfig('http://127.0.0.1:1/v1') });
   const intake = await receiveSkill(f);

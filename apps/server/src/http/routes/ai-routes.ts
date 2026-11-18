@@ -41,6 +41,7 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
     '/api/ai/executions',
     jsonRoute(async (req, res) => {
       const input = submitAiExecutionRequestSchema.parse(req.body);
+      const reuse = 'reuse_existing' in input;
       const principal = await hub.ai.submissionPrincipal(res.locals.principal, input.operation_id);
       const result = await hub.idempotency.execute(
         principal,
@@ -49,17 +50,19 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
         'sha256:' + digest(input),
         async () =>
           executionResponse(
-            await runtime.submit(
-              principal.id,
-              input.operation_id,
-              input.input,
-              input.model_profile,
-            ),
+            reuse
+              ? await hub.ai.ensurePublicationReview(principal, input.input.publication_request_id)
+              : await runtime.submit(
+                  principal.id,
+                  input.operation_id,
+                  input.input,
+                  input.model_profile,
+                ),
           ),
       );
       if (input.operation_id === 'publication-review')
         await hub.ai.principal(principal, await runtime.get(result.id), true);
-      res.status(201);
+      res.status(reuse ? 200 : 201);
       return withRevision(res, result);
     }),
   );

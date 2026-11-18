@@ -127,6 +127,7 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
     [section, setSection] = useState('changes'),
     [decisionOpen, setDecisionOpen] = useState(false),
     [fileFocus, setFileFocus] = useState<ReviewFileFocus>();
+  const [decisionBriefSlot, setDecisionBriefSlot] = useState<HTMLDivElement | null>(null);
   const { comment, advice } = draft;
   const receiveAdvice = useCallback((next: ReviewAuditAdvice) => {
     setDraft((current) => {
@@ -212,13 +213,18 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
     modified: r.diff.filter((f: ChangeFile) => f.status === 'modified').length,
     removed: r.diff.filter((f: ChangeFile) => f.status === 'removed').length,
   };
+  function locateEvidence(path: string, start: number, end: number) {
+    setDecisionOpen(false);
+    setSection('changes');
+    setFileFocus({ path, start, end });
+  }
+
   const reviewAssistant = r.can_use_review_agent && (
     <PublicationReviewAssistant
+      key={me?.id}
       request={r}
-      onEvidence={(path, start, end) => {
-        setSection('changes');
-        setFileFocus({ path, start, end });
-      }}
+      decisionSlot={decisionOpen ? decisionBriefSlot : null}
+      onEvidence={locateEvidence}
     />
   );
   return (
@@ -642,15 +648,14 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
                     </p>
                   </div>
                 </div>
+                {r.can_use_review_agent && (
+                  <div ref={setDecisionBriefSlot} className="mb-3 empty:hidden" />
+                )}
                 {r.can_audit_version && (
                   <ReviewAuditEvidence
                     request={r}
                     onAdvice={receiveAdvice}
-                    onEvidence={(path, start, end) => {
-                      setDecisionOpen(false);
-                      setSection('changes');
-                      setFileFocus({ path, start, end });
-                    }}
+                    onEvidence={locateEvidence}
                   />
                 )}
                 {important

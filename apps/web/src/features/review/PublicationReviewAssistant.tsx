@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   aiExecutionListResponseSchema,
   aiExecutionResponseSchema,
@@ -113,12 +114,14 @@ async function loadTask(requestId: string, ownerId: string, signal: AbortSignal)
   return latest ?? null;
 }
 
-/** 底栏只汇总当前申请的研判，正式审核决定由独立的人工操作提交。 */
+/** 底栏与决定抽屉共用简报进度，最终决定仍由审核员提交。 */
 export function PublicationReviewAssistant({
   request,
+  decisionSlot,
   onEvidence,
 }: {
   request: Pick<ReviewResponse, 'id' | 'revision' | 'policy_digest' | 'can_decide'>;
+  decisionSlot?: HTMLDivElement | null;
   onEvidence: (path: string, start: number, end: number) => void;
 }) {
   const { me, refresh: hubRefresh, reload } = useHub();
@@ -128,6 +131,7 @@ export function PublicationReviewAssistant({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const lookup = useRef<AbortController | null>(null);
+  const autoAttempted = useRef(false);
   const command = useAiCommand();
   const owner = me?.id;
   const models = useQuery<AiModelOptionsResponse>(
@@ -194,6 +198,7 @@ export function PublicationReviewAssistant({
           await command('/api/ai/executions', {
             operation_id: 'publication-review',
             input: { publication_request_id: request.id },
+            ...(record === null && { reuse_existing: true }),
           }),
         );
       }
@@ -207,6 +212,16 @@ export function PublicationReviewAssistant({
       setBusy(false);
     }
   };
+  const startOnOpen = useEffectEvent(() => {
+    void update();
+  });
+  const canAutoStart = record === null && canStart && !busy && !models.loading && !models.error;
+  useEffect(() => {
+    if (!decisionSlot || !canAutoStart || autoAttempted.current) return;
+    autoAttempted.current = true;
+    startOnOpen();
+  }, [decisionSlot, canAutoStart]);
+
   if (!request.can_decide && !task && !readError) return null;
   const signal = reviewBriefSignal(request, task, view);
   const needsRefresh = !!readError || (!!models.error && !running);
@@ -222,12 +237,12 @@ export function PublicationReviewAssistant({
   const source = signal.evidence;
   const rerun = task?.status === 'succeeded';
   const action = running ? '取消研判' : rerun ? '重新研判' : task ? '重试研判' : '生成审核简报';
-  return (
+  const assistant = (
     <section
       aria-label="发布审核助手"
       className={cn(
         'flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5',
-        request.can_decide
+        request.can_decide && !decisionSlot
           ? 'flex-[1_1_21rem]'
           : 'rounded-xl border border-line bg-paper px-4 py-2.5',
       )}
@@ -319,4 +334,5 @@ export function PublicationReviewAssistant({
       )}
     </section>
   );
+  return decisionSlot ? createPortal(assistant, decisionSlot) : assistant;
 }
