@@ -12,7 +12,7 @@
 | 发布       | requests、releases、scenarios、recommendations、asset_feedback     |
 | 运行与证据 | jobs、audit、idempotency、login_attempts、cli_logins               |
 
-SQLite 与 PostgreSQL 各以完整 Drizzle Schema 生成迁移，当前各有一条 `migrations/0000_init.sql` 初始迁移，包含表、唯一约束、关联守卫、不可变触发器及目录修订。启动时在互斥事务中执行官方 migrator，应用待执行变更；迁移历史必须与文件摘要一致，不转换未纳入当前迁移体系的旧数据库。详见[数据库迁移](../development/database-migrations.md)。SQLite 不可变 JSON 比较使用结构路径和值；PostgreSQL 使用 JSONB，均不依赖对象属性顺序。
+SQLite 与 PostgreSQL 各以完整 Drizzle Schema 生成迁移：`migrations/0000_init.sql` 初始化表、唯一约束、关联守卫、不可变触发器及目录修订，后续结构变更按迁移历史追加。启动时在互斥事务中执行官方 migrator，应用待执行变更；迁移历史必须与文件摘要一致，不转换未纳入当前迁移体系的旧数据库。详见[数据库迁移](../development/database-migrations.md)。SQLite 不可变 JSON 比较使用结构路径和值；PostgreSQL 使用 JSONB，均不依赖对象属性顺序。
 
 事务作用域通过异步上下文传递，嵌套事务共享成败状态。内部失败即使被调用方捕获也不能部分提交；未等待的写入或回调结束后的迟到任务被拒绝。连接内操作顺序执行，同文件多 SQLite 连接和跨 PostgreSQL 连接仍受数据库边界约束。
 

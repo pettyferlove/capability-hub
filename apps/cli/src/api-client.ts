@@ -25,7 +25,7 @@ const oauthMessages: Record<string, string> = {
 };
 
 /**
- * CLI 侧最小的 Hub 客户端：不跟随重定向（`redirect: 'error'`），每次请求 30 秒超时，
+ * CLI 侧最小的 Hub 客户端：不跟随重定向（`redirect: 'error'`），普通请求整体 30 秒超时，
  * 非 2xx 一律转成 {@link HubApiError}，错误体按固定上限读取并清洗控制字符后才写入终端，
  * 因此 Hub 返回的文本无法向用户终端注入转义序列。
  * 响应体同样有上限：JSON 1 MiB、归档 120 MiB，超出即中止读取。
@@ -36,7 +36,11 @@ export class HubApiClient {
     private readonly token?: string,
   ) {}
 
-  async request(path: string, body?: unknown): Promise<Response> {
+  async request(
+    path: string,
+    body?: unknown,
+    signal: AbortSignal = AbortSignal.timeout(30000),
+  ): Promise<Response> {
     const response = await fetch(this.url + path, {
       method: body === undefined ? 'GET' : 'POST',
       redirect: 'error',
@@ -45,7 +49,7 @@ export class HubApiClient {
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(30000),
+      signal,
     });
     if (!response.ok) {
       let detail: unknown;
@@ -93,11 +97,33 @@ export class HubApiClient {
     return parsed.data;
   }
 
+  /**
+   * 归档可达上百 MiB，整体时限会中断仍在传输的慢速下载；30 秒只约束建连、响应头
+   * 以及相邻两段数据之间的间隔。
+   */
   async archive(
     path: string,
     onProgress?: (received: number, total?: number) => void,
   ): Promise<Buffer> {
-    return this.readBytes(await this.request(path), 120 * 1024 * 1024, onProgress);
+    const controller = new AbortController();
+    let timer: NodeJS.Timeout | undefined;
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => controller.abort(new Error('下载超过 30 秒没有收到新数据，已中止')),
+        30000,
+      );
+    };
+    arm();
+    try {
+      const response = await this.request(path, undefined, controller.signal);
+      return await this.readBytes(response, 120 * 1024 * 1024, (received, total) => {
+        arm();
+        onProgress?.(received, total);
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async readBytes(

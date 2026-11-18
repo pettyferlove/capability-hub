@@ -14,6 +14,7 @@ import { saveCredentials } from '../../apps/cli/src/credentials.js';
 import { serveTestHub } from '../support/server.js';
 import { publishSkill, submitPublication } from '../support/application.js';
 import { hubClientSkillFiles } from '../support/content.js';
+import { deferred } from '../support/store.js';
 
 const execute = promisify(execFile);
 
@@ -313,6 +314,47 @@ test('CLI 下载进度按接收字节累计，不把压缩或无效长度当成�
     );
     request.mock.restore();
   }
+});
+
+test('CLI 下载归档在 30 秒没有新数据时才中止，持续传输超过 30 秒仍能完成', async (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  // AbortSignal.timeout 不受模拟时钟控制，换成同一时钟上的等价实现，用例不依赖客户端的计时方式。
+  context.mock.method(AbortSignal, 'timeout', (milliseconds: number) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException('计时结束', 'TimeoutError')), milliseconds);
+    return controller.signal;
+  });
+  let source: ReadableStreamDefaultController<Uint8Array> | undefined;
+  context.mock.method(globalThis, 'fetch', async (_input: unknown, init?: RequestInit) => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        source = controller;
+      },
+    });
+    init?.signal?.addEventListener('abort', () => source?.error(init.signal?.reason));
+    return new Response(body);
+  });
+  let arrived = deferred();
+  const client = new HubApiClient('https://hub.example.test');
+  const onProgress = (received: number) => {
+    if (received > 0) arrived.resolve();
+  };
+  const receive = async (pending: Promise<Buffer>) => {
+    source?.enqueue(new Uint8Array(1024));
+    await Promise.race([arrived.promise, pending]);
+    arrived = deferred();
+  };
+  const progressing = client.archive('/archive', onProgress);
+  for (let index = 0; index < 4; index++) {
+    await receive(progressing);
+    context.mock.timers.tick(20_000);
+  }
+  source?.close();
+  assert.equal((await progressing).length, 4096);
+  const stalled = client.archive('/archive', onProgress);
+  await receive(stalled);
+  context.mock.timers.tick(30_000);
+  await assert.rejects(stalled);
 });
 
 test('CLI 安装命令覆盖已有 npm 作用域仓库，沿用当前仓库认证且不改写配置', async (context) => {

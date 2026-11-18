@@ -127,7 +127,8 @@ Operations: `pnpm backup`, `restore:import`, `restore:check`, `maintenance`, `ac
   `hub-services.ts`, and no use case reaches back into `HubServices`.
 - **Async:** `async/await` only; deliberate `void` for fire-and-forget; `Promise.allSettled` +
   `AggregateError` for teardown; `filterAsync`/`someAsync` from `packages/domain/src/async.ts`;
-  `AbortSignal.timeout(30000)` for outbound calls.
+  `AbortSignal.timeout(30000)` for outbound calls; streamed downloads (CLI archives) instead abort
+  after 30s without new data.
 - **Auth ordering:** `security.authenticate`/`csrf` are mounted mid-registration in `app.ts`; routes
   registered before them are anonymous by design. Never reorder blindly.
 - **Data access:** only through `RecordStore`/`AiStore`/`BlobStorage`/`GitRepository` ports; `tx()` for

@@ -222,6 +222,19 @@ test('授权等待期间父目录被换成链接时拒绝提交，清理也不�
   assert.deepEqual(await readdir(outside), [`.${input.slug}.install-lock`]);
 });
 
+test('安装目录经过根目录下的系统链接（如 macOS 的 /var）时按真实路径写入', async (context) => {
+  // 不调用 realpath：macOS 的 tmpdir() 位于根目录的 /var 链接之下。
+  const root = await mkdtemp(join(tmpdir(), 'capability-hub-system-link-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const input = { ...(await installation(context)), to: join(root, 'skills') };
+  const result = await install(input);
+  assert.equal(result.destination, join(await realpath(root), 'skills', input.slug));
+  assert.deepEqual(
+    await readFile(join(input.to, input.slug, 'SKILL.md')),
+    skillDocument('sample-skill'),
+  );
+});
+
 test('CLI 安装保持未知二进制与脚本资源字节，不重新按语言或格式阻断已审核内容', async (context) => {
   const input = await installation(context);
   const resource = Buffer.from([0x4d, 0x5a, 0x00, 0x80]);
