@@ -4,12 +4,17 @@ const json = z.json();
 const id = z.string().min(1).max(200);
 
 /**
- * 发起 AI 执行：`operation_id` 指向目录中登记的可执行操作，`input` 为任意 JSON，
- * 其结构由该操作的输入 schema 在服务端再校验；`model_profile` 省略时用目录里的默认档。
+ * 发起 AI 执行：操作定义负责校验 `input`，`model_profile` 省略时使用默认档。
+ * 审核简报可按当前审核员和申请复用已有执行。
  */
-export const submitAiExecutionRequestSchema = z
-  .object({ operation_id: id, model_profile: id.optional(), input: json })
-  .strict();
+export const submitAiExecutionRequestSchema = z.union([
+  z.strictObject({ operation_id: id, model_profile: id.optional(), input: json }),
+  z.strictObject({
+    operation_id: z.literal('publication-review'),
+    input: z.strictObject({ publication_request_id: z.uuid() }),
+    reuse_existing: z.literal(true),
+  }),
+]);
 
 /** 回应交互请求：`response` 为任意 JSON，形状取决于该交互声明的 `response_schema`。 */
 export const respondAiInteractionRequestSchema = z.object({ response: json }).strict();
