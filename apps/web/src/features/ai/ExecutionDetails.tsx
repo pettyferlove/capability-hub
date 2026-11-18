@@ -57,16 +57,18 @@ export function ExecutionDetails({
     <div className={cn(readingWidthStyles, 'space-y-6')}>
       <section aria-label="运行用量">
         <h2 className="mb-3 text-section">运行概览</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 @min-[640px]/execution:grid-cols-4">
           {metrics.map(([label, number, unit, Icon]) => (
             <div key={label} className={metricStyles}>
               <span className="flex items-center gap-1.5 text-caption text-muted-ink">
                 <Icon size={13} className="text-brand" />
                 {label}
               </span>
-              <span className="text-xl font-semibold tabular-nums">
-                {number.toLocaleString()}
-                <span className="ml-1.5 text-caption font-normal text-muted-ink">{unit}</span>
+              <span className="flex flex-wrap items-baseline gap-x-1.5">
+                <span className="min-w-0 text-xl font-semibold tabular-nums [overflow-wrap:anywhere]">
+                  {number.toLocaleString()}
+                </span>{' '}
+                <span className="text-caption text-muted-ink">{unit}</span>
               </span>
             </div>
           ))}

@@ -45,7 +45,7 @@ export function PublicationPolicyFields({
   const platformReasons: PlatformReviewReason[] = review.kind === 'platform' ? review.reasons : [];
   return (
     <div className={policyFieldsStyles}>
-      <div>
+      <div className="grid gap-2">
         <label data-draft-field="category">
           分类
           <SelectField
@@ -98,7 +98,11 @@ export function PublicationPolicyFields({
         </SelectField>
       </label>
       {audienceMode === 'restricted' && (
-        <fieldset data-review-target="audience" tabIndex={-1}>
+        <fieldset
+          data-review-target="audience"
+          tabIndex={-1}
+          className="grid gap-2 [&>div:empty]:hidden"
+        >
           <legend>指定受众</legend>
           <div className={chipsStyles}>
             {[...audienceOptions].map(([id, name]) => (
