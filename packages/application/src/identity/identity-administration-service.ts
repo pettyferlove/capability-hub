@@ -177,6 +177,19 @@ export class IdentityAdministrationService {
     this.identity.require(principal, 'identity:manage');
     return (await this.store.all('scenarios')).map((s) => ({ ...s, revision: s.revision ?? 1 }));
   }
+  async getScenarioReferences(principal: Principal, id: string) {
+    this.identity.require(principal, 'identity:manage');
+    return this.scenarioReferences(id);
+  }
+  private async scenarioReferences(id: string) {
+    const counts = await this.store.countScenarioReferences(id);
+    if (!counts) fail(404, 'NOT_FOUND', '场景不存在');
+    const { publication_requests, releases, source_targets, role_bindings, merges } = counts;
+    return {
+      ...counts,
+      total: publication_requests + releases + source_targets + role_bindings + merges,
+    };
+  }
   async updateScenario(
     principal: Principal,
     id: string,
@@ -254,7 +267,7 @@ export class IdentityAdministrationService {
         const scenario = await this.store.get('scenarios', id);
         if (!scenario) fail(404, 'NOT_FOUND', '场景不存在');
         matchRevision({ revision: scenario.revision ?? 1 }, etag);
-        if (scenario.merged_into || (await this.store.hasScenarioReferences(id)))
+        if ((await this.scenarioReferences(id)).total > 0)
           fail(409, 'SCENARIO_IN_USE', '该场景仍被引用或参与过合并，不能删除');
         await this.store.audit(principal.id, 'scenario.deleted', id);
         await this.store.remove('scenarios', id);

@@ -149,6 +149,7 @@ test('管理员按当前修订删除未使用的停用场景，重试不重复�
   const path = '/api/admin/scenarios/' + scenario.id;
   const client = await signIn(f);
   const reader = await signIn(f, 'reader');
+  await reader.get(path + '/references').expect(403);
   await reader.delete(path).set('If-Match', '"1"').set('Idempotency-Key', randomUUID()).expect(403);
   await client.delete(path).set('Idempotency-Key', randomUUID()).expect(428);
   await client
@@ -163,6 +164,7 @@ test('管理员按当前修订删除未使用的停用场景，重试不重复�
   const key = randomUUID();
   for (let i = 0; i < 2; i++)
     await client.delete(path).set('If-Match', '"2"').set('Idempotency-Key', key).expect(200);
+  await client.get(path + '/references').expect(404);
   await client.get('/api/admin/scenarios').expect(200, []);
   const next = await client.post('/api/admin/scenarios').send({ name: scenario.name }).expect(200);
   assert.notEqual(next.body.id, scenario.id);

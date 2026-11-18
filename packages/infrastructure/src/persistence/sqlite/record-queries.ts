@@ -1,11 +1,12 @@
-import type { ReadyJobsQuery } from '@capability-hub/application/ports';
+import type { ReadyJobsQuery, ScenarioReferenceCounts } from '@capability-hub/application/ports';
 import {
   parseRecord,
   type GitSourceRecord,
   type RecordMap,
   type TableName,
 } from '@capability-hub/domain/models';
-import { and, eq, gt, inArray, lte, not, or, sql } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, lte, not, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import type { RecordQueries } from '../record-driver.js';
 import { resourceActivityQuery } from '../resource-activity-query.js';
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy';
@@ -113,43 +114,43 @@ export class SqliteQueries implements RecordQueries {
       return source;
     });
   }
-  async hasScenarioReferences(id: string): Promise<boolean> {
-    const rows = await this.db
-      .select({ id: scenarios.id })
+  async countScenarioReferences(id: string): Promise<ScenarioReferenceCounts | undefined> {
+    const publicationRequests = this.db.select({ count: count() }).from(requests).where(sql`exists (
+        select 1 from json_each(${requests.data}, '$.scenario_ids') as selected
+        where selected.value = ${scenarios.id}
+      ) or (
+        json_extract(${requests.data}, '$.state') = 'pending' and exists (
+          select 1 from json_each(${requests.data}, '$.proposed_scenarios') as proposed
+          where json_extract(proposed.value, '$.name') = ${scenarios.name}
+        )
+      )`);
+    const releaseReferences = this.db.select({ count: count() }).from(releases).where(sql`exists (
+        select 1 from json_each(${releases.data}, '$.scenario_ids') as selected
+        where selected.value = ${scenarios.id}
+      )`);
+    const sourceTargets = this.db.select({ count: count() }).from(bindings).where(sql`exists (
+        select 1 from json_each(${bindings.data}, '$.scenario_ids') as selected
+        where selected.value = ${scenarios.id}
+      )`);
+    const roleBindings = this.db.select({ count: count() }).from(role_bindings)
+      .where(sql`json_extract(${role_bindings.data}, '$.scope_type') = 'scenario'
+        and json_extract(${role_bindings.data}, '$.scope_id') = ${scenarios.id}`);
+    const merged = alias(scenarios, 'merged');
+    const mergedInto = sql`json_extract(${merged.data}, '$.merged_into')`;
+    const merges = this.db.select({ count: count() }).from(merged)
+      .where(sql`${mergedInto} = ${scenarios.id}
+        or (${merged.id} = ${scenarios.id} and ${mergedInto} is not null)`);
+    const [references] = await this.db
+      .select({
+        publication_requests: sql`(${publicationRequests})`.mapWith(Number),
+        releases: sql`(${releaseReferences})`.mapWith(Number),
+        source_targets: sql`(${sourceTargets})`.mapWith(Number),
+        role_bindings: sql`(${roleBindings})`.mapWith(Number),
+        merges: sql`(${merges})`.mapWith(Number),
+      })
       .from(scenarios)
-      .where(
-        and(
-          eq(scenarios.id, id),
-          sql`(
-            exists (
-              select 1 from ${requests}
-              where exists (
-                select 1 from json_each(${requests.data}, '$.scenario_ids') as selected
-                where selected.value = ${scenarios.id}
-              ) or (
-                json_extract(${requests.data}, '$.state') = 'pending' and exists (
-                  select 1 from json_each(${requests.data}, '$.proposed_scenarios') as proposed
-                  where json_extract(proposed.value, '$.name') = ${scenarios.name}
-                )
-              )
-            ) or exists (
-              select 1 from ${releases}, json_each(${releases.data}, '$.scenario_ids') as selected
-              where selected.value = ${scenarios.id}
-            ) or exists (
-              select 1 from ${bindings}, json_each(${bindings.data}, '$.scenario_ids') as selected
-              where selected.value = ${scenarios.id}
-            ) or exists (
-              select 1 from ${role_bindings}
-              where json_extract(${role_bindings.data}, '$.scope_type') = 'scenario'
-                and json_extract(${role_bindings.data}, '$.scope_id') = ${scenarios.id}
-            ) or exists (
-              select 1 from ${scenarios} as merged
-              where json_extract(merged.data, '$.merged_into') = ${scenarios.id}
-            )
-          )`,
-        ),
-      );
-    return rows.length > 0;
+      .where(eq(scenarios.id, id));
+    return references;
   }
   async where<K extends TableName>(
     table: K,

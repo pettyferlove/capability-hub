@@ -27,7 +27,7 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 
 `POST /api/publication-requests` 通过 `scenario_ids` 引用已登记场景，也可用 `proposed_scenarios` 提交 `name`、`description`；新定义需要平台审核。场景修订由 `GET /api/admin/scenarios` 返回；`PATCH /api/admin/scenarios/:id` 可编辑（`edit`）、合并（`merge` 与 `target_id`）或停用（`disable`）。合并使已有发布可按目标场景检索，不改写历史快照和授权。
 
-身份管理员在「团队与权限 → 业务场景」可删除未使用的词条。`DELETE /api/admin/scenarios/:id` 需 `If-Match` 和 `Idempotency-Key`；存在发布申请、发布记录、来源目标、场景授权、合并关系或同名待审定义时返回 409 `SCENARIO_IN_USE`，不更改任何关联记录。
+身份管理员在「团队与权限 → 业务场景」可删除未使用的词条。`GET /api/admin/scenarios/:id/references` 按发布申请（含同名待审定义）、发布记录、来源目标、场景授权和合并关系返回分项及总数。`DELETE /api/admin/scenarios/:id` 需 `If-Match` 和 `Idempotency-Key`，有引用时返回 409 `SCENARIO_IN_USE`。
 
 `POST /auth/login` 接受 `username`、`password` 和 `provider`。来源为 `local` 或 `ldap`，省略时仅验证本地密码。实例未启用 LDAP 时，选择 `ldap` 返回 403 `LDAP_DISABLED`。当前账号和管理台用户记录均以 `auth_provider` 标明来源。
 

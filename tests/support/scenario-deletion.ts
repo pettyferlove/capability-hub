@@ -1,15 +1,31 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import type { ScenarioReferencesResponse } from '@capability-hub/contracts/http';
 import { receiveSkill, type TestHub } from './application.js';
 import { signIn } from './http.js';
+
+const noReferences: ScenarioReferencesResponse = {
+  total: 0,
+  publication_requests: 0,
+  releases: 0,
+  source_targets: 0,
+  role_bindings: 0,
+  merges: 0,
+};
 
 /** 按独立引用构造场景，避免一个删除条件掩盖另一个条件的遗漏。 */
 export async function assertScenarioDeletionReferences(f: TestHub) {
   const administration = f.hub.administration;
   const client = await signIn(f);
-  async function expectInUse(id: string, revision = 1) {
+  async function expectInUse(
+    id: string,
+    expected: Partial<ScenarioReferencesResponse>,
+    revision = 1,
+  ) {
+    const path = '/api/admin/scenarios/' + id;
+    await client.get(path + '/references').expect(200, { ...noReferences, ...expected });
     const response = await client
-      .delete('/api/admin/scenarios/' + id)
+      .delete(path)
       .set('If-Match', `"${revision}"`)
       .set('Idempotency-Key', randomUUID())
       .expect(409);
@@ -48,7 +64,7 @@ export async function assertScenarioDeletionReferences(f: TestHub) {
     '"1"',
     randomUUID(),
   );
-  await expectInUse(historical.id);
+  await expectInUse(historical.id, { total: 1, publication_requests: 1 });
 
   const definition = { name: '发布检查', description: '核对待发布内容' };
   const proposed = await f.hub.publications.submit(
@@ -57,7 +73,7 @@ export async function assertScenarioDeletionReferences(f: TestHub) {
     randomUUID(),
   );
   const published = await administration.createScenario(f.admin, definition);
-  await expectInUse(published.id);
+  await expectInUse(published.id, { total: 1, publication_requests: 1 });
   await f.hub.publications.decide(
     f.reviewer,
     proposed.id,
@@ -70,7 +86,7 @@ export async function assertScenarioDeletionReferences(f: TestHub) {
     '"1"',
     randomUUID(),
   );
-  await expectInUse(published.id);
+  await expectInUse(published.id, { total: 1, releases: 1 });
 
   const source = await administration.createScenario(f.admin, { name: '来源目标场景' });
   await f.sources.create(
@@ -86,7 +102,7 @@ export async function assertScenarioDeletionReferences(f: TestHub) {
     },
     randomUUID(),
   );
-  await expectInUse(source.id);
+  await expectInUse(source.id, { total: 1, source_targets: 1 });
 
   const scoped = await administration.createScenario(f.admin, { name: '场景审核授权' });
   const role = await f.store.find('roles', 'key', 'reviewer');
@@ -97,7 +113,16 @@ export async function assertScenarioDeletionReferences(f: TestHub) {
     scope_type: 'scenario',
     scope_id: scoped.id,
   });
-  await expectInUse(scoped.id);
+  await expectInUse(scoped.id, { total: 1, role_bindings: 1 });
+  for (const principal_id of [f.reader.id, f.reviewer.id]) {
+    await administration.grantRole(f.admin, {
+      principal_id,
+      role_id: role.id,
+      scope_type: 'scenario',
+      scope_id: published.id,
+    });
+  }
+  await expectInUse(published.id, { total: 3, releases: 1, role_bindings: 2 });
 
   const from = await administration.createScenario(f.admin, { name: '原场景' });
   const into = await administration.createScenario(f.admin, { name: '合并目标' });
@@ -108,10 +133,11 @@ export async function assertScenarioDeletionReferences(f: TestHub) {
     '"1"',
     randomUUID(),
   );
-  await expectInUse(from.id, 2);
-  await expectInUse(into.id);
+  await expectInUse(from.id, { total: 1, merges: 1 }, 2);
+  await expectInUse(into.id, { total: 1, merges: 1 });
 
   const unused = await administration.createScenario(f.admin, { name: '未使用场景' });
+  await client.get('/api/admin/scenarios/' + unused.id + '/references').expect(200, noReferences);
   await client
     .delete('/api/admin/scenarios/' + unused.id)
     .set('If-Match', '"1"')

@@ -387,7 +387,7 @@ export function AdministrationPanel({ tab }: { tab: string }) {
                         )}
                       </div>
                       {(s.active || !s.merged_into) && (
-                        <div className="ml-auto flex shrink-0 gap-2">
+                        <div className="ml-auto flex shrink-0 gap-2 self-center">
                           {s.active && (
                             <button
                               type="button"

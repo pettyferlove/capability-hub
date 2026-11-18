@@ -13,20 +13,30 @@ import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import type {
   IdentitySnapshotResponse,
+  ManagedScenarioResponse,
   ManagementAssetResponse,
+  ScenarioReferencesResponse,
   SourceResponse,
 } from '@capability-hub/contracts/http';
-import type { ManagedScenarioResponse } from '@capability-hub/contracts/http';
 import { useState, type SubmitEvent } from 'react';
-import { mutate } from '../../shared/api/client.js';
+import { ApiError, mutate } from '../../shared/api/client.js';
 import { formFields } from '../../shared/api/form-fields.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { DialogTitle } from '../../shared/components/DialogTitle.js';
+import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Message } from '../../shared/components/Message.js';
 import { PasswordField } from '../../shared/components/PasswordField.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { accountLoginLabel } from '../../shared/format/labels.js';
+
+const scenarioReferenceLabels = [
+  ['publication_requests', '发布申请'],
+  ['releases', '发布记录'],
+  ['source_targets', '来源目标'],
+  ['role_bindings', '场景授权'],
+  ['merges', '合并关系'],
+] as const;
 
 /**
  * 账号、团队、角色、绑定与场景共用的编辑表单：`kind` 同时决定提交路径、字段集合与标题，
@@ -58,12 +68,26 @@ export function IdentityAdminForm({
     [roleId, setRoleId] = useState(data.roles[0]?.id ?? ''),
     [scenarioAction, setScenarioAction] = useState('edit');
   const deletingScenario = kind === 'delete-scenario';
+  const [referencesRefresh, setReferencesRefresh] = useState(0);
+  const {
+    data: references,
+    error: referencesError,
+    loading: referencesLoading,
+  } = useQuery<ScenarioReferencesResponse>(
+    deletingScenario && scenario ? '/api/admin/scenarios/' + scenario.id + '/references' : null,
+    referencesRefresh,
+  );
+  const canDeleteScenario = references?.total === 0 && !referencesLoading && !referencesError;
   const { data: sources } = useQuery<SourceResponse[]>(kind === 'binding' ? '/api/sources' : null);
   const { data: assets } = useQuery<ManagementAssetResponse[]>(
     kind === 'binding' ? '/api/management/assets/options' : null,
   );
+  function reloadReferences() {
+    setReferencesRefresh((value) => value + 1);
+  }
   async function submit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy || (deletingScenario && !canDeleteScenario)) return;
     setBusy(true);
     setError('');
     try {
@@ -121,7 +145,10 @@ export function IdentityAdminForm({
         );
       onSaved();
     } catch (e) {
-      setError(errorMessage(e));
+      if (deletingScenario && e instanceof ApiError && e.code === 'SCENARIO_IN_USE') {
+        setError('场景引用已变化，本次未删除。');
+        reloadReferences();
+      } else setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -263,9 +290,31 @@ export function IdentityAdminForm({
         {kind === 'edit-scenario' && scenarioAction === 'disable' && (
           <Message>停用后，后续申请需要选择其他有效场景。已发布资产仍按原受众分发。</Message>
         )}
-        {deletingScenario && (
-          <Message>仅可删除未被引用且未参与合并的场景。删除后不可恢复。</Message>
-        )}
+        {deletingScenario &&
+          (referencesLoading ? (
+            <Message>正在查询场景引用…</Message>
+          ) : referencesError ? (
+            <ErrorState message={referencesError} retry={reloadReferences} />
+          ) : references ? (
+            <Message>
+              {references.total === 0 ? (
+                '当前引用数为 0，删除后不可恢复。'
+              ) : (
+                <>
+                  <p>当前有 {references.total} 条引用，不能删除。</p>
+                  <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1" aria-label="场景引用明细">
+                    {scenarioReferenceLabels.map(([key, label]) =>
+                      references[key] > 0 ? (
+                        <li key={key}>
+                          {label} {references[key]} 条
+                        </li>
+                      ) : null,
+                    )}
+                  </ul>
+                </>
+              )}
+            </Message>
+          ) : null)}
         {kind === 'membership' && (
           <>
             <label>
@@ -391,7 +440,7 @@ export function IdentityAdminForm({
             <button type="button" className={btnStyles} disabled={busy} onClick={onClose}>
               取消
             </button>
-            <Submit busy={busy} className={btnDangerStyles}>
+            <Submit busy={busy} disabled={!canDeleteScenario} className={btnDangerStyles}>
               确认删除
             </Submit>
           </div>

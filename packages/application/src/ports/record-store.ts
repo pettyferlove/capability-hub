@@ -24,6 +24,15 @@ export interface ResourceActivityBucket {
   count: number;
 }
 
+/** 同一条记录只计一次；同名待审定义归入发布申请，合并关系计入两端。 */
+export interface ScenarioReferenceCounts {
+  publication_requests: number;
+  releases: number;
+  source_targets: number;
+  role_bindings: number;
+  merges: number;
+}
+
 /**
  * 持久化调用统一异步，嵌套操作共享同一事务。
  *
@@ -46,7 +55,7 @@ export interface RecordStore {
   listReadyJobs(query: ReadyJobsQuery): Promise<RecordMap['jobs'][]>;
   listCancellationRequestedJobs(): Promise<RecordMap['jobs'][]>;
   listDueSources(now: number): Promise<GitSourceRecord[]>;
-  hasScenarioReferences(id: string): Promise<boolean>;
+  countScenarioReferences(id: string): Promise<ScenarioReferenceCounts | undefined>;
   /** 无索引保证，返回顺序由驱动决定，需要稳定顺序时调用方自行排序。 */
   where<K extends TableName>(
     table: K,

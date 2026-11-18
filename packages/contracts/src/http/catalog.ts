@@ -191,3 +191,13 @@ export interface ManagedScenarioResponse extends ScenarioResponse {
   revision: number;
   merged_into?: string;
 }
+
+/** 删除前的引用统计，不返回关联记录明细。 */
+export interface ScenarioReferencesResponse {
+  total: number;
+  publication_requests: number;
+  releases: number;
+  source_targets: number;
+  role_bindings: number;
+  merges: number;
+}

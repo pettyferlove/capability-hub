@@ -14,7 +14,7 @@ export type RecordQueries = Pick<
   | 'listReadyJobs'
   | 'listCancellationRequestedJobs'
   | 'listDueSources'
-  | 'hasScenarioReferences'
+  | 'countScenarioReferences'
   | 'insert'
   | 'put'
   | 'remove'

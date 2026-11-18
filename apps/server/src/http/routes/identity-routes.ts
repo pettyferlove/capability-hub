@@ -89,6 +89,12 @@ export function registerIdentityRoutes(app: Express, { hub }: HttpContext): void
     '/api/admin/scenarios',
     send(async (_req, res) => administration.listScenarios(res.locals.principal)),
   );
+  app.get(
+    '/api/admin/scenarios/:id/references',
+    send((req, res) =>
+      administration.getScenarioReferences(res.locals.principal, String(req.params.id)),
+    ),
+  );
   app.patch(
     '/api/admin/scenarios/:id',
     send(async (req, res) =>

@@ -1,11 +1,12 @@
-import type { ReadyJobsQuery } from '@capability-hub/application/ports';
+import type { ReadyJobsQuery, ScenarioReferenceCounts } from '@capability-hub/application/ports';
 import {
   parseRecord,
   type GitSourceRecord,
   type RecordMap,
   type TableName,
 } from '@capability-hub/domain/models';
-import { and, eq, inArray, not, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, not, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { RecordQueries } from '../record-driver.js';
 import { resourceActivityQuery } from '../resource-activity-query.js';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -104,35 +105,39 @@ export class PgQueries implements RecordQueries {
       .map((row) => parseRecord('sources', row.data))
       .filter((source): source is GitSourceRecord => source.kind === 'git');
   }
-  async hasScenarioReferences(id: string): Promise<boolean> {
-    const rows = await this.db
-      .select({ id: scenarios.id })
+  async countScenarioReferences(id: string): Promise<ScenarioReferenceCounts | undefined> {
+    const publicationRequests = this.db.select({ count: count() }).from(requests)
+      .where(sql`${requests.data} -> 'scenario_ids' ? ${scenarios.id}
+        or (${requests.data} ->> 'state' = 'pending'
+          and ${requests.data} -> 'proposed_scenarios'
+            @> jsonb_build_array(jsonb_build_object('name', ${scenarios.name})))`);
+    const releaseReferences = this.db
+      .select({ count: count() })
+      .from(releases)
+      .where(sql`${releases.data} -> 'scenario_ids' ? ${scenarios.id}`);
+    const sourceTargets = this.db
+      .select({ count: count() })
+      .from(bindings)
+      .where(sql`${bindings.data} -> 'scenario_ids' ? ${scenarios.id}`);
+    const roleBindings = this.db.select({ count: count() }).from(role_bindings)
+      .where(sql`${role_bindings.data} ->> 'scope_type' = 'scenario'
+        and ${role_bindings.data} ->> 'scope_id' = ${scenarios.id}`);
+    const merged = alias(scenarios, 'merged');
+    const mergedInto = sql`${merged.data} ->> 'merged_into'`;
+    const merges = this.db.select({ count: count() }).from(merged)
+      .where(sql`${mergedInto} = ${scenarios.id}
+        or (${merged.id} = ${scenarios.id} and ${mergedInto} is not null)`);
+    const [references] = await this.db
+      .select({
+        publication_requests: sql`(${publicationRequests})`.mapWith(Number),
+        releases: sql`(${releaseReferences})`.mapWith(Number),
+        source_targets: sql`(${sourceTargets})`.mapWith(Number),
+        role_bindings: sql`(${roleBindings})`.mapWith(Number),
+        merges: sql`(${merges})`.mapWith(Number),
+      })
       .from(scenarios)
-      .where(
-        and(
-          eq(scenarios.id, id),
-          sql`(
-            exists (
-              select 1 from ${requests}
-              where ${requests.data} -> 'scenario_ids' ? ${scenarios.id}
-                or (${requests.data} ->> 'state' = 'pending'
-                  and ${requests.data} -> 'proposed_scenarios'
-                    @> jsonb_build_array(jsonb_build_object('name', ${scenarios.name})))
-            ) or exists (
-              select 1 from ${releases} where ${releases.data} -> 'scenario_ids' ? ${scenarios.id}
-            ) or exists (
-              select 1 from ${bindings} where ${bindings.data} -> 'scenario_ids' ? ${scenarios.id}
-            ) or exists (
-              select 1 from ${role_bindings}
-              where ${role_bindings.data} ->> 'scope_type' = 'scenario'
-                and ${role_bindings.data} ->> 'scope_id' = ${scenarios.id}
-            ) or exists (
-              select 1 from ${scenarios} as merged where merged.data ->> 'merged_into' = ${scenarios.id}
-            )
-          )`,
-        ),
-      );
-    return rows.length > 0;
+      .where(eq(scenarios.id, id));
+    return references;
   }
   async where<K extends TableName>(
     table: K,
