@@ -73,7 +73,7 @@ export const assetContentPanelStyles = cn(
 
 export const markdownStyles = cn(
   'min-w-0 text-base leading-[1.75] text-ink [overflow-wrap:anywhere]',
-  '[&_>_div_>_:not([data-markdown-wide])]:max-w-[76ch] [&_>_div_>_*+*]:mt-4',
+  '[&_>_div_>_*+*]:mt-4',
   '[&_p]:text-pretty [&_>_div_>_:is(h2,h3,h4,h5,h6):not(:first-child)]:mt-8',
   '[&_:is(h1,h2,h3,h4,h5,h6)]:font-semibold [&_:is(h1,h2,h3,h4,h5,h6)]:leading-tight',
   '[&_h1]:text-3xl max-[600px]:[&_h1]:text-2xl [&_h2]:text-2xl [&_h3]:text-xl',

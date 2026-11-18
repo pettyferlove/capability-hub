@@ -9,13 +9,7 @@ const languagePrefix = 'language-';
 
 const blocks: MarkdownProps['blocks'] = {
   table: ({ children }) => (
-    <div
-      data-markdown-wide=""
-      className={markdownTableStyles}
-      role="group"
-      aria-label="文档表格"
-      tabIndex={0}
-    >
+    <div className={markdownTableStyles} role="group" aria-label="文档表格" tabIndex={0}>
       <table>{children}</table>
     </div>
   ),
@@ -33,7 +27,7 @@ const blocks: MarkdownProps['blocks'] = {
     // 只去掉渲染器补的末尾换行，保留代码自身的空行和缩进。
     const text = source.value.endsWith('\n') ? source.value.slice(0, -1) : source.value;
     return (
-      <figure data-markdown-wide="" className={markdownCodeStyles}>
+      <figure className={markdownCodeStyles}>
         <figcaption>
           <span title={language}>{language}</span>
           {text && <CopyButton text={text} label="复制代码" />}

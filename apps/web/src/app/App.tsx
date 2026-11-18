@@ -193,7 +193,7 @@ export default function App() {
           loadingKey={view.asset}
         >
           <DialogTitle title="资源详情" onClose={closeAsset} />
-          <div className={cn(sheetScrollStyles, assetDetailScrollStyles)}>
+          <div data-asset-detail-scroll className={cn(sheetScrollStyles, assetDetailScrollStyles)}>
             <Suspense fallback={<DetailSkeleton />}>
               {view.asset && <AssetSheet key={view.asset} slug={view.asset} />}
             </Suspense>

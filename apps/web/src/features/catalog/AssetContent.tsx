@@ -60,6 +60,16 @@ import {
 } from './detail-navigation.js';
 import { useSnapshotFile } from './use-snapshot-file.js';
 
+const detailScrollSelector = '[data-asset-detail-scroll]';
+
+function scrollDetail(start: HTMLDivElement | null, position?: number) {
+  const scroller = start?.closest<HTMLElement>(detailScrollSelector);
+  if (!start || !scroller) return;
+  scroller.scrollTop =
+    position ??
+    scroller.scrollTop + start.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+}
+
 /** 详情内容区：标签切换与文件跳转共用一条历史栈，后退/前进在同一面板内完成。 */
 export function AssetContent({ asset }: { asset: AssetResponse }) {
   const { refresh, reload } = useHub();
@@ -93,7 +103,6 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
   const currentFile = view.tab === 'overview' ? overviewPath : view.path;
   const [lastFile, setLastFile] = useState(entry);
   const [mode, setMode] = useState<'read' | 'source'>('read');
-  const root = useRef<HTMLDivElement>(null);
   const contentStart = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const positions = useRef(new Map<string, number>());
@@ -108,18 +117,15 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
     { id: 'feedback', label: '问题与建议' },
   ];
   function remember(focus = false, scroll: 'restore' | 'start' = 'restore') {
-    const scroller = root.current?.closest<HTMLElement>('.sheet-scroll');
+    const scroller = contentStart.current?.closest<HTMLElement>(detailScrollSelector);
     if (scroller) positions.current.set(detailLocationKey(view), scroller.scrollTop);
     pendingScroll.current = scroll;
     pendingFocus.current = focus;
   }
   function open(location: DetailLocation, focus = false, scroll: 'restore' | 'start' = 'restore') {
     if (detailLocationKey(location) === detailLocationKey(view)) {
-      if (focus && contentStart.current) {
-        const scroller = root.current?.closest<HTMLElement>('.sheet-scroll');
-        if (scroller)
-          scroller.scrollTop +=
-            contentStart.current.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      if (focus) {
+        scrollDetail(contentStart.current);
         panel.current?.focus({ preventScroll: true });
       }
       return;
@@ -141,24 +147,18 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
     open({ tab: 'files', path, anchor }, true, 'start');
   }
   useLayoutEffect(() => {
-    if (!pendingScroll.current || !root.current) return;
     const scroll = pendingScroll.current;
+    if (!scroll) return;
     pendingScroll.current = null;
-    const scroller = root.current.closest<HTMLElement>('.sheet-scroll');
-    if (scroller && contentStart.current) {
-      const target =
-        scroller.scrollTop +
-        contentStart.current.getBoundingClientRect().top -
-        scroller.getBoundingClientRect().top;
-      scroller.scrollTop =
-        scroll === 'start' ? target : (positions.current.get(detailLocationKey(view)) ?? target);
-    }
+    const position =
+      scroll === 'restore' ? positions.current.get(detailLocationKey(view)) : undefined;
+    scrollDetail(contentStart.current, position);
     if (pendingFocus.current) panel.current?.focus({ preventScroll: true });
     pendingFocus.current = false;
   }, [view]);
   const fileDownload = `/api/versions/${versionId}/files?path=`;
   return (
-    <div className={assetContentStyles} ref={root}>
+    <div className={assetContentStyles}>
       <div className={detailActionsStyles}>
         <button
           type="button"
@@ -257,7 +257,7 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
       >
         <div hidden={view.tab !== 'overview'} aria-busy={overview.loading || overview.refreshing}>
           {readmeFallback && (
-            <Message className="mb-4 max-w-3xl">
+            <Message className="mb-4">
               {readme.unavailable ? `README.md：${readme.error}` : 'README.md 没有正文。'}{' '}
               <a href={fileDownload + 'README.md'}>下载 README.md</a>
             </Message>
