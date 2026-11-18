@@ -12,23 +12,64 @@ import { GitCredentialsPanel } from '../profile/GitCredentialsPanel.js';
 import { PersonalProfile } from '../profile/PersonalProfile.js';
 import { PersonalSecurity } from '../profile/SecurityPanel.js';
 import { AdministrationPanel } from './AdministrationPanel.js';
+import type { IdentityView } from './identity-directory.js';
 
 const sections = {
   profile: { name: '个人资料', icon: UserRound },
   credentials: { name: 'Git 凭据', icon: KeyRound },
   security: { name: '账号安全', icon: ShieldCheck },
-  identity: { name: '账号与团队', icon: UsersRound },
-  roles: { name: '角色与作用域', icon: ShieldCheck },
+  identity: { name: '团队与权限', icon: UsersRound },
 };
+
+const administrationTabs: { id: IdentityView; label: string; href: string }[] = [
+  { id: 'accounts', label: '账号', href: '/account?tab=identity' },
+  { id: 'teams', label: '维护团队', href: '/account?tab=identity&view=teams' },
+  { id: 'grants', label: '角色授权', href: '/account?tab=roles' },
+  { id: 'roles', label: '角色定义', href: '/account?tab=roles&view=definitions' },
+  { id: 'scenarios', label: '业务场景', href: '/account?tab=identity&view=scenarios' },
+];
 
 /** 身份管理页签仅向有权管理账号的用户开放。 */
 export default function AccountPage({ query = location.search }: { query?: string }) {
   const { me } = useHub();
-  const requested = new URLSearchParams(query).get('tab') ?? 'profile';
+  const params = new URLSearchParams(query);
+  const requested = params.get('tab') ?? 'profile';
   const tabs = accountPageTabs
-    .filter((id) => (id !== 'identity' && id !== 'roles') || me?.capabilities.can_admin)
+    .filter((id) => id !== 'roles')
+    .filter((id) => id !== 'identity' || me?.capabilities.can_admin)
     .map((id) => ({ id, ...sections[id] }));
   const tab = tabs.find(({ id }) => id === requested)?.id ?? 'profile';
+  if ((requested === 'identity' || requested === 'roles') && me?.capabilities.can_admin) {
+    const section = params.get('view');
+    const view: IdentityView =
+      requested === 'roles'
+        ? section === 'definitions'
+          ? 'roles'
+          : 'grants'
+        : section === 'teams'
+          ? 'teams'
+          : section === 'scenarios'
+            ? 'scenarios'
+            : 'accounts';
+    return (
+      <div className={accountPageStyles}>
+        <PageHead
+          eyebrow="ADMINISTRATION"
+          title="团队与权限"
+          description="管理账号与团队成员，核对角色授权及其生效范围。"
+        />
+        <PageTabs
+          label="团队与权限导航"
+          value={view}
+          items={administrationTabs}
+          hrefFor={(value) => administrationTabs.find(({ id }) => id === value)!.href}
+        />
+        <div className={pageContentStyles}>
+          <AdministrationPanel view={view} initialRole={params.get('role') ?? undefined} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={accountPageStyles}>
       <PageHead
@@ -55,10 +96,8 @@ export default function AccountPage({ query = location.search }: { query?: strin
           <PersonalProfile />
         ) : tab === 'credentials' ? (
           <GitCredentialsPanel />
-        ) : tab === 'security' ? (
-          <PersonalSecurity />
         ) : (
-          <AdministrationPanel tab={tab} />
+          <PersonalSecurity />
         )}
       </div>
     </div>

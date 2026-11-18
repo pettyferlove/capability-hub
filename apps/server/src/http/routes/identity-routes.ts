@@ -14,6 +14,10 @@ export function registerIdentityRoutes(app: Express, { hub }: HttpContext): void
     '/api/admin/identity',
     send(async (_req, res) => await administration.adminSnapshot(res.locals.principal)),
   );
+  app.get(
+    '/api/admin/role-scope-options',
+    send(async (_req, res) => administration.roleScopeOptions(res.locals.principal)),
+  );
   app.post(
     '/api/admin/users',
     send(async (req, res) => await administration.createUser(res.locals.principal, req.body)),

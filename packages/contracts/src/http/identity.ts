@@ -100,6 +100,19 @@ export interface IdentitySnapshotResponse {
   permissions: string[];
 }
 
+/** 授权选择器只读最小标识，不返回来源或资产的管理详情。 */
+export interface RoleScopeOptionsResponse {
+  sources: RoleScopeOptionResponse[];
+  assets: RoleScopeOptionResponse[];
+}
+
+/** 标签可随资源修改；授权始终引用记录 ID。 */
+export interface RoleScopeOptionResponse {
+  id: string;
+  label: string;
+  owner_group_id: string;
+}
+
 /** 个人资料页：在 {@link PublicUserResponse} 基础上补齐本人可见字段与统计。 */
 export type ProfileResponse = Pick<
   PublicUserResponse,

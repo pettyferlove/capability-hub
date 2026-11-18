@@ -25,6 +25,8 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 
 需要修订的修改携带 If-Match，幂等用例携带 Idempotency-Key。Cookie 写入还需 CSRF。
 
+「团队与权限」的账号详情区分直接与继承授权，团队详情区分授给团队的角色和仅以该团队为范围的授权。`GET /api/admin/role-scope-options` 仅向持有平台级 `identity:manage` 的账号返回来源和资产的 ID、名称及所属团队，不返回内容或凭据。
+
 `POST /api/publication-requests` 通过 `scenario_ids` 引用已登记场景，也可用 `proposed_scenarios` 提交 `name`、`description`；新定义需要平台审核。场景修订由 `GET /api/admin/scenarios` 返回；`PATCH /api/admin/scenarios/:id` 可编辑（`edit`）、合并（`merge` 与 `target_id`）或停用（`disable`）。合并使已有发布可按目标场景检索，不改写历史快照和授权。
 
 身份管理员在「团队与权限 → 业务场景」可删除未使用的词条。`GET /api/admin/scenarios/:id/references` 按发布申请（含同名待审定义）、发布记录、来源目标、场景授权和合并关系返回分项及总数。`DELETE /api/admin/scenarios/:id` 需 `If-Match` 和 `Idempotency-Key`，有引用时返回 409 `SCENARIO_IN_USE`。

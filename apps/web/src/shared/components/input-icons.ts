@@ -12,6 +12,7 @@ import variable from '@iconify-icons/lucide/variable';
 import key from '@iconify-icons/lucide/key-round';
 import lock from '@iconify-icons/lucide/lock-keyhole';
 import text from '@iconify-icons/lucide/file-text';
+import search from '@iconify-icons/lucide/search';
 
 // 单图标静态导入，随应用交付；字段语义由调用方明确指定。
 export const inputIcons = {
@@ -29,5 +30,6 @@ export const inputIcons = {
   key,
   lock,
   text,
+  search,
 } as const;
 export type InputIconName = keyof typeof inputIcons;

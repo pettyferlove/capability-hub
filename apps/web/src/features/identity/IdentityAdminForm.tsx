@@ -1,22 +1,19 @@
 import { InputField } from '../../shared/components/InputField.js';
-import { permissionScopeIcons } from '../../shared/components/select-icons.js';
 import {
   sheetScrollStyles,
   formStackStyles,
   checkLabelStyles,
-  btnStyles,
-  btnDangerStyles,
-  formActionsStyles,
 } from '../../shared/styles/recipes.js';
 import { permissionListStyles } from './styles.js';
 import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import type {
+  GroupResponse,
   IdentitySnapshotResponse,
   ManagedScenarioResponse,
-  ManagementAssetResponse,
+  PublicUserResponse,
+  RoleScopeOptionsResponse,
   ScenarioReferencesResponse,
-  SourceResponse,
 } from '@capability-hub/contracts/http';
 import { useState, type SubmitEvent } from 'react';
 import { ApiError, mutate } from '../../shared/api/client.js';
@@ -27,8 +24,22 @@ import { DialogTitle } from '../../shared/components/DialogTitle.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Message } from '../../shared/components/Message.js';
 import { PasswordField } from '../../shared/components/PasswordField.js';
-import { Submit } from '../../shared/components/Submit.js';
-import { accountLoginLabel } from '../../shared/format/labels.js';
+import {
+  BindingFields,
+  IdentityFormActions,
+  MembershipFields,
+  type IdentityOptions,
+} from './IdentityAssignments.js';
+import { IdentityPicker } from './IdentityPicker.js';
+import {
+  accountName,
+  compareNames,
+  permissionLabels,
+  scopeLabels,
+  type IdentityDirectoryModel,
+  type IdentityEditor,
+  type IdentityEntity,
+} from './identity-directory.js';
 
 const scenarioReferenceLabels = [
   ['publication_requests', '发布申请'],
@@ -38,34 +49,37 @@ const scenarioReferenceLabels = [
   ['merges', '合并关系'],
 ] as const;
 
-/**
- * 账号、团队、角色、绑定与场景共用的编辑表单：`kind` 同时决定提交路径、字段集合与标题，
- * 且每类形态只提交自己的字段。修改已有账号、角色或场景时回传所选记录的 revision。
- */
+/** 修订冲突时要求管理员核对新快照，不自动重试写入。 */
 export function IdentityAdminForm({
-  kind,
+  editor,
   data,
-  user,
-  scenarios,
-  scenario,
+  directory,
+  scenarioOptions,
+  resources,
+  currentUserId,
+  busy,
+  onBusyChange,
+  retry,
   onClose,
   onSaved,
 }: {
-  kind: IdentityEditorKind;
+  editor: IdentityEditor;
   data: IdentitySnapshotResponse;
-  user?: IdentityEditorRecord;
-  scenarios: ManagedScenarioResponse[];
-  scenario?: ManagedScenarioResponse;
+  directory: IdentityDirectoryModel;
+  scenarioOptions: IdentityOptions<ManagedScenarioResponse[]>;
+  resources: IdentityOptions<RoleScopeOptionsResponse>;
+  currentUserId?: string;
+  busy: boolean;
+  onBusyChange: (busy: boolean) => void;
+  retry: () => void;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (message: string, entity?: IdentityEntity) => void;
 }) {
+  const { kind } = editor;
+  const scenarios = scenarioOptions.data ?? [];
+  const scenario = 'scenario' in editor ? editor.scenario : undefined;
   const [error, setError] = useState(''),
-    [busy, setBusy] = useState(false),
-    [permissions, setPermissions] = useState<string[]>(
-      kind === 'edit-role' ? (user?.permissions ?? []) : [],
-    ),
-    [scope, setScope] = useState('platform'),
-    [roleId, setRoleId] = useState(data.roles[0]?.id ?? ''),
+    [permissions, setPermissions] = useState(kind === 'edit-role' ? editor.role.permissions : []),
     [scenarioAction, setScenarioAction] = useState('edit');
   const deletingScenario = kind === 'delete-scenario';
   const [referencesRefresh, setReferencesRefresh] = useState(0);
@@ -78,113 +92,149 @@ export function IdentityAdminForm({
     referencesRefresh,
   );
   const canDeleteScenario = references?.total === 0 && !referencesLoading && !referencesError;
-  const { data: sources } = useQuery<SourceResponse[]>(kind === 'binding' ? '/api/sources' : null);
-  const { data: assets } = useQuery<ManagementAssetResponse[]>(
-    kind === 'binding' ? '/api/management/assets/options' : null,
-  );
   function reloadReferences() {
     setReferencesRefresh((value) => value + 1);
   }
   async function submit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy || (deletingScenario && !canDeleteScenario)) return;
-    setBusy(true);
+    onBusyChange(true);
     setError('');
     try {
       const b = formFields(e.currentTarget);
-      if (['reset', 'edit-role'].includes(kind) && !user) throw new Error('请选择要编辑的记录');
-      if (['user', 'reset'].includes(kind)) {
+      if (kind === 'user' || kind === 'reset') {
         if (b.password !== b.confirm_password) throw new Error('两次输入的密码不一致');
         delete b.confirm_password;
       }
-      if (kind === 'user')
-        await mutate('/api/admin/users', {
-          ...b,
-          group_ids: b.group_id ? [b.group_id] : [],
-          group_id: undefined,
-        });
-      else if (kind === 'reset')
-        await mutate(
-          '/api/admin/users/' + user!.id,
-          { password: b.password },
-          'PATCH',
-          user!.revision,
-        );
-      else if (kind === 'edit-role')
-        await mutate(
-          '/api/admin/roles/' + user!.id,
-          { ...b, permissions },
-          'PATCH',
-          user!.revision,
-        );
-      else if (kind === 'edit-scenario' || deletingScenario) {
-        if (!scenario) throw new Error('请选择要管理的场景');
-        await mutate(
-          '/api/admin/scenarios/' + scenario.id,
-          deletingScenario ? undefined : { action: scenarioAction, ...b },
-          deletingScenario ? 'DELETE' : 'PATCH',
-          scenario.revision,
-        );
-      } else if (kind === 'role') await mutate('/api/admin/roles', { ...b, permissions });
-      else if (kind === 'binding')
-        await mutate('/api/admin/bindings', {
-          ...b,
-          scope_type: scope,
-          scope_id: scope === 'platform' ? '' : b.scope_id,
-        });
-      else
-        await mutate(
-          '/api/admin/' +
-            (
-              { group: 'groups', membership: 'memberships', scenario: 'scenarios' } as Record<
-                string,
-                string
-              >
-            )[kind],
-          b,
-        );
-      onSaved();
+      switch (editor.kind) {
+        case 'user': {
+          const { group_id, ...account } = b;
+          const created = await mutate<PublicUserResponse>('/api/admin/users', {
+            ...account,
+            group_ids: group_id ? [group_id] : [],
+          });
+          onSaved('本地账号已创建。', { kind: 'account', id: created.id });
+          break;
+        }
+        case 'group': {
+          const created = await mutate<GroupResponse>('/api/admin/groups', b);
+          onSaved('维护团队已创建。', { kind: 'team', id: created.id });
+          break;
+        }
+        case 'reset':
+          await mutate(
+            '/api/admin/users/' + editor.user.id,
+            { password: b.password },
+            'PATCH',
+            editor.user.revision,
+          );
+          onSaved('密码已重置，账号需重新登录网页。');
+          break;
+        case 'toggle-user':
+          await mutate(
+            '/api/admin/users/' + editor.user.id,
+            { active: !editor.user.active },
+            'PATCH',
+            editor.user.revision,
+          );
+          onSaved(editor.user.active ? '账号已停用，会话和访问令牌已撤销。' : '账号已启用。');
+          break;
+        case 'rename-team':
+          await mutate(
+            '/api/admin/groups/' + editor.team.id,
+            { name: b.name },
+            'PATCH',
+            editor.team.revision,
+          );
+          onSaved('团队名称已更新。');
+          break;
+        case 'toggle-team':
+          await mutate(
+            '/api/admin/groups/' + editor.team.id,
+            { active: !editor.team.active },
+            'PATCH',
+            editor.team.revision,
+          );
+          onSaved(editor.team.active ? '团队已停用。' : '团队已启用。');
+          break;
+        case 'role':
+          await mutate('/api/admin/roles', { ...b, permissions });
+          onSaved('自定义角色已创建。');
+          break;
+        case 'edit-role':
+          await mutate(
+            '/api/admin/roles/' + editor.role.id,
+            { ...b, permissions },
+            'PATCH',
+            editor.role.revision,
+          );
+          onSaved('角色权限已更新。');
+          break;
+        case 'membership':
+          await mutate('/api/admin/memberships', b);
+          onSaved('已将账号加入团队。');
+          break;
+        case 'remove-membership':
+          await mutate('/api/admin/memberships/' + editor.membership.id, undefined, 'DELETE');
+          onSaved('已移出团队。');
+          break;
+        case 'binding':
+          await mutate('/api/admin/bindings', {
+            ...b,
+            scope_id: b.scope_type === 'platform' ? '' : b.scope_id,
+          });
+          onSaved('角色已授予。');
+          break;
+        case 'revoke':
+          await mutate('/api/admin/bindings/' + editor.binding.id, undefined, 'DELETE');
+          onSaved('这条角色授权已回收。');
+          break;
+        case 'scenario':
+          await mutate('/api/admin/scenarios', b);
+          onSaved('业务场景已登记。');
+          break;
+        case 'edit-scenario':
+          await mutate(
+            '/api/admin/scenarios/' + editor.scenario.id,
+            { action: scenarioAction, ...b },
+            'PATCH',
+            editor.scenario.revision,
+          );
+          onSaved('业务场景已保存。');
+          break;
+        case 'delete-scenario':
+          await mutate(
+            '/api/admin/scenarios/' + editor.scenario.id,
+            undefined,
+            'DELETE',
+            editor.scenario.revision,
+          );
+          onSaved('业务场景已删除。');
+          break;
+      }
     } catch (e) {
       if (deletingScenario && e instanceof ApiError && e.code === 'SCENARIO_IN_USE') {
         setError('场景引用已变化，本次未删除。');
         reloadReferences();
+      } else if (e instanceof ApiError && e.status === 412) {
+        retry();
+        setError('记录已被修改。请关闭此窗口，核对最新内容后再操作。');
       } else setError(errorMessage(e));
     } finally {
-      setBusy(false);
+      onBusyChange(false);
     }
   }
-  const title = (
-    {
-      user: '创建本地账号',
-      group: '新建维护团队',
-      role: '创建自定义角色',
-      'edit-role': '编辑角色权限',
-      binding: '授予角色',
-      membership: '添加团队成员',
-      scenario: '登记业务场景',
-      'edit-scenario': '管理场景 · ' + scenario?.name,
-      'delete-scenario': '删除场景 · ' + scenario?.name,
-      reset: '重置 ' + user?.display_name + ' 的密码',
-    } as Record<string, string>
-  )[kind];
-  const groupSelect = (
-    <label>
-      团队
-      <SelectField name="group_id" required>
-        <option value="">请选择团队</option>
-        {data.groups
-          .filter((g) => !g.ldap_entry_uuid)
-          .map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name}
-            </option>
-          ))}
-      </SelectField>
-    </label>
-  );
+  const confirmation = confirmationFor(editor, directory);
+  const groups =
+    kind === 'user'
+      ? data.groups
+          .filter((group) => group.active && !group.ldap_entry_uuid)
+          .map((group) => ({ id: group.id, label: group.name }))
+          .sort((a, b) => compareNames(a.label, b.label))
+      : [];
   return (
     <>
-      <DialogTitle title={title} onClose={onClose} />
+      <DialogTitle title={identityEditorTitle(editor)} onClose={onClose} />
       <form className={cn(sheetScrollStyles, formStackStyles)} onSubmit={submit}>
         {kind === 'user' && (
           <>
@@ -217,12 +267,22 @@ export function IdentityAdminForm({
               name="confirm_password"
               placeholder="再次输入初始密码"
             />
-            {groupSelect}
-            <Message>创建后请单独授予维护或审核角色。加入团队本身不授予管理权限。</Message>
+            {groups.length > 0 && (
+              <IdentityPicker
+                label="初始团队（选填）"
+                name="group_id"
+                options={groups}
+                placeholder="搜索团队名称"
+              />
+            )}
+            <Message>创建后可在账号详情添加团队或授予角色。加入团队本身不授予个人角色。</Message>
           </>
         )}
         {kind === 'reset' && (
           <>
+            <p className="text-body font-medium [overflow-wrap:anywhere]">
+              {accountName(editor.user)}
+            </p>
             <PasswordField label="新密码" name="password" placeholder="至少 12 位" />
             <PasswordField
               label="确认新密码"
@@ -242,7 +302,11 @@ export function IdentityAdminForm({
             </SelectField>
           </label>
         )}
-        {(['group', 'role', 'edit-role', 'scenario'].includes(kind) ||
+        {(kind === 'group' ||
+          kind === 'rename-team' ||
+          kind === 'role' ||
+          kind === 'edit-role' ||
+          kind === 'scenario' ||
           (kind === 'edit-scenario' && scenarioAction === 'edit')) && (
           <label>
             名称
@@ -250,7 +314,11 @@ export function IdentityAdminForm({
               icon="tag"
               name="name"
               defaultValue={
-                kind === 'edit-role' ? user?.name : kind === 'edit-scenario' ? scenario?.name : ''
+                kind === 'edit-role'
+                  ? editor.role.name
+                  : kind === 'rename-team'
+                    ? editor.team.name
+                    : scenario?.name
               }
               required
               maxLength={80}
@@ -315,24 +383,6 @@ export function IdentityAdminForm({
               )}
             </Message>
           ) : null)}
-        {kind === 'membership' && (
-          <>
-            <label>
-              成员
-              <SelectField name="user_id" required>
-                {data.users
-                  .filter((u) => u.active)
-                  .map((u) => (
-                    <option value={u.id} key={u.id}>
-                      {u.display_name} · {accountLoginLabel(u)}
-                    </option>
-                  ))}
-              </SelectField>
-            </label>
-            {groupSelect}
-            <Message>企业部门成员在登录时自动同步，请在企业目录中调整部门归属。</Message>
-          </>
-        )}
         {['role', 'edit-role'].includes(kind) && (
           <fieldset>
             <legend>角色权限</legend>
@@ -348,142 +398,156 @@ export function IdentityAdminForm({
                       )
                     }
                   />
-                  <code>{p}</code>
+                  <span>
+                    {permissionLabels[p] ?? p} <code className="text-muted-ink">{p}</code>
+                  </span>
                 </label>
               ))}
             </div>
           </fieldset>
         )}
-        {kind === 'binding' && (
+        {confirmation && (
           <>
-            <label>
-              授权主体
-              <SelectField name="principal_id" required>
-                <optgroup label="成员">
-                  {data.users
-                    .filter((u) => u.active)
-                    .map((u) => (
-                      <option value={u.id} key={u.id}>
-                        {u.display_name} · {accountLoginLabel(u)}
-                      </option>
-                    ))}
-                </optgroup>
-                <optgroup label="团队">
-                  {data.groups.map((g) => (
-                    <option value={g.id} key={g.id}>
-                      {g.name}（团队）
-                    </option>
-                  ))}
-                </optgroup>
-              </SelectField>
-            </label>
-            <label>
-              角色
-              <SelectField name="role_id" required value={roleId} onValueChange={setRoleId}>
-                {data.roles.map((r) => (
-                  <option value={r.id} key={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </SelectField>
-            </label>
-            <label>
-              作用域
-              <SelectField
-                optionIcons={permissionScopeIcons}
-                value={scope}
-                onValueChange={(nextValue) => setScope(nextValue)}
-              >
-                <option value="platform">平台</option>
-                <option value="team">指定团队</option>
-                <option value="source">指定来源</option>
-                <option value="asset">指定资产</option>
-                <option value="scenario">指定场景</option>
-              </SelectField>
-            </label>
-            {scope !== 'platform' && (
-              <label>
-                作用对象
-                <SelectField name="scope_id" required>
-                  <option value="">请选择对象</option>
-                  {(scope === 'team'
-                    ? data.groups
-                    : scope === 'scenario'
-                      ? scenarios.filter((s) => s.active)
-                      : scope === 'source'
-                        ? (sources ?? [])
-                        : (assets ?? [])
-                  ).map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {'name' in r ? r.name : 'slug' in r ? r.slug : r.repository_identity}
-                    </option>
-                  ))}
-                </SelectField>
-              </label>
-            )}
-            {data.roles
-              .find((role) => role.id === roleId)
-              ?.permissions.includes('review:decide') && (
-              <Message>
-                {scope === 'platform'
-                  ? '此授权允许审核所有团队的申请，包括公开和面向所有登录用户的发布申请。'
-                  : scope === 'scenario'
-                    ? '此授权仅能审核只涉及该场景且只对所属团队可见的申请；审核其他申请需选择“平台”。'
-                    : '此授权仅能审核未分类且只对所属团队可见的申请；审核其他申请需选择“平台”。'}
-              </Message>
-            )}
+            <p className="rounded-xl border border-line bg-page px-4 py-3 text-body font-semibold [overflow-wrap:anywhere]">
+              {confirmation.subject}
+            </p>
+            <Message>
+              {confirmation.effect}
+              {kind === 'toggle-user' && editor.user.active && editor.user.id === currentUserId && (
+                <p className="mt-1.5 font-semibold">这是你正在使用的账号。</p>
+              )}
+            </Message>
           </>
         )}
-        {error && <Message error>{error}</Message>}
-        {deletingScenario ? (
-          <div className={formActionsStyles}>
-            <button type="button" className={btnStyles} disabled={busy} onClick={onClose}>
-              取消
-            </button>
-            <Submit busy={busy} disabled={!canDeleteScenario} className={btnDangerStyles}>
-              确认删除
-            </Submit>
-          </div>
+        {kind === 'membership' ? (
+          <MembershipFields
+            entity={editor.entity}
+            data={data}
+            directory={directory}
+            busy={busy}
+            onClose={onClose}
+            error={error}
+          />
+        ) : kind === 'binding' ? (
+          <BindingFields
+            entity={editor.entity}
+            teamScopeId={editor.teamScopeId}
+            data={data}
+            directory={directory}
+            scenarios={scenarioOptions}
+            resources={resources}
+            retry={retry}
+            busy={busy}
+            onClose={onClose}
+            error={error}
+          />
         ) : (
-          <Submit busy={busy}>
-            {kind === 'edit-scenario' && scenarioAction === 'merge'
-              ? '确认合并'
-              : kind === 'edit-scenario' && scenarioAction === 'disable'
-                ? '确认停用'
-                : '保存'}
-          </Submit>
+          <IdentityFormActions
+            busy={busy}
+            disabled={deletingScenario && !canDeleteScenario}
+            danger={deletingScenario || confirmation?.danger}
+            onClose={onClose}
+            error={error}
+          >
+            {confirmation?.action ??
+              (deletingScenario
+                ? '确认删除'
+                : kind === 'edit-scenario' && scenarioAction === 'merge'
+                  ? '确认合并'
+                  : kind === 'edit-scenario' && scenarioAction === 'disable'
+                    ? '确认停用'
+                    : kind === 'user' || kind === 'group' || kind === 'role'
+                      ? '创建'
+                      : kind === 'reset'
+                        ? '确认重置'
+                        : '保存')}
+          </IdentityFormActions>
         )}
       </form>
     </>
   );
 }
 
-/**
- * 各编辑形态共用的最小记录快照；`revision` 随写请求回传，服务端据此拒绝过期写入，
- * 因此从列表里拿到的记录不能跨刷新长期持有。不同形态用到的字段不同：
- * `permissions` 只对角色生效，`name` 只对团队与角色生效。
- */
-export interface IdentityEditorRecord {
-  id: string;
-  revision: number;
-  display_name?: string;
-  permissions?: string[];
-  name?: string;
+/** 抽屉标题与弹层的可访问名称使用同一文案。 */
+export function identityEditorTitle(editor: IdentityEditor) {
+  switch (editor.kind) {
+    case 'user':
+      return '创建本地账号';
+    case 'group':
+      return '新建维护团队';
+    case 'rename-team':
+      return '修改团队名称';
+    case 'role':
+      return '创建自定义角色';
+    case 'edit-role':
+      return '编辑角色 · ' + editor.role.name;
+    case 'binding':
+      return '授予角色';
+    case 'membership':
+      return editor.entity.kind === 'account' ? '加入团队' : '添加团队成员';
+    case 'remove-membership':
+      return '移出团队';
+    case 'revoke':
+      return '回收角色授权';
+    case 'scenario':
+      return '登记业务场景';
+    case 'edit-scenario':
+      return '管理场景 · ' + editor.scenario.name;
+    case 'delete-scenario':
+      return '删除场景 · ' + editor.scenario.name;
+    case 'reset':
+      return '重置密码 · ' + editor.user.display_name;
+    case 'toggle-user':
+      return editor.user.active ? '停用账号' : '启用账号';
+    case 'toggle-team':
+      return editor.team.active ? '停用团队' : '启用团队';
+  }
 }
 
-/**
- * 表单形态：`user`/`reset` 面向账号，`group`/`membership` 面向团队与成员关系，
- * `role`/`edit-role` 面向角色定义与授权，`binding` 面向「主体—角色—作用域」绑定，
- * `scenario` 登记业务场景；每种形态对应一条独立的写接口，不共享提交载荷。
- */
-export type IdentityEditorKind =
-  | 'user'
-  | 'reset'
-  | 'group'
-  | 'role'
-  | 'edit-role'
-  | 'binding'
-  | 'membership'
-  | 'scenario'
-  | 'edit-scenario'
-  | 'delete-scenario';
+function confirmationFor(editor: IdentityEditor, directory: IdentityDirectoryModel) {
+  switch (editor.kind) {
+    case 'toggle-user':
+      return {
+        subject: accountName(editor.user),
+        effect: editor.user.active
+          ? '此账号将无法登录，现有网页会话、客户端授权和访问令牌会被撤销。重新启用不会恢复已撤销的连接。'
+          : '此账号可以重新登录，保留的团队归属和角色授权会恢复生效。已撤销的会话和令牌不会恢复。',
+        action: editor.user.active ? '确认停用' : '确认启用',
+        danger: editor.user.active,
+      };
+    case 'toggle-team':
+      return {
+        subject: editor.team.name,
+        effect: editor.team.active
+          ? '成员暂不再继承此团队的角色，也不再以此团队成员身份访问资源。已登记的成员和授权不会被删除。'
+          : '有效成员将重新继承授给此团队的角色，并恢复以团队成员身份访问资源。',
+        action: editor.team.active ? '确认停用' : '确认启用',
+        danger: editor.team.active,
+      };
+    case 'remove-membership':
+      return {
+        subject: `${accountName(editor.user)} → ${editor.team.name}`,
+        effect: '此账号将失去通过这条成员关系取得的访问和角色，直接授予的角色不变。',
+        action: '确认移出',
+        danger: true,
+      };
+    case 'revoke': {
+      const binding = editor.binding;
+      const target = directory.scopeName(binding);
+      return {
+        subject: [
+          directory.subject(binding.principal_id),
+          directory.roles.get(binding.role_id)?.name ?? '未知角色',
+          scopeLabels[binding.scope_type] + (target ? `：${target}` : ''),
+        ].join(' / '),
+        effect: directory.teams.has(binding.principal_id)
+          ? '此团队的所有有效成员都将失去从这条团队授权取得的角色；其他授权不受影响。'
+          : '只回收这条直接授权。通过团队或其他记录取得的角色仍会保留。',
+        action: '确认回收',
+        danger: true,
+      };
+    }
+    default:
+      return undefined;
+  }
+}

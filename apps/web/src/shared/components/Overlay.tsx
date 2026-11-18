@@ -44,7 +44,16 @@ export function Overlay({
 }) {
   const dialog = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
-  const { overlayProps } = useOverlay({ isOpen: open, onClose, isDismissable: true }, dialog);
+  const { overlayProps } = useOverlay(
+    {
+      isOpen: open,
+      onClose,
+      isDismissable: true,
+      // 门户中的非模态选项面板不在抽屉 DOM 内，点击选项也不应关闭抽屉。
+      shouldCloseOnInteractOutside: (target) => !target.closest('[data-overlay-child="true"]'),
+    },
+    dialog,
+  );
   // 与子菜单和选择框共享 React Aria 的滚动锁及弹层栈。
   usePreventScroll({ isDisabled: !open });
 

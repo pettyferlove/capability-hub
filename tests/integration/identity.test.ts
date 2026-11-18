@@ -21,6 +21,55 @@ import { assertScenarioDeletionReferences } from '../support/scenario-deletion.j
 const code = (value: string) => (error: unknown) =>
   error instanceof HubError && error.code === value;
 
+test('授权选择器只向身份管理员返回资产与来源的最小标识', async (context) => {
+  const fixture = await createTestHub(context);
+  const { hub, admin, reader, store, teamId } = fixture;
+  const { asset_id } = await receiveSkill(fixture, { slug: 'scope-sample' });
+  const asset = await hub.assetAccess.getAsset(asset_id);
+  const git = await store.insert('sources', {
+    id: randomUUID(),
+    kind: 'git',
+    owner_group_id: teamId,
+    state: 'active',
+    revision: 1,
+    generation: 1,
+    created_at: new Date().toISOString(),
+    provider: 'generic-git',
+    canonical_url: 'https://git.example/scopes/toolkit.git',
+    repository_identity: 'git.example/scopes/toolkit',
+    branch: 'main',
+    credential_ref: null,
+    next_poll_at: 0,
+  });
+  const role = await hub.administration.createRole(admin, {
+    name: '身份管理员',
+    permissions: ['identity:manage'],
+  });
+  await hub.administration.grantRole(admin, {
+    principal_id: reader.id,
+    role_id: role.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  await hub.administration.grantRole(admin, {
+    principal_id: fixture.reviewer.id,
+    role_id: role.id,
+    scope_type: 'team',
+    scope_id: teamId,
+  });
+  const path = '/api/admin/role-scope-options';
+  await (await signIn(fixture, 'reviewer')).get(path).expect(403);
+  const { body } = await (await signIn(fixture, 'reader')).get(path).expect(200);
+  assert.deepEqual(body.assets, [{ id: asset_id, label: 'scope-sample', owner_group_id: teamId }]);
+  assert.deepEqual(
+    new Set(body.sources),
+    new Set([
+      { id: asset.source_id, label: '上传来源 · scope-sample', owner_group_id: teamId },
+      { id: git.id, label: 'git.example/scopes/toolkit · main', owner_group_id: teamId },
+    ]),
+  );
+});
+
 test('场景管理员合并词条后按目标检索，历史发布和场景审核权仍引用原 ID', async (context) => {
   const f = await createTestHub(context);
   const old = await f.store.insert('scenarios', {

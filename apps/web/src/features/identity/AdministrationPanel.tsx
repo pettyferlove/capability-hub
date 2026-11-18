@@ -1,581 +1,360 @@
-/**
- * 账号与角色管理面板（`identity` 与 `roles` 两个页签共用）：快照来自 `/api/admin/identity`，
- * 成员、团队、角色授权与业务场景的增删改走 `/api/admin/*`；停用账号、编辑角色等写操作回传
- * `revision`，服务端据此拒绝基于过期快照的写入。
- */
+import type {
+  IdentitySnapshotResponse,
+  ManagedScenarioResponse,
+  RoleScopeOptionsResponse,
+} from '@capability-hub/contracts/http';
+import { useMemo, useState } from 'react';
+import { useQuery } from '../../shared/api/use-query.js';
+import { DialogTitle } from '../../shared/components/DialogTitle.js';
+import { ErrorState } from '../../shared/components/ErrorState.js';
+import { Message } from '../../shared/components/Message.js';
+import { Overlay } from '../../shared/components/Overlay.js';
+import { ListSkeleton } from '../../shared/components/Skeleton.js';
+import { useHub } from '../../shared/context/HubContext.js';
+import { ArrowRight, Layers3, Plus, ShieldCheck } from '../../shared/icons/lucide.js';
+import { cn } from '../../shared/styles/cn.js';
 import {
+  btnStyles,
+  chipsStyles,
+  countPillStyles,
+  dangerTextStyles,
   formStackStyles,
   panelStyles,
-  accountLayoutStyles,
   sectionHeadingStyles,
-  countPillStyles,
-  btnStyles,
-  btnPrimaryStyles,
-  tableCellStatusStyles,
-  tableCellActionsStyles,
-  monoStyles,
-  chipsStyles,
-  tagStyles,
-  tagTealStyles,
-  textBtnStyles,
+  sheetScrollStyles,
   subtleStyles,
-  dangerTextStyles,
+  tagStyles,
+  textBtnStyles,
 } from '../../shared/styles/recipes.js';
+import { IdentityAdminForm, identityEditorTitle } from './IdentityAdminForm.js';
+import { IdentityDetail } from './IdentityDetail.js';
+import { IdentityDirectory } from './IdentityDirectory.js';
 import {
-  memberRemoveBtnStyles,
-  memberTableStyles,
-  memberTeamStyles,
-  memberTeamMetaStyles,
-  memberActionsStyles,
-  directoryRowStyles,
-  directoryMemberCountStyles,
+  identityDirectory,
+  permissionLabels,
+  type IdentityEditor,
+  type IdentityEntity,
+  type IdentityView,
+} from './identity-directory.js';
+import {
   directoryCardStyles,
+  directoryEmptyStyles,
+  directoryFooterStyles,
   directoryHeaderStyles,
   directoryIconStyles,
   directoryListStyles,
-  directoryEmptyStyles,
-  directoryFooterStyles,
-  roleGridStyles,
-  roleCardStyles,
   permissionTagStyles,
-  tableScopeStyles,
-  tableScopeNameStyles,
+  roleCardStyles,
+  roleGridStyles,
 } from './styles.js';
-import { cn } from '../../shared/styles/cn.js';
-import { errorMessage } from '../../shared/api/error-message.js';
-import type { IdentitySnapshotResponse, PublicUserResponse } from '@capability-hub/contracts/http';
-import type { ManagedScenarioResponse } from '@capability-hub/contracts/http';
-import { Plus, ShieldCheck, Trash2 } from '../../shared/icons/lucide.js';
-import { AppIcon } from '../../shared/icons/AppIcon.js';
-import usersRoundIcon from '@iconify-icons/lucide/users-round';
-import layersIcon from '@iconify-icons/lucide/layers';
-import userPlusIcon from '@iconify-icons/lucide/user-plus';
-import arrowRightIcon from '@iconify-icons/lucide/arrow-right';
-import { useState } from 'react';
-import { api, mutate } from '../../shared/api/client.js';
-import { useQuery } from '../../shared/api/use-query.js';
-import { DataTable } from '../../shared/components/DataTable.js';
-import { Overlay } from '../../shared/components/Overlay.js';
-import { ErrorState } from '../../shared/components/ErrorState.js';
-import { Message } from '../../shared/components/Message.js';
-import { CardGridSkeleton, ListSkeleton, TableSkeleton } from '../../shared/components/Skeleton.js';
-import { useHub } from '../../shared/context/HubContext.js';
-import type { IdentityEditorKind, IdentityEditorRecord } from './IdentityAdminForm.js';
-import { IdentityAdminForm } from './IdentityAdminForm.js';
-import { accountLoginLabel } from '../../shared/format/labels.js';
 
-/**
- * 按 `tab` 在「账号维护」与「角色授权」两套视图间切换；两套视图共用同一份快照，
- * 停用账号会连带撤销该账号的会话与令牌，因此写操作后立即 `reload()` 而不是本地修补列表。
- */
-export function AdministrationPanel({ tab }: { tab: string }) {
-  const { refresh, reload } = useHub();
-  const { data, error, loading } = useQuery<IdentitySnapshotResponse>(
-    '/api/admin/identity',
+/** 各管理栏目共用快照；变更成功后重取服务端状态，而不在本地推算权限。 */
+export function AdministrationPanel({
+  view,
+  initialRole,
+}: {
+  view: IdentityView;
+  initialRole?: string;
+}) {
+  const { me, refresh, reload } = useHub();
+  const snapshot = useQuery<IdentitySnapshotResponse>('/api/admin/identity', refresh);
+  const { data } = snapshot;
+  const [editor, setEditor] = useState<IdentityEditor>();
+  const [editorBusy, setEditorBusy] = useState(false);
+  const [trail, setTrail] = useState<IdentityEntity[]>([]);
+  const [message, setMessage] = useState('');
+  const entity = trail.at(-1);
+  const detailTitle = entity?.kind === 'team' ? '团队详情' : '账号详情';
+  const mayShowGrants = view === 'grants' || !!entity;
+  const assigning = editor?.kind === 'binding';
+  const scenarios = useQuery<ManagedScenarioResponse[]>(
+    view === 'scenarios' ||
+      assigning ||
+      (mayShowGrants && data?.bindings.some(({ scope_type }) => scope_type === 'scenario'))
+      ? '/api/admin/scenarios'
+      : null,
     refresh,
   );
-  const [dialog, setDialog] = useState<IdentityEditorKind | ''>(''),
-    [activeUser, setActiveUser] = useState<IdentityEditorRecord>(),
-    [activeScenario, setActiveScenario] = useState<ManagedScenarioResponse>(),
-    [message, setMessage] = useState(''),
-    [failure, setFailure] = useState(false);
-  const {
-    data: scenarios,
-    error: scenarioError,
-    loading: scenariosLoading,
-  } = useQuery<ManagedScenarioResponse[]>('/api/admin/scenarios', refresh);
-  async function remove(path: string) {
-    try {
-      await api(path, { method: 'DELETE' });
-      setFailure(false);
-      setMessage('授权已回收，后续请求按最新权限判断。');
-      reload();
-    } catch (e) {
-      setFailure(true);
-      setMessage(errorMessage(e));
-    }
+  const resources = useQuery<RoleScopeOptionsResponse>(
+    assigning ||
+      (mayShowGrants &&
+        data?.bindings.some(({ scope_type }) => scope_type === 'source' || scope_type === 'asset'))
+      ? '/api/admin/role-scope-options'
+      : null,
+    refresh,
+  );
+  const directory = useMemo(
+    () => data && identityDirectory(data, scenarios.data, resources.data),
+    [data, scenarios.data, resources.data],
+  );
+  const user = entity?.kind === 'account' ? directory?.users.get(entity.id) : undefined;
+  const team = entity?.kind === 'team' ? directory?.teams.get(entity.id) : undefined;
+
+  function open(entity: IdentityEntity) {
+    setMessage('');
+    setTrail((current) => {
+      const index = current.findIndex((item) => item.id === entity.id && item.kind === entity.kind);
+      return index >= 0 ? current.slice(0, index + 1) : [...current, entity];
+    });
   }
-  async function toggle(u: PublicUserResponse) {
-    try {
-      await mutate('/api/admin/users/' + u.id, { active: !u.active }, 'PATCH', u.revision);
-      setFailure(false);
-      setMessage(u.active ? '账号已停用，会话与令牌已撤销。' : '账号已启用。');
-      reload();
-    } catch (e) {
-      setFailure(true);
-      setMessage(errorMessage(e));
-    }
+  function edit(editor: IdentityEditor) {
+    setMessage('');
+    setEditor(editor);
   }
-  if (error) return <ErrorState message={error} retry={reload} />;
-  if (loading && !data)
+  function closeEditor() {
+    if (!editorBusy) setEditor(undefined);
+  }
+  function saved(message: string, created?: IdentityEntity) {
+    setEditor(undefined);
+    if (created) setTrail([created]);
+    setMessage(message);
+    reload();
+  }
+  const feedback = message ? <Message>{message}</Message> : null;
+  const scopeNotice = ((view !== 'scenarios' && scenarios.error) || resources.error) && (
+    <Message error className="mb-3">
+      部分作用对象名称未能加载。{' '}
+      <button type="button" className={textBtnStyles} onClick={reload}>
+        重新加载
+      </button>
+    </Message>
+  );
+  const editorVariant =
+    editor?.kind === 'delete-scenario'
+      ? 'palette'
+      : editor &&
+          ['toggle-user', 'toggle-team', 'remove-membership', 'revoke'].includes(editor.kind)
+        ? 'showcase'
+        : 'sheet';
+
+  if (snapshot.error) return <ErrorState message={snapshot.error} retry={reload} />;
+  if (!data || !directory) {
     return (
-      <div className={formStackStyles}>
-        {tab === 'identity' ? (
-          <>
-            <section className={panelStyles}>
-              <TableSkeleton label="正在加载账号…" rows={4} columns={4} />
-            </section>
-            <div className={accountLayoutStyles}>
-              <section className={panelStyles}>
-                <ListSkeleton label="正在加载维护团队…" rows={3} />
-              </section>
-              <section className={panelStyles}>
-                <ListSkeleton label="正在加载业务场景…" rows={3} />
-              </section>
-            </div>
-          </>
-        ) : (
-          <>
-            <section className={panelStyles}>
-              <CardGridSkeleton label="正在加载角色定义…" count={4} variant="role" />
-            </section>
-            <section className={panelStyles}>
-              <TableSkeleton label="正在加载角色授权…" rows={4} columns={4} />
-            </section>
-          </>
-        )}
-      </div>
+      <section className={panelStyles}>
+        <ListSkeleton label="正在加载身份管理数据…" rows={5} />
+      </section>
     );
-  if (!data) return null;
-  const directoryGroupIds = new Set(data.groups.filter((g) => g.ldap_entry_uuid).map((g) => g.id));
-  const person = (id: string) => {
-    const user = data.users.find((u) => u.id === id);
-    return user
-      ? `${user.display_name} · ${accountLoginLabel(user)}`
-      : (data.groups.find((g) => g.id === id)?.name ?? id);
-  };
+  }
+  const scenarioList = scenarios.data ?? [];
   return (
     <div className={formStackStyles}>
-      {message && <Message error={failure}>{message}</Message>}
-      {tab === 'identity' ? (
-        <>
-          <section className={panelStyles}>
-            <div className={sectionHeadingStyles}>
-              <h2>
-                账号 <span className={countPillStyles}>{data.users.length}</span>
-              </h2>
-              <button className={cn(btnStyles, btnPrimaryStyles)} onClick={() => setDialog('user')}>
-                <Plus size={15} />
-                创建本地账号
-              </button>
+      {!entity && feedback}
+      {view === 'scenarios' ? (
+        <section
+          className={cn(panelStyles, directoryCardStyles)}
+          aria-labelledby="scenarios-heading"
+        >
+          <div className={directoryHeaderStyles}>
+            <div className="flex min-w-0 items-center gap-3">
+              <span className={directoryIconStyles} aria-hidden="true">
+                <Layers3 size={19} />
+              </span>
+              <div className="min-w-0">
+                <h2 id="scenarios-heading" className="flex flex-wrap items-center gap-2">
+                  业务场景
+                  {scenarios.data && !scenarios.error && (
+                    <span className={countPillStyles}>{scenarioList.length}</span>
+                  )}
+                </h2>
+                <p className="mt-1 text-caption text-muted-ink">按业务划分资产的审核范围</p>
+              </div>
             </div>
-            <DataTable label="账号">
-              <table className={memberTableStyles}>
-                <colgroup>
-                  <col className="w-[26%]" />
-                  <col />
-                  <col className="w-20" />
-                  <col className="w-48" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>成员</th>
-                    <th>团队</th>
-                    <th className={tableCellStatusStyles}>状态</th>
-                    <th className={tableCellActionsStyles}>管理</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.users.map((u) => (
-                    <tr key={u.id}>
-                      <td>
-                        <strong className="block truncate" title={u.display_name}>
-                          {u.display_name}
-                        </strong>
-                        <small
-                          className={cn(monoStyles, 'block truncate')}
-                          title={accountLoginLabel(u)}
-                        >
-                          {accountLoginLabel(u)}
-                        </small>
-                      </td>
-                      <td>
-                        <div className={chipsStyles}>
-                          {data.memberships
-                            .filter((m) => m.user_id === u.id)
-                            .map((m) => {
-                              const teamName = person(m.group_id);
-                              return (
-                                <span className={cn(tagStyles, memberTeamStyles)} key={m.id}>
-                                  <span className="min-w-0 truncate text-ink" title={teamName}>
-                                    {teamName}
-                                  </span>
-                                  {directoryGroupIds.has(m.group_id) ? (
-                                    <span className={memberTeamMetaStyles}>自动同步</span>
-                                  ) : (
-                                    <button
-                                      className={memberRemoveBtnStyles}
-                                      aria-label={'移出团队 ' + teamName}
-                                      onClick={() => remove('/api/admin/memberships/' + m.id)}
-                                    >
-                                      移出
-                                    </button>
-                                  )}
-                                </span>
-                              );
-                            })}
-                        </div>
-                      </td>
-                      <td className={tableCellStatusStyles}>
-                        <span className={cn(tagStyles, u.active ? tagTealStyles : '')}>
-                          {u.active ? '有效' : '已停用'}
-                        </span>
-                      </td>
-                      <td className={tableCellActionsStyles}>
-                        <div className={memberActionsStyles}>
-                          <button className={textBtnStyles} onClick={() => toggle(u)}>
-                            {u.active ? '停用' : '启用'}
-                          </button>
-                          {u.auth_provider === 'ldap' ? (
-                            <span className={subtleStyles}>LDAP 管理密码</span>
-                          ) : (
-                            <button
-                              className={textBtnStyles}
-                              onClick={() => {
-                                setActiveUser(u);
-                                setDialog('reset');
-                              }}
-                            >
-                              重置密码
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </DataTable>
-          </section>
-          <div className={cn(accountLayoutStyles, 'items-stretch')}>
-            <section
-              className={cn(panelStyles, directoryCardStyles)}
-              aria-labelledby="teams-heading"
+            <button
+              type="button"
+              className={cn(btnStyles, 'shrink-0')}
+              onClick={() => edit({ kind: 'scenario' })}
             >
-              <div className={directoryHeaderStyles}>
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className={directoryIconStyles} aria-hidden="true">
-                    <AppIcon icon={usersRoundIcon} size={19} />
-                  </span>
-                  <div className="min-w-0">
-                    <h2 id="teams-heading" className="flex flex-wrap items-center gap-2">
-                      维护团队 <span className={countPillStyles}>{data.groups.length}</span>
-                    </h2>
-                    <p className="mt-1 text-caption text-muted-ink">组织成员，共同维护共享资产</p>
-                  </div>
-                </div>
-                <button className={cn(btnStyles, 'shrink-0')} onClick={() => setDialog('group')}>
-                  <Plus size={15} aria-hidden="true" />
-                  新建团队
-                </button>
-              </div>
-              {data.groups.length ? (
-                <ul className={directoryListStyles} aria-label="维护团队列表">
-                  {data.groups.map((g) => (
-                    <li key={g.id} className={directoryRowStyles}>
-                      <span
-                        className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-body font-semibold text-brand"
-                        aria-hidden="true"
-                      >
-                        {Array.from(g.name)[0]}
-                      </span>
-                      <div className="min-w-0">
-                        <strong
-                          className="block break-words text-body font-medium leading-5 [overflow-wrap:anywhere]"
-                          title={g.name}
-                        >
-                          {g.name}
-                        </strong>
-                        <small className="mt-0.5 block text-caption leading-4 text-muted-ink">
-                          {g.ldap_entry_uuid ? '企业部门 · 自动同步' : '手动管理'}
-                        </small>
-                      </div>
-                      <span className={directoryMemberCountStyles}>
-                        <AppIcon icon={usersRoundIcon} size={14} aria-hidden="true" />
-                        {data.memberships.filter((m) => m.group_id === g.id).length} 位成员
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className={directoryEmptyStyles}>
-                  <AppIcon
-                    icon={usersRoundIcon}
-                    size={24}
-                    className="text-muted-ink"
-                    aria-hidden="true"
-                  />
-                  <p className="font-medium text-ink">还没有维护团队</p>
-                  <p className="text-muted-ink">新建团队后，即可添加协作成员。</p>
-                </div>
-              )}
-              <div className={directoryFooterStyles}>
-                <button
-                  className={cn(textBtnStyles, 'w-full justify-between py-1')}
-                  onClick={() => setDialog('membership')}
-                >
-                  <span className="inline-flex items-center gap-2">
-                    <AppIcon icon={userPlusIcon} size={16} aria-hidden="true" />
-                    加入团队成员
-                  </span>
-                  <AppIcon icon={arrowRightIcon} size={15} aria-hidden="true" />
-                </button>
-              </div>
-            </section>
-            <section
-              className={cn(panelStyles, directoryCardStyles)}
-              aria-labelledby="scenarios-heading"
-            >
-              <div className={directoryHeaderStyles}>
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className={directoryIconStyles} aria-hidden="true">
-                    <AppIcon icon={layersIcon} size={19} />
-                  </span>
-                  <div className="min-w-0">
-                    <h2 id="scenarios-heading" className="flex flex-wrap items-center gap-2">
-                      业务场景
-                      {scenarios && !scenarioError && (
-                        <span className={countPillStyles}>{scenarios.length}</span>
-                      )}
-                    </h2>
-                    <p className="mt-1 text-caption text-muted-ink">按业务划分资产的审核范围</p>
-                  </div>
-                </div>
-                <button className={cn(btnStyles, 'shrink-0')} onClick={() => setDialog('scenario')}>
-                  <Plus size={15} aria-hidden="true" />
-                  登记场景
-                </button>
-              </div>
-              {scenarioError ? (
-                <ErrorState message={scenarioError} retry={reload} />
-              ) : scenariosLoading && !scenarios ? (
-                <ListSkeleton label="正在加载业务场景…" rows={3} />
-              ) : !scenarios?.length ? (
-                <div className={directoryEmptyStyles}>
-                  <AppIcon
-                    icon={layersIcon}
-                    size={24}
-                    className="text-muted-ink"
-                    aria-hidden="true"
-                  />
-                  <p className="font-medium text-ink">还没有业务场景</p>
-                  <p className="text-muted-ink">从一个业务开始，为资产设置清晰的审核范围。</p>
-                </div>
-              ) : (
-                <ul className={directoryListStyles} aria-label="业务场景列表">
-                  {scenarios.map((s) => (
-                    <li className="flex min-w-0 items-start gap-3 px-3.5 py-3" key={s.id}>
-                      <span
-                        className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand"
-                        aria-hidden="true"
-                      >
-                        <AppIcon icon={layersIcon} size={17} />
-                      </span>
-                      <div className="min-w-0 self-center [overflow-wrap:anywhere]">
-                        <strong className="block text-body font-medium">{s.name}</strong>
-                        <p className="mt-1 whitespace-pre-wrap text-caption leading-relaxed text-muted-ink">
-                          {s.description || '尚未填写场景说明'}
-                        </p>
-                        {!s.active && (
-                          <small>
-                            {s.merged_into
-                              ? '已合并至 ' +
-                                (scenarios.find((item) => item.id === s.merged_into)?.name ??
-                                  s.merged_into)
-                              : '已停用'}
-                          </small>
-                        )}
-                      </div>
-                      {(s.active || !s.merged_into) && (
-                        <div className="ml-auto flex shrink-0 gap-2 self-center">
-                          {s.active && (
-                            <button
-                              type="button"
-                              className={textBtnStyles}
-                              aria-label={'管理场景「' + s.name + '」'}
-                              onClick={() => {
-                                setActiveScenario(s);
-                                setDialog('edit-scenario');
-                              }}
-                            >
-                              管理
-                            </button>
-                          )}
-                          {!s.merged_into && (
-                            <button
-                              type="button"
-                              className={cn(textBtnStyles, dangerTextStyles)}
-                              aria-label={'删除场景「' + s.name + '」'}
-                              onClick={() => {
-                                setActiveScenario(s);
-                                setDialog('delete-scenario');
-                              }}
-                            >
-                              删除
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div
-                className={cn(
-                  directoryFooterStyles,
-                  'flex items-center gap-2 text-caption text-muted-ink',
-                )}
-              >
-                <ShieldCheck size={16} className="shrink-0" aria-hidden="true" />
-                <span>在角色授权中配置场景审核权限</span>
-              </div>
-            </section>
+              <Plus size={15} aria-hidden="true" />
+              登记场景
+            </button>
           </div>
-        </>
-      ) : (
-        <>
-          <section className={panelStyles}>
-            <div className={sectionHeadingStyles}>
-              <div>
-                <h2>角色定义</h2>
-                <p className={subtleStyles}>
-                  内置角色保留职责边界，也可创建包含明确权限的自定义角色。
-                </p>
-              </div>
-              <button className={btnStyles} onClick={() => setDialog('role')}>
-                <Plus size={15} />
-                自定义角色
-              </button>
+          {scenarios.error ? (
+            <ErrorState message={scenarios.error} retry={reload} />
+          ) : scenarios.loading && !scenarios.data ? (
+            <ListSkeleton label="正在加载业务场景…" rows={3} />
+          ) : !scenarioList.length ? (
+            <div className={directoryEmptyStyles}>
+              <Layers3 size={24} className="text-muted-ink" aria-hidden="true" />
+              <p className="font-medium text-ink">还没有业务场景</p>
+              <p className="text-muted-ink">从一个业务开始，为资产设置清晰的审核范围。</p>
             </div>
-            <div className={roleGridStyles}>
-              {data.roles.map((r) => (
-                <div className={roleCardStyles} key={r.id}>
-                  <ShieldCheck size={22} />
-                  <h3>
-                    {r.name}
-                    <span className={tagStyles}>{r.builtin ? '内置' : '自定义'}</span>
-                  </h3>
-                  <div className={chipsStyles}>
-                    {r.permissions.length ? (
-                      r.permissions.map((p: string) => (
-                        <code className={permissionTagStyles} key={p}>
-                          {p}
-                        </code>
-                      ))
-                    ) : (
-                      <small className={subtleStyles}>按获批受众读取内容</small>
+          ) : (
+            <ul className={directoryListStyles} aria-label="业务场景列表">
+              {scenarioList.map((s) => (
+                <li className="flex min-w-0 items-start gap-3 px-3.5 py-3" key={s.id}>
+                  <span
+                    className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand"
+                    aria-hidden="true"
+                  >
+                    <Layers3 size={17} />
+                  </span>
+                  <div className="min-w-0 self-center [overflow-wrap:anywhere]">
+                    <strong className="block text-body font-medium">{s.name}</strong>
+                    <p className="mt-1 whitespace-pre-wrap text-caption leading-relaxed text-muted-ink">
+                      {s.description || '尚未填写场景说明'}
+                    </p>
+                    {!s.active && (
+                      <small>
+                        {s.merged_into
+                          ? '已合并至 ' +
+                            (scenarioList.find((item) => item.id === s.merged_into)?.name ??
+                              s.merged_into)
+                          : '已停用'}
+                      </small>
                     )}
                   </div>
+                  {(s.active || !s.merged_into) && (
+                    <div className="ml-auto flex shrink-0 gap-2 self-center">
+                      {s.active && (
+                        <button
+                          type="button"
+                          className={textBtnStyles}
+                          aria-label={'管理场景「' + s.name + '」'}
+                          onClick={() => edit({ kind: 'edit-scenario', scenario: s })}
+                        >
+                          管理
+                        </button>
+                      )}
+                      {!s.merged_into && (
+                        <button
+                          type="button"
+                          className={cn(textBtnStyles, dangerTextStyles)}
+                          aria-label={'删除场景「' + s.name + '」'}
+                          onClick={() => edit({ kind: 'delete-scenario', scenario: s })}
+                        >
+                          删除
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div
+            className={cn(
+              directoryFooterStyles,
+              'flex items-center gap-2 text-caption text-muted-ink',
+            )}
+          >
+            <ShieldCheck size={16} className="shrink-0" aria-hidden="true" />
+            <a href="/account?tab=roles" className={textBtnStyles}>
+              前往角色授权配置场景审核权限 <ArrowRight size={15} aria-hidden="true" />
+            </a>
+          </div>
+        </section>
+      ) : view === 'roles' ? (
+        <section className={panelStyles}>
+          <div className={sectionHeadingStyles}>
+            <div>
+              <h2>角色定义</h2>
+              <p className={subtleStyles}>
+                角色定义权限；授予角色时另选作用范围。编辑自定义角色会影响已持有该角色的主体。
+              </p>
+            </div>
+            <button type="button" className={btnStyles} onClick={() => edit({ kind: 'role' })}>
+              <Plus size={15} />
+              创建自定义角色
+            </button>
+          </div>
+          <div className={roleGridStyles}>
+            {data.roles.map((r) => (
+              <div className={roleCardStyles} key={r.id}>
+                <ShieldCheck size={22} />
+                <h3>
+                  {r.name}
+                  <span className={tagStyles}>{r.builtin ? '内置' : '自定义'}</span>
+                </h3>
+                <div className={chipsStyles}>
+                  {r.permissions.length ? (
+                    r.permissions.map((p: string) => (
+                      <span className={permissionTagStyles} title={p} key={p}>
+                        {permissionLabels[p] ?? p}
+                      </span>
+                    ))
+                  ) : (
+                    <small className={subtleStyles}>按获批受众读取内容</small>
+                  )}
+                </div>
+                <div className="col-start-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <a href={'/account?tab=roles&role=' + r.id} className={textBtnStyles}>
+                    查看授权（{data.bindings.filter((binding) => binding.role_id === r.id).length}）
+                  </a>
                   {!r.builtin && (
                     <button
+                      type="button"
                       className={textBtnStyles}
-                      onClick={() => {
-                        setActiveUser(r);
-                        setDialog('edit-role');
-                      }}
+                      onClick={() => edit({ kind: 'edit-role', role: r })}
                     >
-                      编辑权限
+                      编辑角色
                     </button>
                   )}
                 </div>
-              ))}
-            </div>
-          </section>
-          <section className={panelStyles}>
-            <div className={sectionHeadingStyles}>
-              <h2>角色授权</h2>
-              <button
-                className={cn(btnStyles, btnPrimaryStyles)}
-                onClick={() => setDialog('binding')}
-              >
-                <Plus size={15} />
-                授予角色
-              </button>
-            </div>
-            <Message>
-              平台、团队、来源、资产和场景作用域分别判断。提交者不能自审，角色不授予目标 MCP
-              的业务权限。
-            </Message>
-            <DataTable label="角色授权">
-              <table>
-                <thead>
-                  <tr>
-                    <th>授权主体</th>
-                    <th>角色</th>
-                    <th>作用域</th>
-                    <th className={tableCellActionsStyles}>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.bindings.map((b) => (
-                    <tr key={b.id}>
-                      <td>{person(b.principal_id)}</td>
-                      <td>{data.roles.find((r) => r.id === b.role_id)?.name}</td>
-                      <td>
-                        <div className={tableScopeStyles}>
-                          <span className={tagStyles}>
-                            {
-                              (
-                                {
-                                  platform: '平台',
-                                  team: '团队',
-                                  source: '来源',
-                                  asset: '资产',
-                                  scenario: '场景',
-                                } as Record<string, string>
-                              )[b.scope_type]
-                            }
-                          </span>
-                          {b.scope_id && (
-                            <span className={tableScopeNameStyles}>
-                              {b.scope_type === 'team' ? person(b.scope_id) : b.scope_id}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className={tableCellActionsStyles}>
-                        <button
-                          className={cn(textBtnStyles, dangerTextStyles)}
-                          onClick={() => remove('/api/admin/bindings/' + b.id)}
-                        >
-                          <Trash2 size={14} />
-                          回收
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </DataTable>
-          </section>
-        </>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <IdentityDirectory
+          key={`${view}:${initialRole ?? ''}`}
+          view={view}
+          data={data}
+          directory={directory}
+          initialRole={initialRole}
+          onOpen={open}
+          onEdit={edit}
+          resourceNotice={scopeNotice}
+        />
       )}
+      <Overlay open={!!entity} onClose={() => setTrail([])} label={detailTitle} variant="sheet">
+        {entity &&
+          (user || team ? (
+            <IdentityDetail
+              key={entity.id}
+              {...(user ? { user } : { team: team! })}
+              directory={directory}
+              onOpen={open}
+              onEdit={edit}
+              onClose={() => setTrail([])}
+              onBack={
+                trail.length > 1 ? () => setTrail((current) => current.slice(0, -1)) : undefined
+              }
+              feedback={feedback}
+              resourceNotice={scopeNotice}
+            />
+          ) : (
+            <>
+              <DialogTitle title={detailTitle} onClose={() => setTrail([])} />
+              <div className={sheetScrollStyles}>
+                {snapshot.loading ? (
+                  <ListSkeleton label="正在加载详情…" rows={2} />
+                ) : (
+                  <Message error>未找到此记录。</Message>
+                )}
+              </div>
+            </>
+          ))}
+      </Overlay>
       <Overlay
-        open={!!dialog}
-        onClose={() => setDialog('')}
-        label={dialog === 'delete-scenario' ? '确认删除场景' : '身份权限管理'}
-        variant={dialog === 'delete-scenario' ? 'palette' : 'sheet'}
+        open={!!editor}
+        onClose={closeEditor}
+        label={editor ? identityEditorTitle(editor) : '身份权限管理'}
+        variant={editorVariant}
       >
-        {dialog && (
+        {editor && (
           <IdentityAdminForm
-            kind={dialog}
+            key={editor.kind}
+            editor={editor}
             data={data}
-            scenarios={scenarios ?? []}
-            scenario={activeScenario}
-            user={activeUser}
-            onClose={() => setDialog('')}
-            onSaved={() => {
-              setDialog('');
-              setMessage(
-                dialog === 'delete-scenario'
-                  ? '业务场景已删除。'
-                  : dialog === 'scenario' || dialog === 'edit-scenario'
-                    ? '业务场景已保存。'
-                    : '已保存，权限变更已生效。',
-              );
-              setFailure(false);
-              reload();
-            }}
+            directory={directory}
+            scenarioOptions={scenarios}
+            resources={resources}
+            retry={reload}
+            currentUserId={me?.id}
+            busy={editorBusy}
+            onBusyChange={setEditorBusy}
+            onClose={closeEditor}
+            onSaved={saved}
           />
         )}
       </Overlay>

@@ -64,6 +64,27 @@ export class IdentityAdministrationService {
       permissions: PERMISSIONS,
     };
   }
+  /** 身份管理员可按名称授权；不要求对作用对象另持维护权限，也不返回业务内容。 */
+  async roleScopeOptions(principal: Principal) {
+    this.identity.require(principal, 'identity:manage');
+    const assets = await this.store.all('assets');
+    const firstAssetBySource = new Map<string, string>();
+    for (const { source_id, slug } of assets) {
+      const existing = firstAssetBySource.get(source_id);
+      if (existing === undefined || slug < existing) firstAssetBySource.set(source_id, slug);
+    }
+    return {
+      assets: assets.map(({ id, slug, owner_group_id }) => ({ id, label: slug, owner_group_id })),
+      sources: (await this.store.all('sources')).map((source) => ({
+        id: source.id,
+        owner_group_id: source.owner_group_id,
+        label:
+          source.kind === 'git'
+            ? `${source.repository_identity} · ${source.branch}`
+            : `上传来源 · ${firstAssetBySource.get(source.id) ?? source.id.slice(0, 8)}`,
+      })),
+    };
+  }
   private async guardLastAdmin() {
     const adminRole = (await this.store.find('roles', 'key', 'admin'))!;
     const users = (await this.store.all('users')).filter((u) => u.active);

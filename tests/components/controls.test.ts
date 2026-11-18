@@ -8,11 +8,13 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import { userEvent } from '@testing-library/user-event';
 import { DataTable } from '../../apps/web/src/shared/components/DataTable.js';
 import { CopyButton } from '../../apps/web/src/shared/components/CopyButton.js';
+import { Overlay } from '../../apps/web/src/shared/components/Overlay.js';
 import { PageTabs } from '../../apps/web/src/shared/components/PageTabs.js';
 import { SelectField } from '../../apps/web/src/shared/components/SelectField.js';
 import { ServerPagination } from '../../apps/web/src/shared/components/ServerPagination.js';
 import { domWindow } from '../support/dom.js';
 import { credentialKindIcons } from '../../apps/web/src/shared/components/select-icons.js';
+import { IdentityPicker } from '../../apps/web/src/features/identity/IdentityPicker.js';
 
 afterEach(cleanup);
 
@@ -56,6 +58,44 @@ test('带图标的下拉保持文字名称、键盘搜索和原生表单值', as
   const form = screen.getByRole('form', { name: '凭据表单' });
   assert(form instanceof HTMLFormElement);
   assert.equal(new domWindow.FormData(form).get('kind'), 'ssh');
+});
+
+test('在抽屉中选择同名账号不会关闭表单或提交另一个账号', async () => {
+  const user = userEvent.setup();
+  function Editor() {
+    const [open, setOpen] = useState(true);
+    return createElement(Overlay, {
+      open,
+      onClose: () => setOpen(false),
+      label: '添加成员',
+      variant: 'sheet',
+      children: createElement(
+        'form',
+        { 'aria-label': '成员表单' },
+        createElement(IdentityPicker, {
+          name: 'user_id',
+          label: '选择账号',
+          placeholder: '搜索登录账号',
+          options: [
+            { id: 'local-account', label: '协作者 · member · 本地账号' },
+            { id: 'directory-account', label: '协作者 · member · LDAP 账号' },
+          ],
+        }),
+      ),
+    });
+  }
+  render(createElement(Editor));
+  const picker = screen.getByRole('combobox', { name: '选择账号' });
+  await user.type(picker, 'member');
+  await user.click(await screen.findByRole('option', { name: '协作者 · member · LDAP 账号' }));
+  await waitFor(() => assert.equal(picker.getAttribute('aria-expanded'), 'false'));
+  const form = within(screen.getByRole('dialog', { name: '添加成员' })).getByRole<HTMLFormElement>(
+    'form',
+    { name: '成员表单' },
+  );
+  assert.equal(new domWindow.FormData(form).get('user_id'), 'directory-account');
+  await user.type(picker, 'x');
+  assert.equal(new domWindow.FormData(form).get('user_id'), '');
 });
 
 test('下拉关闭或回填选项时只在获得键盘焦点的按钮上显示轮廓', async (context) => {

@@ -2,25 +2,34 @@ import { cn } from '../../shared/styles/cn.js';
 
 export const accountPageStyles = "group/account-page [&>nav[class~='group/page-tabs']]:mb-6";
 
-export const memberTableStyles = cn(
-  "[[class~='group/data-table']_&]:[table-layout:fixed]",
-  "[[class~='group/data-table']_&]:min-w-160",
+export const directoryColumnsStyles =
+  'grid-cols-[minmax(0,1fr)_auto_auto] md:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_5rem_4rem]';
+
+export const directoryIdentityStyles = 'flex min-w-0 items-center gap-3';
+
+export const directoryRowIconStyles =
+  'grid size-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand';
+
+export const directoryOpenRowStyles = cn(
+  'grid w-full min-w-0 items-center gap-x-3 gap-y-1 px-4 py-3 text-left text-body',
+  'hover:bg-page focus-visible:-outline-offset-2 md:gap-4',
+  'max-md:[&>span:nth-child(2)]:col-span-full max-md:[&>span:nth-child(2)]:row-start-2 max-md:[&>span:nth-child(2)]:pl-12',
+  'max-md:[&>span:nth-child(3)]:col-start-2 max-md:[&>span:nth-child(3)]:row-start-1',
 );
 
-export const memberTeamStyles = 'min-w-0 max-w-full gap-2';
+export const grantColumnsStyles =
+  'grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1.3fr)_minmax(5rem,0.7fr)_minmax(0,1.2fr)_3.5rem]';
 
-export const memberTeamMetaStyles =
-  'shrink-0 whitespace-nowrap border-l border-line pl-2 text-caption leading-4 text-muted-ink';
-
-export const memberRemoveBtnStyles = cn(
-  memberTeamMetaStyles,
-  'inline-flex items-center border-y-0 border-r-0 bg-transparent py-0 pr-0 hover:text-danger',
+export const grantRowStyles = cn(
+  'grid min-w-0 items-center gap-x-3 gap-y-1 px-4 py-3 text-body md:gap-4',
+  'max-md:[&>*:nth-child(2)]:col-start-1 max-md:[&>*:nth-child(3)]:col-start-1',
+  'max-md:[&>*:last-child]:col-start-2 max-md:[&>*:last-child]:row-start-1',
 );
 
-export const memberActionsStyles =
-  'grid grid-cols-[2.5rem_6.5rem] items-center justify-center gap-2 [&_>_*]:justify-self-start';
+export const detailRowStyles =
+  'flex min-w-0 items-center justify-between gap-3 px-3.5 py-2.5 text-body';
 
-export const directoryCardStyles = 'flex min-h-64 flex-col gap-5';
+export const directoryCardStyles = 'flex flex-col gap-4';
 
 export const directoryHeaderStyles = 'flex flex-wrap items-center justify-between gap-3';
 
@@ -29,12 +38,6 @@ export const directoryIconStyles =
 
 export const directoryListStyles =
   'm-0 list-none overflow-hidden rounded-xl border border-line bg-page p-0 [&_>_li+li]:border-t [&_>_li+li]:border-line';
-
-export const directoryRowStyles =
-  'grid min-h-18 min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-3';
-
-export const directoryMemberCountStyles =
-  'inline-flex min-w-18 items-center justify-end gap-1.5 whitespace-nowrap text-caption tabular-nums text-muted-ink';
 
 export const directoryEmptyStyles =
   'flex min-h-32 flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line bg-page px-4 py-5 text-center text-body leading-relaxed';
