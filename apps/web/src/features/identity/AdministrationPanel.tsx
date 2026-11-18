@@ -386,18 +386,35 @@ export function AdministrationPanel({ tab }: { tab: string }) {
                           </small>
                         )}
                       </div>
-                      {s.active && (
-                        <button
-                          type="button"
-                          className={cn(textBtnStyles, 'ml-auto shrink-0')}
-                          aria-label={'管理场景「' + s.name + '」'}
-                          onClick={() => {
-                            setActiveScenario(s);
-                            setDialog('edit-scenario');
-                          }}
-                        >
-                          管理
-                        </button>
+                      {(s.active || !s.merged_into) && (
+                        <div className="ml-auto flex shrink-0 gap-2">
+                          {s.active && (
+                            <button
+                              type="button"
+                              className={textBtnStyles}
+                              aria-label={'管理场景「' + s.name + '」'}
+                              onClick={() => {
+                                setActiveScenario(s);
+                                setDialog('edit-scenario');
+                              }}
+                            >
+                              管理
+                            </button>
+                          )}
+                          {!s.merged_into && (
+                            <button
+                              type="button"
+                              className={cn(textBtnStyles, dangerTextStyles)}
+                              aria-label={'删除场景「' + s.name + '」'}
+                              onClick={() => {
+                                setActiveScenario(s);
+                                setDialog('delete-scenario');
+                              }}
+                            >
+                              删除
+                            </button>
+                          )}
+                        </div>
                       )}
                     </li>
                   ))}
@@ -533,7 +550,12 @@ export function AdministrationPanel({ tab }: { tab: string }) {
           </section>
         </>
       )}
-      <Overlay open={!!dialog} onClose={() => setDialog('')} label="身份权限管理" variant="sheet">
+      <Overlay
+        open={!!dialog}
+        onClose={() => setDialog('')}
+        label={dialog === 'delete-scenario' ? '确认删除场景' : '身份权限管理'}
+        variant={dialog === 'delete-scenario' ? 'palette' : 'sheet'}
+      >
         {dialog && (
           <IdentityAdminForm
             kind={dialog}
@@ -545,9 +567,11 @@ export function AdministrationPanel({ tab }: { tab: string }) {
             onSaved={() => {
               setDialog('');
               setMessage(
-                dialog === 'scenario' || dialog === 'edit-scenario'
-                  ? '业务场景已保存。'
-                  : '已保存，权限变更已生效。',
+                dialog === 'delete-scenario'
+                  ? '业务场景已删除。'
+                  : dialog === 'scenario' || dialog === 'edit-scenario'
+                    ? '业务场景已保存。'
+                    : '已保存，权限变更已生效。',
               );
               setFailure(false);
               reload();

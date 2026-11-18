@@ -104,4 +104,15 @@ export function registerIdentityRoutes(app: Express, { hub }: HttpContext): void
       ),
     ),
   );
+  app.delete(
+    '/api/admin/scenarios/:id',
+    send((req, res) =>
+      administration.deleteScenario(
+        res.locals.principal,
+        String(req.params.id),
+        req.get('If-Match'),
+        idempotencyKey(req),
+      ),
+    ),
+  );
 }

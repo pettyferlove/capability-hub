@@ -47,6 +47,9 @@ class DrizzleStore implements RecordStore {
   listDueSources(now: number) {
     return this.execute((queries) => queries.listDueSources(now));
   }
+  hasScenarioReferences(id: string): Promise<boolean> {
+    return this.execute((queries) => queries.hasScenarioReferences(id));
+  }
   where<K extends TableName>(
     table: K,
     key: keyof RecordMap[K] & string,

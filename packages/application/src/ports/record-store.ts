@@ -46,6 +46,7 @@ export interface RecordStore {
   listReadyJobs(query: ReadyJobsQuery): Promise<RecordMap['jobs'][]>;
   listCancellationRequestedJobs(): Promise<RecordMap['jobs'][]>;
   listDueSources(now: number): Promise<GitSourceRecord[]>;
+  hasScenarioReferences(id: string): Promise<boolean>;
   /** 无索引保证，返回顺序由驱动决定，需要稳定顺序时调用方自行排序。 */
   where<K extends TableName>(
     table: K,

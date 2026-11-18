@@ -10,7 +10,16 @@ import type { RecordQueries } from '../record-driver.js';
 import { resourceActivityQuery } from '../resource-activity-query.js';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pgRevision, type pgSchema, pgTableFor } from './record-schema.js';
-import { audit, jobs, sources } from './schema.js';
+import {
+  audit,
+  bindings,
+  jobs,
+  releases,
+  requests,
+  role_bindings,
+  scenarios,
+  sources,
+} from './schema.js';
 
 /** 查询对象所需的 drizzle 会话子集：既接受连接池上的 db，也接受事务内的 tx。 */
 export type PostgresSession = Pick<
@@ -94,6 +103,36 @@ export class PgQueries implements RecordQueries {
     return rows
       .map((row) => parseRecord('sources', row.data))
       .filter((source): source is GitSourceRecord => source.kind === 'git');
+  }
+  async hasScenarioReferences(id: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: scenarios.id })
+      .from(scenarios)
+      .where(
+        and(
+          eq(scenarios.id, id),
+          sql`(
+            exists (
+              select 1 from ${requests}
+              where ${requests.data} -> 'scenario_ids' ? ${scenarios.id}
+                or (${requests.data} ->> 'state' = 'pending'
+                  and ${requests.data} -> 'proposed_scenarios'
+                    @> jsonb_build_array(jsonb_build_object('name', ${scenarios.name})))
+            ) or exists (
+              select 1 from ${releases} where ${releases.data} -> 'scenario_ids' ? ${scenarios.id}
+            ) or exists (
+              select 1 from ${bindings} where ${bindings.data} -> 'scenario_ids' ? ${scenarios.id}
+            ) or exists (
+              select 1 from ${role_bindings}
+              where ${role_bindings.data} ->> 'scope_type' = 'scenario'
+                and ${role_bindings.data} ->> 'scope_id' = ${scenarios.id}
+            ) or exists (
+              select 1 from ${scenarios} as merged where merged.data ->> 'merged_into' = ${scenarios.id}
+            )
+          )`,
+        ),
+      );
+    return rows.length > 0;
   }
   async where<K extends TableName>(
     table: K,

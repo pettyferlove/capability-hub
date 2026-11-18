@@ -4,6 +4,9 @@ import {
   sheetScrollStyles,
   formStackStyles,
   checkLabelStyles,
+  btnStyles,
+  btnDangerStyles,
+  formActionsStyles,
 } from '../../shared/styles/recipes.js';
 import { permissionListStyles } from './styles.js';
 import { cn } from '../../shared/styles/cn.js';
@@ -54,8 +57,11 @@ export function IdentityAdminForm({
     [scope, setScope] = useState('platform'),
     [roleId, setRoleId] = useState(data.roles[0]?.id ?? ''),
     [scenarioAction, setScenarioAction] = useState('edit');
-  const { data: sources } = useQuery<SourceResponse[]>('/api/sources');
-  const { data: assets } = useQuery<ManagementAssetResponse[]>('/api/management/assets/options');
+  const deletingScenario = kind === 'delete-scenario';
+  const { data: sources } = useQuery<SourceResponse[]>(kind === 'binding' ? '/api/sources' : null);
+  const { data: assets } = useQuery<ManagementAssetResponse[]>(
+    kind === 'binding' ? '/api/management/assets/options' : null,
+  );
   async function submit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -87,12 +93,12 @@ export function IdentityAdminForm({
           'PATCH',
           user!.revision,
         );
-      else if (kind === 'edit-scenario') {
+      else if (kind === 'edit-scenario' || deletingScenario) {
         if (!scenario) throw new Error('请选择要管理的场景');
         await mutate(
           '/api/admin/scenarios/' + scenario.id,
-          { action: scenarioAction, ...b },
-          'PATCH',
+          deletingScenario ? undefined : { action: scenarioAction, ...b },
+          deletingScenario ? 'DELETE' : 'PATCH',
           scenario.revision,
         );
       } else if (kind === 'role') await mutate('/api/admin/roles', { ...b, permissions });
@@ -130,6 +136,7 @@ export function IdentityAdminForm({
       membership: '添加团队成员',
       scenario: '登记业务场景',
       'edit-scenario': '管理场景 · ' + scenario?.name,
+      'delete-scenario': '删除场景 · ' + scenario?.name,
       reset: '重置 ' + user?.display_name + ' 的密码',
     } as Record<string, string>
   )[kind];
@@ -256,6 +263,9 @@ export function IdentityAdminForm({
         {kind === 'edit-scenario' && scenarioAction === 'disable' && (
           <Message>停用后，后续申请需要选择其他有效场景。已发布资产仍按原受众分发。</Message>
         )}
+        {deletingScenario && (
+          <Message>仅可删除未被引用且未参与合并的场景。删除后不可恢复。</Message>
+        )}
         {kind === 'membership' && (
           <>
             <label>
@@ -376,13 +386,24 @@ export function IdentityAdminForm({
           </>
         )}
         {error && <Message error>{error}</Message>}
-        <Submit busy={busy}>
-          {kind === 'edit-scenario' && scenarioAction === 'merge'
-            ? '确认合并'
-            : kind === 'edit-scenario' && scenarioAction === 'disable'
-              ? '确认停用'
-              : '保存'}
-        </Submit>
+        {deletingScenario ? (
+          <div className={formActionsStyles}>
+            <button type="button" className={btnStyles} disabled={busy} onClick={onClose}>
+              取消
+            </button>
+            <Submit busy={busy} className={btnDangerStyles}>
+              确认删除
+            </Submit>
+          </div>
+        ) : (
+          <Submit busy={busy}>
+            {kind === 'edit-scenario' && scenarioAction === 'merge'
+              ? '确认合并'
+              : kind === 'edit-scenario' && scenarioAction === 'disable'
+                ? '确认停用'
+                : '保存'}
+          </Submit>
+        )}
       </form>
     </>
   );
@@ -415,4 +436,5 @@ export type IdentityEditorKind =
   | 'binding'
   | 'membership'
   | 'scenario'
-  | 'edit-scenario';
+  | 'edit-scenario'
+  | 'delete-scenario';

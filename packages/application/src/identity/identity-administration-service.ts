@@ -238,6 +238,30 @@ export class IdentityAdministrationService {
       },
     );
   }
+  async deleteScenario(
+    principal: Principal,
+    id: string,
+    etag: string | undefined,
+    key: string | undefined,
+  ) {
+    this.identity.require(principal, 'identity:manage');
+    return this.idempotency.execute(
+      principal,
+      'scenario/' + id,
+      key,
+      digest(canonical({ action: 'delete', etag: etag ?? null })),
+      async () => {
+        const scenario = await this.store.get('scenarios', id);
+        if (!scenario) fail(404, 'NOT_FOUND', '场景不存在');
+        matchRevision({ revision: scenario.revision ?? 1 }, etag);
+        if (scenario.merged_into || (await this.store.hasScenarioReferences(id)))
+          fail(409, 'SCENARIO_IN_USE', '该场景仍被引用或参与过合并，不能删除');
+        await this.store.audit(principal.id, 'scenario.deleted', id);
+        await this.store.remove('scenarios', id);
+        return { ok: true };
+      },
+    );
+  }
   /**
    * 新建自定义角色：权限只能取自 {@link PERMISSIONS}，数量不超过权限总数，落库时 `builtin: false`。
    * 角色本身不带作用域，作用范围由 {@link grantRole} 的绑定决定。

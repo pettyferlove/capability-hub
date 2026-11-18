@@ -19,6 +19,7 @@ import { createSqliteStore, deferred } from '../support/store.js';
 import { assertFrozenEvidence } from '../support/evidence.js';
 import { assertProjectTokenUsage } from '../support/token-usage.js';
 import { assertResourceActivity } from '../support/resource-activity.js';
+import { assertScenarioDeletionReferences } from '../support/scenario-deletion.js';
 
 test('PostgreSQL 维护列表按业务事件更新顺序，读取操作不覆盖最近变动', async (context) => {
   const database = await externalDatabase();
@@ -85,6 +86,24 @@ test('PostgreSQL 的项目 Token 总量、时间边界和分布与 SQLite 一致
     });
     try {
       await assertProjectTokenUsage(f);
+    } finally {
+      await f.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
+
+test('PostgreSQL 禁止删除仍被引用或参与合并的场景', async (context) => {
+  const database = await externalDatabase();
+  try {
+    const f = await createTestHub(context, {
+      database: { driver: 'postgresql', url: database.url, poolSize: 2 },
+      gitHosts: ['127.0.0.1'],
+      privateGitHosts: ['127.0.0.1'],
+    });
+    try {
+      await assertScenarioDeletionReferences(f);
     } finally {
       await f.close();
     }

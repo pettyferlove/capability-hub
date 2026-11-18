@@ -169,6 +169,7 @@ export const auditDefinitions: Record<string, AuditDefinition> = {
   'scenario.edited': { label: '编辑适用场景', category: 'publication', subject: 'scenario' },
   'scenario.merged': { label: '合并适用场景', category: 'publication', subject: 'scenario' },
   'scenario.disabled': { label: '停用适用场景', category: 'publication', subject: 'scenario' },
+  'scenario.deleted': { label: '删除适用场景', category: 'publication', subject: 'scenario' },
   'backup.completed': { label: '完成数据备份', category: 'operations', subject: 'instance' },
 };
 

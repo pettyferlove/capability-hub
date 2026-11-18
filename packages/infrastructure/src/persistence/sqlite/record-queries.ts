@@ -10,7 +10,16 @@ import type { RecordQueries } from '../record-driver.js';
 import { resourceActivityQuery } from '../resource-activity-query.js';
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy';
 import { sqliteRevision, type sqliteSchema, sqliteTableFor } from './record-schema.js';
-import { audit, jobs, sources } from './schema.js';
+import {
+  audit,
+  bindings,
+  jobs,
+  releases,
+  requests,
+  role_bindings,
+  scenarios,
+  sources,
+} from './schema.js';
 
 type Session = Pick<
   SqliteRemoteDatabase<typeof sqliteSchema>,
@@ -103,6 +112,44 @@ export class SqliteQueries implements RecordQueries {
       if (source.kind !== 'git') throw new Error('Expected Git source');
       return source;
     });
+  }
+  async hasScenarioReferences(id: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: scenarios.id })
+      .from(scenarios)
+      .where(
+        and(
+          eq(scenarios.id, id),
+          sql`(
+            exists (
+              select 1 from ${requests}
+              where exists (
+                select 1 from json_each(${requests.data}, '$.scenario_ids') as selected
+                where selected.value = ${scenarios.id}
+              ) or (
+                json_extract(${requests.data}, '$.state') = 'pending' and exists (
+                  select 1 from json_each(${requests.data}, '$.proposed_scenarios') as proposed
+                  where json_extract(proposed.value, '$.name') = ${scenarios.name}
+                )
+              )
+            ) or exists (
+              select 1 from ${releases}, json_each(${releases.data}, '$.scenario_ids') as selected
+              where selected.value = ${scenarios.id}
+            ) or exists (
+              select 1 from ${bindings}, json_each(${bindings.data}, '$.scenario_ids') as selected
+              where selected.value = ${scenarios.id}
+            ) or exists (
+              select 1 from ${role_bindings}
+              where json_extract(${role_bindings.data}, '$.scope_type') = 'scenario'
+                and json_extract(${role_bindings.data}, '$.scope_id') = ${scenarios.id}
+            ) or exists (
+              select 1 from ${scenarios} as merged
+              where json_extract(merged.data, '$.merged_into') = ${scenarios.id}
+            )
+          )`,
+        ),
+      );
+    return rows.length > 0;
   }
   async where<K extends TableName>(
     table: K,

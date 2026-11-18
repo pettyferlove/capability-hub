@@ -16,6 +16,7 @@ import {
 } from '../support/application.js';
 import { deferred } from '../support/store.js';
 import { signIn } from '../support/http.js';
+import { assertScenarioDeletionReferences } from '../support/scenario-deletion.js';
 
 const code = (value: string) => (error: unknown) =>
   error instanceof HubError && error.code === value;
@@ -140,6 +141,44 @@ test('场景管理员合并词条后按目标检索，历史发布和场景审�
   );
   assert.deepEqual(await f.hub.catalog.listScenarios(null), []);
   assert.equal((await f.hub.catalog.search(null, {})).total, 1);
+});
+
+test('管理员按当前修订删除未使用的停用场景，重试不重复写审计', async (context) => {
+  const f = await createTestHub(context);
+  const scenario = await f.hub.administration.createScenario(f.admin, { name: '临时场景' });
+  const path = '/api/admin/scenarios/' + scenario.id;
+  const client = await signIn(f);
+  const reader = await signIn(f, 'reader');
+  await reader.delete(path).set('If-Match', '"1"').set('Idempotency-Key', randomUUID()).expect(403);
+  await client.delete(path).set('Idempotency-Key', randomUUID()).expect(428);
+  await client
+    .patch(path)
+    .set('If-Match', '"1"')
+    .set('Idempotency-Key', randomUUID())
+    .send({ action: 'disable' })
+    .expect('ETag', '"2"')
+    .expect(200);
+  await client.delete(path).set('If-Match', '"1"').set('Idempotency-Key', randomUUID()).expect(412);
+
+  const key = randomUUID();
+  for (let i = 0; i < 2; i++)
+    await client.delete(path).set('If-Match', '"2"').set('Idempotency-Key', key).expect(200);
+  await client.get('/api/admin/scenarios').expect(200, []);
+  const next = await client.post('/api/admin/scenarios').send({ name: scenario.name }).expect(200);
+  assert.notEqual(next.body.id, scenario.id);
+  const audit = await f.store.where('audit', 'action', 'scenario.deleted');
+  assert.deepEqual(
+    audit.map((row) => [row.entity_id, row.subject?.name]),
+    [[scenario.id, scenario.name]],
+  );
+});
+
+test('SQLite 禁止删除仍被引用或参与合并的场景', async (context) => {
+  const f = await createTestHub(context, {
+    gitHosts: ['127.0.0.1'],
+    privateGitHosts: ['127.0.0.1'],
+  });
+  await assertScenarioDeletionReferences(f);
 });
 
 function directoryLogin(
