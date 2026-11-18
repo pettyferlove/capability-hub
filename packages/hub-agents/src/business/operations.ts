@@ -5,7 +5,9 @@ import { z } from 'zod';
 import { feedbackTriagePrompts, resourceAuditPrompts } from './prompts.js';
 import {
   assessmentSchema,
+  generatedPublicationSuggestion,
   publicationSuggestion,
+  publicationSuggestionIssue,
   businessDecision,
   businessInput,
   businessResult,
@@ -13,12 +15,50 @@ import {
 } from './schemas.js';
 import { businessTools, mergeReadRanges, validateCitations } from './tools.js';
 
+type SuggestionIssueCode = z.infer<typeof publicationSuggestionIssue>['code'];
+
+const suggestionIssueMessages: Record<SuggestionIssueCode, string> = {
+  invalid_output: 'AI 未生成格式有效的发布建议。',
+  category_mismatch: '建议分类与场景列表不匹配。',
+  too_many_scenarios: '建议中的已有场景与新场景合计超过 20 个。',
+  catalog_not_checked: 'AI 没有查询场景词表。',
+  unknown_scenario_choice: 'AI 选择了本次查询未返回的场景。',
+  duplicate_scenarios: '建议中有重复选择的场景或重复起草的名称。',
+  scenario_name_exists: '建议的新场景与已登记场景重名。',
+};
+
+function scenarioIssue(
+  {
+    category,
+    scenario_choices,
+    proposed_scenarios,
+  }: z.infer<typeof generatedPublicationSuggestion>,
+  candidates: number,
+  catalogNames?: ReadonlySet<string>,
+): SuggestionIssueCode | undefined {
+  const count = scenario_choices.length + (proposed_scenarios?.length ?? 0);
+  const hasScenarios = count > 0;
+  if ((category === 'scenario') !== hasScenarios) return 'category_mismatch';
+  if (count === 0) return;
+  if (count > 20) return 'too_many_scenarios';
+  if (!catalogNames) return 'catalog_not_checked';
+  if (scenario_choices.some((choice) => choice < 1 || choice > candidates))
+    return 'unknown_scenario_choice';
+  const names = proposed_scenarios?.map((item) => item.name) ?? [];
+  if (
+    new Set(scenario_choices).size !== scenario_choices.length ||
+    new Set(names).size !== names.length
+  )
+    return 'duplicate_scenarios';
+  if (names.some((name) => catalogNames.has(name))) return 'scenario_name_exists';
+}
+
 /**
  * 注册资源审计（`resource-audit`）与反馈研判（`feedback-triage`）两个操作。流程固定为
  * 「调查 → 人工确认 → 记录」三段，任何一段都不能跳过：
  * - 调查阶段必须实际读过入口文件（Skill 的 `SKILL.md`、MCP 的 `server.json`），反馈研判还必须
  *   读过目标反馈，否则以 `AI_OUTPUT_INVALID` 失败；
- * - 报告引用必须落在已读行区间内，发布建议只能引用本次工具返回过的场景 ID；
+ * - 报告引用必须落在已读行区间内；发布建议单独校验，不合规时保留报告但不给出回填字段；
  * - 人工确认是唯一的暂停点（`human-review`），回写反馈走 `context.effect` 幂等效果，落库前
  *   重新校验维护权限与反馈修订号，二者任一变化即 `AI_FORBIDDEN` / `AI_CONFLICT`。
  *
@@ -37,13 +77,16 @@ export function registerBusinessOperations(
         : businessInput.omit({ feedback_id: true });
     const reportSchema =
       kind === 'resource-audit'
-        ? assessmentSchema.extend({ publication_suggestion: publicationSuggestion })
+        ? assessmentSchema.extend({
+            publication_suggestion: publicationSuggestion.optional(),
+            publication_suggestion_issue: publicationSuggestionIssue.optional(),
+          })
         : assessmentSchema;
     const researchOutput = researchSchema.extend({ assessment: reportSchema });
     const resultSchema = businessResult.extend({ assessment: reportSchema });
     registry.register({
       id: kind,
-      version: kind === 'resource-audit' ? '8' : '4',
+      version: kind === 'resource-audit' ? '9' : '4',
       title: kind === 'resource-audit' ? '资源审计' : '反馈研判',
       description: '自主查阅固定版本证据，形成可追溯建议并等待人工确认。',
       input,
@@ -113,34 +156,46 @@ export function registerBusinessOperations(
               );
               validateCitations(assessment.findings, readRanges);
               if (kind === 'resource-audit') {
-                const suggestion = await context.step('publication-suggestion', () =>
-                  context.structured(
-                    {
-                      id: 'publication-suggestion',
-                      instructions: resourceAuditPrompts.suggestion,
-                      prompt: JSON.stringify({ ...material, scenarios: [...evidence.scenarios] }),
+                const candidates = [...evidence.scenarios];
+                const suggestion = await context
+                  .step('publication-suggestion', () =>
+                    context.structured(
+                      {
+                        id: 'publication-suggestion',
+                        instructions: resourceAuditPrompts.suggestion,
+                        prompt: JSON.stringify({
+                          ...material,
+                          scenario_catalog_checked: evidence.catalogNames !== undefined,
+                          scenarios: candidates.map(([, item]) => item),
+                        }),
+                      },
+                      generatedPublicationSuggestion,
+                    ),
+                  )
+                  .catch((error: unknown) => {
+                    if (!(error instanceof AiError) || error.code !== 'AI_OUTPUT_INVALID')
+                      throw error;
+                    // 建议输出不合规不应掩盖此后记录报告时的失败。
+                    if (context.failure === error) context.failure = undefined;
+                    return undefined;
+                  });
+                const issue =
+                  suggestion && scenarioIssue(suggestion, candidates.length, evidence.catalogNames);
+                if (!suggestion || issue) {
+                  const code = issue ?? 'invalid_output';
+                  Object.assign(assessment, {
+                    publication_suggestion_issue: { code, message: suggestionIssueMessages[code] },
+                  });
+                } else {
+                  const { scenario_choices, ...fields } = suggestion;
+                  Object.assign(assessment, {
+                    publication_suggestion: {
+                      ...fields,
+                      scenario_ids: scenario_choices.map((choice) => candidates[choice - 1][0]),
+                      keywords: fields.keywords.slice(0, 8),
                     },
-                    publicationSuggestion,
-                  ),
-                );
-                const ids = suggestion.scenario_ids;
-                const names = (suggestion.proposed_scenarios ?? []).map((item) => item.name);
-                const count = ids.length + names.length;
-                if (
-                  (suggestion.category === 'scenario') !== count > 0 ||
-                  count > 20 ||
-                  new Set(names).size !== names.length ||
-                  names.some((name) => !evidence.catalogNames || evidence.catalogNames.has(name)) ||
-                  new Set(ids).size !== ids.length ||
-                  ids.some((id) => !evidence.scenarios.has(id))
-                )
-                  throw new AiError('AI_OUTPUT_INVALID', '发布建议引用了无效场景，不能填入申请');
-                Object.assign(assessment, {
-                  publication_suggestion: {
-                    ...suggestion,
-                    keywords: suggestion.keywords.slice(0, 8),
-                  },
-                });
+                  });
+                }
               }
               const coverage = `实际读取 ${new Set(inspected.map((item) => item.path)).size}/${overview.file_count} 个文件；行号范围之外的内容未纳入本次读取证据。`;
               assessment.limitations = assessment.limitations.slice(0, 28);
@@ -173,7 +228,10 @@ export function registerBusinessOperations(
               return suspend({
                 question: inputData.feedback_id
                   ? '是否采纳反馈研判？可选择写入处理建议。'
-                  : '采纳后将建议分类、关键词和共享目的填入此版本的发布申请草稿。是否采纳？',
+                  : 'publication_suggestion_issue' in inputData.assessment &&
+                      inputData.assessment.publication_suggestion_issue
+                    ? '是否采纳审计报告？本次发布建议不能回填。'
+                    : '采纳后将建议分类、关键词和共享目的填入此版本的发布申请草稿。是否采纳？',
                 assessment: inputData,
               });
             if (

@@ -13,20 +13,26 @@ import {
   textBtnStyles,
 } from '../../shared/styles/recipes.js';
 
+/** 应用 AI 建议和手动挑选共享同一份词表查询。 */
+export interface ScenarioCatalog {
+  data?: ScenarioResponse[];
+  error: string;
+  loading: boolean;
+}
+
 /** 已有 ID 与新定义共用申请的名额；复用同名词条时移除相应草稿。 */
 export function PublicationScenarioFields({
+  catalog,
   value,
   onChange,
 }: {
+  catalog?: ScenarioCatalog;
   value: PublicationDraftPolicy;
   onChange: (patch: Partial<PublicationDraftPolicy>) => void;
 }) {
   const { refresh } = useHub();
-  const {
-    data: scenarios,
-    error,
-    loading,
-  } = useQuery<ScenarioResponse[]>('/api/scenarios', refresh);
+  const local = useQuery<ScenarioResponse[]>(catalog ? null : '/api/scenarios', refresh);
+  const { data: scenarios, error, loading } = catalog ?? local;
   const [query, setQuery] = useState('');
   const selected = value.scenario_ids;
   const drafts = value.proposed_scenarios ?? [];

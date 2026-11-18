@@ -10,7 +10,6 @@ import {
   detailPreviewActionsStyles,
   detailPreviewModesStyles,
   detailFilePreviewContentStyles,
-  markdownStyles,
   detailFileSourceStyles,
   detailFileProofStyles,
 } from './styles.js';
@@ -22,14 +21,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CopyButton } from '../../shared/components/CopyButton.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Message } from '../../shared/components/Message.js';
-import {
-  SafeMarkdown,
-  markdownBody,
-  scrollMarkdownAnchor,
-} from '../../shared/components/SafeMarkdown.js';
+import { markdownBody, scrollMarkdownAnchor } from '../../shared/components/SafeMarkdown.js';
 import { CodeSkeleton } from '../../shared/components/Skeleton.js';
 import { bytesLabel } from '../../shared/format/labels.js';
 import { useHub } from '../../shared/context/HubContext.js';
+import { SnapshotMarkdown } from './SnapshotMarkdown.js';
 import { useSnapshotFile } from './use-snapshot-file.js';
 
 /**
@@ -190,14 +186,12 @@ export function SnapshotFileBrowser({
               <ErrorState message={preview.error} retry={preview.retry} />
             )
           ) : rendered ? (
-            <article data-markdown className={markdownStyles}>
-              <SafeMarkdown
-                text={markdownBody(preview.text ?? '')}
-                currentFile={path}
-                paths={asset.files.map((file) => file.path)}
-                onOpen={onOpen}
-              />
-            </article>
+            <SnapshotMarkdown
+              text={markdownBody(preview.text ?? '')}
+              currentFile={path}
+              paths={asset.files.map((file) => file.path)}
+              onOpen={onOpen}
+            />
           ) : (
             <pre className={detailFileSourceStyles}>{preview.text}</pre>
           )}

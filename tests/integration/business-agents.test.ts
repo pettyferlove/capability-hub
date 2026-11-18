@@ -28,12 +28,13 @@ import {
   emptyMcpEntry,
 } from '../../apps/web/src/features/publishing/mcp-entry.js';
 
-const publicationSuggestion = {
+const suggestionFields = {
   category: 'general',
-  scenario_ids: [],
   keywords: ['异常输入', '数据校验'],
   purpose: '供维护者检查异常输入。',
 };
+const publicationSuggestion = { ...suggestionFields, scenario_ids: [] };
+const modelSuggestion = { ...suggestionFields, scenario_choices: [] };
 const assessment = {
   summary: '入口文档需要明确异常输入行为。',
   risk: 'medium',
@@ -51,7 +52,7 @@ const assessment = {
 };
 type AuditReport = typeof assessment & { publication_suggestion: typeof publicationSuggestion };
 const feedbackJson = JSON.stringify(assessment);
-const suggestionJson = JSON.stringify(publicationSuggestion);
+const suggestionJson = JSON.stringify(modelSuggestion);
 const script = {
   turns: [
     { name: 'resource_overview', input: {} },
@@ -136,7 +137,7 @@ for (const format of ['openai', 'anthropic'] as const)
     }
   });
 
-test('AI 只能在查询词表后起草未登记的场景，人工采纳只回填草稿', async (t) => {
+test('AI 只能在查询词表后起草未登记的场景，拒绝建议不丢失审计报告', async (t) => {
   const previous = process.env.AI_FIXTURE_KEY;
   process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
   t.after(() => {
@@ -145,33 +146,47 @@ test('AI 只能在查询词表后起草未登记的场景，人工采纳只回�
   });
   const definition = { name: '代码评审', description: '审查提交的功能和测试。' };
   const fields = {
-    ...publicationSuggestion,
+    ...suggestionFields,
     category: 'scenario',
     proposed_scenarios: [definition],
     scenario_reason: '词表中缺少代码评审任务。',
   };
-  for (const { lookup, exists, valid } of [
-    { lookup: false, exists: false, valid: false },
-    { lookup: true, exists: true, valid: false },
-    { lookup: true, exists: false, valid: true },
+  for (const { lookup, active, unknown, issue } of [
+    { lookup: false, issue: 'catalog_not_checked' },
+    { lookup: true, active: true, issue: 'scenario_name_exists' },
+    { lookup: true, active: false, issue: 'scenario_name_exists' },
+    { lookup: true, unknown: true, issue: 'unknown_scenario_choice' },
+    { lookup: true },
   ]) {
     const provider = await fixture('openai', 'tools', false, {
       ...script,
       turns: lookup
         ? [...script.turns, { name: 'publication_scenarios', input: { query: '未命中' } }]
         : script.turns,
-      json: [feedbackJson, JSON.stringify(fields)],
+      json: [
+        feedbackJson,
+        JSON.stringify(
+          unknown
+            ? { ...modelSuggestion, category: 'scenario', scenario_choices: [1] }
+            : { ...fields, scenario_choices: [] },
+        ),
+      ],
     });
     t.after(provider.close);
     const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
-    if (exists) await f.hub.administration.createScenario(f.admin, definition);
+    if (active !== undefined) {
+      const existing = await f.hub.administration.createScenario(f.admin, definition);
+      if (!active)
+        await f.hub.administration.updateScenario(
+          f.admin,
+          existing.id,
+          { action: 'disable' },
+          '"1"',
+          randomUUID(),
+        );
+    }
     await receiveSkill(f);
     const execution = await run(f);
-    if (!valid) {
-      assert.equal(execution.status, 'failed');
-      assert.equal(execution.payload.error?.code, 'AI_OUTPUT_INVALID');
-      continue;
-    }
     assert.equal(execution.status, 'waiting_input', JSON.stringify(execution.payload.error));
     const [interaction] = (await f.hub.ai.runtime.view(execution.id)).interactions;
     await f.hub.ai.runtime.respond(
@@ -181,20 +196,42 @@ test('AI 只能在查询词表后起草未登记的场景，人工采纳只回�
       interaction.payload.revision,
       { approved: true },
     );
-    const accepted = acceptedSuggestion(executionResponse(await run(f)));
-    assert.deepEqual(accepted?.fields, fields);
-    assert.deepEqual(await f.hub.catalog.listScenarios(f.admin), []);
+    const done = await run(f);
+    assert.equal(done.status, 'succeeded');
+    const result = done.payload.result as {
+      assessment: typeof assessment & {
+        publication_suggestion?: unknown;
+        publication_suggestion_issue?: { code: string };
+      };
+    };
+    assert.deepEqual(result.assessment.findings, assessment.findings);
+    assert.equal(result.assessment.publication_suggestion_issue?.code, issue);
+    if (issue) assert.equal(result.assessment.publication_suggestion, undefined);
+    else
+      assert.deepEqual(acceptedSuggestion(executionResponse(done))?.fields, {
+        ...fields,
+        scenario_ids: [],
+      });
+    if (active !== true) assert.deepEqual(await f.hub.catalog.listScenarios(f.admin), []);
     assert.deepEqual(await f.store.all('requests'), []);
   }
 });
 
 test('提交人可回看版本审计，待审期间不能采纳，撤回后可继续原交互', async (t) => {
   const scenarioId = randomUUID();
-  const suggested = { ...publicationSuggestion, category: 'scenario', scenario_ids: [scenarioId] };
+  const suggested = { ...suggestionFields, category: 'scenario', scenario_ids: [scenarioId] };
   const provider = await fixture('openai', 'tools', false, {
     ...script,
-    turns: [...script.turns, { name: 'publication_scenarios', input: { query: '工程' } }],
-    json: [feedbackJson, JSON.stringify(suggested)],
+    turns: [
+      ...script.turns,
+      { name: 'publication_scenarios', input: { query: '测试' } },
+      { name: 'publication_scenarios', input: { query: '测试' } },
+      { name: 'publication_scenarios', input: { query: '工程' } },
+    ],
+    json: [
+      feedbackJson,
+      JSON.stringify({ ...modelSuggestion, category: 'scenario', scenario_choices: [2] }),
+    ],
   });
   t.after(provider.close);
   const previous = process.env.AI_FIXTURE_KEY;
@@ -204,6 +241,7 @@ test('提交人可回看版本审计，待审期间不能采纳，撤回后可�
     else process.env.AI_FIXTURE_KEY = previous;
   });
   const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
+  await f.hub.administration.createScenario(f.admin, { name: '测试管理' });
   await f.store.insert('scenarios', {
     id: scenarioId,
     name: '工程实践',
@@ -954,7 +992,7 @@ test('模型给出超量关键词时按序只保留前 8 个，不因数量拒�
   const keywords = Array.from({ length: 10 }, (_, index) => `检索词${index + 1}`);
   const provider = await fixture('openai', 'tools', false, {
     ...script,
-    json: [feedbackJson, JSON.stringify({ ...publicationSuggestion, keywords })],
+    json: [feedbackJson, JSON.stringify({ ...modelSuggestion, keywords })],
   });
   t.after(provider.close);
   const previous = process.env.AI_FIXTURE_KEY;
@@ -1011,6 +1049,37 @@ test('发布建议达到输出上限时只修复建议，采纳项保留已校�
   const repairRequest = JSON.stringify(provider.requests.at(-1)?.body);
   assert(!repairRequest.includes('suggested_resolution'));
   assert(!repairRequest.includes('partial-output'));
+});
+
+test('发布建议在格式修复后仍无效时保留审计发现和无法回填的原因', async (t) => {
+  const incomplete = { text: '{"purpose":"incomplete', stop: 'length' } as const;
+  const provider = await fixture('openai', 'tools', false, {
+    ...script,
+    json: [feedbackJson, incomplete, incomplete],
+  });
+  t.after(provider.close);
+  const previous = process.env.AI_FIXTURE_KEY;
+  process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+  t.after(() => {
+    if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+    else process.env.AI_FIXTURE_KEY = previous;
+  });
+  const f = await createTestHub(t, { ai: frameworkConfig(provider.url) });
+  await receiveSkill(f);
+  const waiting = await run(f);
+  assert.equal(waiting.status, 'waiting_input', JSON.stringify(waiting.payload.error));
+  const view = await f.hub.ai.runtime.view(waiting.id);
+  const artifact = view.artifacts.find((item) => item.payload.name === 'assessment');
+  assert(artifact);
+  const content = artifact.payload.content;
+  assert(content && typeof content === 'object' && !Array.isArray(content));
+  const report = content.assessment;
+  assert(report && typeof report === 'object' && !Array.isArray(report));
+  assert.deepEqual(report.findings, assessment.findings);
+  assert.equal(report.publication_suggestion, undefined);
+  const issue = report.publication_suggestion_issue;
+  assert(issue && typeof issue === 'object' && 'code' in issue);
+  assert.equal(issue.code, 'invalid_output');
 });
 
 test('MCP 审计按需读取 server.json 和声明工具，明确静态边界并允许不采纳', async (t) => {

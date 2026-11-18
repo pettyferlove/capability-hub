@@ -72,29 +72,49 @@ export const assetContentPanelStyles = cn(
 );
 
 export const markdownStyles = cn(
-  'min-w-0 max-w-3xl text-[length:14px] leading-[1.8] text-ink [overflow-wrap:anywhere]',
-  '[&_>_div_>_*+*]:mt-4 [&_>_div_>_:is(h2,h3,h4,h5,h6):not(:first-child)]:mt-7',
+  'min-w-0 text-base leading-[1.75] text-ink [overflow-wrap:anywhere]',
+  '[&_>_div_>_:not([data-markdown-wide])]:max-w-[76ch] [&_>_div_>_*+*]:mt-4',
+  '[&_p]:text-pretty [&_>_div_>_:is(h2,h3,h4,h5,h6):not(:first-child)]:mt-8',
   '[&_:is(h1,h2,h3,h4,h5,h6)]:font-semibold [&_:is(h1,h2,h3,h4,h5,h6)]:leading-tight',
-  '[&_h1]:text-2xl [&_h2]:text-xl [&_h3]:text-lg [&_h2]:border-b [&_h2]:border-line [&_h2]:pb-2',
+  '[&_h1]:text-3xl max-[600px]:[&_h1]:text-2xl [&_h2]:text-2xl [&_h3]:text-xl',
+  '[&_h2]:border-b [&_h2]:border-line [&_h2]:pb-2',
   '[&_ul]:list-disc [&_ol]:list-decimal [&_:is(ul,ol)]:ps-6 [&_li+li]:mt-1',
   '[&_li_:is(ul,ol)]:mt-1 [&_li_p+p]:mt-2 [&_li.task-list-item]:list-none [&_li.task-list-item_input]:me-1',
-  '[&_blockquote]:border-s-[3px] [&_blockquote]:border-brand [&_blockquote]:bg-page',
-  '[&_blockquote]:px-4 [&_blockquote]:py-2.5 [&_blockquote]:text-muted-ink [&_blockquote_p+p]:mt-2',
-  '[&_a[href]]:underline [&_a[href]]:underline-offset-3',
-  '[&_code]:text-[length:0.9em] [&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-page',
-  '[&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5',
-  '[&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-line [&_pre]:bg-page',
-  '[&_pre]:p-4 [&_pre_code]:whitespace-pre',
-  '[&_table]:block [&_table]:w-fit [&_table]:max-w-full [&_table]:overflow-x-auto',
-  '[&_table]:rounded-lg [&_table]:border [&_table]:border-line [&_table]:text-[length:13px]',
-  '[&_:is(th,td)]:px-3 [&_:is(th,td)]:py-2.5 [&_th]:text-[length:inherit] [&_th]:font-semibold',
-  '[&_th]:text-ink [&_tbody_tr:last-child_td]:border-b-0',
+  '[&_blockquote]:rounded-e-lg [&_blockquote]:border-s-[3px] [&_blockquote]:border-brand [&_blockquote]:bg-page',
+  '[&_blockquote]:px-4 [&_blockquote]:py-3 [&_blockquote]:text-muted-ink [&_blockquote_p+p]:mt-2',
+  '[&_:is(a[href],[data-markdown-link])]:underline [&_:is(a[href],[data-markdown-link])]:decoration-brand/55',
+  '[&_:is(a[href],[data-markdown-link])]:underline-offset-3 [&_:is(a[href],[data-markdown-link]):hover]:decoration-brand',
+  '[&_[data-markdown-link]]:max-w-full [&_[data-markdown-link]]:[text-align:inherit]',
+  '[&_:not(pre)>code]:box-decoration-clone [&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-line/40',
+  '[&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:text-[length:0.9em]',
+  '[&_pre]:overflow-x-auto [&_pre]:overscroll-x-contain [&_pre]:[scrollbar-width:thin]',
+  '[&_pre]:p-4 [&_pre]:text-[length:13px] [&_pre]:leading-[1.65] [&_pre_code]:whitespace-pre',
+  '[&_pre:focus-visible]:outline-2 [&_pre:focus-visible]:-outline-offset-2 [&_pre:focus-visible]:outline-code-dim',
   "[[class~='group/asset-content']_&_:is(h1,_h2,_h3,_h4,_h5,_h6)]:[scroll-margin-top:112px]",
   "[[class~='group/asset-content']_[class~='group/detail-file-preview-content']_&]:pt-4.5",
   "[[class~='group/asset-content']_[class~='group/detail-file-preview-content']_&]:pr-4.5",
   "[[class~='group/asset-content']_[class~='group/detail-file-preview-content']_&]:pb-4.5",
   "[[class~='group/asset-content']_[class~='group/detail-file-preview-content']_&]:pl-4.5",
   "[[class~='group/asset-content']_[class~='group/detail-file-preview-content']_&_:is(h1,_h2,_h3,_h4,_h5,_h6)]:[scroll-margin-top:16px]",
+);
+
+export const markdownTableStyles = cn(
+  'max-w-full overflow-x-auto overscroll-x-contain rounded-xl border border-line [scrollbar-width:thin]',
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+  '[&_table]:w-full [&_table]:text-[length:13px] [&_table]:leading-normal',
+  '[&_:is(th,td)]:min-w-28 [&_:is(th,td)]:px-3.5 [&_:is(th,td)]:py-2',
+  '[&_th]:whitespace-normal [&_th]:bg-page [&_th]:font-semibold [&_th]:text-ink',
+  '[&_:is(th,td_strong)]:text-[length:inherit] [&_tbody_tr:nth-child(even)]:bg-page/60',
+  '[&_tbody_tr:last-child_td]:border-b-0',
+);
+
+export const markdownCodeStyles = cn(
+  'overflow-hidden rounded-xl border border-line bg-code-bg text-code-fg',
+  '[&_figcaption]:flex [&_figcaption]:items-center [&_figcaption]:justify-between [&_figcaption]:gap-3',
+  '[&_figcaption]:border-b [&_figcaption]:border-code-control [&_figcaption]:px-4 [&_figcaption]:py-1.5',
+  '[&_figcaption>span:first-child]:truncate [&_figcaption>span:first-child]:font-mono',
+  '[&_figcaption>span:first-child]:text-caption [&_figcaption>span:first-child]:text-code-dim',
+  '[&_figcaption>button]:shrink-0',
 );
 
 export const historyListStyles = cn(

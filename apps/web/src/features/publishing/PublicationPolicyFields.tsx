@@ -3,7 +3,7 @@ import { audienceIcons, classificationIcons } from '../../shared/components/sele
 import { policyFieldsStyles } from './styles.js';
 import { chipsStyles, checkLabelStyles } from '../../shared/styles/recipes.js';
 import type { PublicationDraftPolicy } from '@capability-hub/contracts';
-import { PublicationScenarioFields } from './PublicationScenarioFields.js';
+import { PublicationScenarioFields, type ScenarioCatalog } from './PublicationScenarioFields.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { Message } from '../../shared/components/Message.js';
@@ -17,10 +17,12 @@ export function PublicationPolicyFields({
   value,
   onChange,
   categoryHint,
+  scenarioCatalog,
   ownerGroupId,
 }: {
   value: PublicationDraftPolicy;
   categoryHint?: ReactNode;
+  scenarioCatalog?: ScenarioCatalog;
   onChange: (v: PublicationDraftPolicy) => void;
   /** 资产所属团队；受众超出该团队时只能由平台审核者审核。 */
   ownerGroupId: string;
@@ -66,7 +68,7 @@ export function PublicationPolicyFields({
       </div>
       {platformReasons.includes('general') && <Message>通用分类只能由平台审核者审核。</Message>}
       {value.category === 'scenario' && (
-        <PublicationScenarioFields value={value} onChange={update} />
+        <PublicationScenarioFields catalog={scenarioCatalog} value={value} onChange={update} />
       )}
       {review.kind === 'scenario' && (
         <Message>场景分类由负责所选场景的审核者或平台审核者审核。</Message>

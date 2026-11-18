@@ -4,7 +4,7 @@
  *
  * 入参为未校验的 `Json`，内部逐字段做类型收敛，缺字段时降级为「待核实」而非报错。
  */
-import { reportSuggestion } from './publication-suggestion.js';
+import { reportSuggestion, reportSuggestionIssue } from './publication-suggestion.js';
 import { SuggestionPreview } from './SuggestionPreview.js';
 import { AiText } from './AiText.js';
 import { jsonObject, type Json } from './presentation.js';
@@ -37,6 +37,7 @@ export function BusinessAssessment({
   review?: boolean;
 }) {
   const suggestion = reportSuggestion(value);
+  const suggestionIssue = suggestion ? undefined : reportSuggestionIssue(value);
   const report = jsonObject(value);
   const assessment = jsonObject(report.assessment);
   const findings = Array.isArray(assessment.findings) ? assessment.findings : [];
@@ -71,11 +72,20 @@ export function BusinessAssessment({
         )}
       </section>
       {!review && suggestion && <SuggestionPreview fields={suggestion} />}
-      {!review && !suggestion && !report.feedback_id && report.approved === true && (
+      {!review && suggestionIssue && (
         <p className="rounded-xl border border-line p-3 text-caption text-muted-ink">
-          这份历史报告未包含分类、关键词和共享目的的建议。
+          发布建议无法回填：{suggestionIssue}
         </p>
       )}
+      {!review &&
+        !suggestion &&
+        !suggestionIssue &&
+        !report.feedback_id &&
+        report.approved === true && (
+          <p className="rounded-xl border border-line p-3 text-caption text-muted-ink">
+            这份历史报告未包含分类、关键词和共享目的的建议。
+          </p>
+        )}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h3 className="font-semibold">发现与建议</h3>
         <span className="text-muted-ink">

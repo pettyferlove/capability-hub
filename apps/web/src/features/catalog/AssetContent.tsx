@@ -13,7 +13,6 @@ import {
   detailReadingNavigationStyles,
   detailCurrentFileStyles,
   assetContentPanelStyles,
-  markdownStyles,
   historyListStyles,
 } from './styles.js';
 import {
@@ -45,13 +44,14 @@ import { Empty } from '../../shared/components/Empty.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Message } from '../../shared/components/Message.js';
 import { PageTabs } from '../../shared/components/PageTabs.js';
-import { SafeMarkdown, markdownBody } from '../../shared/components/SafeMarkdown.js';
+import { markdownBody } from '../../shared/components/SafeMarkdown.js';
 import { CodeSkeleton, ListSkeleton } from '../../shared/components/Skeleton.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { bytesLabel, dateLabel, stateLabel } from '../../shared/format/labels.js';
 import { AssetCommunity } from './AssetCommunity.js';
 import { ResourceInstallation } from './ResourceInstallation.js';
 import { SnapshotFileBrowser } from './SnapshotFileBrowser.js';
+import { SnapshotMarkdown } from './SnapshotMarkdown.js';
 import {
   detailLocationKey,
   detailNavigation,
@@ -275,14 +275,12 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
               </a>
             </>
           ) : asset.kind === 'skill' ? (
-            <article data-markdown className={markdownStyles}>
-              <SafeMarkdown
-                text={showReadme ? (readmeBody ?? '') : markdownBody(overview.text ?? '')}
-                currentFile={overviewPath}
-                paths={asset.files.map((file) => file.path)}
-                onOpen={openFile}
-              />
-            </article>
+            <SnapshotMarkdown
+              text={showReadme ? (readmeBody ?? '') : markdownBody(overview.text ?? '')}
+              currentFile={overviewPath}
+              paths={asset.files.map((file) => file.path)}
+              onOpen={openFile}
+            />
           ) : (
             <CodeBlock title="server.json" code={overview.text ?? ''} />
           )}

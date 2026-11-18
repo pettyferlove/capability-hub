@@ -39,7 +39,7 @@ export function validateCitations(findings: { evidence: ReadRange[] }[], readRan
 interface BusinessEvidence {
   feedbackRead: boolean;
   catalogNames?: Set<string>;
-  scenarios: Map<string, string>;
+  scenarios: Map<string, { choice: number; name: string }>;
 }
 
 /**
@@ -67,7 +67,7 @@ export function businessTools(
 } {
   const evidence: BusinessEvidence = {
     feedbackRead: false,
-    scenarios: new Map<string, string>(),
+    scenarios: new Map(),
   };
   const inspected: z.infer<typeof evidenceSchema>[] = [];
   const tool = <I extends z.ZodType>(
@@ -90,7 +90,7 @@ export function businessTools(
     ...(!feedbackId && {
       publication_scenarios: tool(
         'publication-scenarios',
-        '按名称或说明搜索已登记场景。优先复用同类业务任务，引用返回的 ID。',
+        '按名称或说明搜索已登记场景。优先复用同类业务任务，记录返回的候选序号。',
         z
           .object({
             query: z.string().max(128).default(''),
@@ -98,15 +98,19 @@ export function businessTools(
           })
           .strict(),
         async ({ query, offset }) => {
-          const catalog = await service.publicationScenarios(context.ownerId, versionId);
+          const { items: catalog, names } = await service.publicationScenarios(
+            context.ownerId,
+            versionId,
+          );
           const available = catalog.filter((s) =>
             (s.name + ' ' + s.description).toLowerCase().includes(query.toLowerCase()),
           );
-          const items = available
-            .slice(offset, offset + 30)
-            .map((s) => ({ ...s, description: s.description.slice(0, 160) }));
-          evidence.catalogNames = new Set(catalog.map((s) => s.name));
-          for (const item of items) evidence.scenarios.set(item.id, item.name);
+          const items = available.slice(offset, offset + 30).map(({ id, name, description }) => {
+            const choice = evidence.scenarios.get(id)?.choice ?? evidence.scenarios.size + 1;
+            evidence.scenarios.set(id, { choice, name });
+            return { choice, name, description: description.slice(0, 160) };
+          });
+          evidence.catalogNames = names;
           return {
             items,
             next_offset: offset + items.length < available.length ? offset + items.length : null,

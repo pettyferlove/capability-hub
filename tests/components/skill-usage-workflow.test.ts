@@ -1116,6 +1116,104 @@ test('维护者可将 AI 新场景改为已有条目，再补充自己的定义�
   ]);
 });
 
+test('场景建议过期只阻止分类回填，仍可选用当前场景提交', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f);
+  const current = {
+    id: randomUUID(),
+    name: '代码评审',
+    description: '审查合并请求',
+    active: true,
+  };
+  const fields = {
+    category: 'scenario' as const,
+    scenario_ids: [randomUUID()],
+    keywords: ['GitLab'],
+    purpose: '供维护者核对代码改动。',
+  };
+  let submitted: Record<string, unknown> | undefined;
+  t.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path === '/api/scenarios') return Response.json([current]);
+    assert.equal(path, '/api/publication-requests');
+    submitted = JSON.parse(String(options.body)) as Record<string, unknown>;
+    return Response.json({ id: 'request' });
+  });
+  render(
+    page(
+      createElement(IntakeDetail, {
+        intake,
+        suggestion: {
+          fields,
+          versionId: intake.version_id,
+          digest: intake.content_digest!,
+          executionId: 'audit',
+        },
+      }),
+    ),
+  );
+  await screen.findByRole('button', { name: '移除关键词 GitLab' });
+  const settings = within(screen.getByRole('region', { name: '分发设置' }));
+  const category = settings.getByRole('button', { name: /分类/ });
+  assert.match(category.textContent ?? '', /未分类/, '失效场景不得改写草稿分类');
+  assert(screen.getByText(/建议中的场景已不可选/));
+  const purpose = screen.getByRole('textbox', {
+    name: '共享目的与授权确认',
+  }) as HTMLTextAreaElement;
+  assert.equal(purpose.value, fields.purpose);
+
+  const user = userEvent.setup();
+  await user.click(category);
+  await user.click(screen.getByRole('option', { name: '场景' }));
+  await user.click(await screen.findByRole('checkbox', { name: current.name }));
+  await user.click(screen.getByRole('button', { name: '确认内容并提交审核' }));
+  await screen.findByRole('link', { name: '查看审核' });
+  assert.deepEqual(submitted?.scenario_ids, [current.id]);
+});
+
+test('手动使用分类建议时重新查询场景，不沿用已打开表单中的词表', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f);
+  const selected = { id: randomUUID(), name: '业务核对', description: '', active: true };
+  const suggested = { id: randomUUID(), name: '代码评审', description: '', active: true };
+  let scenarios = [selected, suggested];
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    assert.equal(path, '/api/scenarios');
+    return Response.json(scenarios);
+  });
+  render(
+    page(
+      createElement(IntakeDetail, {
+        intake: {
+          ...intake,
+          proposed_policy: {
+            ...intake.proposed_policy,
+            category: 'scenario',
+            scenario_ids: [selected.id],
+          },
+        },
+        suggestion: {
+          executionId: 'audit',
+          versionId: intake.version_id,
+          digest: intake.content_digest!,
+          fields: {
+            category: 'scenario',
+            scenario_ids: [suggested.id],
+            keywords: ['GitLab'],
+            purpose: '供维护者核对代码改动。',
+          },
+        },
+      }),
+    ),
+  );
+  await screen.findByRole('checkbox', { name: suggested.name });
+  scenarios = [selected];
+  await userEvent.setup().click(screen.getByRole('button', { name: '使用分类建议' }));
+  await screen.findByText(/建议中的场景已不可选/);
+  assert.equal(screen.queryByRole('checkbox', { name: suggested.name }), null);
+  const manual = screen.getByRole('checkbox', { name: selected.name }) as HTMLInputElement;
+  assert(manual.checked);
+});
+
 test('简报可定位到第 800 行以后的候选证据，基线文件不可读时仍可核对', async (context) => {
   const f = await createTestHub(context);
   const first = await publishSkill(f);

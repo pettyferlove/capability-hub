@@ -85,6 +85,30 @@ export const publicationSuggestion = z
   })
   .strict();
 
+/** 模型选择本次查询的候选序号；报告只保存映射后的场景 ID。 */
+export const generatedPublicationSuggestion = publicationSuggestion
+  .omit({ scenario_ids: true })
+  .extend({
+    scenario_choices: z
+      .array(z.number().int())
+      .max(20)
+      .describe('本次候选列表中的序号，不填写数据库 ID'),
+  });
+
+/** 发布建议拒绝原因与审计结论独立记录。 */
+export const publicationSuggestionIssue = z.strictObject({
+  code: z.enum([
+    'invalid_output',
+    'category_mismatch',
+    'too_many_scenarios',
+    'catalog_not_checked',
+    'unknown_scenario_choice',
+    'duplicate_scenarios',
+    'scenario_name_exists',
+  ]),
+  message: z.string(),
+});
+
 /**
  * 研判报告主体。上限均为硬上限：发现最多 30 条、每条最多 10 处证据、局限最多 30 条；
  * 落盘前实现还会把局限截到 28 条并追加读取覆盖度，因此模型不应依赖填满上限。

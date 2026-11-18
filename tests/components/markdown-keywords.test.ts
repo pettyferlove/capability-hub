@@ -4,6 +4,7 @@ import { afterEach, test } from 'node:test';
 import { createElement, useState } from 'react';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
+import { SnapshotMarkdown } from '../../apps/web/src/features/catalog/SnapshotMarkdown.js';
 import { SafeMarkdown } from '../../apps/web/src/shared/components/SafeMarkdown.js';
 import { KeywordField } from '../../apps/web/src/shared/components/KeywordField.js';
 
@@ -28,6 +29,22 @@ test('Markdown 不挂载 HTML 或远程图片，固定快照引用只触发文�
   assert.equal(external.getAttribute('target'), '_blank');
   assert.equal(external.getAttribute('rel'), 'noreferrer noopener');
   assert.equal(screen.getByText('危险').hasAttribute('href'), false);
+});
+
+test('技能文档复制围栏中的代码，保留缩进和作者写下的空行', async () => {
+  const user = userEvent.setup();
+  const source = 'const tag = "<article>";  \n  console.log(tag);\n';
+  render(
+    createElement(SnapshotMarkdown, {
+      text: ['```typescript', source, '```'].join('\n'),
+      currentFile: 'README.md',
+      paths: ['README.md'],
+      onOpen: () => assert.fail('复制代码不应打开其他文件'),
+    }),
+  );
+  assert(screen.getByText('typescript'));
+  await user.click(screen.getByRole('button', { name: '复制代码' }));
+  assert.equal(await navigator.clipboard.readText(), source);
 });
 
 test('关键词输入去重、保留未按回车的末项，并通过退格与删除按钮更新表单值', async () => {

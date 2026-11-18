@@ -36,20 +36,19 @@ export interface AuditNotice {
 }
 
 /**
- * 可回填到发布表单的审计建议，由审计报告派生；结构不符或版本对不上时上游直接返回 `undefined`。
+ * 从同一版本的审计报告派生的发布建议或无法回填的原因。
  */
-export interface AuditSuggestion {
+export type AuditSuggestion = {
   executionId: string;
   /** 必须与任务输入里固定的 `version_id` 一致，否则整条建议作废，避免回填到别的版本。 */
   versionId: string;
   /** 内容摘要，与版本号一起用于判断建议是否还对应当前内容，失配时不回填。 */
   digest: string;
-  fields: PublicationSuggestion;
   /** 上游总是填数组（可为空）；只有 severity 为 warning 或 critical 的发现才会进来。 */
   notices?: AuditNotice[];
   /** 仅在等待人工确认阶段为 `true`；采纳后从任务结果重建的同一结构不带此标记。 */
   pending?: boolean;
-}
+} & ({ fields: PublicationSuggestion; issue?: never } | { fields?: never; issue: string });
 
 /**
  * 从报告 JSON 中取 `assessment.publication_suggestion` 并按契约 schema 校验，任一层结构不符都返回
@@ -62,15 +61,23 @@ export function reportSuggestion(value: Json | undefined) {
   return parsed.success ? parsed.data : undefined;
 }
 
+/** 缺少建议不一定是校验失败，只读取明确记入报告的原因。 */
+export function reportSuggestionIssue(value: Json | undefined) {
+  const issue = jsonObject(jsonObject(jsonObject(value).assessment).publication_suggestion_issue);
+  if (typeof issue.code === 'string' && typeof issue.message === 'string') return issue.message;
+}
+
 function suggestionFor(
   execution: AiExecutionResponse,
   report: Json | undefined,
 ): AuditSuggestion | undefined {
   const result = jsonObject(report);
   const fields = reportSuggestion(result);
+  const issue = fields ? undefined : reportSuggestionIssue(result);
+  const content = fields ? { fields } : issue ? { issue } : undefined;
   if (
     execution.operation_id !== 'resource-audit' ||
-    !fields ||
+    !content ||
     typeof result.version_id !== 'string' ||
     jsonObject(execution.input).version_id !== result.version_id ||
     typeof result.content_digest !== 'string'
@@ -99,7 +106,7 @@ function suggestionFor(
     executionId: execution.id,
     versionId: result.version_id,
     digest: result.content_digest,
-    fields,
+    ...content,
     notices,
   };
 }

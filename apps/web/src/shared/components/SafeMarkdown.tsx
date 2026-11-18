@@ -1,5 +1,5 @@
 import { subtleStyles, markdownFileLinkStyles } from '../styles/recipes.js';
-import Markdown from 'react-markdown';
+import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Children, isValidElement, useId, useRef, type ReactNode } from 'react';
 
@@ -106,6 +106,7 @@ export function SafeMarkdown({
   currentFile,
   paths,
   onOpen,
+  blocks,
 }: {
   text: string;
   /** 当前文件在归档内的路径，用作相对链接的解析基准。 */
@@ -114,6 +115,7 @@ export function SafeMarkdown({
   paths: string[];
   /** 点击归档内引用时触发，`anchor` 为链接里的片段（无片段时为 `undefined`）。 */
   onOpen: (path: string, anchor?: string) => void;
+  blocks?: Pick<Components, 'table' | 'pre'>;
 }) {
   const prefix = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -144,6 +146,7 @@ export function SafeMarkdown({
         remarkPlugins={[remarkGfm]}
         skipHtml
         components={{
+          ...blocks,
           h1: ({ children, node }) => heading('h1', children, node?.position?.start.offset),
           h2: ({ children, node }) => heading('h2', children, node?.position?.start.offset),
           h3: ({ children, node }) => heading('h3', children, node?.position?.start.offset),
@@ -157,6 +160,7 @@ export function SafeMarkdown({
                 <button
                   type="button"
                   className={markdownFileLinkStyles}
+                  data-markdown-link=""
                   onClick={() => {
                     const anchor = referenceAnchor(href);
                     if (root.current && anchor) scrollMarkdownAnchor(root.current, anchor);
@@ -170,6 +174,7 @@ export function SafeMarkdown({
               <button
                 type="button"
                 className={markdownFileLinkStyles}
+                data-markdown-link=""
                 title={'查看固定版本文件 ' + target}
                 onClick={() => onOpen(target, referenceAnchor(href!))}
               >

@@ -8,7 +8,7 @@ export interface DraftChange {
   field: 'category' | 'keywords' | 'purpose';
   label: string;
   value: string;
-  result: '已填入' | '保留手动填写' | '已有相同内容' | '已达关键词上限';
+  result: '已填入' | '未填入' | '保留手动填写' | '已有相同内容' | '已达关键词上限';
 }
 
 /**

@@ -29,8 +29,13 @@ import {
 import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { PublicationPolicyFields } from './PublicationPolicyFields.js';
-import type { PublicationDraftPolicy } from '@capability-hub/contracts';
-import type { IntakeResponse, PublicationRequestResponse } from '@capability-hub/contracts/http';
+import type { ScenarioCatalog } from './PublicationScenarioFields.js';
+import type { PublicationDraftPolicy, PublicationSuggestion } from '@capability-hub/contracts';
+import type {
+  IntakeResponse,
+  PublicationRequestResponse,
+  ScenarioResponse,
+} from '@capability-hub/contracts/http';
 import { ArrowRight, ShieldCheck } from '../../shared/icons/lucide.js';
 import {
   useEffect,
@@ -42,6 +47,7 @@ import {
   type SubmitEvent,
 } from 'react';
 import { mutate } from '../../shared/api/client.js';
+import { useQuery } from '../../shared/api/use-query.js';
 import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { assetHref } from '../../shared/navigation/history-route.js';
@@ -61,6 +67,35 @@ function draftPolicy(intake: IntakeResponse): PublicationDraftPolicy {
     return { category, scenario_ids, proposed_scenarios, distribution };
   }
   return intake.proposed_policy;
+}
+
+interface ClassificationCheck {
+  intakeId: string;
+  executionId: string;
+  attempt: number;
+  manual?: { button: DOMRect; draft: PublicationDraftPolicy };
+}
+
+const categoryIssues = {
+  unreadable: '无法核对最新场景，分类未填入。可以重试或手动选择场景。',
+  unavailable: '建议中的场景已不可选，请手动选择场景。',
+  name_taken: '建议的新场景已有同名条目，请手动选择或修改场景。',
+} as const;
+
+function scenarioCatalogIssue(fields: PublicationSuggestion, { data, error }: ScenarioCatalog) {
+  if (error || !data) return 'unreadable';
+  if (fields.scenario_ids.some((id) => !data.some((entry) => entry.id === id && entry.active)))
+    return 'unavailable';
+  if (fields.proposed_scenarios?.some(({ name }) => data.some((entry) => entry.name === name)))
+    return 'name_taken';
+}
+
+function classificationChanged(before: PublicationDraftPolicy, after: PublicationDraftPolicy) {
+  return (
+    before.category !== after.category ||
+    before.scenario_ids !== after.scenario_ids ||
+    before.proposed_scenarios !== after.proposed_scenarios
+  );
 }
 
 /**
@@ -87,7 +122,7 @@ export function IntakeDetail({
   connection?: IntakeConnection;
   onSelect?: (id: string) => void;
 }) {
-  const { reload } = useHub();
+  const { refresh, reload } = useHub();
   const [section, setSection] = useState(i.state === 'ready' ? 'publication' : 'evidence');
   const inactive = i.asset_lifecycle !== 'active';
   const [requiresApiKey, setRequiresApiKey] = useState(
@@ -137,6 +172,24 @@ export function IntakeDetail({
     !submitted &&
     i.publication?.state !== 'pending' &&
     !published;
+  const [classificationCheck, setClassificationCheck] = useState<ClassificationCheck>();
+  const handledCheck = useRef<ClassificationCheck>(undefined);
+  const check =
+    editable &&
+    proposal?.fields &&
+    !proposal.pending &&
+    classificationCheck?.executionId === proposal.executionId &&
+    classificationCheck.intakeId === i.id
+      ? classificationCheck
+      : undefined;
+  const scenarioCatalog = useQuery<ScenarioResponse[]>(
+    editable && (value.category === 'scenario' || check) ? '/api/scenarios' : null,
+    refresh + (check?.attempt ?? 0),
+  );
+  const categoryIssue =
+    check && !scenarioCatalog.loading && proposal?.fields
+      ? scenarioCatalogIssue(proposal.fields, scenarioCatalog)
+      : undefined;
   const formId = useId();
   const root = useRef<HTMLDivElement>(null);
   const [jump, setJump] = useState<PublicationNotice>();
@@ -180,11 +233,12 @@ export function IntakeDetail({
       notices.push({ target: 'audit-' + index, evidence: true, text: notice.title }),
     );
   }
-  function fillProposal(field?: DraftChange['field'], button?: DOMRect) {
-    if (!proposal || proposal.pending || !editable) return;
+  function fillProposal(field?: DraftChange['field'], button?: DOMRect, skipCategory = false) {
+    if (!proposal?.fields || proposal.pending || !editable) return;
     if (field) edited.current[field] = true;
     const fields = proposal.fields;
-    const writeCategory = field ? field === 'category' : !edited.current.category;
+    const applyCategory = field ? field === 'category' : !edited.current.category;
+    const writeCategory = applyCategory && !skipCategory;
     const writeKeywords = field ? field === 'keywords' : !edited.current.keywords;
     const writePurpose = field ? field === 'purpose' : !edited.current.purpose;
     const existing = appliesTo.keywords ?? [];
@@ -207,7 +261,13 @@ export function IntakeDetail({
         field: 'category',
         label: '分类',
         value: categoryLabels[writeCategory ? fields.category : value.category],
-        result: !writeCategory ? '保留手动填写' : changedCategory ? '已填入' : '已有相同内容',
+        result: !applyCategory
+          ? '保留手动填写'
+          : skipCategory
+            ? '未填入'
+            : changedCategory
+              ? '已填入'
+              : '已有相同内容',
       },
       {
         field: 'keywords',
@@ -243,15 +303,47 @@ export function IntakeDetail({
     });
     applied.current = proposal.executionId;
   }
+  function verifyCategory(button?: DOMRect) {
+    if (!proposal?.fields || proposal.pending || !editable) return;
+    setClassificationCheck((previous) => ({
+      intakeId: i.id,
+      executionId: proposal.executionId,
+      attempt: (previous?.attempt ?? 0) + 1,
+      ...(button && { manual: { button, draft: value } }),
+    }));
+  }
   useEffect(() => {
-    if (proposal && !proposal.pending && applied.current !== proposal.executionId) fillProposal();
-  }, [proposal, editable]);
+    if (
+      !editable ||
+      !proposal?.fields ||
+      proposal.pending ||
+      applied.current === proposal.executionId ||
+      check
+    )
+      return;
+    if (proposal.fields.category === 'scenario' && !edited.current.category) verifyCategory();
+    else fillProposal();
+  }, [proposal, editable, check]);
+  useEffect(() => {
+    if (!check || scenarioCatalog.loading || handledCheck.current === check) return;
+    handledCheck.current = check;
+    if (!check.manual) fillProposal(undefined, undefined, categoryIssue !== undefined);
+    else if (!categoryIssue && !classificationChanged(check.manual.draft, value))
+      fillProposal('category', check.manual.button);
+  }, [check, scenarioCatalog.loading, categoryIssue]);
   useEffect(() => {
     if (origin && receipt?.id === origin.executionId && editable) setSection('publication');
   }, [origin, receipt?.id, editable]);
   function hint(field: DraftChange['field']) {
-    if (!proposal) return;
+    if (field === 'category' && proposal?.issue)
+      return <Message>发布建议无法回填：{proposal.issue}你可以手动填写申请。</Message>;
+    if (!proposal?.fields) return;
     const fields = proposal.fields;
+    if (field === 'category') {
+      if (check && scenarioCatalog.loading) return <Message>正在核对最新场景…</Message>;
+      if (categoryIssue && categoryIssue !== 'unreadable')
+        return <Message>{categoryIssues[categoryIssue]}</Message>;
+    }
     const keywords = new Set((appliesTo.keywords ?? []).map((term) => term.toLowerCase()));
     const missing = fields.keywords.filter((term) => !keywords.has(term.toLowerCase()));
     const config = {
@@ -271,15 +363,25 @@ export function IntakeDetail({
       purpose: { label: '共享目的', values: [fields.purpose], matched: purpose === fields.purpose },
     }[field];
     return (
-      <FieldSuggestion
-        {...config}
-        pending={proposal.pending}
-        onApply={
-          field === 'keywords' && keywords.size >= 20
-            ? undefined
-            : (event) => fillProposal(field, event.currentTarget.getBoundingClientRect())
-        }
-      />
+      <>
+        <FieldSuggestion
+          {...config}
+          pending={proposal.pending}
+          onApply={
+            field === 'keywords' && keywords.size >= 20
+              ? undefined
+              : (event) => {
+                  const button = event.currentTarget.getBoundingClientRect();
+                  if (field === 'category' && fields.category === 'scenario')
+                    verifyCategory(button);
+                  else fillProposal(field, button);
+                }
+          }
+        />
+        {field === 'category' && categoryIssue === 'unreadable' && (
+          <Message>{categoryIssues.unreadable}</Message>
+        )}
+      </>
     );
   }
   async function submit(e: SubmitEvent) {
@@ -542,15 +644,11 @@ export function IntakeDetail({
                 <h4 className="font-semibold">分发设置</h4>
                 <PublicationPolicyFields
                   categoryHint={hint('category')}
+                  scenarioCatalog={scenarioCatalog}
                   ownerGroupId={i.asset_owner_group_id}
                   value={value}
                   onChange={(next) => {
-                    if (
-                      next.category !== value.category ||
-                      next.scenario_ids !== value.scenario_ids ||
-                      next.proposed_scenarios !== value.proposed_scenarios
-                    )
-                      edited.current.category = true;
+                    if (classificationChanged(value, next)) edited.current.category = true;
                     setValue(next);
                   }}
                 />

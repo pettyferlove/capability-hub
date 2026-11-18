@@ -72,14 +72,18 @@ export class AgentEvidenceService {
   }
 
   /**
-   * 可发布的场景清单，包含启用场景的名称与用途说明；
+   * 候选只包含启用场景；查重同时计入停用场景的名称。
    * 仍要传版本 id 以复用门禁，从而不向无权主体暴露场景表。
    */
   async publicationScenarios(ownerId: string, versionId: string) {
     await this.version(ownerId, versionId);
-    return (await this.context.store.all('scenarios'))
-      .filter((s) => s.active)
-      .map(({ id, name, description }) => ({ id, name, description }));
+    const items: { id: string; name: string; description: string }[] = [];
+    const names = new Set<string>();
+    for (const { id, name, description, active } of await this.context.store.all('scenarios')) {
+      names.add(name);
+      if (active) items.push({ id, name, description });
+    }
+    return { items, names };
   }
 
   /**
