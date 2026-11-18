@@ -33,6 +33,7 @@ import {
   ArrowRight,
   BookOpen,
   Download,
+  FileText,
   History,
   MessageSquare,
   Terminal,
@@ -63,7 +64,17 @@ import { useSnapshotFile } from './use-snapshot-file.js';
 export function AssetContent({ asset }: { asset: AssetResponse }) {
   const { refresh, reload } = useHub();
   const entry = asset.kind === 'skill' ? 'SKILL.md' : 'server.json';
-  const overview = useSnapshotFile(asset.current_release.version_id, entry, refresh);
+  const versionId = asset.current_release.version_id;
+  const hasReadme = asset.kind === 'skill' && asset.files.some((file) => file.path === 'README.md');
+  const readme = useSnapshotFile(versionId, hasReadme ? 'README.md' : null, refresh);
+  const readmeBody = readme.text === undefined ? undefined : markdownBody(readme.text);
+  const readmeFallback =
+    hasReadme &&
+    (readme.unavailable || (!readme.error && readmeBody !== undefined && !readmeBody.trim()));
+  const showReadme = hasReadme && !readmeFallback;
+  const entryFile = useSnapshotFile(versionId, showReadme ? null : entry, refresh);
+  const overview = showReadme ? readme : entryFile;
+  const overviewPath = showReadme ? 'README.md' : entry;
   const history = useQuery<VersionHistoryResponse[]>(
     '/api/assets/' + encodeURIComponent(asset.slug) + '/versions',
     refresh,
@@ -79,6 +90,7 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
     index: 0,
   });
   const view = navigation.entries[navigation.index];
+  const currentFile = view.tab === 'overview' ? overviewPath : view.path;
   const [lastFile, setLastFile] = useState(entry);
   const [mode, setMode] = useState<'read' | 'source'>('read');
   const root = useRef<HTMLDivElement>(null);
@@ -144,7 +156,7 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
     if (pendingFocus.current) panel.current?.focus({ preventScroll: true });
     pendingFocus.current = false;
   }, [view]);
-  const download = `/api/versions/${asset.current_release.version_id}/files?path=${encodeURIComponent(entry)}`;
+  const fileDownload = `/api/versions/${versionId}/files?path=`;
   return (
     <div className={assetContentStyles} ref={root}>
       <div className={detailActionsStyles}>
@@ -208,15 +220,21 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
           >
             <ArrowRight size={16} />
           </button>
-          <span className={detailCurrentFileStyles} title={view.path}>
+          <span className={detailCurrentFileStyles} title={currentFile}>
             {view.tab === 'overview' || view.tab === 'files'
-              ? view.path
+              ? currentFile
               : view.tab === 'installation'
                 ? '使用与安装'
                 : view.tab === 'feedback'
                   ? '问题与建议'
                   : '版本历史'}
           </span>
+          {view.tab === 'overview' && showReadme && (
+            <button type="button" className={textBtnStyles} onClick={() => openFile(entry)}>
+              <FileText size={14} />
+              查看 SKILL.md
+            </button>
+          )}
           {view.tab === 'files' && (
             <button
               type="button"
@@ -238,6 +256,12 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
         className={assetContentPanelStyles}
       >
         <div hidden={view.tab !== 'overview'} aria-busy={overview.loading || overview.refreshing}>
+          {readmeFallback && (
+            <Message className="mb-4 max-w-3xl">
+              {readme.unavailable ? `README.md：${readme.error}` : 'README.md 没有正文。'}{' '}
+              <a href={fileDownload + 'README.md'}>下载 README.md</a>
+            </Message>
+          )}
           {overview.loading ? (
             view.tab === 'overview' && <CodeSkeleton />
           ) : overview.error ? (
@@ -246,15 +270,15 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
                 message={overview.error}
                 retry={overview.unavailable ? undefined : overview.retry}
               />
-              <a className={textBtnStyles} href={download}>
+              <a className={textBtnStyles} href={fileDownload + encodeURIComponent(overviewPath)}>
                 下载说明文件
               </a>
             </>
           ) : asset.kind === 'skill' ? (
             <article data-markdown className={markdownStyles}>
               <SafeMarkdown
-                text={markdownBody(overview.text ?? '')}
-                currentFile={entry}
+                text={showReadme ? (readmeBody ?? '') : markdownBody(overview.text ?? '')}
+                currentFile={overviewPath}
                 paths={asset.files.map((file) => file.path)}
                 onOpen={openFile}
               />

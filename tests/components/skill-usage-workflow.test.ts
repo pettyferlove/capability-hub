@@ -10,6 +10,7 @@ import { userEvent } from '@testing-library/user-event';
 import { IntakeDetail } from '../../apps/web/src/features/publishing/IntakeDetail.js';
 import { IntakeHistoryRow } from '../../apps/web/src/features/publishing/IntakeHistoryRow.js';
 import { AssetCommunity } from '../../apps/web/src/features/catalog/AssetCommunity.js';
+import { AssetContent } from '../../apps/web/src/features/catalog/AssetContent.js';
 import DiscoverPage from '../../apps/web/src/features/catalog/DiscoverPage.js';
 import ManagementPanel from '../../apps/web/src/features/catalog/ManagementPanel.js';
 import { assetCardPixelRevealStyles } from '../../apps/web/src/features/catalog/styles.js';
@@ -26,6 +27,7 @@ import {
   publishSkill,
   testPassword,
 } from '../support/application.js';
+import { skillDocument } from '../support/content.js';
 import { deferred } from '../support/store.js';
 
 afterEach(cleanup);
@@ -62,6 +64,50 @@ function page(child: ReactNode, refresh = 0, groups = [{ id: 'team', name: '工�
     child,
   );
 }
+
+test('技能 README 读取失败不回退，重试后仍可查看该版本的 SKILL.md', async (context) => {
+  const fixture = await createTestHub(context);
+  const slug = 'documented-skill';
+  const entry = skillDocument(slug, '先核对技术术语。');
+  const readme = '# 文档检查指南';
+  await publishSkill(fixture, {
+    slug,
+    files: [
+      { path: 'SKILL.md', bytes: entry, executable: false },
+      { path: 'README.md', bytes: Buffer.from(readme), executable: false },
+    ],
+  });
+  const asset = await fixture.hub.catalog.getDetail(null, slug);
+  const fileUrl = `/api/versions/${asset.current_release.version_id}/files?path=`;
+  let readable = false;
+  context.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === `/api/assets/${slug}/versions`) return Response.json([]);
+    if (path === fileUrl + 'SKILL.md') return new Response(entry.toString());
+    if (path === fileUrl + 'README.md') {
+      return readable
+        ? new Response(readme)
+        : Response.json({ error: { message: '版本不可读' } }, { status: 404 });
+    }
+    assert.fail('Unexpected fetch: ' + path);
+  });
+  const user = userEvent.setup();
+  render(page(createElement(AssetContent, { asset })));
+
+  assert.match((await screen.findByRole('alert')).textContent ?? '', /版本不可读/);
+  assert.equal(screen.queryByText('先核对技术术语。'), null);
+  assert.equal(
+    screen.getByRole('link', { name: '下载说明文件' }).getAttribute('href'),
+    fileUrl + 'README.md',
+  );
+
+  readable = true;
+  await user.click(screen.getByRole('button', { name: '重新加载' }));
+  assert(await screen.findByRole('heading', { name: '文档检查指南' }));
+  await user.click(screen.getByRole('button', { name: '查看 SKILL.md' }));
+  assert(await screen.findByText('先核对技术术语。'));
+  await user.click(screen.getByRole('button', { name: '返回内容说明' }));
+  assert(screen.getByRole('heading', { name: '文档检查指南' }));
+});
 
 test('上传按有效团队候选提交 API Key 声明，切换 MCP 后隐藏且重置', async (context) => {
   const submitted: Record<string, unknown>[] = [];

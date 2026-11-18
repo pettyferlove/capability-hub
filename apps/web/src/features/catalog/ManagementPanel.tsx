@@ -254,7 +254,22 @@ export default function ManagementPanel() {
           </Empty>
         ) : (
           <div className={cn(dataTableStyles, managementTableStyles)} aria-busy={loading}>
-            <div className={tableWrapStyles} tabIndex={0} role="region" aria-label="资产维护表格">
+            <div
+              className={tableWrapStyles}
+              tabIndex={0}
+              role="region"
+              aria-label="资产维护表格"
+              onFocus={({ currentTarget, target }) => {
+                if (
+                  target.matches(':focus-visible') &&
+                  target.closest('td:not(:last-child)') &&
+                  currentTarget.scrollWidth > currentTarget.clientWidth
+                ) {
+                  // 被固定列覆盖的链接仍在滚动容器内，原生焦点滚动不会避开覆盖区。
+                  target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                }
+              }}
+            >
               <table aria-label="维护资产">
                 <thead>
                   <tr>
@@ -291,7 +306,7 @@ export default function ManagementPanel() {
                         </div>
                       </td>
                       <td>
-                        <span className="mb-1 block text-caption text-muted-ink min-[761px]:hidden">
+                        <span className="mb-1 block text-caption text-muted-ink min-[760px]:hidden">
                           当前发布
                         </span>
                         {a.current_version ? (
@@ -306,7 +321,7 @@ export default function ManagementPanel() {
                         )}
                       </td>
                       <td>
-                        <span className="mb-1 block text-caption text-muted-ink min-[761px]:hidden">
+                        <span className="mb-1 block text-caption text-muted-ink min-[760px]:hidden">
                           最近接收
                         </span>
                         {a.latest_intake ? (
@@ -357,7 +372,7 @@ export default function ManagementPanel() {
                         )}
                       </td>
                       <td>
-                        <span className="mb-1 block text-caption text-muted-ink min-[761px]:hidden">
+                        <span className="mb-1 block text-caption text-muted-ink min-[760px]:hidden">
                           最近上传 / 同步
                         </span>
                         <div className={subtleStyles}>
@@ -365,7 +380,7 @@ export default function ManagementPanel() {
                         </div>
                       </td>
                       <td>
-                        <span className="mb-1 block text-caption text-muted-ink min-[761px]:hidden">
+                        <span className="mb-1 block text-caption text-muted-ink min-[760px]:hidden">
                           最近变动
                         </span>
                         <span className="block text-caption">{a.latest_activity.label}</span>

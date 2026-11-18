@@ -72,19 +72,28 @@ export const assetContentPanelStyles = cn(
 );
 
 export const markdownStyles = cn(
-  'text-ink text-[length:12px] leading-[1.95] [overflow-wrap:anywhere] [&_h1]:text-[length:25px]',
-  '[&_h2]:text-[length:21px] [&_h2]:mt-[25px] [&_h2]:mr-0 [&_h2]:mb-3.5 [&_h2]:ml-0',
-  '[&_h3]:text-[length:17px] [&_h3]:mt-5 [&_h3]:mr-0 [&_h3]:mb-2.5 [&_h3]:ml-0 [&_p]:mt-3.5',
-  '[&_p]:mr-0 [&_p]:mb-3.5 [&_p]:ml-0 [&_ul]:pl-5.5 [&_ol]:pl-5.5 [&_pre]:bg-page [&_pre]:pt-3.5',
-  '[&_pre]:pr-3.5 [&_pre]:pb-3.5 [&_pre]:pl-3.5 [&_pre]:rounded-[9px] [&_pre]:overflow-auto',
-  '[&_pre_code]:whitespace-pre [&_pre_code]:text-[length:11px] [&_code]:text-[length:11px]',
-  '[&_table]:block [&_table]:overflow-auto',
+  'min-w-0 max-w-3xl text-[length:14px] leading-[1.8] text-ink [overflow-wrap:anywhere]',
+  '[&_>_div_>_*+*]:mt-4 [&_>_div_>_:is(h2,h3,h4,h5,h6):not(:first-child)]:mt-7',
+  '[&_:is(h1,h2,h3,h4,h5,h6)]:font-semibold [&_:is(h1,h2,h3,h4,h5,h6)]:leading-tight',
+  '[&_h1]:text-2xl [&_h2]:text-xl [&_h3]:text-lg [&_h2]:border-b [&_h2]:border-line [&_h2]:pb-2',
+  '[&_ul]:list-disc [&_ol]:list-decimal [&_:is(ul,ol)]:ps-6 [&_li+li]:mt-1',
+  '[&_li_:is(ul,ol)]:mt-1 [&_li_p+p]:mt-2 [&_li.task-list-item]:list-none [&_li.task-list-item_input]:me-1',
+  '[&_blockquote]:border-s-[3px] [&_blockquote]:border-brand [&_blockquote]:bg-page',
+  '[&_blockquote]:px-4 [&_blockquote]:py-2.5 [&_blockquote]:text-muted-ink [&_blockquote_p+p]:mt-2',
+  '[&_a[href]]:underline [&_a[href]]:underline-offset-3',
+  '[&_code]:text-[length:0.9em] [&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-page',
+  '[&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5',
+  '[&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-line [&_pre]:bg-page',
+  '[&_pre]:p-4 [&_pre_code]:whitespace-pre',
+  '[&_table]:block [&_table]:w-fit [&_table]:max-w-full [&_table]:overflow-x-auto',
+  '[&_table]:rounded-lg [&_table]:border [&_table]:border-line [&_table]:text-[length:13px]',
+  '[&_:is(th,td)]:px-3 [&_:is(th,td)]:py-2.5 [&_th]:text-[length:inherit] [&_th]:font-semibold',
+  '[&_th]:text-ink [&_tbody_tr:last-child_td]:border-b-0',
   "[[class~='group/asset-content']_&_:is(h1,_h2,_h3,_h4,_h5,_h6)]:[scroll-margin-top:112px]",
   "[[class~='group/asset-content']_[class~='group/detail-file-preview-content']_&]:pt-4.5",
   "[[class~='group/asset-content']_[class~='group/detail-file-preview-content']_&]:pr-4.5",
   "[[class~='group/asset-content']_[class~='group/detail-file-preview-content']_&]:pb-4.5",
   "[[class~='group/asset-content']_[class~='group/detail-file-preview-content']_&]:pl-4.5",
-  "[[class~='group/asset-content']_[class~='group/detail-file-preview-content']_&]:text-[length:12px]",
   "[[class~='group/asset-content']_[class~='group/detail-file-preview-content']_&_:is(h1,_h2,_h3,_h4,_h5,_h6)]:[scroll-margin-top:16px]",
 );
 
@@ -401,10 +410,17 @@ export const feedbackFormStyles = cn(
 );
 
 export const managementTableStyles = cn(
-  '[&_table]:min-w-320 [&_table]:[table-layout:fixed] [&_td]:py-4',
-  '[&_th:nth-child(1)]:w-[23%] [&_th:nth-child(2)]:w-[10%] [&_th:nth-child(3)]:w-[12%] [&_th:nth-child(4)]:w-[16%] [&_th:nth-child(5)]:w-[17%]',
+  '[&_table]:min-w-288 [&_table]:border-separate [&_table]:border-spacing-0 [&_td]:py-4',
+  "[&_[class~='group/table-wrap']>table]:table-fixed",
+  '[&_th:nth-child(2)]:w-44 [&_th:nth-child(3)]:w-42 [&_th:nth-child(4)]:w-[16%] [&_th:nth-child(5)]:w-36',
   '[&_small]:block [&_small]:text-muted-ink [&_small]:text-caption',
-  "[&_[class~='group/table-wrap']]:max-h-none",
+  "[&_[class~='group/table-wrap']]:max-h-none [&_[class~='group/table-wrap']]:[--management-actions-width:256px]",
+  "min-[760px]:[&_[class~='group/table-wrap']]:scroll-pe-[calc(var(--management-actions-width)_+_1rem)]",
+  'min-[760px]:[&_th:last-child]:w-(--management-actions-width)',
+  'min-[760px]:[&_:is(th,td):last-child]:sticky min-[760px]:[&_:is(th,td):last-child]:end-0 min-[760px]:[&_:is(th,td):last-child]:border-s',
+  'min-[760px]:[&_td:last-child]:bg-paper',
+  'min-[760px]:[&_tbody_tr:hover>td]:bg-[color-mix(in_srgb,var(--brand-soft)_35%,var(--paper))]',
+  'min-[760px]:[&_tbody_tr:focus-within>td]:bg-[color-mix(in_srgb,var(--brand-soft)_45%,var(--paper))]',
   'max-[760px]:[&_table]:block max-[760px]:[&_table]:min-w-0',
   'max-[760px]:[&_thead]:absolute max-[760px]:[&_thead]:w-px max-[760px]:[&_thead]:h-px',
   'max-[760px]:[&_thead]:overflow-hidden max-[760px]:[&_thead]:[clip-path:inset(50%)]',
@@ -426,7 +442,7 @@ export const managementTableStyles = cn(
 );
 
 export const managementActionsStyles = cn(
-  'flex flex-wrap items-center gap-2 min-[761px]:flex-nowrap [&>button]:min-h-8 [&>a]:min-h-8',
+  'flex flex-wrap items-center gap-x-2 gap-y-1 [&>button]:min-h-8 [&>a]:min-h-8',
   '[&>button]:px-3 [&>button]:py-1.5 [&>a]:py-1.5',
   'pointer-coarse:[&>button]:min-h-11 pointer-coarse:[&>a]:min-h-11',
 );
