@@ -105,7 +105,7 @@ export function Overlay({
                     variant === 'showcase'
                       ? 'pointer-events-none absolute inset-0 flex items-center justify-center p-4'
                       : cn(
-                          'pointer-events-none absolute inset-x-0 top-[12vh] flex justify-center',
+                          'pointer-events-none absolute inset-x-0 bottom-4 top-[12dvh] flex items-start justify-center',
                           gutterStyles,
                         )
                   }
@@ -122,7 +122,7 @@ export function Overlay({
                             hubShowcaseDialogStyles,
                             'pointer-events-auto w-full max-h-full overflow-y-auto',
                           )
-                        : 'pointer-events-auto w-full max-w-[620px] overflow-hidden rounded-[22px] border border-line bg-paper shadow-[var(--shadow-floating)]'
+                        : 'pointer-events-auto max-h-full w-full max-w-[620px] overflow-x-hidden overflow-y-auto rounded-[22px] border border-line bg-paper shadow-[var(--shadow-floating)]'
                     }
                     initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: -8 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
