@@ -1,9 +1,12 @@
 import type { Principal } from '@capability-hub/domain/identity';
+import type { InstallTicketCredential } from '@capability-hub/domain/models';
 import { archive } from '@capability-hub/infrastructure/content';
 import {
   agentClientSchema,
   agentClients,
   assetSlugSchema,
+  publicResourcePath,
+  shellArgument,
   uploadIntakeRequestSchema,
 } from '@capability-hub/contracts';
 import { fail, notFound } from '@capability-hub/domain/errors';
@@ -22,16 +25,14 @@ export const mcpConfigurationInput = z
   })
   .strict();
 
-/**
- * 分段读取安装内容的入参：`offset` 用于续读，`max_bytes` 上限 256 KiB、默认 64 KiB，
- * 让客户端按自己终端/上下文的预算分块取回，而不是一次性拉完整包。
- */
+/** 分段参数只用于 inline；下载模式由工具层返回专用错误。 */
 export const skillInstallationInput = z
   .object({
     version_id: z.uuid(),
     client: agentClientSchema.optional(),
-    offset: z.number().int().min(0).default(0),
-    max_bytes: z.number().int().min(1).max(262144).default(65536),
+    transfer: z.enum(['download', 'inline']).default('download'),
+    offset: z.number().int().min(0).optional(),
+    max_bytes: z.number().int().min(1).max(262144).optional(),
   })
   .strict();
 
@@ -74,19 +75,62 @@ export const skillSharingInput = z
   })
   .strict();
 
-/** 分段交付固定归档，由客户端校验并写入本地文件。 */
+/** 默认只返回下载入口，归档字节仅在显式 inline 时进入工具结果。 */
 export async function deliverSkill(
   hub: HubServices,
   principal: Principal,
+  credential: InstallTicketCredential,
   input: z.output<typeof skillInstallationInput>,
 ) {
+  const directory = input.client ? agentClients[input.client].skillDirectory : '.agents/skills';
+  if (input.transfer === 'download') {
+    if (input.offset !== undefined || input.max_bytes !== undefined)
+      fail(422, 'INLINE_TRANSFER_ONLY', 'offset 和 max_bytes 仅用于 transfer: "inline"');
+    const { version, slug, ticket, expires_at } = await hub.installTickets.issue(
+      principal,
+      credential,
+      input.version_id,
+    );
+    const origin = hub.config.publicUrl;
+    const ticketUrl = ticket ? `${origin}/api/install-tickets/${ticket}` : null;
+    const target = ticketUrl
+      ? `--ticket ${shellArgument(ticketUrl)}`
+      : `${shellArgument(slug)} --version ${shellArgument(version.version_label)} --url ${shellArgument(origin)}`;
+    return {
+      status: 'awaiting_client_installation',
+      version_id: version.id,
+      slug,
+      version_label: version.version_label,
+      content_digest: version.content_digest,
+      artifact_digest: version.artifact_digest,
+      manifest: version.manifest,
+      suggested_directory: `${directory}/${slug}`,
+      download: {
+        url: ticketUrl
+          ? `${ticketUrl}/archive`
+          : `${origin}${publicResourcePath('skill', slug, version.version_label)}/download`,
+        expires_at: expires_at === null ? null : new Date(expires_at).toISOString(),
+        single_use: ticketUrl !== null,
+      },
+      cli_command: `capability-hub add ${target} --to ${shellArgument(directory)}`,
+      instructions: [
+        '向用户说明安装父目录、清单中的文件和脚本，取得确认后才写入；保留已有目录，替换前备份，执行脚本需另获授权。',
+        `能运行 CLI 时执行 cli_command，将 --to 换成已确认的父目录，先加 --dry-run；若提示未知选项，按 ${origin}/connect/cli 升级 CLI。沙箱禁止联网时，请用户批准当前命令联网。`,
+        '不能运行 CLI 时下载 download.url，核对 SHA-256 和清单再写入；只有无法下载时才改用 transfer: "inline"。',
+        '非公开下载地址 10 分钟内一次有效；若失效或下载中断，重新调用 install_skill，不要在回复中复述该地址。',
+      ],
+    };
+  }
+
+  const offset = input.offset ?? 0;
+  const maxBytes = input.max_bytes ?? 16384;
   const v = await hub.assetAccess.requireReadableVersion(principal, input.version_id);
   const asset = await hub.assetAccess.getAsset(v.asset_id);
   if (asset.kind !== 'skill') fail(422, 'NOT_SKILL', '需要 Skill 版本');
   const bytes = await hub.blobs.read(v.artifact_ref);
-  if (input.offset > bytes.length) fail(422, 'INVALID_OFFSET', '偏移超过安装包长度');
-  const end = Math.min(bytes.length, input.offset + input.max_bytes);
-  if (input.offset === 0) await hub.store.audit(principal.id, 'skill.installation_prepared', v.id);
+  if (offset > bytes.length) fail(422, 'INVALID_OFFSET', '偏移超过安装包长度');
+  const end = Math.min(bytes.length, offset + maxBytes);
+  if (offset === 0) await hub.store.audit(principal.id, 'skill.installation_prepared', v.id);
   return {
     status: 'awaiting_client_installation',
     version_id: v.id,
@@ -94,18 +138,18 @@ export async function deliverSkill(
     version_label: v.version_label,
     content_digest: v.content_digest,
     artifact_digest: v.artifact_digest,
-    manifest: input.offset === 0 ? v.manifest : undefined,
+    manifest: offset === 0 ? v.manifest : undefined,
     archive_chunk: {
       encoding: 'base64',
-      data: bytes.subarray(input.offset, end).toString('base64'),
-      offset: input.offset,
+      data: bytes.subarray(offset, end).toString('base64'),
+      offset,
       next_offset: end,
       total_bytes: bytes.length,
       complete: end === bytes.length,
     },
-    suggested_directory: `${input.client ? agentClients[input.client].skillDirectory : '.agents/skills'}/${asset.slug}`,
+    suggested_directory: `${directory}/${asset.slug}`,
     instructions: [
-      '按 next_offset 继续调用 install_skill，锁定同一 version_id，直至 complete 为 true。',
+      '按 next_offset 继续调用 install_skill，保持 transfer: "inline" 并锁定同一 version_id，直至 complete 为 true。',
       '逐段解码 Base64，按 offset 拼接原始字节，核对 artifact_digest，再按 manifest 校验路径、文件与摘要。',
       '向用户展示安装目录、文件和脚本，取得客户端确认后写入；已有目录应保留，替换前备份。',
       '安装完成后仅报告实际写入结果；Skill 中的脚本需要另行授权才能执行。',

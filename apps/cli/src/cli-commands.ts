@@ -19,8 +19,13 @@ import {
   resolveConsumerCredentials,
   saveCredentials,
 } from './credentials.js';
-import { HubApiClient, terminalText } from './api-client.js';
-import { install } from './install.js';
+import { HubApiClient, HubApiError, terminalText } from './api-client.js';
+import {
+  install,
+  preflightInstall,
+  validateInstallManifest,
+  type InstallResult,
+} from './install.js';
 import {
   assetSchema,
   searchSchema,
@@ -28,6 +33,7 @@ import {
   optionsSchema,
   configurationSchema,
   manifestResponseSchema,
+  installTicketSchema,
   loginResponseSchema,
   pollResponseSchema,
 } from './response-schemas.js';
@@ -46,6 +52,7 @@ export interface CliOptions {
   browser?: boolean;
   configFile?: string;
   version?: string;
+  ticket?: string;
   to?: string;
   option?: string;
   conversation?: boolean;
@@ -134,6 +141,12 @@ export async function runCommand(
     else await checkConnection(url, directory, client, ui);
     return;
   }
+  if (command === 'add' && flags.ticket !== undefined) {
+    if (args[0] !== undefined || flags.version !== undefined)
+      throw new Error('--ticket 不能与 NAME 或 --version 同时使用');
+    await installTicket(flags.ticket, flags, ui);
+    return;
+  }
   const credentialsFile = join(
     flags.configDir ? resolve(flags.configDir) : join(homedir(), '.config', 'capability-hub'),
     'auth.json',
@@ -193,18 +206,8 @@ export async function runCommand(
   const credentials = await resolveConsumerCredentials({
     url: flags.url,
     environmentToken: process.env.CAPABILITY_HUB_TOKEN,
-    load: async () => {
-      try {
-        return await loadCredentials(credentialsFile);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-          throw new Error(
-            '尚未登录 CLI。请运行 capability-hub login --url <URL>，或设置 CAPABILITY_HUB_TOKEN 并显式提供 --url。',
-            { cause: error },
-          );
-        throw error;
-      }
-    },
+    allowAnonymous: command === 'add',
+    load: () => loadCredentials(credentialsFile),
   });
   const api = new HubApiClient(credentials.url, credentials.token);
   if (command === 'search') {
@@ -228,13 +231,29 @@ export async function runCommand(
     return;
   }
   if (!slug) throw new Error('未知命令：' + terminalText(command));
-  const asset = await api.json('/api/assets/' + slug, assetSchema);
+  const anonymous = command === 'add' && credentials.token === undefined;
+  if (anonymous) ui.message('未找到 CLI 登录，按匿名身份读取公开资源');
+  async function readResource<T>(request: Promise<T>): Promise<T> {
+    try {
+      return await request;
+    } catch (error) {
+      if (anonymous && error instanceof HubApiError && error.status === 404)
+        throw new Error(
+          `未找到可匿名访问的资源 ${slug}；团队资源请先运行 capability-hub login --url ${api.url}`,
+          { cause: error },
+        );
+      throw error;
+    }
+  }
+  const asset = await readResource(api.json('/api/assets/' + slug, assetSchema));
   if (asset.slug !== slug) throw new Error('Hub 返回的资源名称与请求不一致');
   if (command === 'mcp-config' && asset.kind !== 'mcp')
     throw new Error('mcp-config 仅用于 MCP 资源');
   if (command === 'add' && asset.kind !== 'skill')
     throw new Error('add 只安装 Skill；MCP 请使用 mcp-config');
-  const versions = await api.json(`/api/assets/${asset.asset_id}/versions`, versionsSchema);
+  const versions = await readResource(
+    api.json(`/api/assets/${asset.asset_id}/versions`, versionsSchema),
+  );
   if (flags.version === undefined)
     flags.version = await ui.choose(
       '--version',
@@ -288,25 +307,9 @@ export async function runCommand(
   }
   if (!flags.to) throw new Error('add 必须提供明确 --to PATH');
   const path = `/api/versions/${version.version_id}`;
-  const manifest = await api.json(path + '/manifest', manifestResponseSchema);
-  if (ui.interactive)
-    ui.note(
-      flags.dryRun ? '安装预览' : '安装 Skill',
-      `资源名称  ${asset.slug}\n资源版本  ${terminalText(version.version_label)}\n安装目录  ${terminalText(resolve(flags.to, asset.slug))}`,
-    );
-  const archive = await ui.task('下载 Skill 归档', '归档下载完成，开始校验', (update) =>
-    api.archive(
-      path + '/archive',
-      ui.animated
-        ? (received, total) => {
-            const transferred = formatBytes(received);
-            update(
-              `下载 Skill 归档 · ${total === undefined ? transferred : `${transferred} / ${formatBytes(total)}`}`,
-            );
-          }
-        : undefined,
-    ),
-  );
+  const manifest = await readResource(api.json(path + '/manifest', manifestResponseSchema));
+  showInstallTarget(ui, flags.to, asset.slug, version.version_label, flags.dryRun);
+  const archive = await readResource(downloadSkillArchive(ui, api, path + '/archive'));
   const result = await install({
     slug: asset.slug,
     to: flags.to,
@@ -323,13 +326,142 @@ export async function runCommand(
     dryRun: flags.dryRun,
     replace: flags.replace,
     beforeCommit: async () => {
-      await api.json(path + '/manifest', manifestResponseSchema);
+      await readResource(api.json(path + '/manifest', manifestResponseSchema));
     },
   });
+  printInstallResult(ui, result);
+}
+
+async function installTicket(ticket: string, flags: CliOptions, ui: CliUi) {
+  const to = flags.to;
+  if (!to?.trim()) throw new Error('--ticket 必须提供明确 --to PATH');
+  const { origin, pathname } = parseTicketUrl(ticket);
+  if (flags.url !== undefined) {
+    let specifiedOrigin: string;
+    try {
+      specifiedOrigin = hubUrl(flags.url);
+    } catch {
+      throw new Error('--url 必须是有效的 HTTP(S) 实例根地址');
+    }
+    if (specifiedOrigin !== origin) throw new Error('--url 与票据的 Hub 地址不一致');
+  }
+  const api = new HubApiClient(origin);
+  const describe = async () => {
+    const metadata = await readTicket(api.json(pathname, installTicketSchema));
+    if (
+      metadata.hub_url !== origin ||
+      metadata.manifest.kind !== 'skill' ||
+      validateVersion(metadata.version_label)
+    )
+      throw new Error('Hub 返回的安装票据元数据无效');
+    validateInstallManifest(metadata);
+    return metadata;
+  };
+  const metadata = await describe();
+  if (!flags.dryRun && !metadata.archive_available) ticketUsed();
+  const input = { ...metadata, to, dryRun: flags.dryRun, replace: flags.replace };
+  const preview = await preflightInstall(input);
+  showInstallTarget(ui, to, metadata.slug, metadata.version_label, flags.dryRun);
+  if (preview) {
+    printInstallResult(ui, preview);
+    return;
+  }
+  const archive = await readTicket(downloadSkillArchive(ui, api, pathname + '/archive'));
+  const result = await install({
+    ...input,
+    archive,
+    source: {
+      hub_url: origin,
+      asset_id: metadata.asset_id,
+      version_id: metadata.version_id,
+      release_id: metadata.release_id,
+    },
+    beforeCommit: async () => {
+      const current = await describe();
+      if (
+        current.asset_id !== metadata.asset_id ||
+        current.slug !== metadata.slug ||
+        current.version_id !== metadata.version_id ||
+        current.version_label !== metadata.version_label ||
+        current.release_id !== metadata.release_id ||
+        current.content_digest !== metadata.content_digest ||
+        current.artifact_digest !== metadata.artifact_digest
+      )
+        throw new Error('安装票据元数据已变更，请重新调用 install_skill');
+    },
+  });
+  printInstallResult(ui, result);
+}
+
+function parseTicketUrl(value: string): URL {
+  try {
+    const raw = /^https?:\/\/[^/@?#]+(\/[^?#]*)$/i.exec(value);
+    if (
+      raw &&
+      !/[\p{Cc}\p{Cf}\s\\]/u.test(value) &&
+      /^\/api\/install-tickets\/[A-Za-z0-9_-]{43}$/.test(raw[1])
+    ) {
+      const url = new URL(value);
+      if (url.pathname === raw[1]) return url;
+    }
+  } catch {
+    // 解析错误可能包含原始票据地址。
+  }
+  throw new Error('--ticket 必须是有效的 HTTP(S) 安装票据地址');
+}
+
+/** 只把失效与已使用的票据转成重新签发的提示，其余错误保留原因。 */
+async function readTicket<T>(request: Promise<T>): Promise<T> {
+  try {
+    return await request;
+  } catch (error) {
+    if (error instanceof HubApiError && error.code === 'INSTALL_TICKET_USED') ticketUsed(error);
+    if (error instanceof HubApiError && error.code === 'INSTALL_TICKET_INVALID')
+      throw new HubApiError(
+        404,
+        'INSTALL_TICKET_INVALID',
+        '票据无效或已过期，请重新调用 install_skill',
+        { cause: error },
+      );
+    throw error;
+  }
+}
+
+function ticketUsed(cause?: HubApiError): never {
+  throw new HubApiError(409, 'INSTALL_TICKET_USED', '票据已使用，请重新调用 install_skill', {
+    cause,
+  });
+}
+
+function showInstallTarget(ui: CliUi, to: string, slug: string, version: string, dryRun?: boolean) {
+  if (ui.interactive)
+    ui.note(
+      dryRun ? '安装预览' : '安装 Skill',
+      `资源名称  ${slug}\n资源版本  ${terminalText(version)}\n安装目录  ${terminalText(resolve(to, slug))}`,
+    );
+}
+
+function downloadSkillArchive(ui: CliUi, api: HubApiClient, path: string) {
+  return ui.task('下载 Skill 归档', '归档下载完成，开始校验', (update) =>
+    api.archive(
+      path,
+      ui.animated
+        ? (received, total) => {
+            const transferred = formatBytes(received);
+            update(
+              `下载 Skill 归档 · ${total === undefined ? transferred : `${transferred} / ${formatBytes(total)}`}`,
+            );
+          }
+        : undefined,
+    ),
+  );
+}
+
+function printInstallResult(ui: CliUi, result: InstallResult) {
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   if (ui.interactive)
     ui.outro(
-      flags.dryRun
+      result.dry_run
         ? '预览完成，未写入文件。去掉 --dry-run 可安装。'
         : 'Skill 已校验并安装；请在 Agent 中重新加载技能。',
     );

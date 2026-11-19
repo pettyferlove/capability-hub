@@ -45,7 +45,7 @@ export const hubTools = [
   {
     name: 'install_skill',
     title: '安装完整 Skill',
-    description: '交付固定版本完整文件与校验信息，由 Agent 确认位置后写入。',
+    description: '取得固定版本的下载地址、清单与摘要，确认位置后交给 CLI 写入。',
     action: 'client',
   },
   {

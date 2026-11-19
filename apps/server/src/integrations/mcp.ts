@@ -6,7 +6,7 @@ import {
   assetRecommendationRequestSchema,
   assetSlugSchema,
 } from '@capability-hub/contracts';
-import type { TokenRecord } from '@capability-hub/domain/models';
+import type { InstallTicketCredential, TokenRecord } from '@capability-hub/domain/models';
 import { fail, HubError } from '@capability-hub/domain/errors';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
@@ -38,6 +38,7 @@ export function createMcp(
   hub: HubServices,
   p: Principal,
   scope: TokenRecord['scope'],
+  credential: InstallTicketCredential,
   publishedSkillUrl?: string,
 ) {
   const handler = createMcpHandler(
@@ -50,7 +51,7 @@ export function createMcp(
             scope === 'hub:read'
               ? `当前连接可搜索和使用资源。提交本地 Skill、推荐或取消推荐资源、上报版本反馈时，请从当前客户端重新申请贡献权限，授权后刷新工具列表。可在 ${hub.config.publicUrl}/connect?permission=contribute 获取接入指令。不要索取访问令牌。`
               : '当前连接支持搜索、使用与贡献，操作受账号权限约束。提交 Skill 前取得用户授权，新建前先调用 list_share_teams 选择归属团队，发布仍需独立审核。',
-            `当次使用 Skill 可搜索并加载正文。需要安装、接入目标 MCP 或贡献资源时，可阅读官方使用指南 ${hub.config.publicUrl}${hubClientSkillPath}`,
+            `当次使用 Skill 可搜索并加载正文。持久安装 Skill 时调用 install_skill 取得下载地址，用返回的 cli_command 交给 CLI 校验写入。接入目标 MCP 或贡献资源时，可阅读官方使用指南 ${hub.config.publicUrl}${hubClientSkillPath}`,
             '发布审核、资源删除或撤销、权限和共享密钥变更须在 Hub 网页完成。MCP 读取工具只交付已发布且当前可读的内容。',
             publishedSkillUrl
               ? `如需安装该指南，使用本实例已审核的固定版本 ${publishedSkillUrl}`
@@ -124,9 +125,9 @@ export function createMcp(
       );
       register(
         'install_skill',
-        '分段交付固定版本完整 Skill 安装包、清单和摘要；由客户端确认安装位置后写入，不在服务器安装',
+        '为固定版本 Skill 返回清单、摘要、下载地址和 CLI 安装命令；非公开版本使用 10 分钟内一次有效的票据。由客户端确认位置后交给 CLI 写入，不在服务器安装。transfer 为 inline 时分段返回 Base64，仅用于无法下载的环境。',
         skillInstallationInput,
-        async ({ _principal, ...b }) => await deliverSkill(hub, _principal, b),
+        async ({ _principal, ...b }) => await deliverSkill(hub, _principal, credential, b),
       );
       register(
         'get_asset_version',

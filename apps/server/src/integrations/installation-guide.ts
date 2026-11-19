@@ -1,4 +1,4 @@
-import { publicResourcePath } from '@capability-hub/contracts';
+import { publicResourcePath, shellArgument } from '@capability-hub/contracts';
 import { sharedKeysForOption } from '@capability-hub/application';
 import type { HubServices } from '../bootstrap/hub-services.js';
 
@@ -20,7 +20,15 @@ export async function createInstallationGuide(hub: HubServices, id: string): Pro
   ];
   if (asset.kind === 'skill') {
     lines.push(
-      `[下载资源包](${base}/download)`,
+      `公开 Skill 无需登录。先按 [CLI 安装说明](${new URL('/connect/cli', hub.config.publicUrl).href}) 准备命令，再将 \`<技能父目录>\` 换成实际目录：`,
+      '',
+      '```sh',
+      `capability-hub add ${shellArgument(asset.slug)} --version ${shellArgument(version.version_label)} --url ${shellArgument(new URL(hub.config.publicUrl).origin)} --to ${shellArgument('<技能父目录>')} --dry-run`,
+      '```',
+      '',
+      '核对安装位置和差异后，去掉 `--dry-run` 安装。',
+      '',
+      `无法运行 CLI 时，[下载资源包](${base}/download)，核对归档摘要 \`${version.artifact_digest}\`。`,
       '',
       `解压后将 ${asset.slug} 安装到当前 Agent 的技能目录，保留包内目录结构。`,
       `使用说明：[SKILL.md](${base}/files/SKILL.md)。`,

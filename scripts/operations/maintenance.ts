@@ -26,6 +26,8 @@ try {
       if (row.expires_at < Date.now()) await store.remove('idempotency', row.id);
     for (const row of await store.all('cli_logins'))
       if (row.expires_at < Date.now()) await store.remove('cli_logins', row.id);
+    for (const row of await store.all('install_tickets'))
+      if (row.expires_at < Date.now()) await store.remove('install_tickets', row.id);
     for (const row of await store.all('oauth_requests'))
       if (row.expires_at < Date.now() && row.status !== 'consumed')
         await store.remove('oauth_requests', row.id);

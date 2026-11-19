@@ -10,6 +10,7 @@ import {
   AuthenticationService,
   CatalogService,
   CliLoginService,
+  InstallTicketService,
   GitCredentialService,
   McpSharedKeyService,
   IdempotencyService,
@@ -52,6 +53,7 @@ export class HubServices {
   readonly catalog: CatalogService;
   readonly content: AssetContentService;
   readonly feedback: AssetFeedbackService;
+  readonly installTickets: InstallTicketService;
   readonly community: AssetCommunityService;
   readonly idempotency: IdempotencyService;
   readonly jobs: JobQueue;
@@ -133,6 +135,7 @@ export class HubServices {
       new SignedCatalogCursorCodec(config.secret),
     );
     this.content = new AssetContentService(context, this.assetAccess);
+    this.installTickets = new InstallTicketService(context, this.assetAccess, this.identity);
     this.mcpKeys = new McpSharedKeyService(
       context,
       this.assetAccess,

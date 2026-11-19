@@ -17,7 +17,8 @@ export const cliInstallationResponseSchema = z.strictObject({
 /** {@link cliInstallationResponseSchema} 的输出侧类型。 */
 export type CliInstallationResponse = z.infer<typeof cliInstallationResponseSchema>;
 
-const shellArgument = (value: string) => `'${value.replaceAll("'", "'\"'\"'")}'`;
+/** 单引号转义保留 POSIX Shell 的参数边界，不展开参数中的表达式。 */
+export const shellArgument = (value: string) => `'${value.replaceAll("'", "'\"'\"'")}'`;
 
 /** 私有仓库地址由部署配置校验；未配置时遵循使用者的 npm 配置。 */
 export function cliInstallationGuide(origin: string, registry?: string): CliInstallationResponse {
@@ -27,7 +28,7 @@ export function cliInstallationGuide(origin: string, registry?: string): CliInst
       {
         title: '准备运行环境',
         description:
-          'CLI 支持 Node.js 24.x（24.22.0 及以上），建议使用最新补丁版本。在运行 CLI 或 Agent 的同一环境准备 Node.js 和 npm；独立安装 CLI 无需 pnpm 或项目源码。该环境需要能访问 npm 仓库和 Hub。',
+          'CLI 支持 Node.js 22.12.0 及以上版本（含 24、26 LTS），建议使用最新补丁版本；Node.js 22 于 2027-04-30 结束维护。在运行 CLI 或 Agent 的同一环境准备 Node.js 和 npm；独立安装 CLI 无需 pnpm 或项目源码。该环境需要能访问 npm 仓库和 Hub。',
         command: 'node --version\nnpm --version',
       },
       ...(registry
@@ -50,7 +51,7 @@ export function cliInstallationGuide(origin: string, registry?: string): CliInst
       {
         title: '首次使用或授权失效时登录 CLI',
         description:
-          '已有当前实例的有效登录时跳过此步。在浏览器核对授权码并批准，无需本机回调。connect 用于预设客户端的 MCP 接入助手，与 login 独立授权，无需依次执行。',
+          '公开 Skill 的 add 无需登录；已有当前实例的有效登录也可跳过此步。团队资源可在浏览器核对授权码并批准 CLI 登录，无需本机回调。connect 用于预设客户端的 MCP 接入助手，与 login 独立授权，无需依次执行。',
         command: `capability-hub login --url ${shellArgument(new URL(origin).origin)} --no-interactive`,
         optional: true,
       },

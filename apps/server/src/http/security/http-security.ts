@@ -73,6 +73,7 @@ export class HttpSecurity {
         )
           fail(403, 'TOKEN_SCOPE', '个人 CLI/MCP 令牌仅允许目录与内容读取，请通过网页会话管理');
         res.locals.token = r;
+        res.locals.credential = { kind: connection ? 'oauth' : 'personal', id: r.id };
       } else {
         const s = await this.session(req);
         if (!s) fail(401, 'UNAUTHENTICATED', '请登录');

@@ -1,6 +1,6 @@
 import type { AssetKind } from '../content.js';
 import type { ContentMetadata, Manifest, ManifestFile } from '../content.js';
-import type { IsoDateTime, VersionedRecord } from './base.js';
+import type { EpochMilliseconds, IsoDateTime, VersionedRecord } from './base.js';
 import type { EncryptedCredential } from './source.js';
 
 /** 同一服务地址的原值请求头与 Bearer 认证分别绑定。 */
@@ -80,6 +80,20 @@ export interface VersionRecord {
   /** `unreleased` 只能由发布流程转为 `released`；`revoked` 为终态，不可再次发布。 */
   availability: 'unreleased' | 'released' | 'revoked';
   created_at: IsoDateTime;
+}
+
+/** OAuth 绑定连接授权而非可轮换的访问凭据，个人令牌绑定其摘要。 */
+export type InstallTicketCredential = { kind: 'oauth' | 'personal'; id: string };
+
+/** 只保存票据摘要；兑换后顺延到期时间，保留记录以识别重复兑换并供提交前复核清单。 */
+export interface InstallTicketRecord {
+  id: string;
+  user_id: string;
+  version_id: string;
+  credential: InstallTicketCredential;
+  created_at: EpochMilliseconds;
+  expires_at: EpochMilliseconds;
+  consumed_at: EpochMilliseconds | null;
 }
 
 /**

@@ -10,8 +10,9 @@ export class HubApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(`${code}: ${message}`);
+    super(`${code}: ${message}`, options);
   }
 }
 

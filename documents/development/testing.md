@@ -17,6 +17,8 @@ pnpm test:external
 
 runner 发现文件为空会失败；默认只包含 unit、integration、components。外部 runner 校验本机 Docker Unix socket，生成临时身份和随机项目，等待健康后执行，最终清理自身容器、卷、网络和构建镜像。不能使用远程生产 Docker。
 
+发布 CLI 前，在工作区 Node 24 下运行 `CAPABILITY_HUB_CLI_TEST_NODE=/绝对路径/node pnpm test:cli-runtime`，分别验证 CLI 下限及最新 22.x、24.x；只有 CLI 子进程使用指定的运行时。
+
 ## 关键行为覆盖
 
 以下行为由默认或外部套件覆盖；新增或修改测试的时机与写法见 [AGENTS.md](../../AGENTS.md#testing)。

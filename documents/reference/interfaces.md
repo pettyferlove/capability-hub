@@ -11,6 +11,7 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 | /api/assets、/api/scenarios                              | 按当前受众发现与读取                   |
 | /api/ratings、/api/nominations                           | 按 asset_id 推荐、按 release_id 提名   |
 | /api/versions/:id/manifest、archive、files               | 已发布固定内容                         |
+| /api/install-tickets/:ticket、/archive                   | 清单与一次性归档；HEAD 归档返回 405    |
 | /skills/:slug/:version、/mcp-servers/:slug/:version      | 人可读公开资源地址，按匿名权限         |
 | /api/feedback、/api/assets/:id/feedback                  | 私有反馈提交、详情、处理与分页         |
 | /api/management/*                                        | 维护和候选审查                         |
@@ -54,7 +55,7 @@ Skill 的上传与提交审核请求均可携带布尔字段 `requires_api_key`�
 | search_skills / search_mcp    | 可见固定版本资源及分页                               |
 | get_asset_version             | 按资源名称和版本号定位可读已发布版本及安装项         |
 | load_skill / read_skill_file  | 根正文或指定参考文件                                 |
-| install_skill                 | 固定归档的分段字节、摘要及安装材料；客户端确认后写入 |
+| install_skill                 | 固定版本清单、地址与 CLI 命令；`inline`：分段 Base64 |
 | get_mcp_config / activate_mcp | 客户端配置、变量及连接步骤；Hub 不实际连接目标       |
 | list_share_teams              | 已加入且有创建权限的启用团队名称与 ID                |
 | share_skill                   | 接收 Skill 并进入静态扫描和网页审核流程              |
@@ -85,13 +86,13 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 | bridge           | --url、--client；供 Agent 调用的 stdio MCP 桥接                                     |
 | login            | --url；显示浏览器批准地址，保存 CLI 读取凭据                                        |
 | search           | 可选查询文本、--json；省略查询列出资源                                              |
-| add              | NAME、--version、--to；--dry-run 预览、--replace 备份替换                           |
+| add              | NAME、--version 或 --ticket URL，均需 --to；--dry-run 预览、--replace 备份替换      |
 | hub-config       | --url、--client；离线生成配置，可选 --method、--scope、--contribute、--conversation |
 | mcp-config       | NAME、--version、--client；可选 --option、--scope                                   |
 
 `-h` / `help <命令>` 查看帮助，`-V` 查看版本。终端提供菜单和参数向导，等待时显示点阵动效、下载时显示字节进度；`--no-animation` 保留向导和静态状态。`--no-interactive`、CI、重定向、`--json` 和 `bridge` 禁用交互。JSON、配置和协议写 stdout，提示写 stderr。
 
-`--config-dir` 隔离凭据，默认 `~/.config/capability-hub`。读取命令使用登录凭据或 `CAPABILITY_HUB_TOKEN` + 显式 `--url`，两者互斥；`hub-config` 不读取凭据。Hub URL 仅接受无凭据、路径、查询的 HTTP(S) 根地址。下载限制大小，不携带授权跟随重定向。
+`--config-dir` 隔离凭据，默认 `~/.config/capability-hub`。读取使用登录凭据或 `CAPABILITY_HUB_TOKEN` + 显式 `--url`；两者都没有时，`add --url` 可匿名安装公开 Skill。`add --ticket` 和 `hub-config` 不读取 CLI 凭据；票据模式如提供 `--url`，其 origin 必须与票据一致。下载限制大小，不跟随重定向。
 
 ## OAuth 与客户端连接
 

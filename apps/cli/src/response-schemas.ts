@@ -44,6 +44,18 @@ export const manifestResponseSchema = z.object({
   release_id: id.nullable(),
 });
 
+/** 票据绑定已发布版本；归档被消费后仍可读取清单。 */
+export const installTicketSchema = manifestResponseSchema.extend({
+  hub_url: z.url(),
+  asset_id: id,
+  slug: assetSlugSchema,
+  version_id: id,
+  version_label: text,
+  release_id: id,
+  expires_at: z.iso.datetime(),
+  archive_available: z.boolean(),
+});
+
 /** 设备码登录首步：`expires_in` 上限 600 秒，CLI 用它决定轮询截止时间。 */
 export const loginResponseSchema = z.object({
   verification_uri: z.url(),

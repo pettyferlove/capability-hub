@@ -63,6 +63,7 @@ TS 运维脚本由 `tsconfig.operations.json` 编译到 `dist/operations`，镜�
 | 脚本                                                                         | 职责与调用方                                                       |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | [run-tests.mjs](../../scripts/testing/run-tests.mjs)                         | `pnpm test`；发现测试文件并启动 Node 测试进程，也供外部测试调用。  |
+| [run-cli-runtime.mjs](../../scripts/testing/run-cli-runtime.mjs)             | `pnpm test:cli-runtime`；按指定 Node 版本验证 CLI 产物和子进程。   |
 | [register-test-runtime.mjs](../../scripts/testing/register-test-runtime.mjs) | 测试进程加载统一的 TS/JSX 编译配置。                               |
 | [test-external.mjs](../../scripts/testing/test-external.mjs)                 | `pnpm test:external`；管理隔离的本机 Docker 测试依赖与清理。       |
 | [verify-image.mjs](../../scripts/testing/verify-image.mjs)                   | `pnpm test:image <镜像标签>`；验收已构建镜像的运行资产与服务行为。 |

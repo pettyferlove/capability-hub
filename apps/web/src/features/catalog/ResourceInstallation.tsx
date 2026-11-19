@@ -60,11 +60,11 @@ export function ResourceInstallation({ asset, origin }: { asset: AssetResponse; 
           code={cliResourceCommand(asset, origin, undefined, client)}
         />
         <p className={subtleStyles}>
-          也可让已接入 Hub 的 Agent 调用 install_skill 获取完整安装包，再确认目录并安装。
+          已接入 Hub 的 Agent 可使用一次性下载票据安装，无需另外登录 CLI。
         </p>
         <CodeBlock
           title="交给 Agent 安装"
-          code={`请调用 install_skill，固定 version_id 为 ${asset.current_release.version_id}，client 为 ${client}，获取完整安装包并校验摘要。先展示安装目录与文件，得到我确认后再写入，保留已有目录。`}
+          code={`请调用 install_skill（version_id ${asset.current_release.version_id}，client ${client}）取得下载票据。按返回的 cli_command 先加 --dry-run 核对目录和差异，经我确认后安装。无法运行 CLI 时，按返回说明下载并校验摘要。保留已有目录，不要在回复中复述票据地址。`}
         />
       </section>
     );

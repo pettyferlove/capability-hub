@@ -17,6 +17,7 @@ import type { SourceRecord, BindingRecord, GitCredentialRecord } from './source.
 import type {
   AssetRecord,
   VersionRecord,
+  InstallTicketRecord,
   RecommendationRecord,
   AssetFeedbackRecord,
   ScenarioRecord,
@@ -44,6 +45,7 @@ export interface RecordMap {
   sessions: SessionRecord;
   tokens: TokenRecord;
   cli_logins: CliLoginRecord;
+  install_tickets: InstallTicketRecord;
   login_attempts: LoginAttemptRecord;
   sources: SourceRecord;
   assets: AssetRecord;

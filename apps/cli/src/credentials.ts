@@ -32,7 +32,8 @@ export async function resolveConsumerCredentials(options: {
   url?: string;
   environmentToken?: string;
   load: () => Promise<CliCredentials>;
-}): Promise<CliCredentials> {
+  allowAnonymous?: boolean;
+}): Promise<{ url: string; token?: string }> {
   if (options.environmentToken !== undefined) {
     const token = options.environmentToken;
     if (!token || /\s/.test(token))
@@ -40,7 +41,20 @@ export async function resolveConsumerCredentials(options: {
     if (!options.url) throw new Error('使用 CAPABILITY_HUB_TOKEN 必须同时提供 --url');
     return { url: hubUrl(options.url), token };
   }
-  const saved = parseCredentials(await options.load());
+  let saved: CliCredentials;
+  try {
+    saved = parseCredentials(await options.load());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    if (options.allowAnonymous) {
+      if (!options.url) throw new Error('未登录时需要 --url 指定 Hub 地址', { cause: error });
+      return { url: hubUrl(options.url) };
+    }
+    throw new Error(
+      '尚未登录 CLI。请运行 capability-hub login --url <URL>，或设置 CAPABILITY_HUB_TOKEN 并显式提供 --url。',
+      { cause: error },
+    );
+  }
   const url = hubUrl(saved.url);
   if (options.url !== undefined && hubUrl(options.url) !== url)
     throw new Error('--url 与已登录的 Hub 地址不一致，请使用对应 Hub 的个人访问令牌或重新登录');

@@ -3,12 +3,14 @@ import { test } from 'node:test';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { cliInstallationGuide } from '@capability-hub/contracts';
+import { sha256 } from '@capability-hub/domain/canonical';
 import { HubApiClient } from '../../apps/cli/src/api-client.js';
 import { saveCredentials } from '../../apps/cli/src/credentials.js';
 import { serveTestHub } from '../support/server.js';
@@ -29,7 +31,7 @@ function cli(
 ) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
     const environment = { ...process.env, ...options.environment };
-    if (token) environment.CAPABILITY_HUB_TOKEN = token;
+    if (token !== undefined) environment.CAPABILITY_HUB_TOKEN = token;
     else delete environment.CAPABILITY_HUB_TOKEN;
     const bootstrap = `
       for (const stream of [process.stdin, process.stdout, process.stderr])
@@ -39,7 +41,7 @@ function cli(
       await import('./bin/capability-hub.mjs');
     `;
     const child = spawn(
-      process.execPath,
+      process.env.CAPABILITY_HUB_CLI_TEST_NODE ?? process.execPath,
       [
         '--conditions=development',
         '--import',
@@ -615,6 +617,312 @@ test('CLI 子进程通过真实 HTTP 搜索和安装已发布内容，撤权后�
   assert.equal(revoked.code, 1);
   assert.equal(revoked.stderr.includes(token.token), false);
   assert(revoked.stderr.includes('UNAUTHENTICATED'));
+});
+
+test('CLI 可匿名预览和安装公开 Skill，来源记录与下载审计保留版本和匿名身份', async (context) => {
+  const fixture = await serveTestHub(context);
+  const slug = 'sample-skill';
+  const { intake } = await publishSkill(fixture, { slug });
+  const root = await realpath(fixture.directory);
+  const to = join(root, 'public-skills');
+  const arguments_ = [
+    'add',
+    slug,
+    '--version',
+    '1.0.0',
+    '--config-dir',
+    join(root, 'unused-config'),
+    '--to',
+    to,
+  ];
+  const missingUrl = await cli(arguments_);
+  assert.equal(missingUrl.code, 1);
+  assert.match(missingUrl.stderr, /未登录时需要 --url/);
+
+  arguments_.push('--url', fixture.origin);
+  const preview = await cli([...arguments_, '--dry-run']);
+  assert.equal(preview.code, 0, preview.stderr);
+  assert.match(preview.stderr, /按匿名身份读取公开资源/);
+  assert.equal(JSON.parse(preview.stdout).dry_run, true);
+  await assert.rejects(() => readdir(to), { code: 'ENOENT' });
+  const previewDownloads = await fixture.store.where('audit', 'action', 'content.download');
+  assert.deepEqual(
+    previewDownloads.map(({ actor_id, entity_id }) => [actor_id, entity_id]),
+    [['anonymous', intake.version_id]],
+  );
+
+  const installed = await cli(arguments_);
+  assert.equal(installed.code, 0, installed.stderr);
+  assert.match(installed.stderr, /按匿名身份读取公开资源/);
+  assert.equal(JSON.parse(installed.stdout).destination, join(to, slug));
+  assert.match(await readFile(join(to, slug, 'SKILL.md'), 'utf8'), /sample-skill/);
+  const receipt = JSON.parse(await readFile(join(to, slug, '.capability-hub-source'), 'utf8'));
+  assert.equal(receipt.hub_url, fixture.origin);
+  assert.equal(receipt.asset_id, intake.asset_id);
+  assert.equal(receipt.version_id, intake.version_id);
+  assert.equal(
+    receipt.release_id,
+    (await fixture.hub.assetAccess.getAsset(intake.asset_id)).current_release_id,
+  );
+  const downloads = await fixture.store.where('audit', 'action', 'content.download');
+  assert.deepEqual(
+    downloads.map(({ actor_id, entity_id }) => [actor_id, entity_id]),
+    [
+      ['anonymous', intake.version_id],
+      ['anonymous', intake.version_id],
+    ],
+  );
+  await assert.rejects(() => readdir(join(root, 'unused-config')), { code: 'ENOENT' });
+});
+
+test('匿名 CLI 安装不可见 Skill 时提示登录且不创建目录；无效凭据不会降级', async (context) => {
+  const fixture = await serveTestHub(context);
+  await publishSkill(fixture, {
+    slug: 'private-skill',
+    distribution: { mode: 'approved_audience', audience: ['organization'] },
+  });
+  await publishSkill(fixture, { slug: 'public-skill' });
+  const root = await realpath(fixture.directory);
+  const to = join(root, 'skills');
+  const config = join(root, 'cli-config');
+  const arguments_ = [
+    '--version',
+    '1.0.0',
+    '--url',
+    fixture.origin,
+    '--to',
+    to,
+    '--config-dir',
+    config,
+  ];
+  const hidden = await cli(['add', 'private-skill', ...arguments_]);
+  assert.equal(hidden.code, 1);
+  assert.equal(hidden.stdout, '');
+  assert(hidden.stderr.includes(`capability-hub login --url ${fixture.origin}`));
+  assert.match(hidden.stderr, /未找到可匿名访问的资源 private-skill/);
+
+  const publicAdd = ['add', 'public-skill', ...arguments_];
+  const auth = join(config, 'auth.json');
+  await saveCredentials(auth, { url: 'https://other.example.test', token: 'other-instance-token' });
+  const mismatched = await cli(publicAdd);
+  const empty = await cli(publicAdd, '');
+  await saveCredentials(auth, { url: fixture.origin, token: 'invalid-token' });
+  const unauthorized = await cli(publicAdd);
+  await writeFile(auth, '{}');
+  const malformed = await cli(publicAdd);
+  for (const [result, message] of [
+    [mismatched, /与已登录的 Hub 地址不一致/],
+    [empty, /CAPABILITY_HUB_TOKEN 必须是非空/],
+    [unauthorized, /UNAUTHENTICATED/],
+    [malformed, /凭据格式无效/],
+  ] as const) {
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, message);
+    assert.doesNotMatch(result.stderr, /按匿名身份|other-instance-token|invalid-token/);
+  }
+  await assert.rejects(() => readdir(to), { code: 'ENOENT' });
+  assert.deepEqual(await fixture.store.where('audit', 'action', 'content.download'), []);
+});
+
+test('CLI 票据预览和目标冲突不消费票据；安装忽略其他实例凭据且不能重放', async (context) => {
+  const fixture = await serveTestHub(context);
+  const slug = 'ticket-skill';
+  const { intake } = await publishSkill(fixture, {
+    slug,
+    distribution: { mode: 'approved_audience', audience: ['organization'] },
+  });
+  const token = await fixture.hub.tokens.issue(fixture.reader, {
+    name: '安装票据',
+    scope: 'hub:read',
+  });
+  const { ticket, version } = await fixture.hub.installTickets.issue(
+    fixture.reader,
+    { kind: 'personal', id: sha256(token.token) },
+    intake.version_id,
+  );
+  assert(ticket);
+  const root = await realpath(fixture.directory);
+  const to = join(root, 'ticket-skills');
+  const destination = join(to, slug);
+  const config = join(root, 'other-hub-cli');
+  await saveCredentials(join(config, 'auth.json'), {
+    url: 'https://other.example.test',
+    token: 'other-instance-token',
+  });
+  const ticketUrl = `${fixture.origin}/api/install-tickets/${ticket}`;
+  const arguments_ = ['add', '--ticket', ticketUrl, '--to', to, '--config-dir', config];
+  const preview = await cli([...arguments_, '--url', fixture.origin + '/', '--dry-run']);
+  assert.equal(preview.code, 0, preview.stderr);
+  assert.deepEqual(JSON.parse(preview.stdout), {
+    dry_run: true,
+    destination,
+    existing: false,
+    differences: [],
+    files: version.manifest.files.map((file) => file.path),
+  });
+  await assert.rejects(() => readdir(to), { code: 'ENOENT' });
+
+  await mkdir(destination, { recursive: true });
+  const blocked = await cli(arguments_, undefined, { terminal: true });
+  assert.equal(blocked.code, 1);
+  assert.equal(blocked.stdout, '');
+  assert.match(blocked.stderr, /TARGET_EXISTS/);
+  assert.deepEqual(await readdir(destination), []);
+  assert.deepEqual(await fixture.store.where('audit', 'action', 'content.download'), []);
+
+  const installed = await cli([...arguments_, '--replace'], '');
+  assert.equal(installed.code, 0, installed.stderr);
+  const result = JSON.parse(installed.stdout);
+  assert.equal(result.dry_run, false);
+  assert.equal(result.destination, destination);
+  assert.equal(result.files, version.manifest.files.length);
+  assert.match(await readFile(join(destination, 'SKILL.md'), 'utf8'), /ticket-skill/);
+  const receipt = JSON.parse(await readFile(join(destination, '.capability-hub-source'), 'utf8'));
+  assert.deepEqual(receipt, {
+    hub_url: fixture.origin,
+    asset_id: intake.asset_id,
+    version_id: intake.version_id,
+    release_id: (await fixture.hub.assetAccess.getAsset(intake.asset_id)).current_release_id,
+    content_digest: version.content_digest,
+    files: version.manifest.files,
+  });
+
+  const replay = await cli(arguments_);
+  assert.equal(replay.code, 1);
+  assert.equal(replay.stdout, '');
+  assert.match(replay.stderr, /INSTALL_TICKET_USED.*重新调用 install_skill/);
+  for (const { stdout, stderr } of [preview, blocked, installed, replay]) {
+    assert(!(stdout + stderr).includes(ticket));
+    assert(!(stdout + stderr).includes('other-instance-token'));
+  }
+  const downloads = await fixture.store.where('audit', 'action', 'content.download');
+  assert.deepEqual(
+    downloads.map(({ actor_id, entity_id }) => [actor_id, entity_id]),
+    [[fixture.reader.id, intake.version_id]],
+  );
+
+  const invalid = await cli([
+    'add',
+    '--ticket',
+    `${fixture.origin}/api/install-tickets/${'x'.repeat(43)}`,
+    '--to',
+    to,
+  ]);
+  assert.equal(invalid.code, 1);
+  assert.equal(invalid.stdout, '');
+  assert.match(invalid.stderr, /INSTALL_TICKET_INVALID.*重新调用 install_skill/);
+  assert(!invalid.stderr.includes('x'.repeat(43)));
+});
+
+test('CLI 票据归档下载后签发凭据失效时，提交前复核拒绝写入目标 Skill', async (context) => {
+  const fixture = await serveTestHub(context);
+  const slug = 'ticket-skill';
+  const { intake } = await publishSkill(fixture, {
+    slug,
+    distribution: { mode: 'approved_audience', audience: ['organization'] },
+  });
+  const { token } = await fixture.hub.tokens.issue(fixture.reader, {
+    name: '下载后撤销',
+    scope: 'hub:read',
+  });
+  const id = sha256(token);
+  const { ticket } = await fixture.hub.installTickets.issue(
+    fixture.reader,
+    { kind: 'personal', id },
+    intake.version_id,
+  );
+  assert(ticket);
+  const readBlob = fixture.blobs.read.bind(fixture.blobs);
+  context.mock.method(fixture.blobs, 'read', async (hash: string) => {
+    const archive = await readBlob(hash);
+    await fixture.hub.tokens.revoke(fixture.reader.id, id);
+    return archive;
+  });
+  const to = join(await realpath(fixture.directory), 'ticket-skills');
+  const result = await cli([
+    'add',
+    '--ticket',
+    `${fixture.origin}/api/install-tickets/${ticket}`,
+    '--to',
+    to,
+  ]);
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /INSTALL_TICKET_INVALID.*重新调用 install_skill/);
+  assert(!result.stderr.includes(ticket));
+  assert.deepEqual(await readdir(to), []);
+  const downloads = await fixture.store.where('audit', 'action', 'content.download');
+  assert.deepEqual(
+    downloads.map(({ actor_id, entity_id }) => [actor_id, entity_id]),
+    [[fixture.reader.id, intake.version_id]],
+  );
+});
+
+test('CLI 票据模式保留 Hub 错误码和响应校验原因，不改写成笼统的连接失败', async (context) => {
+  let reply: { status: number; body: unknown } = { status: 500, body: {} };
+  const server = createServer((_request, response) =>
+    response
+      .writeHead(reply.status, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify(reply.body)),
+  );
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  context.after(async () => {
+    server.close();
+    await once(server, 'close');
+  });
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  const ticketUrl = `http://127.0.0.1:${address.port}/api/install-tickets/${'t'.repeat(43)}`;
+  for (const [status, body, message] of [
+    [
+      503,
+      { error: { code: 'SERVICE_UNAVAILABLE', message: '实例维护中' } },
+      /SERVICE_UNAVAILABLE: 实例维护中/,
+    ],
+    [200, { manifest: {} }, /Hub 响应结构无效/],
+  ] as const) {
+    reply = { status, body };
+    const result = await cli(['add', '--ticket', ticketUrl, '--to', 'skills']);
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, message);
+    assert(!result.stderr.includes('t'.repeat(43)));
+  }
+});
+
+test('CLI 票据模式拒绝其他资源参数、非元数据地址和缺少明确目标目录', async () => {
+  const ticket = 't'.repeat(43);
+  const pathname = `/api/install-tickets/${ticket}`;
+  const url = `https://hub.example.test${pathname}`;
+  const args = ['add', '--ticket', url, '--to', 'skills'];
+  const cases: [string[], RegExp][] = [
+    [[...args, 'sample-skill'], /不能与 NAME 或 --version 同时使用/],
+    [[...args, '--version', '1.0.0'], /不能与 NAME 或 --version 同时使用/],
+    [[...args, '--url', 'https://other.example.test'], /与票据的 Hub 地址不一致/],
+    [['add', '--ticket', url], /必须提供明确 --to/],
+    ...[
+      pathname,
+      `ftp://hub.example.test${pathname}`,
+      `https://private-token@hub.example.test${pathname}`,
+      `https://hub.example.test/elsewhere/..${pathname}`,
+      `${url}?`,
+      `${url}#`,
+      `${url}/archive`,
+    ].map<[string[], RegExp]>((address) => [
+      ['add', '--ticket', address, '--to', 'skills'],
+      /必须是有效的 HTTP\(S\) 安装票据地址/,
+    ]),
+  ];
+  for (const [arguments_, message] of cases) {
+    const result = await cli([...arguments_]);
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, message);
+    assert(!result.stderr.includes(ticket));
+    assert(!result.stderr.includes('private-token'));
+  }
 });
 
 test('CLI 为新增客户端生成真实已发布 MCP 配置，stdout 可解析且提示不泄漏 Hub 令牌', async (context) => {

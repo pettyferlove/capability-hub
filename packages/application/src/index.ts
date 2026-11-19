@@ -7,6 +7,7 @@ export { AuditService } from './audit/audit-service.js';
 export { AuthenticationService } from './identity/authentication-service.js';
 export { CatalogService } from './catalog/catalog-service.js';
 export { CliLoginService } from './identity/cli-login-service.js';
+export { InstallTicketService } from './catalog/install-ticket-service.js';
 export { GitCredentialService } from './credentials/git-credential-service.js';
 export {
   McpSharedKeyService,

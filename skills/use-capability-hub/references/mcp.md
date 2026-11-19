@@ -12,9 +12,11 @@
 
 ## 安装 Skill
 
-1. 用固定的 `version_id` 调用 `install_skill`；预设客户端可传 `client`，未知客户端省略。保留首块的 `manifest`，逐块解码 `archive_chunk.data` 的 Base64，按 `archive_chunk.offset` 拼接 ZIP 归档。把 `archive_chunk.next_offset` 作为下一次的 `offset`，直到 `archive_chunk.complete` 为真。
-2. 核对完整归档的 `sha256:<十六进制摘要>` 与 `artifact_digest`，核对归档与 `manifest.files` 的文件集合一致，逐项校验相对路径、大小、SHA-256 和执行属性。缺块、清单不符或路径越出目标目录时停止，保留已有安装。
-3. 校验通过后按[本地写入](../SKILL.md#本地写入)安装完整目录。
+1. 用固定的 `version_id` 调用 `install_skill`，预设客户端可传 `client`。向用户说明 `suggested_directory` 和 `manifest.files` 中的文件与脚本，确认父目录。
+2. 能运行 CLI 时，执行返回的 `cli_command`，把 `--to` 换成已确认的父目录：先加 `--dry-run` 查看本地差异，确认后去掉。提示未知选项 `--ticket` 时，按实例的 `/connect/cli` 升级。沙箱禁止联网时，请用户批准当前命令联网。
+3. 不能运行 CLI 时，下载 `download.url`，核对 ZIP 的 SHA-256 与 `artifact_digest`。解包后逐项核对文件集合、相对路径、大小、SHA-256 和执行属性，再按[本地写入](../SKILL.md#本地写入)处理；不符时停止并保留已有安装。
+4. 非公开票据 10 分钟内只能下载一次。遇到 `INSTALL_TICKET_INVALID`、`INSTALL_TICKET_USED` 或下载中断时重新调用。不要在回复中复述票据地址。
+5. 只有无法下载时才传 `transfer: "inline"`，保留首块清单，逐块解码 `archive_chunk.data`，按 `offset` 拼接，传 `next_offset` 续读直到 `complete: true`；核对摘要和清单后再写入。
 
 ## 配置或接入目录里的 MCP
 

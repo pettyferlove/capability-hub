@@ -267,6 +267,18 @@ const schemas = {
     expires_at: integer,
     user_id: id.optional(),
   }),
+  install_tickets: z.strictObject({
+    id: hash,
+    user_id: z.uuid(),
+    version_id: z.uuid(),
+    credential: z.discriminatedUnion('kind', [
+      z.strictObject({ kind: z.literal('oauth'), id: z.uuid() }),
+      z.strictObject({ kind: z.literal('personal'), id: hash }),
+    ]),
+    created_at: integer,
+    expires_at: integer,
+    consumed_at: integer.nullable(),
+  }),
   login_attempts: z.strictObject({ ...base, failure_count: integer, window_expires_at: integer }),
   sources: z.discriminatedUnion('kind', [
     z.strictObject({ ...sourceBase, kind: z.literal('upload') }),

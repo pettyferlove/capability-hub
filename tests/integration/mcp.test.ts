@@ -126,7 +126,12 @@ test('官方 MCP 客户端完成协议发现，读取令牌只看到读取工具
     for (;;) {
       const response = await client.callTool({
         name: 'install_skill',
-        arguments: { version_id: published.intake.version_id, offset: cursor, max_bytes: 37 },
+        arguments: {
+          version_id: published.intake.version_id,
+          transfer: 'inline',
+          offset: cursor,
+          max_bytes: 37,
+        },
       });
       const result = object(response.structuredContent);
       const archive = object(result.archive_chunk);
@@ -149,6 +154,68 @@ test('官方 MCP 客户端完成协议发现，读取令牌只看到读取工具
   } finally {
     await client.close();
   }
+});
+
+test('MCP 默认交付公开链接或受限票据，续传参数只用于显式 inline', async (context) => {
+  const fixture = await serveTestHub(context);
+  const publicSkill = await publishSkill(fixture);
+  const restricted = await publishSkill(fixture, {
+    slug: 'team-skill',
+    distribution: { mode: 'approved_audience', audience: ['organization'] },
+  });
+  const token = await fixture.hub.tokens.issue(fixture.reader, {
+    name: 'install',
+    scope: 'hub:read',
+  });
+  const client = await connect(fixture.origin, token.token);
+  context.after(async () => await client.close());
+  const publicInstall = await client.callTool({
+    name: 'install_skill',
+    arguments: { version_id: publicSkill.intake.version_id },
+  });
+  assert(!publicInstall.isError);
+  const publicResult = object(publicInstall.structuredContent);
+  assert.equal(publicResult.archive_chunk, undefined);
+  assert.deepEqual(publicResult.download, {
+    url: `${fixture.origin}/skills/sample-skill/1.0.0/download`,
+    expires_at: null,
+    single_use: false,
+  });
+  assert.equal(
+    publicResult.cli_command,
+    `capability-hub add 'sample-skill' --version '1.0.0' --url '${fixture.origin}' --to '.agents/skills'`,
+  );
+  assert.deepEqual(await fixture.store.all('install_tickets'), []);
+
+  for (const paging of [{ offset: 0 }, { max_bytes: 1024 }]) {
+    const wrongMode = await client.callTool({
+      name: 'install_skill',
+      arguments: { version_id: restricted.intake.version_id, ...paging },
+    });
+    assert.equal(wrongMode.isError, true);
+    assert.match(JSON.stringify(wrongMode.content), /INLINE_TRANSFER_ONLY/);
+  }
+  const delivery = await client.callTool({
+    name: 'install_skill',
+    arguments: { version_id: restricted.intake.version_id, client: 'claude-code' },
+  });
+  assert(!delivery.isError);
+  const result = object(delivery.structuredContent);
+  assert.equal(result.archive_chunk, undefined);
+  const download = object(result.download);
+  assert.equal(download.single_use, true);
+  assert.equal(typeof download.expires_at, 'string');
+  const archiveUrl = new URL(String(download.url));
+  assert.equal(archiveUrl.origin, fixture.origin);
+  assert.match(archiveUrl.pathname, /^\/api\/install-tickets\/[A-Za-z0-9_-]{43}\/archive$/);
+  const ticketUrl = archiveUrl.href.slice(0, -'/archive'.length);
+  assert.equal(
+    result.cli_command,
+    `capability-hub add --ticket '${ticketUrl}' --to '.claude/skills'`,
+  );
+  const bytes = await fetch(archiveUrl);
+  assert.equal(bytes.status, 200);
+  assert.equal(digest(Buffer.from(await bytes.arrayBuffer())), result.artifact_digest);
 });
 
 test('分享提交限制所属团队，重复幂等请求只生成一次接收，扫描后仍需独立审核', async (context) => {

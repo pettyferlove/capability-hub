@@ -628,6 +628,21 @@ export const cli_logins = sqliteTable(
   ],
 );
 
+/** 票据使用摘要寻址；兑换时重查凭据和版本，不依赖外键级联。 */
+export const install_tickets = sqliteTable(
+  'install_tickets',
+  {
+    id: text('id').primaryKey().notNull(),
+    data: text('data', { mode: 'json' }).$type<RecordMap['install_tickets']>().notNull(),
+  },
+  (_t): SQLiteTableExtraConfigValue[] => [
+    check(
+      'install_tickets_data_check',
+      sql`( json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id ) IS 1`,
+    ),
+  ],
+);
+
 /** 场景名唯一；场景内容整体落在 `data` 中，不参与任何外键。 */
 export const scenarios = sqliteTable(
   'scenarios',

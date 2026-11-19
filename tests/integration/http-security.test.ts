@@ -149,6 +149,12 @@ test('公开固定链接交付同一版本的安装说明、文件与归档，�
   assert(Buffer.isBuffer(download.body));
   const version = await fixture.store.get('versions', intake.version_id);
   assert(version);
+  assert(
+    guide.text.includes(
+      `capability-hub add 'sample-skill' --version '1.0.0' --url '${fixture.config.publicUrl}' --to '<技能父目录>' --dry-run`,
+    ),
+  );
+  assert(guide.text.includes(version.artifact_digest));
   assert.equal('sha256:' + sha256(download.body), version.artifact_digest);
   assertFailure(await guest.get('/skills/sample-skill/2.0.0'), 404, 'NOT_FOUND');
   await guest.get('/api/assets').expect(200);

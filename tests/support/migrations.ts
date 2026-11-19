@@ -4,12 +4,8 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { TestContext } from 'node:test';
-import {
-  snapshotStore,
-  type openRecordStore,
-  type RecordStoreOptions,
-  type restoreStore,
-} from '@capability-hub/infrastructure/store';
+import type { RecordStore } from '@capability-hub/application/ports';
+import type { openRecordStore, RecordStoreOptions } from '@capability-hub/infrastructure/store';
 import { createTestHub, publishSkill, receiveSkill, submitPublication } from './application.js';
 
 /** 在隔离的部署副本里追加迁移，验证真实执行器，不改工作区或当前数据库。 */
@@ -27,7 +23,6 @@ export async function migrationRuntime(context: TestContext, dialect: 'sqlite' |
   );
   const runtime = (await import(pathToFileURL(join(directory, 'src/store.ts')).href)) as {
     openRecordStore: typeof openRecordStore;
-    restoreStore: typeof restoreStore;
   };
   const folder = join(directory, 'src/persistence', dialect, 'migrations');
   const journalPath = join(folder, 'meta/_journal.json');
@@ -39,7 +34,6 @@ export async function migrationRuntime(context: TestContext, dialect: 'sqlite' |
     directory,
     initialCount: initialJournal.entries.length,
     open: runtime.openRecordStore,
-    restore: runtime.restoreStore,
     async openBefore(options: RecordStoreOptions, index: number) {
       const entries = initialJournal.entries.slice(0, index);
       await writeFile(journalPath, JSON.stringify({ ...initialJournal, entries }));
@@ -70,6 +64,30 @@ export async function migrationRuntime(context: TestContext, dialect: 'sqlite' |
   };
 }
 
+/** 旧库只写用例所需的身份与发布记录，不要求尚未迁移的运行表存在。 */
+async function seedPublicationHistory(target: RecordStore, source: RecordStore) {
+  await target.tx(async () => {
+    for (const table of [
+      'users',
+      'groups',
+      'roles',
+      'memberships',
+      'role_bindings',
+      'sources',
+      'assets',
+      'bindings',
+      'versions',
+      'intakes',
+      'scans',
+      'requests',
+      'releases',
+      'audit',
+    ] as const) {
+      for (const record of await source.all(table)) await target.insert(table, record);
+    }
+  });
+}
+
 /** 历史推荐按旧表结构直接写入，迁移结果通过当前 RecordStore 读取并校验。 */
 export async function assertRecommendationMigration(
   context: TestContext,
@@ -88,7 +106,7 @@ export async function assertRecommendationMigration(
   const { intake: other } = await publishSkill(fixture, { slug: 'other-skill' });
   const old = await runtime.openBefore(options, 3);
   try {
-    await runtime.restore(old, await snapshotStore(fixture.store));
+    await seedPublicationHistory(old, fixture.store);
   } finally {
     await old.close();
   }
@@ -152,10 +170,9 @@ export async function assertUnpublishedDeletionMigration(
   await fixture.hub.publications.cancel(fixture.admin, cancelled.id, { reason: '放弃发布' }, '"1"');
   const pending = await receiveSkill(fixture, { slug: 'pending' });
   const request = await submitPublication(fixture, pending);
-  const snapshot = await snapshotStore(fixture.store);
   const old = await runtime.openBefore(options, 4);
   try {
-    await runtime.restore(old, snapshot);
+    await seedPublicationHistory(old, fixture.store);
     await assert.rejects(() => old.remove('requests', cancelled.id), /immutable/);
   } finally {
     await old.close();
@@ -179,7 +196,10 @@ export async function assertUnpublishedDeletionMigration(
     }
     for (const id of [published.request.id, request.id])
       await assert.rejects(() => upgraded.remove('requests', id), /immutable/);
-    assert.deepEqual(new Set(await upgraded.all('audit')), new Set(snapshot.audit));
+    assert.deepEqual(
+      new Set(await upgraded.all('audit')),
+      new Set(await fixture.store.all('audit')),
+    );
   } finally {
     await upgraded.close();
   }

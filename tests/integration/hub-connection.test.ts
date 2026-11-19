@@ -137,7 +137,7 @@ test('官方安装链接只指向当前公开且完整包匹配的目录版本',
     name: 'client',
     scope: 'hub:read',
   });
-  async function checkLinks(version?: { label: string; id: string }) {
+  async function checkLinks(version?: { label: string; id: string; restricted?: boolean }) {
     const guide = await http.get('/INSTALL.md').expect(200);
     const client = new Client(
       { name: 'guide-test', version: '1.0.0' },
@@ -149,10 +149,11 @@ test('官方安装链接只指向当前公开且完整包匹配的目录版本',
           requestInit: { headers: { Authorization: 'Bearer ' + token.token } },
         }),
       );
+      const recommended = !!version && !version.restricted;
       for (const document of [guide.text, client.getInstructions() ?? '']) {
         assert(document.includes(fixture.origin + path));
-        assert.equal(document.includes(directory), !!version);
-        if (version) assert(document.includes(directory + version.label));
+        assert.equal(document.includes(directory), recommended);
+        if (recommended) assert(document.includes(directory + version.label));
       }
       if (version) {
         const search = await client.callTool({ name: 'search_skills', arguments: { query: name } });
@@ -190,10 +191,13 @@ test('官方安装链接只指向当前公开且完整包匹配的目录版本',
         const delivered = z
           .object({
             artifact_digest: z.string(),
-            archive_chunk: z.object({ data: z.string(), complete: z.literal(true) }),
+            download: z.object({ url: z.url(), single_use: z.boolean() }),
           })
           .parse(installation.structuredContent);
-        const archive = Buffer.from(delivered.archive_chunk.data, 'base64');
+        assert.equal(delivered.download.single_use, !!version.restricted);
+        const response = await fetch(delivered.download.url);
+        assert.equal(response.status, 200);
+        const archive = Buffer.from(await response.arrayBuffer());
         assert.equal(digest(archive), delivered.artifact_digest);
         const unpacked = await unzip(archive);
         assert.deepEqual(
@@ -211,7 +215,7 @@ test('官方安装链接只指向当前公开且完整包匹配的目录版本',
     files,
     distribution: { mode: 'approved_audience', audience: ['organization'] },
   });
-  await checkLinks();
+  await checkLinks({ label: '1.0.0', id: first.intake.version_id, restricted: true });
   const next = { slug: name, assetId: first.intake.asset_id };
   await publishSkill(fixture, {
     ...next,

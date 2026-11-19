@@ -4,13 +4,13 @@
 
 应用层定义异步 RecordStore；Drizzle 实现在 infrastructure。记录以类型化模型读写，写入前、读取数据库 JSON 时以及导入外部快照时，均按当前每表结构校验；校验失败同样使所属事务整体回滚。连接、ORM schema、查询和事务不暴露给用例。
 
-| 分组       | 记录                                                               |
-| ---------- | ------------------------------------------------------------------ |
-| 身份       | users、groups、roles、memberships、role_bindings、sessions、tokens |
-| 来源       | sources、bindings、git_credentials                                 |
-| 内容       | assets、versions、intakes、scans                                   |
-| 发布       | requests、releases、scenarios、recommendations、asset_feedback     |
-| 运行与证据 | jobs、audit、idempotency、login_attempts、cli_logins               |
+| 分组       | 记录                                                                  |
+| ---------- | --------------------------------------------------------------------- |
+| 身份       | users、groups、roles、memberships、role_bindings、sessions、tokens    |
+| 来源       | sources、bindings、git_credentials                                    |
+| 内容       | assets、versions、intakes、scans                                      |
+| 发布       | requests、releases、scenarios、recommendations、asset_feedback        |
+| 运行与证据 | jobs、audit、idempotency、login_attempts、cli_logins、install_tickets |
 
 SQLite 与 PostgreSQL 各以完整 Drizzle Schema 生成迁移：`migrations/0000_init.sql` 初始化表、唯一约束、关联守卫、不可变触发器及目录修订，后续结构变更按迁移历史追加。启动时在互斥事务中执行官方 migrator，应用待执行变更；迁移历史必须与文件摘要一致，不转换未纳入当前迁移体系的旧数据库。详见[数据库迁移](../development/database-migrations.md)。SQLite 不可变 JSON 比较使用结构路径和值；PostgreSQL 使用 JSONB，均不依赖对象属性顺序。
 

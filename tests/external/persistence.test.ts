@@ -20,6 +20,8 @@ import { assertFrozenEvidence } from '../support/evidence.js';
 import { assertProjectTokenUsage } from '../support/token-usage.js';
 import { assertResourceActivity } from '../support/resource-activity.js';
 import { assertScenarioDeletionReferences } from '../support/scenario-deletion.js';
+import { assertSingleInstallRedemption } from '../support/install-tickets.js';
+import { serveTestHub } from '../support/server.js';
 
 test('PostgreSQL 维护列表按业务事件更新顺序，读取操作不覆盖最近变动', async (context) => {
   const database = await externalDatabase();
@@ -106,6 +108,22 @@ test('PostgreSQL 禁止删除仍被引用或参与合并的场景', async (conte
       await assertScenarioDeletionReferences(f);
     } finally {
       await f.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
+
+test('PostgreSQL 并发兑换安装票据只交付一次，兑换后仍可读清单', async (context) => {
+  const database = await externalDatabase();
+  try {
+    const fixture = await serveTestHub(context, {
+      database: { driver: 'postgresql', url: database.url, poolSize: 2 },
+    });
+    try {
+      await assertSingleInstallRedemption(fixture);
+    } finally {
+      await fixture.close();
     }
   } finally {
     await database.close();

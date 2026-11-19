@@ -30,6 +30,7 @@ export const tables = [
   'idempotency',
   'login_attempts',
   'cli_logins',
+  'install_tickets',
   'scenarios',
   'recommendations',
   'asset_feedback',

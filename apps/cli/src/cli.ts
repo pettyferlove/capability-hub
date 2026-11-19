@@ -32,6 +32,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
   capability-hub search "code review"
 
 连接 Agent 用 connect；登录 CLI 后可 search、add 和 mcp-config。
+公开 Skill 的 add 无需登录，但须提供 --url。
 交互终端省略命令可打开菜单；使用 help <命令> 查看详细示例。
 读取命令也可使用 CAPABILITY_HUB_TOKEN，但必须显式提供 --url。
 --version 指资源版本；查看 CLI 版本请用 -V / --cli-version。
@@ -106,12 +107,13 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
   command(
     'add',
     '下载、校验并安装 Skill',
-    '示例：\n  capability-hub add example-skill --version 1.0.0 --to .agents/skills --dry-run\n  capability-hub add example-skill --version 1.0.0 --to .agents/skills\n\n只写入明确指定的 PATH/NAME，不执行内容。缺少参数时可在终端选择版本、输入路径。\n--dry-run 只预览；已有目录须显式 --replace 并保留备份；请先用 --dry-run 核对本地差异。',
+    '示例：\n  capability-hub add example-skill --version 1.0.0 --url https://hub.example.com --to .agents/skills --dry-run\n  capability-hub add --ticket <URL> --to .agents/skills\n\n公开 Skill 无需登录，但须提供 --url。票据模式必须显式提供 --to，且不使用 NAME 或 --version。\n只写入明确指定的 PATH/NAME，不执行内容。已有目录须显式 --replace 并保留备份；请先用 --dry-run 核对本地差异。',
   )
     .argument('[name]', 'Skill 资源名称')
     .option('--version <VERSION>', '明确的资源版本；交互终端可从可见版本选择')
+    .option('--ticket <URL>', 'install_skill 返回的一次性票据地址；无需登录')
     .option('--to <PATH>', '安装父目录，必须明确指定或输入')
-    .option('--dry-run', '校验下载内容并预览差异，不写入文件')
+    .option('--dry-run', '校验并预览差异，不写入文件；使用票据时不下载归档')
     .option('--replace', '允许替换已有安装，并保留原目录备份')
     .action(async (name: string | undefined, _options: CliOptions, command: Command) =>
       execute(command, name === undefined ? [] : [name]),

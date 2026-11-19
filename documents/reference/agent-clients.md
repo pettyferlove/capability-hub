@@ -48,7 +48,7 @@ capability-hub add example-skill --version 1.0.0 --to .opencode/skills --dry-run
 
 示例资源名、版本与安装项需替换为实际发布内容。CLI 的配置 JSON/TOML 写到 stdout，目标位置、变量说明和客户端提示写到 stderr。CLI 默认生成项目配置，也可指定 `--scope user`；HTTP 与 Hub MCP 使用 `scope: "user"`。
 
-`get_mcp_config` 与 `activate_mcp` 的 `client` 接受表中的八个标识。`install_skill` 可提供同样的可选 `client`，使 `suggested_directory` 匹配客户端；省略时仍建议 `.agents/skills/<资源名>`，实际位置由使用者确认。
+`get_mcp_config` 与 `activate_mcp` 的 `client` 接受表中标识。`install_skill` 的可选 `client` 决定 `suggested_directory` 和 `cli_command` 的 `--to`，缺省为 `.agents/skills` 父目录；实际位置由使用者确认。
 
 Hub 生成 Streamable HTTP 远程配置和固定版本 npm stdio 配置，不运行目标服务，不覆盖客户端已有设置。复杂 URL 模板、多变量 Header、环境变量模板、自定义运行时参数和可变包参数明确拒绝，不猜测参数。固定值中会被目标客户端展开的环境/文件表达式不直接透传；Pi 的命令求值同样拒绝。`runtime_client_verification` 始终为 `false`。
 
@@ -63,7 +63,7 @@ https://hub.example.com/INSTALL.md
 
 分享邀请只包含接入请求和实例公开链接。`GET /api/hub-share` 返回 `installation_url` 与 `prompt`，`GET /INSTALL.md` 匿名交付 Markdown。
 
-接入说明按任务与运行能力选择 MCP 或独立 CLI，先验证并复用同一实例的可用通路。MCP 在目标 Agent 调用 `search_skills`；CLI 用显式 `--url` 的 `search --json` 验证。预设表提供快捷配置；未知客户端按自身 Streamable HTTP 与认证能力接入，或用 CLI 搜索、安装 Skill。
+接入说明先验证并复用同一实例的可用通路：在目标 Agent 用 `search_skills` 验证 MCP，或用带 `--url` 的 `search --json` 验证 CLI。当次读取和贡献用 MCP，持久安装优先由 CLI 校验写入。未知客户端按自身 Streamable HTTP 与认证能力接入。
 
 接入说明和 MCP 工具发现均指向随附的 [use-capability-hub](../../skills/use-capability-hub/SKILL.md) 及参考资料。仅推荐 `active`、当前版本公开且完整清单与摘要均匹配的目录版本；否则按 `/INSTALL.md` 下载并校验随附完整包，目录查询失败也可安装。
 

@@ -12,7 +12,8 @@ import type { HttpContext } from '../context.js';
 export function registerMcpRoutes(app: Express, { hub }: HttpContext): void {
   app.all('/mcp', async (req, res, next) => {
     try {
-      if (!res.locals.token) fail(401, 'BEARER_REQUIRED', '请在客户端发起 Hub 连接授权');
+      const { principal, token, credential } = res.locals;
+      if (!token || !credential) fail(401, 'BEARER_REQUIRED', '请在客户端发起 Hub 连接授权');
       const request: unknown = req.body;
       const method =
         request && typeof request === 'object' && 'method' in request ? request.method : undefined;
@@ -20,7 +21,7 @@ export function registerMcpRoutes(app: Express, { hub }: HttpContext): void {
         method === 'initialize' || method === 'server/discover'
           ? await publishedHubClientSkillUrl(hub)
           : undefined;
-      const m = createMcp(hub, res.locals.principal, res.locals.token.scope, skillUrl);
+      const m = createMcp(hub, principal, token.scope, credential, skillUrl);
       res.on('close', () => void m.handler.close());
       await m.node(req, res, req.body);
     } catch (e) {

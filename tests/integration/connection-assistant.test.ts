@@ -31,6 +31,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 // 仅使用隔离测试实例的会话，模拟授权协议响应，不访问用户浏览器或凭据。
 test('接入助手子进程完成浏览器授权回调、私有保存、合并配置、检索验证与 stdio 桥接', async (context) => {
   const fixture = await serveTestHub(context);
+  const cliNode = process.env.CAPABILITY_HUB_CLI_TEST_NODE ?? process.execPath;
   await publishSkill(fixture);
   const directory = join(await realpath(fixture.directory), 'assistant');
   const target = join(await realpath(fixture.directory), 'mcp.json');
@@ -39,7 +40,7 @@ test('接入助手子进程完成浏览器授权回调、私有保存、合并�
     '{\n // keep comment\n "mcpServers": {"other": {"command": "other"}}, "setting": true\n}\n',
   );
   const child = spawn(
-    process.execPath,
+    cliNode,
     [
       '--conditions=development',
       '--import',
@@ -144,7 +145,7 @@ test('接入助手子进程完成浏览器授权回调、私有保存、合并�
   assert.equal(concurrent[0], concurrent[1]);
   assert.notEqual(concurrent[0], saved.access_token);
   const transport = new StdioClientTransport({
-    command: process.execPath,
+    command: cliNode,
     args: [
       '--conditions=development',
       '--import',

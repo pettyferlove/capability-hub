@@ -109,6 +109,44 @@ async function localDiff(path: string) {
   return diff;
 }
 
+interface InstallTarget {
+  slug: string;
+  to: string;
+  manifest: Manifest;
+  content_digest: string;
+  dryRun?: boolean;
+  replace?: boolean;
+}
+
+/** 预览列出文件路径，正式写入后仅返回文件数与备份位置。 */
+export type InstallResult =
+  | {
+      dry_run: true;
+      destination: string;
+      files: string[];
+      existing: boolean;
+      differences: string[];
+    }
+  | { dry_run: false; destination: string; backup?: string; files: number };
+
+/** 票据预览只取得清单，因此归档摘要与逐文件校验留到安装时。 */
+export function validateInstallManifest(input: Pick<InstallTarget, 'manifest' | 'content_digest'>) {
+  validateManifest(input.manifest);
+  if (digest(canonical(input.manifest)) !== input.content_digest)
+    fail(422, 'CONTENT_DIGEST_MISMATCH', '规范内容摘要不匹配');
+}
+
+/** 兑换前检查目标，但不创建目录，也不替代安装提交时的锁与复核。 */
+export async function preflightInstall(input: InstallTarget) {
+  const destination = join(await safeDirectory(input.to, false), input.slug);
+  if (input.dryRun) return describeDestination(destination, input.manifest, true);
+  if ((await directoryExists(destination)) && !input.replace) targetExists();
+}
+
+function targetExists(description?: unknown): never {
+  fail(409, 'TARGET_EXISTS', '目标目录已存在，请先检查差异并显式 --replace', description);
+}
+
 /**
  * 把归档原子地装进 `to/<slug>`，全程只写显式给出的目标目录，不执行其中任何内容。
  * 前置校验：slug 合法、清单合规、清单与归档各自的摘要匹配、逐文件比对大小与 SHA-256，
@@ -118,23 +156,17 @@ async function localDiff(path: string) {
  * 连备份路径一起抛出。`beforeCommit` 用于提交前再做一次远端校验（例如重新拉清单）。
  * `dryRun` 只返回差异，不创建任何目录。
  */
-export async function install(input: {
-  slug: string;
-  to: string;
-  manifest: Manifest;
-  content_digest: string;
-  artifact_digest: string;
-  archive: Buffer;
-  source: Record<string, unknown>;
-  dryRun?: boolean;
-  replace?: boolean;
-  beforeCommit?: () => Promise<void>;
-}) {
+export async function install(
+  input: InstallTarget & {
+    artifact_digest: string;
+    archive: Buffer;
+    source: Record<string, unknown>;
+    beforeCommit?: () => Promise<void>;
+  },
+): Promise<InstallResult> {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.slug) || input.slug.length > 64)
     fail(422, 'INVALID_SLUG', '资产名称无效');
-  validateManifest(input.manifest);
-  if (digest(canonical(input.manifest)) !== input.content_digest)
-    fail(422, 'CONTENT_DIGEST_MISMATCH', '规范内容摘要不匹配');
+  validateInstallManifest(input);
   if (digest(input.archive) !== input.artifact_digest)
     fail(422, 'ARTIFACT_DIGEST_MISMATCH', '下载归档摘要不匹配');
   const files = await unzip(input.archive);
@@ -178,8 +210,7 @@ export async function install(input: {
   let backupDirectory: string | undefined;
   try {
     const description = await describeDestination(destination, input.manifest, false);
-    if (description.existing && !input.replace)
-      fail(409, 'TARGET_EXISTS', '目标目录已存在，请先检查差异并显式 --replace', description);
+    if (description.existing && !input.replace) targetExists(description);
     const initialFingerprint = description.existing
       ? await directoryFingerprint(destination)
       : null;
@@ -269,7 +300,11 @@ async function directoryExists(path: string): Promise<boolean> {
   }
 }
 
-async function describeDestination(destination: string, manifest: Manifest, dryRun: boolean) {
+async function describeDestination<T extends boolean>(
+  destination: string,
+  manifest: Manifest,
+  dryRun: T,
+) {
   const existing = await directoryExists(destination);
   return {
     dry_run: dryRun,

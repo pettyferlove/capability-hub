@@ -235,13 +235,14 @@ relax package boundaries, RBAC, concurrency, persistence, or test rules.
 - Node `>=24.22.0` and pnpm `>=10.33.0 <11` (`engines`); `.nvmrc` selects 24.x. Dockerfile pins
   Node 24.22.1 and pnpm 10.33.0; `preinstall` rejects other package managers
   (`scripts/setup/require-pnpm.mjs`).
+- The published CLI runs on Node `>=22.12.0` and bundles for `node22`; the workspace pin is unchanged.
 - ESM everywhere (`"type": "module"`); dev/test resolution uses `--conditions=development` + `tsx`
   so packages resolve to `src/*.ts`, while production resolves `dist`. Tests import `./x.js` for
   files that are `x.ts` on disk — do not "fix" these specifiers.
 - Server uses tsc; CLI uses esbuild for a single bundle without runtime dependencies; Web uses Vite.
   drizzle-kit 0.31.11 is pinned for migrations.
-- No CI config in-repo: `pnpm check` is the gate. Then `pnpm test:external`, `docker build`, and
-  `pnpm test:image <tag>` for release confidence.
+- No CI config in-repo: `pnpm check` is the gate. Run `pnpm test:cli-runtime` before publishing the CLI.
+  Use `pnpm test:external`, `docker build`, and `pnpm test:image <tag>` for server release confidence.
 - `.env` is loaded by child processes via `--env-file-if-exists`; see
   `documents/reference/configuration.md`. Production needs `NODE_ENV=production`, an HTTP(S) public URL,
   64-hex `CAPABILITY_HUB_INSTANCE_SECRET`, and `CAPABILITY_HUB_SETUP_TOKEN`.

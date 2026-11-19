@@ -578,6 +578,21 @@ export const cli_logins = pgTable(
   ],
 );
 
+/** 票据使用摘要寻址；兑换时重查凭据和版本，不依赖外键级联。 */
+export const install_tickets = pgTable(
+  'install_tickets',
+  {
+    id: text('id').primaryKey().notNull(),
+    data: jsonb('data').$type<RecordMap['install_tickets']>().notNull(),
+  },
+  (_t): PgTableExtraConfigValue[] => [
+    check(
+      'install_tickets_data_check',
+      sql`( jsonb_typeof(data) = 'object' AND jsonb_typeof(data -> 'id') = 'string' AND data ->> 'id' = id ) IS TRUE`,
+    ),
+  ],
+);
+
 /** 场景名唯一；场景内容整体落在 `data` 中，不参与任何外键。 */
 export const scenarios = pgTable(
   'scenarios',

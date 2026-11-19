@@ -4,6 +4,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { McpServer, fromJsonSchema, type JsonSchemaType } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { agentClients, type AgentClient } from '@capability-hub/contracts';
+import packageJson from '../package.json' with { type: 'json' };
 import {
   connectionFile,
   connectionToken,
@@ -28,7 +29,7 @@ import { CliUi } from './cli-ui.js';
  */
 export async function openHubConnection(url: string, path: string) {
   const identity = await readConnection(path, url);
-  const client = new Client({ name: 'capability-hub-bridge', version: '0.1.0' });
+  const client = new Client({ name: 'capability-hub-bridge', version: packageJson.version });
   try {
     await client.connect(
       new StreamableHTTPClientTransport(new URL(url + '/mcp'), {
@@ -189,7 +190,7 @@ async function revokeConnection(url: string, credentials: ConnectionCredentials)
 export async function bridgeAgent(url: string, directory: string, agent: AgentClient) {
   const client = await openHubConnection(url, connectionFile(directory, url, agent));
   const server = new McpServer(
-    { name: 'capability-hub', version: '0.1.0' },
+    { name: 'capability-hub', version: packageJson.version },
     { instructions: client.getInstructions() },
   );
   try {
