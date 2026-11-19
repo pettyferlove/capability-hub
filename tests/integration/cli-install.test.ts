@@ -14,19 +14,26 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { install } from '../../apps/cli/src/install.js';
+import { install, localDiff } from '../../apps/cli/src/install.js';
 import { archive, inspect } from '@capability-hub/infrastructure/content';
 import { digest, canonical } from '@capability-hub/domain/canonical';
 import { HubError } from '@capability-hub/domain/errors';
 import { hubClientSkillFiles, skillDocument } from '../support/content.js';
 import { deferred } from '../support/store.js';
 
-async function installation(context: TestContext, body?: string) {
+async function installation(
+  context: TestContext,
+  body?: string,
+  extraFiles: Parameters<typeof archive>[0] = [],
+) {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'capability-hub-install-'));
   context.after(() => rm(root, { recursive: true, force: true }));
   const result = inspect(
     'skill',
-    [{ path: 'SKILL.md', bytes: skillDocument('sample-skill', body), executable: false }],
+    [
+      { path: 'SKILL.md', bytes: skillDocument('sample-skill', body), executable: false },
+      ...extraFiles,
+    ],
     'sample-skill',
   );
   const bytes = await archive(result.files);
@@ -51,8 +58,26 @@ test('安装预览识别执行权限变化，即使文件字节没有修改', as
   await chmod(path, 0o700);
   const preview = await install({ ...input, dryRun: true });
   assert('differences' in preview);
-  assert.deepEqual(preview.differences, ['修改 SKILL.md']);
+  assert.deepEqual(preview.differences, process.platform === 'win32' ? [] : ['修改 SKILL.md']);
   assert.deepEqual(await readFile(path), skillDocument('sample-skill'));
+});
+
+test('Windows 本地差异忽略脚本执行位缺失，仍识别同大小的字节修改', async (context) => {
+  const script = 'scripts/check.py';
+  const input = await installation(context, undefined, [
+    { path: script, bytes: Buffer.from('print(1)\n'), executable: true },
+  ]);
+  await install(input);
+  const directory = join(input.to, input.slug);
+  const path = join(directory, script);
+  await chmod(path, 0o600);
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  context.after(() => Object.defineProperty(process, 'platform', platform));
+
+  assert.deepEqual(await localDiff(directory, input.manifest.files), []);
+  await writeFile(path, 'print(2)\n');
+  assert.deepEqual(await localDiff(directory, input.manifest.files), [`修改 ${script}`]);
 });
 
 test('安装逐字节校验并写入私有目录，dry-run 不创建路径，默认拒绝覆盖', async (context) => {

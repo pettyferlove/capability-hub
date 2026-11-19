@@ -834,14 +834,14 @@ test('outdated 按安装状态检查来源、补全旧记录，并且只向匹�
     `"${asset.revision}"`,
   );
   await fixture.hub.lifecycle.revokeVersion(fixture.admin, withdrawn.version_id, '停止旧安装分发');
-  async function check(directories: readonly string[], expected: number, exitCode = false) {
+  async function check(directories: readonly string[], expected: number, ...flags: string[]) {
     const result = await cli([
       'outdated',
       '--config-dir',
       config,
       '--json',
       ...directories.flatMap((name) => ['--to', parent(name)]),
-      ...(exitCode ? ['--exit-code'] : []),
+      ...flags,
     ]);
     assert.equal(result.code, expected, result.stderr);
     return JSON.parse(result.stdout);
@@ -876,7 +876,10 @@ test('outdated 按安装状态检查来源、补全旧记录，并且只向匹�
     [['withdrawn'], 2],
     [['.agents/skills', 'old-client', 'edited', 'another-instance'], 0],
   ] as const)
-    await check(directories, expected, true);
+    await check(directories, expected, '--exit-code');
+  await check(['.claude/skills'], 0, '--fail-on-modified');
+  await check(['edited'], 3, '--fail-on-modified');
+  await check(['edited', 'withdrawn'], 3, '--exit-code', '--fail-on-modified');
 
   const previewArgs = await execute('sh', [
     '-c',
@@ -905,6 +908,37 @@ test('outdated 按安装状态检查来源、补全旧记录，并且只向匹�
   assert.equal(table.code, 0, table.stderr);
   assert.match(table.stdout, /STATUS.*SKILL.*INSTALLED.*LATEST.*PATH/);
   assert.match(table.stdout, /unavailable\s+sample-skill\s+3\.0\.0/);
+});
+
+test('outdated 仅报告含入口文件的无来源 Skill，不要求登录或指定 Hub', async (context) => {
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-cli-unknown-source-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const parent = join(root, 'skills');
+  const manual = join(parent, 'manual-skill');
+  const staging = join(parent, '.capability-hub-stage-local');
+  for (const path of [manual, staging]) {
+    await mkdir(path, { recursive: true });
+    await writeFile(join(path, 'SKILL.md'), '# 本地规范\n');
+  }
+  await mkdir(join(parent, 'not-a-skill'));
+
+  const args = ['outdated', '--to', parent, '--config-dir', join(root, 'no-config')];
+  const json = await cli([...args, '--json', '--exit-code', '--fail-on-modified']);
+  assert.equal(json.code, 0, json.stderr);
+  const entries = JSON.parse(json.stdout) as Array<{
+    path: string;
+    status: string;
+    hub_url: string | null;
+    version_id: string | null;
+  }>;
+  assert.deepEqual(
+    entries.map(({ path, status, hub_url, version_id }) => ({ path, status, hub_url, version_id })),
+    [{ path: manual, status: 'unknown_source', hub_url: null, version_id: null }],
+  );
+  const table = await cli(args);
+  assert.equal(table.code, 0, table.stderr);
+  assert.match(table.stdout, /unknown_source\s+manual-skill/);
+  assert.match(table.stdout, /无法判定来源/);
 });
 
 test('匿名 CLI 安装不可见 Skill 时提示登录且不创建目录；无效凭据不会降级', async (context) => {

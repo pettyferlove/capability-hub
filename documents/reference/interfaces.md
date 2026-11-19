@@ -94,7 +94,7 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 | login            | --url；显示浏览器批准地址，保存 CLI 读取凭据                                        |
 | search           | 可选查询文本、--json；省略查询列出资源                                              |
 | add              | NAME、--version 或 --ticket URL，均需 --to；--dry-run 预览、--replace 备份替换      |
-| outdated         | 检查已安装 Skill；可重复 `--to`，支持 `--json`、`--exit-code`                       |
+| outdated         | 检查已安装 Skill；可重复 `--to`，支持 `--json`；退出码见下文                        |
 | hub-config       | --url、--client；离线生成配置，可选 --method、--scope、--contribute、--conversation |
 | mcp-config       | NAME、--version、--client；可选 --option、--scope                                   |
 
@@ -102,7 +102,7 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 
 `--config-dir` 隔离凭据，默认 `~/.config/capability-hub`。读取使用登录凭据或 `CAPABILITY_HUB_TOKEN` + 显式 `--url`；两者都没有时，`add` 和 `outdated` 可用 `--url` 匿名访问公开 Skill。`add --ticket` 和 `hub-config` 不读取 CLI 凭据；票据模式如提供 `--url`，其 origin 必须与票据一致。下载限制大小，不跟随重定向。
 
-`outdated` 输出表格或 JSON 数组；检查成功退出 0，`--exit-code` 下存在 `update_available` 或 `unavailable` 时退出 2。其他状态为 `current`、`deprecated`、`modified`、`other_hub`；不同实例的安装不发请求。
+`outdated` 输出表格或 JSON 数组。含 `SKILL.md` 但缺少来源记录的 Skill 报告 `unknown_source`（来源和版本字段为 `null`），与 `other_hub` 一样不查询远端。Windows 不比较磁盘执行位，仍校验文件内容。`--exit-code` 在 `update_available` 或 `unavailable` 时退出 2；`--fail-on-modified` 在 `modified` 时退出 3，优先于 2。其余状态为 `current`、`deprecated`；未触发上述条件且检查成功时退出 0。
 
 ## OAuth 与客户端连接
 

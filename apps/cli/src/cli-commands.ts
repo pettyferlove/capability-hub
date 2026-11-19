@@ -62,6 +62,7 @@ export interface CliOptions {
   replace?: boolean;
   json?: boolean;
   exitCode?: boolean;
+  failOnModified?: boolean;
 }
 
 /**

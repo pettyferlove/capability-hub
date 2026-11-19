@@ -93,6 +93,7 @@ export async function localDiff(path: string, receiptFiles?: ManifestFile[]) {
   }
   await walk(path);
   const diff: string[] = [];
+  const checkExecutable = process.platform !== 'win32';
   for (const f of expected) {
     safePath(f.path);
     if (!files.includes(f.path)) {
@@ -104,7 +105,7 @@ export async function localDiff(path: string, receiptFiles?: ManifestFile[]) {
       if (
         !stat.isFile() ||
         sha256(await readFile(join(path, f.path))) !== f.sha256 ||
-        Boolean(stat.mode & 0o111) !== f.executable
+        (checkExecutable && Boolean(stat.mode & 0o111) !== f.executable)
       )
         diff.push('修改 ' + f.path);
     } catch {

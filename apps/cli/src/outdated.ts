@@ -30,13 +30,19 @@ interface Installation {
 }
 
 type Status =
-  'current' | 'update_available' | 'deprecated' | 'unavailable' | 'modified' | 'other_hub';
+  | 'current'
+  | 'update_available'
+  | 'deprecated'
+  | 'unavailable'
+  | 'modified'
+  | 'other_hub'
+  | 'unknown_source';
 
 interface Entry {
   path: string;
-  hub_url: string;
-  asset_id: string;
-  version_id: string;
+  hub_url: string | null;
+  asset_id: string | null;
+  version_id: string | null;
   slug: string | null;
   version_label: string | null;
   status: Status;
@@ -47,10 +53,20 @@ interface Entry {
   next_step?: string;
 }
 
+async function statIfPresent(path: string) {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 async function installedSkills(directories: readonly string[]) {
   const defaults = directories.length === 0;
   const parents = new Set<string>();
   const installs: Installation[] = [];
+  const unknownSources: Entry[] = [];
   for (const directory of defaults
     ? new Set(Object.values(agentClients).map((c) => c.skillDirectory))
     : directories) {
@@ -72,14 +88,24 @@ async function installedSkills(directories: readonly string[]) {
       },
     );
     for (const child of children) {
-      if (!child.isDirectory()) continue;
+      if (!child.isDirectory() || child.name.startsWith('.')) continue;
       const path = join(parent, child.name);
       const source = join(path, installSourceFile);
-      const stat = await lstat(source).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === 'ENOENT') return null;
-        throw error;
-      });
-      if (!stat) continue;
+      const stat = await statIfPresent(source);
+      if (!stat) {
+        if ((await statIfPresent(join(path, 'SKILL.md')))?.isFile())
+          unknownSources.push({
+            path,
+            hub_url: null,
+            asset_id: null,
+            version_id: null,
+            slug: null,
+            version_label: null,
+            status: 'unknown_source',
+            next_step: `无法判定来源：缺少 ${installSourceFile}`,
+          });
+        continue;
+      }
       if (!stat.isFile()) throw new Error(`来源记录不是普通文件：${source}`);
       try {
         const receipt = receiptSchema.parse(JSON.parse(await readFile(source, 'utf8')));
@@ -90,7 +116,7 @@ async function installedSkills(directories: readonly string[]) {
       }
     }
   }
-  return installs;
+  return { installs, unknownSources };
 }
 
 async function ifReadable<T>(request: Promise<T>): Promise<T | null> {
@@ -205,11 +231,10 @@ function printTable(entries: Entry[]): void {
 /** 同一安装的 HTTP 请求串行，异源条目不发请求。 */
 export async function outdated(
   directories: readonly string[],
-  options: { json?: boolean; exitCode?: boolean; configDir?: string },
+  options: { json?: boolean; exitCode?: boolean; failOnModified?: boolean; configDir?: string },
   credentials: () => Promise<{ url: string; token?: string }>,
 ): Promise<number | undefined> {
-  const installs = await installedSkills(directories);
-  const entries: Entry[] = [];
+  const { installs, unknownSources: entries } = await installedSkills(directories);
   if (installs.length) {
     const { url, token } = await credentials();
     const api = new HubApiClient(url, token);
@@ -220,14 +245,15 @@ export async function outdated(
           entries.push(await inspectInstallation(api, install, options.configDir));
       }),
     );
-    entries.sort(
-      (a, b) =>
-        Number(b.status === 'unavailable') - Number(a.status === 'unavailable') ||
-        utf8Compare(a.path, b.path),
-    );
   }
+  entries.sort(
+    (a, b) =>
+      Number(b.status === 'unavailable') - Number(a.status === 'unavailable') ||
+      utf8Compare(a.path, b.path),
+  );
   if (options.json) process.stdout.write(JSON.stringify(entries, null, 2) + '\n');
   else printTable(entries);
+  if (options.failOnModified && entries.some(({ status }) => status === 'modified')) return 3;
   if (
     options.exitCode &&
     entries.some(({ status }) => status === 'update_available' || status === 'unavailable')
