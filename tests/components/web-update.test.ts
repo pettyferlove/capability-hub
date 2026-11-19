@@ -39,6 +39,30 @@ test('发现新构建时提示刷新，关闭后同一构建不再提示', async
   assert(screen.getByRole('status'));
 });
 
+test('切回旧标签页时无需业务请求就能发现新构建', async (context) => {
+  let build = 'seen-in-background';
+  let visibility: DocumentVisibilityState = 'hidden';
+  context.mock.getter(document, 'visibilityState', () => visibility);
+  context.mock.method(globalThis, 'fetch', async () =>
+    Response.json({}, { headers: { 'X-Capability-Hub-Web-Build': build } }),
+  );
+  await api('/api/me');
+  const user = userEvent.setup();
+  render(createElement(WebUpdateNotice));
+  await user.click(screen.getByRole('button', { name: '关闭版本提示' }));
+
+  build = 'deployed-while-away';
+  const changeVisibility = () =>
+    act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+  await changeVisibility();
+  assert.equal(screen.queryByRole('region', { name: '版本更新' }), null);
+  visibility = 'visible';
+  await changeVisibility();
+  assert(screen.getByRole('button', { name: '刷新页面' }));
+});
+
 test('旧 chunk 失败时只对新版重载一次，之后沿用错误边界', async (context) => {
   let build: string;
   context.mock.method(

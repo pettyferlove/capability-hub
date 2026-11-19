@@ -180,8 +180,10 @@ export const discoverStyles = 'group/discover';
 
 export const discoverHeroStyles = 'relative isolate flex overflow-hidden pb-2';
 
-export const heroDotsStyles =
-  '[mask-image:radial-gradient(ellipse_closest-side_at_70%_50%,_black,_transparent)]';
+export const heroDotsStyles = cn(
+  '[mask-image:linear-gradient(90deg,transparent,var(--mask-solid)_40px,var(--mask-solid)_calc(100%_-_40px),transparent),linear-gradient(transparent,var(--mask-solid)_40px,var(--mask-solid)_calc(100%_-_40px),transparent)]',
+  '[mask-composite:intersect]',
+);
 
 export const heroOrbStyles = cn(
   'absolute top-0 right-0 bottom-0 left-auto w-[min(60%,_560px)]',

@@ -87,7 +87,7 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
   return response.json() as Promise<T>;
 }
 
-/** 仅在懒加载失败时探测，不让缓存的文档或会话状态决定是否重载。 */
+/** 返回标签页或懒加载失败时探测，绕开缓存且不依赖会话。 */
 export async function checkWebBuild(): Promise<string | null> {
   const response = await fetch('/health/live', {
     method: 'HEAD',

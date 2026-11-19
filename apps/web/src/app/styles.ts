@@ -31,32 +31,35 @@ export const skipLinkStyles = cn(
 );
 
 export const webUpdateSurfaceStyles = cn(
-  'relative isolate grid items-center gap-2.5 overflow-hidden sm:grid-cols-[minmax(0,1fr)_auto]',
-  'rounded-xl border border-brand/25 bg-linear-to-r from-brand-soft via-paper to-brand-soft',
-  'px-3 py-2.5 shadow-[0_8px_24px_-16px_var(--brand)] sm:gap-x-5 sm:px-4',
-  'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px',
-  'before:bg-linear-to-r before:from-transparent before:via-brand/75 before:to-transparent',
-  'before:[background-size:180%_100%] motion-safe:before:animate-[react-bits-shine_700ms_var(--ease-out)]',
-  'motion-safe:animate-[theme-appear_220ms_var(--ease-out)_both]',
+  'relative isolate grid items-center gap-x-5 gap-y-3 px-3 py-3',
+  'sm:grid-cols-[minmax(0,1fr)_auto] sm:py-2 sm:pr-2 sm:pl-3',
 );
 
-export const webUpdateGridStyles = cn(
-  'pointer-events-none absolute inset-y-0 right-0 -z-10 w-2/3 opacity-30',
-  'bg-[radial-gradient(circle,var(--brand)_1px,transparent_1.7px)] [background-size:12px_12px]',
-  '[mask-image:linear-gradient(90deg,transparent,var(--mask-solid)_50%,transparent)]',
+// DotGrid 按 `--hero-dot-opacity` 计算静态点阵浓度；提示条面积小，需更高浓度才显出纹理。
+export const webUpdateDotsStyles = cn(
+  '[--hero-dot-opacity:0.6]',
+  '[mask-image:linear-gradient(90deg,transparent_35%,var(--mask-solid)_85%)]',
 );
 
-export const webUpdateMarkStyles = cn(
-  'grid size-10 shrink-0 place-items-center rounded-xl border border-on-brand/25',
-  'bg-linear-to-br from-brand to-brand-hover text-on-brand',
-  'shadow-[0_4px_14px_-5px_var(--brand)] sm:size-11',
+export const webUpdateLabelStyles =
+  'hidden border-s border-line ps-2.5 text-caption leading-none font-semibold tracking-[0.1em] text-brand sm:inline';
+
+export const webUpdateRefreshButtonStyles = 'min-w-0 flex-1 sm:w-36 sm:flex-none';
+
+export const webUpdateTickStyles =
+  'inline-block font-mono tabular-nums motion-safe:animate-[web-update-tick_280ms_var(--ease-out)]';
+
+// 动画时长由组件按倒计时秒数内联指定；减少动态效果时改用逐秒更新的内联缩放。
+export const webUpdateCountdownStyles = cn(
+  'pointer-events-none absolute inset-x-0 bottom-0 h-0.5 origin-left bg-brand/70',
+  'motion-safe:[animation:web-update-countdown_linear_both]',
 );
 
-export const webUpdateRefreshButtonStyles =
-  'relative min-h-11 flex-1 overflow-hidden rounded-xl px-3.5 sm:w-40 sm:flex-none';
-
-export const webUpdateMenuStyles =
-  'z-[100] w-40 rounded-xl border border-line bg-paper p-1.5 text-ink shadow-[var(--shadow-floating)]';
+export const webUpdateMenuStyles = cn(
+  'z-[100] w-40 rounded-xl border border-line bg-paper p-1.5 text-ink shadow-[var(--shadow-floating)]',
+  '[&[data-entering]]:[animation:popover-in_var(--duration-fast)_ease-out]',
+  '[&[data-exiting]]:[animation:popover-out_var(--duration-fast)_ease-in]',
+);
 
 export const webUpdateMenuItemStyles = cn(
   'flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-body outline-none',

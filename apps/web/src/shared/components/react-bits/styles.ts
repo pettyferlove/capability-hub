@@ -26,3 +26,19 @@ export const shinyTextStyles = cn(
   'motion-safe:[animation:react-bits-shine_1.6s_var(--ease-out)_0.2s_both]',
   'forced-colors:bg-none forced-colors:text-ink',
 );
+
+export const starBorderStyles = 'relative isolate overflow-hidden rounded-[14px]';
+
+export const starBorderSurfaceStyles = 'rounded-[14px] border border-line bg-paper';
+
+export const starBorderTopStyles = cn(
+  'pointer-events-none absolute inset-x-0 top-0 z-[1] h-px opacity-0 [filter:drop-shadow(0_0_3px_var(--brand))]',
+  '[background:linear-gradient(90deg,transparent_30%,var(--brand)_50%,transparent_70%)]',
+  'motion-safe:[animation:react-bits-star-top_2.2s_ease-in-out_0.15s_both] forced-colors:hidden',
+);
+
+export const starBorderBottomStyles = cn(
+  'pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-px opacity-0 [filter:drop-shadow(0_0_3px_var(--brand))]',
+  '[background:linear-gradient(90deg,transparent_30%,var(--brand)_50%,transparent_70%)]',
+  'motion-safe:[animation:react-bits-star-bottom_2.2s_ease-in-out_0.15s_both] forced-colors:hidden',
+);

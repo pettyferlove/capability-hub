@@ -26,6 +26,52 @@
   }
 }
 
+@keyframes react-bits-star-top {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  25%,
+  75% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+@keyframes react-bits-star-bottom {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  25%,
+  75% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes web-update-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes web-update-tick {
+  from {
+    opacity: 0;
+    transform: translateY(-45%);
+  }
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

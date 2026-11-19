@@ -1,37 +1,144 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { Button, Menu, MenuItem, MenuTrigger, Popover } from 'react-aria-components';
-import { webBuildUpdates } from '../shared/api/web-build.js';
-import { ChevronDown, Clock3, RefreshCw, Sparkles, X } from '../shared/icons/lucide.js';
+import { checkWebBuild } from '../shared/api/client.js';
+import { bundledWebBuild, webBuildUpdates } from '../shared/api/web-build.js';
+import { DotGrid } from '../shared/components/react-bits/DotGrid.js';
+import { ShinyText } from '../shared/components/react-bits/ShinyText.js';
+import { StarBorder } from '../shared/components/react-bits/StarBorder.js';
+import {
+  ChevronDown,
+  CircleCheck,
+  Clock3,
+  RefreshCw,
+  Sparkles,
+  X,
+} from '../shared/icons/lucide.js';
+import { contentTransition } from '../shared/motion/transitions.js';
 import { navigationEvent } from '../shared/navigation/history-navigation.js';
 import { cn } from '../shared/styles/cn.js';
-import { btnPrimaryStyles, btnStyles, iconBtnStyles } from '../shared/styles/recipes.js';
 import {
-  webUpdateGridStyles,
-  webUpdateMarkStyles,
+  btnPrimaryStyles,
+  btnStyles,
+  iconBtnStyles,
+  stepNumberStyles,
+} from '../shared/styles/recipes.js';
+import {
+  webUpdateCountdownStyles,
+  webUpdateDotsStyles,
+  webUpdateLabelStyles,
   webUpdateMenuItemStyles,
   webUpdateMenuStyles,
   webUpdateRefreshButtonStyles,
   webUpdateSurfaceStyles,
+  webUpdateTickStyles,
 } from './styles.js';
 
 const refreshDelaySeconds = 10;
+const confirmedBuildKey = 'capability-hub:confirmed-web-build';
+
+function readConfirmedBuild() {
+  try {
+    return window.localStorage.getItem(confirmedBuildKey);
+  } catch {
+    return null;
+  }
+}
+
+function rememberBuild(build: string) {
+  try {
+    window.localStorage.setItem(confirmedBuildKey, build);
+  } catch {
+    // 禁用存储时仍可在当前标签页确认提示。
+  }
+}
 
 function reloadCurrentPage() {
   location.reload();
 }
 
-/** 关闭只影响对应构建，不影响之后的部署提示。 */
+/** 本地只记录实际加载的构建，旧页面关闭待刷新提示不等于已加载新版。 */
 export function WebUpdateNotice({ onReload = reloadCurrentPage }: { onReload?: () => void }) {
   const build = useSyncExternalStore(webBuildUpdates.subscribe, webBuildUpdates.getSnapshot);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
-  if (!build || dismissed.has(build)) return null;
+  const [loadedUpdate, setLoadedUpdate] = useState(() => {
+    const previous = bundledWebBuild ? readConfirmedBuild() : null;
+    return previous !== null && previous !== bundledWebBuild;
+  });
+
+  useEffect(() => {
+    if (!bundledWebBuild) return;
+    if (readConfirmedBuild() === null) rememberBuild(bundledWebBuild);
+
+    const syncConfirmation = (event: StorageEvent) => {
+      if (event.key === confirmedBuildKey && event.newValue === bundledWebBuild)
+        setLoadedUpdate(false);
+    };
+    let checking = false;
+    const checkOnReturn = () => {
+      if (document.visibilityState !== 'visible' || checking) return;
+      checking = true;
+      void checkWebBuild()
+        .catch(() => {
+          // 离线时不打断页面，后续业务请求仍能发现更新。
+        })
+        .finally(() => {
+          checking = false;
+        });
+    };
+    window.addEventListener('storage', syncConfirmation);
+    document.addEventListener('visibilitychange', checkOnReturn);
+    return () => {
+      window.removeEventListener('storage', syncConfirmation);
+      document.removeEventListener('visibilitychange', checkOnReturn);
+    };
+  }, []);
+
+  const reduceMotion = useReducedMotion();
+  const visible = build ? !dismissed.has(build) : loadedUpdate;
+  const notice = visible && (
+    <WebUpdateRegion key="web-update" animated={!reduceMotion}>
+      <WebUpdateCard
+        key={build ?? bundledWebBuild}
+        build={build}
+        onReload={onReload}
+        onDismiss={() => {
+          if (build) setDismissed((previous) => new Set([...previous, build]));
+          else if (bundledWebBuild) {
+            rememberBuild(bundledWebBuild);
+            setLoadedUpdate(false);
+          }
+        }}
+      />
+    </WebUpdateRegion>
+  );
+  // 减少动态效果时没有退场过渡，关闭后立即卸载。
+  return reduceMotion ? notice : <AnimatePresence initial={false}>{notice}</AnimatePresence>;
+}
+
+/** 中途出现时展开、关闭时收起，顶栏与正文随之平移而不跳动；退场期间立即移出读屏与交互。 */
+function WebUpdateRegion({ animated, children }: { animated: boolean; children: ReactNode }) {
+  const present = useIsPresent();
   return (
-    <WebUpdateCard
-      key={build}
-      build={build}
-      onReload={onReload}
-      onDismiss={() => setDismissed((previous) => new Set([...previous, build]))}
-    />
+    <motion.section
+      aria-label="版本更新"
+      aria-hidden={present ? undefined : true}
+      inert={!present}
+      className="overflow-hidden text-ink"
+      initial={animated ? { height: 0, opacity: 0 } : false}
+      animate={{ height: 'auto', opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={{ ...contentTransition, duration: 0.3 }}
+    >
+      <div className="mx-auto max-w-310 px-4 pt-2.5 min-[850px]:px-7">{children}</div>
+    </motion.section>
   );
 }
 
@@ -40,7 +147,7 @@ function WebUpdateCard({
   onReload,
   onDismiss,
 }: {
-  build: string;
+  build: string | null;
   onReload: () => void;
   onDismiss: () => void;
 }) {
@@ -62,13 +169,14 @@ function WebUpdateCard({
   }, []);
 
   useEffect(() => {
+    if (build === null) return;
     const leaving = [navigationEvent, 'popstate', 'pagehide'];
     for (const event of leaving) window.addEventListener(event, cancelCountdown);
     return () => {
       clearTimeout(timer.current);
       for (const event of leaving) window.removeEventListener(event, cancelCountdown);
     };
-  }, [cancelCountdown]);
+  }, [build, cancelCountdown]);
 
   function startCountdown() {
     if (timer.current !== undefined) return;
@@ -92,85 +200,86 @@ function WebUpdateCard({
     tick();
   }
 
+  const loaded = build === null;
   return (
-    <section
-      aria-label="版本更新"
-      className="mx-auto max-w-310 px-4 pt-2.5 text-ink min-[850px]:px-7"
-    >
-      <div className={webUpdateSurfaceStyles}>
-        <div className={webUpdateGridStyles} aria-hidden="true" />
-        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3.5">
-          <span className={webUpdateMarkStyles} aria-hidden="true">
-            <Sparkles size={20} />
-          </span>
-          <div role="status" className="min-w-0">
-            <p className="flex items-center gap-2.5 text-section leading-5 font-semibold">
-              Hub 已更新
-              <span
-                className="hidden rounded-full border border-brand/20 bg-paper/65 px-2 py-0.5 font-mono text-caption leading-none tracking-wider text-brand sm:inline-block"
-                aria-hidden="true"
-              >
-                WEB UPDATE
-              </span>
-            </p>
-            <p className="mt-0.5 text-sm text-muted-ink">
-              {counting ? '倒计时结束后刷新，未保存的修改不会保留' : '刷新前请保存正在编辑的内容'}
-            </p>
-          </div>
+    <StarBorder className={cn(webUpdateSurfaceStyles, loaded && 'grid-cols-[minmax(0,1fr)_auto]')}>
+      <DotGrid className={webUpdateDotsStyles} />
+      <div className="flex min-w-0 items-center gap-3">
+        <span
+          className={cn(stepNumberStyles, loaded && 'bg-success-soft text-success')}
+          aria-hidden="true"
+        >
+          {loaded ? <CircleCheck size={18} /> : <Sparkles size={18} />}
+        </span>
+        <div role="status" className="min-w-0">
+          <p className="flex items-center gap-2.5 text-base leading-5 font-semibold">
+            <ShinyText>{loaded ? '已载入新版' : 'Hub 有新版本'}</ShinyText>
+            <span className={webUpdateLabelStyles} aria-hidden="true">
+              WEB UPDATE
+            </span>
+          </p>
+          <p className="mt-0.5 text-body leading-4.5 text-muted-ink">
+            {loaded
+              ? '无需再次刷新，可以继续使用'
+              : counting
+                ? '倒计时结束后刷新，未保存的修改不会保留'
+                : '刷新前请保存正在编辑的内容'}
+          </p>
         </div>
-        <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
-          {counting ? (
+      </div>
+      <div className="flex min-w-0 items-center gap-2">
+        {loaded ? (
+          <Button className={cn(btnStyles, 'sm:px-6')} onPress={onDismiss}>
+            知道了
+          </Button>
+        ) : counting ? (
+          <Button
+            autoFocus
+            aria-label="取消刷新"
+            className={cn(btnStyles, btnPrimaryStyles, webUpdateRefreshButtonStyles)}
+            onPress={() => {
+              restoreFocusOnCancel.current = true;
+              cancelCountdown();
+            }}
+          >
+            <span key={remaining} aria-hidden="true" className={webUpdateTickStyles}>
+              {String(remaining).padStart(2, '0')}s
+            </span>
+            取消刷新
+          </Button>
+        ) : (
+          <MenuTrigger>
             <Button
-              autoFocus
-              aria-label="取消刷新"
+              ref={focusRefreshTrigger}
               className={cn(btnStyles, btnPrimaryStyles, webUpdateRefreshButtonStyles)}
-              onPress={() => {
-                restoreFocusOnCancel.current = true;
-                cancelCountdown();
-              }}
             >
-              <span aria-hidden="true" className="font-mono tabular-nums">
-                {String(remaining).padStart(2, '0')}s
-              </span>
-              取消刷新
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 origin-left bg-on-brand/65 motion-safe:transition-transform motion-safe:duration-500"
-                style={{ transform: `scaleX(${remaining / refreshDelaySeconds})` }}
-              />
+              <RefreshCw size={14} aria-hidden="true" />
+              刷新页面
+              <ChevronDown size={13} aria-hidden="true" className="opacity-75" />
             </Button>
-          ) : (
-            <MenuTrigger>
-              <Button
-                ref={focusRefreshTrigger}
-                className={cn(btnStyles, btnPrimaryStyles, webUpdateRefreshButtonStyles)}
-              >
-                <RefreshCw size={14} aria-hidden="true" />
-                刷新页面
-                <ChevronDown size={13} aria-hidden="true" className="opacity-75" />
-              </Button>
-              <Popover
-                className={webUpdateMenuStyles}
-                placement="bottom end"
-                offset={6}
-                data-overlay-child="true"
-              >
-                <Menu aria-label="刷新方式" className="outline-none">
-                  <MenuItem className={webUpdateMenuItemStyles} onAction={onReload}>
-                    <RefreshCw size={14} aria-hidden="true" />
-                    立即刷新
-                  </MenuItem>
-                  <MenuItem className={webUpdateMenuItemStyles} onAction={startCountdown}>
-                    <Clock3 size={14} aria-hidden="true" />
-                    {refreshDelaySeconds} 秒后刷新
-                  </MenuItem>
-                </Menu>
-              </Popover>
-            </MenuTrigger>
-          )}
+            <Popover
+              className={webUpdateMenuStyles}
+              placement="bottom end"
+              offset={6}
+              data-overlay-child="true"
+            >
+              <Menu aria-label="刷新方式" className="outline-none">
+                <MenuItem className={webUpdateMenuItemStyles} onAction={onReload}>
+                  <RefreshCw size={14} aria-hidden="true" />
+                  立即刷新
+                </MenuItem>
+                <MenuItem className={webUpdateMenuItemStyles} onAction={startCountdown}>
+                  <Clock3 size={14} aria-hidden="true" />
+                  {refreshDelaySeconds} 秒后刷新
+                </MenuItem>
+              </Menu>
+            </Popover>
+          </MenuTrigger>
+        )}
+        {!loaded && (
           <Button
             aria-label="关闭版本提示"
-            className={cn(iconBtnStyles, 'size-11 shrink-0 rounded-xl')}
+            className={cn(iconBtnStyles, 'size-10 shrink-0 rounded-[10px]')}
             onPress={() => {
               cancelCountdown();
               onDismiss();
@@ -178,8 +287,18 @@ function WebUpdateCard({
           >
             <X size={16} aria-hidden="true" />
           </Button>
-        </div>
+        )}
       </div>
-    </section>
+      {counting && (
+        <span
+          aria-hidden="true"
+          className={webUpdateCountdownStyles}
+          style={{
+            animationDuration: `${refreshDelaySeconds}s`,
+            transform: `scaleX(${remaining / refreshDelaySeconds})`,
+          }}
+        />
+      )}
+    </StarBorder>
   );
 }
