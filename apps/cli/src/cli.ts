@@ -136,7 +136,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
       },
     )
     .option('--json', '输出 JSON 数组')
-    .option('--exit-code', '有可用更新或不可用安装时返回 2')
+    .option('--exit-code', '有可用更新或不可用安装时返回 2；unknown_source 仅报告，不影响退出码')
     .option('--fail-on-modified', '存在 modified 状态时返回 3，优先于 --exit-code 的 2')
     .action(async (options: { to?: string[] }, command: Command) => execute(command, options.to));
 
