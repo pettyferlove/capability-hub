@@ -47,9 +47,13 @@ CAPABILITY_HUB_AI_CONFIG=.data/ai-config.json
 HUB_AI_PRIMARY_KEY=<实际凭据>
 ```
 
-`format` 选择协议，`credential_ref` 只填写密钥的环境变量名。`default_profile` 必须指向已有模型配置。修改后重启服务，新执行使用新配置，已有执行按原模型配置摘要校验。预算和 MCP 白名单见 [AI 框架](../design/ai-framework.md)。
+`format` 选协议，`credential_ref` 引用密钥环境变量，`default_profile` 引用已有模型配置 ID。重启后生效，旧执行仍校验原模型摘要。预算和 MCP 白名单见 [AI 框架](../design/ai-framework.md)。
 
-所有 Agent 在模型配置的 `thinking_control` 下运行。默认 `protocol` 请求关闭思考，OpenAI 发送 `reasoning_effort=none`，Anthropic 发送 `thinking.type=disabled`。OpenAI 兼容端点若要求 `thinking.type=disabled`，选 `thinking_type`。不接受思考参数的端点选 `omit`。
+两种协议均支持 `request_headers`。值可为非敏感的单行 ASCII 字符串，或 `{"from":"execution_id","prefix":"ses_"}`（前缀可省略，续跑保留同一执行 ID）。头名不区分大小写，不可重复或覆盖鉴权、Host、报文传输等保留头。[OpenCode Go](https://opencode.ai/docs/console/go/#where-can-i-use-it) 用固定 `User-Agent: capability-hub` 和动态 `x-opencode-session`。
+
+Chat Completions 缺省发送 `max_tokens`。端点要求 `max_completion_tokens` 时，将 `chat_max_tokens_field` 设为 `max_completion_tokens`；数值仍取 `max_output_tokens`。
+
+`thinking_control` 默认 `protocol`，OpenAI 发送 `reasoning_effort=none`，Anthropic 发送 `thinking.type=disabled`。Chat 端点可用 `thinking_type` 发送 `thinking.type=disabled`，或用 `enable_thinking` 发送 `enable_thinking=false`。`omit` 不发思考参数，沿用端点默认值。
 
 必须思考的模型选 `effort_only`，仅发送强度。默认 `reasoning_effort` 为 `medium`，可选端点支持的 `low`、`medium`、`high`、`xhigh`、`max`。用 `"reasoning_effort_overrides": {"resource-audit/assessment": "low"}` 按 `操作 ID/调用的 Agent ID` 覆盖，格式修复沿用原调用档位。
 

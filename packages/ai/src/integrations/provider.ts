@@ -8,7 +8,7 @@ import type { AiRecordMap, ModelCallDiagnostics } from '../core/records.js';
 import { AiError } from '../core/errors.js';
 import { type ExecutionScope } from '../execution/scope.js';
 import { type AiEventService } from '../execution/events.js';
-import { observeModelFrame } from './provider-diagnostics.js';
+import { observeModelFrame, observeModelHttpError } from './provider-diagnostics.js';
 
 type EndpointModel = ReturnType<ReturnType<typeof createOpenAICompatible>>;
 
@@ -44,6 +44,8 @@ export class ManagedProvider {
       return { anthropic: effort === 'none' ? { thinking: { type: 'disabled' } } : { effort } };
     if (this.profile.thinking_control === 'thinking_type')
       return { hubOpenai: { thinking: { type: 'disabled' } } };
+    if (this.profile.thinking_control === 'enable_thinking')
+      return { hubOpenai: { enable_thinking: false } };
     return { openaiCompatible: { reasoningEffort: effort } };
   }
   assertSuccess() {
@@ -63,11 +65,20 @@ export class ManagedProvider {
       apiKey,
       fetch: this.fetch,
     };
-    return this.profile.format === 'openai'
-      ? createOpenAICompatible({ ...options, name: 'hub-openai', includeUsage: true })(
-          this.profile.model,
-        )
-      : createAnthropic(options)(this.profile.model);
+    if (this.profile.format === 'anthropic') return createAnthropic(options)(this.profile.model);
+    return createOpenAICompatible({
+      ...options,
+      name: 'hub-openai',
+      includeUsage: true,
+      transformRequestBody:
+        this.profile.chat_max_tokens_field === 'max_completion_tokens'
+          ? (body) => {
+              body.max_completion_tokens = body.max_tokens;
+              delete body.max_tokens;
+              return body;
+            }
+          : undefined,
+    })(this.profile.model);
   }
   private async reserve(diagnostics: ModelCallDiagnostics): Promise<AiRecordMap['ai_calls']> {
     const owner = this.scope.current().owner_id;
@@ -127,7 +138,7 @@ export class ManagedProvider {
   }
   // Mastra 会在部分错误下自行重试。首个传输失败中止本轮作用域，重试只由宿主队列决定。
   private readonly fetch: typeof fetch = async (input, init) => {
-    const { controller, step } = this.scope.current();
+    const { controller, lease, step } = this.scope.current();
     controller.signal.throwIfAborted();
     const diagnostics: ModelCallDiagnostics = {
       agent_id: this.agentId,
@@ -181,11 +192,23 @@ export class ManagedProvider {
       );
     };
     try {
-      const response = await fetch(input, { ...init, redirect: 'error', signal });
+      let headers = init?.headers;
+      if (this.profile.request_headers) {
+        const merged = new Headers(
+          headers ?? (input instanceof Request ? input.headers : undefined),
+        );
+        for (const [name, value] of Object.entries(this.profile.request_headers))
+          merged.set(
+            name,
+            typeof value === 'string' ? value : (value.prefix ?? '') + lease.execution_id,
+          );
+        headers = merged;
+      }
+      const response = await fetch(input, { ...init, headers, redirect: 'error', signal });
       transport.headers_ms = elapsed();
       transport.http_status = response.status;
       if (!response.ok) {
-        await response.body?.cancel();
+        await observeModelHttpError(transport, response);
         throw new AiError(
           'AI_PROVIDER_FAILED',
           `模型端点返回 HTTP ${response.status}`,

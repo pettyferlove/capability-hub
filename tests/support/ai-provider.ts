@@ -1,4 +1,4 @@
-import { createServer, type ServerResponse } from 'node:http';
+import { createServer, type IncomingHttpHeaders, type ServerResponse } from 'node:http';
 import { once } from 'node:events';
 import { deferred } from './store.js';
 
@@ -11,8 +11,14 @@ function record(value: unknown): Record<string, unknown> {
 /** fixture 服务要模拟的协议；两者在鉴权头与响应形状上都不同。 */
 export type Format = 'openai' | 'anthropic';
 
-/** 响应模式：`tools` 先回一次工具调用再回文本，其余分别对应纯文本、JSON、限流与截断。 */
-export type Mode = 'tools' | 'text' | 'json' | 'rate-limit' | 'truncated';
+/** `tools` 先回一次工具调用；自定义 HTTP 失败用于验证非 SSE 响应。 */
+export type Mode =
+  | 'tools'
+  | 'text'
+  | 'json'
+  | 'rate-limit'
+  | 'truncated'
+  | { status: number; headers: Record<string, string>; body: string };
 
 type FixtureReply = string | { text: string; stop: 'length' | 'content_filter' };
 
@@ -31,7 +37,12 @@ export async function fixture(
     json: string | FixtureReply[];
   },
 ) {
-  const requests: { path: string; body: Record<string, unknown>; authenticated: boolean }[] = [];
+  const requests: {
+    path: string;
+    body: Record<string, unknown>;
+    authenticated: boolean;
+    headers: IncomingHttpHeaders;
+  }[] = [];
   const firstDelta = deferred();
   const release = deferred();
   const disconnected = deferred();
@@ -45,6 +56,7 @@ export async function fixture(
       requests.push({
         path: req.url ?? '',
         body,
+        headers: req.headers,
         authenticated:
           format === 'openai'
             ? req.headers.authorization === 'Bearer ai-fixture-key'
@@ -52,6 +64,15 @@ export async function fixture(
       });
       res.on('close', () => disconnected.resolve());
       if (gated === 'before-headers') await release.promise;
+      if (typeof mode === 'object') {
+        res.writeHead(mode.status, mode.headers);
+        if (gated === 'before-output') {
+          res.flushHeaders();
+          await release.promise;
+        }
+        res.end(mode.body);
+        return;
+      }
       if (mode === 'rate-limit') {
         res.writeHead(429, { 'content-type': 'application/json' });
         res.end(

@@ -356,6 +356,55 @@ for (const format of ['openai', 'anthropic'] as const)
     });
   }
 
+for (const format of ['openai', 'anthropic'] as const)
+  test(`AI ${format} HTTP 失败诊断可导出上游标识但不暴露错误正文`, async (t) => {
+    const detail = 'private-upstream-error-text';
+    const chat = format === 'openai';
+    const provider = await providerFixture(format, {
+      status: 400,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        ...(chat && { 'x-request-id': 'req-header' }),
+      },
+      body: JSON.stringify({
+        error: {
+          code: chat ? 'missing_session' : undefined,
+          type: 'invalid_request_error',
+          message: detail,
+        },
+        request_id: 'req-envelope',
+      }),
+    });
+    t.after(provider.close);
+    const prior = process.env.AI_FIXTURE_KEY;
+    process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+    t.after(() => {
+      if (prior === undefined) delete process.env.AI_FIXTURE_KEY;
+      else process.env.AI_FIXTURE_KEY = prior;
+    });
+    const hub = await createTestHub(t, { ai: config(provider.url, format) });
+    const client = await signIn(hub);
+    const row = await hub.hub.ai.runtime.submit(hub.admin.id, 'assistant', { prompt: 'Hello' });
+    await hub.worker.tick();
+    await hub.worker.waitForIdle();
+    const path = `/api/admin/operations/agents/executions/${row.id}/diagnostics`;
+    const response = await client.get(path).expect(200);
+    const report = aiExecutionDiagnosticsResponseSchema.parse(response.body);
+    const [call] = report.model_calls;
+    const code = chat ? 'missing_session' : 'invalid_request_error';
+    const requestId = chat ? 'req-header' : 'req-envelope';
+    assert.equal(call.status, 'failed');
+    assert.equal(call.error_code, 'AI_PROVIDER_FAILED');
+    assert.equal(call.diagnostics.transport?.http_status, 400);
+    assert.equal(call.diagnostics.transport?.upstream_error_code, code);
+    assert.equal(call.diagnostics.transport?.upstream_request_id, requestId);
+    assert(!response.text.includes(detail));
+    const markdown = await client.get(path + '?download=markdown').expect(200);
+    assert(markdown.text.includes(`"upstream_error_code": "${code}"`));
+    assert(markdown.text.includes(`"upstream_request_id": "${requestId}"`));
+    assert(!markdown.text.includes(detail));
+  });
+
 test('AI 第一个文本增量在模型完成前提交；取消后旧执行者不能再写回', async (t) => {
   const provider = await providerFixture('openai', 'text', true);
   t.after(() => provider.close());

@@ -80,6 +80,7 @@ export const aiExecutionLedgerResponseSchema = z
   .strict();
 
 const elapsedMs = z.number().int().nonnegative();
+const upstreamIdentifier = z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/u);
 const callDiagnosticsSchema = z.strictObject({
   agent_id: id,
   step: z.strictObject({ id, start_seq: z.number().int().positive() }).optional(),
@@ -91,6 +92,8 @@ const callDiagnosticsSchema = z.strictObject({
   transport: z
     .strictObject({
       http_status: z.number().int().min(100).max(599).optional(),
+      upstream_error_code: upstreamIdentifier.optional(),
+      upstream_request_id: upstreamIdentifier.optional(),
       headers_ms: elapsedMs.optional(),
       first_output_ms: elapsedMs.optional(),
       last_output_ms: elapsedMs.optional(),

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { z } from 'zod';
-import { AiError } from '@capability-hub/ai';
+import { AiError, modelProfileSchema } from '@capability-hub/ai';
 import { executionView } from '../../apps/server/src/http/routes/ai-views.js';
 import { ScopedMemoryStorage, ScopedWorkflowsStorage } from '@capability-hub/ai/storage';
 import { purgeAiHistory } from '@capability-hub/infrastructure/ai';
@@ -9,7 +9,7 @@ import { fixture } from '../support/ai-provider.js';
 import { frameworkFixture, frameworkConfig } from '../support/ai-framework.js';
 import { recoveryRuntime } from '../support/ai-recovery.js';
 
-for (const control of ['thinking_type', 'omit'] as const)
+for (const control of ['thinking_type', 'enable_thinking', 'omit'] as const)
   test(`OpenAI 兼容端点按 ${control} 接收思考参数，强度覆盖不能意外开启推理`, async (t) => {
     const provider = await fixture('openai', 'text');
     t.after(provider.close);
@@ -24,6 +24,7 @@ for (const control of ['thinking_type', 'omit'] as const)
     assert.equal((await hub.runtime.get(execution.id)).status, 'succeeded');
     const { body } = provider.requests[0];
     assert.deepEqual(body.thinking, control === 'thinking_type' ? { type: 'disabled' } : undefined);
+    assert.equal(body.enable_thinking, control === 'enable_thinking' ? false : undefined);
     assert.equal(body.reasoning_effort, undefined);
     const [call] = await hub.runtime.store.list('ai_calls', {
       execution_id: execution.id,
@@ -31,8 +32,170 @@ for (const control of ['thinking_type', 'omit'] as const)
     });
     assert.equal(
       call.payload.diagnostics.reasoning_effort,
-      control === 'thinking_type' ? 'none' : undefined,
+      control === 'omit' ? undefined : 'none',
     );
+  });
+
+test('AI Chat 可切换 token 上限字段，不降低预算或同时发送两个字段', async (t) => {
+  const provider = await fixture('openai', 'text');
+  t.after(provider.close);
+  const config = frameworkConfig(provider.url);
+  const [profile] = config.profiles;
+  profile.max_output_tokens = 1536;
+  config.profiles.push({
+    ...profile,
+    id: 'completion-tokens',
+    chat_max_tokens_field: 'max_completion_tokens',
+  });
+  const hub = await frameworkFixture(t, config, (context) =>
+    context.agent({ id: 'writer', instructions: 'Answer briefly.', prompt: 'Hello' }),
+  );
+  for (const profileId of [profile.id, 'completion-tokens']) {
+    const execution = await hub.runtime.submit(hub.admin.id, 'framework-test', {}, profileId);
+    await hub.run();
+    assert.equal((await hub.runtime.get(execution.id)).status, 'succeeded');
+  }
+  assert.deepEqual(
+    provider.requests.map(({ body }) => [body.max_tokens, body.max_completion_tokens]),
+    [
+      [1536, undefined],
+      [undefined, 1536],
+    ],
+  );
+});
+
+test('AI Messages 配置拒绝不会生效的 Chat 请求体选项', () => {
+  const [profile] = frameworkConfig(undefined, 'anthropic').profiles;
+  for (const options of [
+    { chat_max_tokens_field: 'max_completion_tokens' },
+    { thinking_control: 'enable_thinking' },
+  ]) {
+    assert.equal(modelProfileSchema.safeParse({ ...profile, ...options }).success, false);
+  }
+});
+
+test('AI 模型请求头拒绝覆盖保留头、歧义名称和不安全值', () => {
+  const [profile] = frameworkConfig().profiles;
+  for (const requestHeaders of [
+    { Authorization: 'Bearer override' },
+    { 'X-Api-Key': 'override' },
+    { 'Content-Length': '0' },
+    { 'Bad Header': 'value' },
+    { 'X-Session': 'value\n' },
+    { 'X-Session': { from: 'execution_id', prefix: '\r\n' } },
+    { 'X-Session': 'first', 'x-session': 'second' },
+    { 'X-Session': { from: 'owner_id' } },
+  ]) {
+    const parsed = modelProfileSchema.safeParse({ ...profile, request_headers: requestHeaders });
+    assert.equal(parsed.success, false, JSON.stringify(requestHeaders));
+  }
+});
+
+test('AI HTTP 错误忽略不可用的正文，保留 HTTP 状态和可用的请求 ID', async (t) => {
+  const cases: {
+    name: string;
+    body: string;
+    type?: string;
+    holdBody?: boolean;
+    invalidId?: boolean;
+  }[] = [
+    {
+      name: '标识含换行或空格',
+      body: JSON.stringify({ error: { code: 'invalid\ncode' }, request_id: 'invalid id' }),
+      invalidId: true,
+    },
+    { name: 'JSON 不完整', body: '{"error":{"code":"incomplete"}' },
+    {
+      name: '正文超出字节上限',
+      body: JSON.stringify({ error: { code: 'large_error', message: '大'.repeat(3000) } }),
+    },
+    { name: '非 JSON 类型', type: 'text/html', body: '{"error":{"code":"not_json"}}' },
+    { name: '正文迟迟未返回', holdBody: true, body: '{"error":{"code":"late_error"}}' },
+  ];
+  for (const item of cases) {
+    await t.test(item.name, { timeout: 5000 }, async (scenario) => {
+      const provider = await fixture(
+        'openai',
+        {
+          status: 400,
+          headers: {
+            'content-type': item.type ?? 'application/json',
+            'x-request-id': item.invalidId ? 'invalid id' : 'req-fixture',
+          },
+          body: item.body,
+        },
+        item.holdBody ? 'before-output' : false,
+      );
+      scenario.after(provider.close);
+      const hub = await frameworkFixture(scenario, frameworkConfig(provider.url), (context) =>
+        context.agent({ id: 'writer', instructions: 'Answer briefly.', prompt: 'Hello' }),
+      );
+      const execution = await hub.runtime.submit(hub.admin.id, 'framework-test', {});
+      await hub.run();
+      const result = await hub.runtime.get(execution.id);
+      assert.deepEqual(result.payload.error, {
+        code: 'AI_PROVIDER_FAILED',
+        message: '模型端点返回 HTTP 400',
+        retryable: false,
+      });
+      const [call] = await hub.runtime.store.list('ai_calls', {
+        execution_id: execution.id,
+        limit: 1,
+      });
+      const transport = call.payload.diagnostics.transport;
+      assert.equal(transport?.http_status, 400);
+      assert.equal(transport?.upstream_error_code, undefined);
+      assert.equal(transport?.upstream_request_id, item.invalidId ? undefined : 'req-fixture');
+    });
+  }
+});
+
+for (const format of ['openai', 'anthropic'] as const)
+  test(`AI ${format} 自定义请求头在工具续轮中稳定且按执行和配置隔离`, async (t) => {
+    const provider = await fixture(format, 'tools');
+    t.after(provider.close);
+    const config = frameworkConfig(provider.url, format);
+    const [profile] = config.profiles;
+    config.profiles.push({ ...profile, id: 'unconfigured' });
+    profile.request_headers = {
+      'User-Agent': 'hub-test/1',
+      'X-Gateway-Session': { from: 'execution_id', prefix: 'session-' },
+    };
+    const hub = await frameworkFixture(t, config, (context) =>
+      context.agent({
+        id: 'inspect',
+        instructions: 'Use tool',
+        prompt: 'Count hello',
+        tools: {
+          inspect_text: context.tool({
+            id: 'inspect-text',
+            description: 'Count',
+            input: z.object({ text: z.string() }),
+            output: z.object({ count: z.number() }),
+            execute: async ({ text }) => ({ count: text.length }),
+          }),
+        },
+      }),
+    );
+    const run = async (profileId?: string) => {
+      const execution = await hub.runtime.submit(hub.admin.id, 'framework-test', {}, profileId);
+      await hub.run();
+      const result = await hub.runtime.get(execution.id);
+      assert.equal(result.status, 'succeeded', JSON.stringify(result.payload.error));
+      return execution.id;
+    };
+    const first = await run();
+    const next = await run();
+    await run('unconfigured');
+    assert.deepEqual(
+      provider.requests.map(({ headers }) => headers['x-gateway-session']),
+      [`session-${first}`, `session-${first}`, `session-${next}`, undefined],
+    );
+    assert(provider.requests.every(({ authenticated }) => authenticated));
+    assert(
+      provider.requests.slice(0, -1).every(({ headers }) => headers['user-agent'] === 'hub-test/1'),
+    );
+    assert.notEqual(provider.requests.at(-1)?.headers['user-agent'], 'hub-test/1');
   });
 
 for (const format of ['openai', 'anthropic'] as const)

@@ -95,6 +95,12 @@ export function ModelCallRow({ call, locate }: { call: Call; locate: (seq: numbe
                 <p>
                   HTTP {transport.http_status ?? '—'} · 响应头 {ms(transport.headers_ms)}
                 </p>
+                {transport.upstream_error_code && (
+                  <p className="min-w-48 break-all">上游错误码 {transport.upstream_error_code}</p>
+                )}
+                {transport.upstream_request_id && (
+                  <p className="min-w-48 break-all">上游请求 ID {transport.upstream_request_id}</p>
+                )}
                 <p>
                   首个输出 {ms(transport.first_output_ms)} · 最后输出 {ms(transport.last_output_ms)}
                 </p>

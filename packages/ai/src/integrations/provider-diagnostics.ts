@@ -1,7 +1,18 @@
 import type { ModelProfile } from '../core/config.js';
-import type { ModelCallDiagnostics } from '../core/records.js';
+import { upstreamIdentifierSchema, type ModelCallDiagnostics } from '../core/records.js';
 
 type Transport = NonNullable<ModelCallDiagnostics['transport']>;
+const maxErrorBodyBytes = 8192;
+const errorBodyTimeoutMs = 500;
+const upstreamRequestIdHeaders = [
+  'x-request-id',
+  'request-id',
+  'apim-request-id',
+  'x-ms-request-id',
+  'x-amzn-requestid',
+  'x-amz-request-id',
+  'x-dashscope-request-id',
+];
 
 const finishReasons = new Map<string, NonNullable<Transport['finish_reason']>>([
   ['stop', 'stop'],
@@ -21,6 +32,77 @@ function object(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function identifier(value: unknown) {
+  if (typeof value !== 'string') return undefined;
+  const parsed = upstreamIdentifierSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+async function readErrorEnvelope(response: Response) {
+  const stream = response.body;
+  if (!stream) return;
+  const type = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+  if (
+    (type !== 'application/json' && !type?.endsWith('+json')) ||
+    Number(response.headers.get('content-length')) > maxErrorBodyBytes
+  ) {
+    void stream.cancel().catch(() => undefined);
+    return;
+  }
+  const reader = stream.getReader();
+  let expired = false;
+  const timeout = setTimeout(() => {
+    expired = true;
+    void reader.cancel().catch(() => undefined);
+  }, errorBodyTimeoutMs);
+  timeout.unref();
+  try {
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    let bytes = 0;
+    let text = '';
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) return expired ? undefined : object(JSON.parse(text + decoder.decode()));
+      bytes += chunk.value.byteLength;
+      if (bytes > maxErrorBodyBytes) return;
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timeout);
+    void reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
+/** 错误体只用于提取协议标识；读取或解析失败不得遮蔽已收到的 HTTP 状态。 */
+export async function observeModelHttpError(transport: Transport, response: Response) {
+  for (const name of upstreamRequestIdHeaders) {
+    const id = identifier(response.headers.get(name));
+    if (id) {
+      transport.upstream_request_id = id;
+      break;
+    }
+  }
+  const envelope = await readErrorEnvelope(response);
+  if (!envelope) return;
+  const error = object(envelope.error);
+  for (const value of [error?.code, envelope.code, error?.type]) {
+    const code = identifier(
+      typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : value,
+    );
+    if (code) {
+      transport.upstream_error_code = code;
+      break;
+    }
+  }
+  if (!transport.upstream_request_id) {
+    const id = identifier(envelope.request_id);
+    if (id) transport.upstream_request_id = id;
+  }
 }
 
 function hasText(value: unknown) {

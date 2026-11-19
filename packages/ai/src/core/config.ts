@@ -3,6 +3,50 @@ import { createHash } from 'node:crypto';
 import { AiError } from './errors.js';
 import { reasoningEffortSchema } from './records.js';
 
+const managedModelHeaders: Record<string, true> = {
+  authorization: true,
+  connection: true,
+  'content-encoding': true,
+  'content-length': true,
+  'content-type': true,
+  cookie: true,
+  expect: true,
+  host: true,
+  'keep-alive': true,
+  'proxy-authorization': true,
+  'proxy-connection': true,
+  te: true,
+  trailer: true,
+  'transfer-encoding': true,
+  upgrade: true,
+  'x-api-key': true,
+};
+const headerValue = z
+  .string()
+  .refine((value) => !/[^ -~]/.test(value), '模型请求头值必须为单行 ASCII 文本');
+const requestHeadersSchema = z
+  .record(
+    z
+      .string()
+      .min(1)
+      .refine((name) => !/[^!#$%&'*+.^_`|~\w-]/.test(name), '模型请求头名称无效'),
+    z.union([
+      headerValue,
+      z.strictObject({ from: z.literal('execution_id'), prefix: headerValue.optional() }),
+    ]),
+  )
+  .superRefine((headers, ctx) => {
+    const names = new Set<string>();
+    for (const name of Object.keys(headers)) {
+      const key = name.toLowerCase();
+      if (Object.hasOwn(managedModelHeaders, key))
+        ctx.addIssue({ code: 'custom', path: [name], message: '不能覆盖模型传输保留请求头' });
+      else if (names.has(key))
+        ctx.addIssue({ code: 'custom', path: [name], message: '模型请求头名称不能重复' });
+      names.add(key);
+    }
+  });
+
 /**
  * 单个模型端点的配置。`base_url` 必须是 API 前缀而不是具体操作地址：不允许内嵌凭据、查询或片段，
  * 也不接受以 `/messages`、`/chat/completions`、`/responses` 结尾（这些由 provider 适配器自行拼接）；
@@ -19,11 +63,13 @@ export const modelProfileSchema = z
     base_url: z.url(),
     model: z.string().min(1).max(200),
     credential_ref: z.string().regex(/^[A-Z][A-Z0-9_]{1,127}$/),
+    request_headers: requestHeadersSchema.optional(),
     allow_http: z.boolean().default(false),
     max_output_tokens: z.number().int().min(128).max(32768).default(4096),
+    chat_max_tokens_field: z.enum(['max_tokens', 'max_completion_tokens']).optional(),
     request_timeout_ms: z.number().int().min(1000).max(120000).default(60000),
     thinking_control: z
-      .enum(['protocol', 'thinking_type', 'effort_only', 'omit'])
+      .enum(['protocol', 'thinking_type', 'enable_thinking', 'effort_only', 'omit'])
       .default('protocol'),
     reasoning_effort: reasoningEffortSchema.default('medium'),
     reasoning_effort_overrides: z
@@ -49,6 +95,20 @@ export const modelProfileSchema = z
         code: 'custom',
         message: '模型地址必须为受信 API 前缀，HTTP 需显式允许，不接受凭据、查询或操作路径',
       });
+    if (profile.format === 'anthropic') {
+      if (profile.chat_max_tokens_field !== undefined)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['chat_max_tokens_field'],
+          message: '仅 OpenAI Chat Completions 支持选择 token 上限字段',
+        });
+      if (profile.thinking_control === 'enable_thinking')
+        ctx.addIssue({
+          code: 'custom',
+          path: ['thinking_control'],
+          message: 'enable_thinking 仅用于 OpenAI Chat Completions',
+        });
+    }
   });
 
 /** 解析后的模型配置；该值会被 {@link digest} 固化进执行的 `model_digest`，改动即视为另一套配置。 */
