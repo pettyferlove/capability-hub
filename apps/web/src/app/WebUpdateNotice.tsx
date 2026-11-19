@@ -40,8 +40,9 @@ import {
   webUpdateSurfaceStyles,
   webUpdateTickStyles,
 } from './styles.js';
+import { useAutoDismiss } from './use-auto-dismiss.js';
 
-const refreshDelaySeconds = 10;
+const countdownSeconds = 10;
 const confirmedBuildKey = 'capability-hub:confirmed-web-build';
 
 function readConfirmedBuild() {
@@ -155,6 +156,8 @@ function WebUpdateCard({
   const restoreFocusOnCancel = useRef(false);
   const [remaining, setRemaining] = useState<number>();
   const counting = remaining !== undefined;
+  const loaded = build === null;
+  const autoDismiss = useAutoDismiss(loaded, countdownSeconds, onDismiss);
 
   const cancelCountdown = useCallback(() => {
     clearTimeout(timer.current);
@@ -180,7 +183,7 @@ function WebUpdateCard({
 
   function startCountdown() {
     if (timer.current !== undefined) return;
-    const deadline = performance.now() + refreshDelaySeconds * 1_000;
+    const deadline = performance.now() + countdownSeconds * 1_000;
     const page = location.href;
     function tick() {
       if (webBuildUpdates.getSnapshot() !== build || location.href !== page) {
@@ -200,9 +203,12 @@ function WebUpdateCard({
     tick();
   }
 
-  const loaded = build === null;
+  const barSeconds = loaded ? autoDismiss.remaining : remaining;
   return (
-    <StarBorder className={cn(webUpdateSurfaceStyles, loaded && 'grid-cols-[minmax(0,1fr)_auto]')}>
+    <StarBorder
+      {...autoDismiss.holdProps}
+      className={cn(webUpdateSurfaceStyles, loaded && 'grid-cols-[minmax(0,1fr)_auto]')}
+    >
       <DotGrid className={webUpdateDotsStyles} />
       <div className="flex min-w-0 items-center gap-3">
         <span
@@ -213,14 +219,14 @@ function WebUpdateCard({
         </span>
         <div role="status" className="min-w-0">
           <p className="flex items-center gap-2.5 text-base leading-5 font-semibold">
-            <ShinyText>{loaded ? '已载入新版' : 'Hub 有新版本'}</ShinyText>
+            <ShinyText>{loaded ? 'Hub 已更新' : 'Hub 有新版本'}</ShinyText>
             <span className={webUpdateLabelStyles} aria-hidden="true">
               WEB UPDATE
             </span>
           </p>
           <p className="mt-0.5 text-body leading-4.5 text-muted-ink">
             {loaded
-              ? '无需再次刷新，可以继续使用'
+              ? '你正在使用最新版本'
               : counting
                 ? '倒计时结束后刷新，未保存的修改不会保留'
                 : '刷新前请保存正在编辑的内容'}
@@ -270,7 +276,7 @@ function WebUpdateCard({
                 </MenuItem>
                 <MenuItem className={webUpdateMenuItemStyles} onAction={startCountdown}>
                   <Clock3 size={14} aria-hidden="true" />
-                  {refreshDelaySeconds} 秒后刷新
+                  {countdownSeconds} 秒后刷新
                 </MenuItem>
               </Menu>
             </Popover>
@@ -289,13 +295,14 @@ function WebUpdateCard({
           </Button>
         )}
       </div>
-      {counting && (
+      {barSeconds !== undefined && (
         <span
           aria-hidden="true"
           className={webUpdateCountdownStyles}
           style={{
-            animationDuration: `${refreshDelaySeconds}s`,
-            transform: `scaleX(${remaining / refreshDelaySeconds})`,
+            animationDuration: `${countdownSeconds}s`,
+            animationPlayState: loaded && autoDismiss.paused ? 'paused' : undefined,
+            transform: `scaleX(${barSeconds / countdownSeconds})`,
           }}
         />
       )}

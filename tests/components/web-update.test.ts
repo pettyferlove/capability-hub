@@ -6,6 +6,7 @@ import { userEvent } from '@testing-library/user-event';
 import { createElement, Suspense } from 'react';
 import { PageBoundary } from '../../apps/web/src/app/PageBoundary.js';
 import { navigate } from '../../apps/web/src/shared/navigation/history-navigation.js';
+import { useAutoDismiss } from '../../apps/web/src/app/use-auto-dismiss.js';
 
 // 模拟编译常量，先于读取它的网页模块载入。
 Object.defineProperty(globalThis, '__HUB_WEB_BUILD__', { value: 'bundled-build' });
@@ -203,4 +204,52 @@ test('切换页面、新构建或关闭提示都会撤销当前倒计时', async
   assert.equal(screen.queryByRole('region', { name: '版本更新' }), null);
   act(() => timers.tick(10_000));
   assert.equal(reloads, 0);
+});
+
+function AutoDismissNotice({ onDismiss }: { onDismiss: () => void }) {
+  const { holdProps } = useAutoDismiss(true, 10, onDismiss);
+  return createElement('div', holdProps, createElement('button', { type: 'button' }, '知道了'));
+}
+
+test('自动关闭只在页面可见时计时，悬停或聚焦时暂停并按剩余时间继续', async (context) => {
+  let visibility: DocumentVisibilityState = 'hidden';
+  context.mock.getter(document, 'visibilityState', () => visibility);
+  const { timers } = context.mock;
+  timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
+  context.mock.method(performance, 'now', () => Date.now());
+  const advance = (milliseconds: number) => act(() => timers.tick(milliseconds));
+  const button = () => screen.getByRole('button', { name: '知道了' });
+  // user-event 靠 setTimeout 排空任务，模拟计时器下会挂起，这里直接派发指针与焦点事件。
+  const holds: Array<[hold: () => unknown, release: () => unknown]> = [
+    [
+      () => fireEvent.pointerOver(button(), { pointerType: 'mouse' }),
+      () => fireEvent.pointerOut(button(), { pointerType: 'mouse' }),
+    ],
+    [() => act(() => button().focus()), () => act(() => button().blur())],
+  ];
+  for (const [hold, release] of holds) {
+    visibility = 'hidden';
+    let dismissals = 0;
+    render(
+      createElement(AutoDismissNotice, {
+        onDismiss: () => {
+          dismissals++;
+        },
+      }),
+    );
+    advance(30_000);
+    visibility = 'visible';
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    advance(6_000);
+    await hold();
+    advance(30_000);
+    await release();
+    advance(3_999);
+    assert.equal(dismissals, 0);
+    advance(1);
+    assert.equal(dismissals, 1);
+    cleanup();
+  }
 });
