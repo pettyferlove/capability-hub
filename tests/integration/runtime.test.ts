@@ -13,13 +13,18 @@ import { frameworkConfig } from '../support/ai-framework.js';
 import { httpClient, signIn } from '../support/http.js';
 import { assertProjectTokenUsage } from '../support/token-usage.js';
 import { assertResourceActivity } from '../support/resource-activity.js';
+import rootPackage from '../../package.json' with { type: 'json' };
+import cliPackage from '../../apps/cli/package.json' with { type: 'json' };
 
 const operationsPath = '/api/admin/operations';
 
 test('有效页面返回入口，浏览器打开未知地址得到 404 入口，接口与资源请求保持 JSON 404', async (context) => {
   const directory = await mkdtemp(join(tmpdir(), 'hub-operations-web-'));
   context.after(() => rm(directory, { recursive: true, force: true }));
-  await writeFile(join(directory, 'index.html'), '<!doctype html><title>Hub</title>');
+  await writeFile(
+    join(directory, 'index.html'),
+    '<!doctype html><title>Hub</title><meta name="capability-hub-build" content="test-build">',
+  );
   const f = await createTestHub(context, { webDirectory: directory });
   const client = httpClient(f);
   for (const path of [
@@ -34,6 +39,7 @@ test('有效页面返回入口，浏览器打开未知地址得到 404 入口，
     await client
       .get(path)
       .set('Accept', 'text/html')
+      .expect('X-Capability-Hub-Web-Build', 'test-build')
       .expect(200, /<title>Hub<\/title>/);
   for (const path of [
     '/account?tab=unknown',
@@ -53,8 +59,29 @@ test('有效页面返回入口，浏览器打开未知地址得到 404 入口，
     ['/assets/missing.js', '*/*'],
   ]) {
     const response = await client.get(path).set('Accept', accept).expect(404);
+    assert.equal(response.headers['x-capability-hub-version'], rootPackage.version);
+    assert.equal(response.headers['x-capability-hub-web-build'], 'test-build');
+    assert.match(response.headers['x-capability-hub-cli'], /^recommended=[^,]+, minimum=[^,]+$/);
+    assert(
+      response.headers['x-capability-hub-cli'].startsWith(`recommended=${cliPackage.version},`),
+    );
+    assert(response.headers['x-request-id']);
     assert.equal(response.body.error.code, 'NOT_FOUND');
   }
+});
+
+test('服务运行期间重建网页后，构建号响应头随之更新，不让新页面持续提示已更新', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'] });
+  const directory = await mkdtemp(join(tmpdir(), 'hub-rebuilt-web-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const page = (build: string) =>
+    `<!doctype html><title>Hub</title><meta name="capability-hub-build" content="${build}">`;
+  await writeFile(join(directory, 'index.html'), page('first-build'));
+  const client = httpClient(await createTestHub(context, { webDirectory: directory }));
+  await client.get('/api/auth/status').expect('X-Capability-Hub-Web-Build', 'first-build');
+  await writeFile(join(directory, 'index.html'), page('rebuilt'));
+  context.mock.timers.tick(5000);
+  await client.get('/api/auth/status').expect('X-Capability-Hub-Web-Build', 'rebuilt');
 });
 
 test('运营总览按发布、分发和反馈提交日计数，只向平台审计员提供汇总', async (context) => {
@@ -175,6 +202,8 @@ test('运行快照按 Agent 汇总保留的执行，只向审计员披露统计�
   const admin = await signIn(fixture);
   const response = await admin.get(operationsPath).expect(200);
   const data = response.body as OperationsResponse;
+  assert.equal(data.hub_version, rootPackage.version);
+  assert.equal(data.hub_commit, '');
   assert.equal(data.database.driver, 'sqlite');
   assert.equal(data.database.available, true);
   assert(data.database.size_bytes && data.database.size_bytes > 0);

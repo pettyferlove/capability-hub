@@ -3,9 +3,17 @@ import { sharedKeysForOption } from '@capability-hub/application';
 import type { HubServices } from '../bootstrap/hub-services.js';
 
 /** 以普通 HTTP 文档交付固定版本安装说明。 */
-export async function createInstallationGuide(hub: HubServices, id: string): Promise<string> {
-  const version = await hub.assetAccess.requireReadableVersion(null, id);
-  const asset = await hub.assetAccess.getAsset(version.asset_id);
+export async function createInstallationGuide(
+  hub: HubServices,
+  kind: 'skill' | 'mcp',
+  slug: string,
+  label: string,
+): Promise<string> {
+  const { asset, version, notice } = await hub.store.tx(async () => {
+    const version = await hub.assetAccess.requirePublicVersion(kind, slug, label);
+    const asset = await hub.assetAccess.getAsset(version.asset_id);
+    return { asset, version, notice: await hub.assetAccess.versionNotice(null, asset, version.id) };
+  });
   const base = new URL(
     publicResourcePath(asset.kind, asset.slug, version.version_label),
     hub.config.publicUrl,
@@ -15,9 +23,22 @@ export async function createInstallationGuide(hub: HubServices, id: string): Pro
     '',
     `${asset.kind === 'skill' ? 'Skill' : 'MCP'} · ${version.version_label}`,
     '',
-    asset.kind === 'skill' ? '## 安装' : '## 配置',
-    '',
   ];
+  if (!notice.is_latest && notice.latest_release) {
+    const latest = notice.latest_release.version_label;
+    const url = new URL(publicResourcePath(asset.kind, asset.slug, latest), hub.config.publicUrl);
+    lines.push(`最新版本为 [${latest}](${url.href})。`, '');
+  }
+  if (notice.lifecycle === 'deprecated') {
+    const replacement = notice.replacement_asset_slug;
+    lines.push(
+      replacement
+        ? `此资源已弃用。替代资源：[${replacement}](${new URL(`/asset/${replacement}`, hub.config.publicUrl).href})。`
+        : '此资源已弃用。',
+      '',
+    );
+  }
+  lines.push(asset.kind === 'skill' ? '## 安装' : '## 配置', '');
   if (asset.kind === 'skill') {
     lines.push(
       `公开 Skill 无需登录。先按 [CLI 安装说明](${new URL('/connect/cli', hub.config.publicUrl).href}) 准备命令，再将 \`<技能父目录>\` 换成实际目录：`,

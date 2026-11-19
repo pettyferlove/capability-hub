@@ -21,6 +21,7 @@ import {
 import { savePrivateJson } from './private-json.js';
 import { HubApiClient, HubApiError, terminalText } from './api-client.js';
 import { CliUi } from './cli-ui.js';
+import { observeCliResponse } from './update-notice.js';
 
 /**
  * 打开到 Hub MCP 的连接：请求被限制在 `<url>/mcp` 这一路径内，令牌每次请求前换取，
@@ -43,6 +44,7 @@ export async function openHubConnection(url: string, path: string) {
             'Bearer ' + (await connectionToken(path, url, identity.client_id)),
           );
           const response = await fetch(input, { ...init, headers, redirect: 'error' });
+          observeCliResponse(url, response);
           if (response.status === 401) {
             await response.body?.cancel();
             throw new HubApiError(401, 'UNAUTHENTICATED', '连接已失效，请重新运行 connect 授权');

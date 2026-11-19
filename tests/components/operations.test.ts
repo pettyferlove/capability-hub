@@ -348,6 +348,8 @@ function OperationsView({ section }: { section: 'runtime' | 'agents' }) {
 test('刷新恢复的存储和 Agent 统计时，页面区分采样失败和没有执行', async (t) => {
   const time = '2026-10-31T10:00:00Z';
   const snapshot: OperationsResponse = {
+    hub_version: '0.1.0',
+    hub_commit: '',
     observed_at: time,
     memory_rss_bytes: 1024,
     last_backup_at: null,

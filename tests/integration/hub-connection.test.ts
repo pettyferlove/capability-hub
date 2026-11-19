@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { z } from 'zod';
 import {
+  cliCompatibility,
   cliInstallationResponseSchema,
   hubClientSkillBundleResponseSchema,
 } from '@capability-hub/contracts';
@@ -34,6 +35,7 @@ test('CLI 说明直接提供 npm 安装命令，仅配置私有仓库时附带�
       .expect(200);
     const guide = cliInstallationResponseSchema.parse(response.body);
     assert.equal(guide.registry_url, registry ?? null);
+    assert.deepEqual(guide.cli, cliCompatibility);
     const commands = guide.steps.flatMap((step) => (step.command ? [step.command] : []));
     assert(
       commands.includes(
@@ -269,6 +271,42 @@ test('官方安装链接只指向当前公开且完整包匹配的目录版本',
   );
   await checkLinks();
   assert.equal((await http.get(`/skills/${name}/6.0.0/files/SKILL.md`).expect(200)).text, raw.text);
+});
+
+test('公开固定安装链接提示最新可读发布与替代资源，不更换固定版本', async (context) => {
+  const origin = 'https://hub.example.test';
+  const fixture = await createTestHub(context, { publicUrl: origin });
+  const http = httpClient(fixture);
+  const first = await publishSkill(fixture);
+  const assetId = first.intake.asset_id;
+  await publishSkill(fixture, { assetId, version: '1.5.0', body: '仍可读取的发布' });
+  const restricted = await publishSkill(fixture, {
+    assetId,
+    version: '2.0.0',
+    body: '仅组织可读的历史发布',
+    distribution: { mode: 'approved_audience', audience: ['organization'] },
+  });
+  const last = await publishSkill(fixture, { assetId, version: '3.0.0', body: '当前公开发布' });
+  const path = '/skills/sample-skill/1.0.0';
+  const guide = await http.get(path).expect(200);
+  assert(guide.text.includes(`${origin}/skills/sample-skill/3.0.0`));
+  assert(guide.text.includes("--version '1.0.0'"));
+  await fixture.hub.lifecycle.revokeVersion(fixture.admin, last.intake.version_id, '撤销当前发布');
+  const { intake: replacement } = await publishSkill(fixture, { slug: 'replacement-skill' });
+  const asset = await fixture.hub.assetAccess.getAsset(assetId);
+  await fixture.hub.lifecycle.updateState(
+    fixture.admin,
+    assetId,
+    { lifecycle: 'deprecated', reason: '已有公开替代', replacement_asset_id: replacement.asset_id },
+    `"${asset.revision}"`,
+  );
+  const after = await http.get(path).expect(200);
+  assert(after.text.includes(`${origin}/skills/sample-skill/1.5.0`));
+  assert(after.text.includes(`${origin}${path}/download`));
+  assert(!after.text.includes(`${origin}/skills/sample-skill/2.0.0`));
+  assert(!after.text.includes(`${origin}/skills/sample-skill/3.0.0`));
+  assert(after.text.includes(`${origin}/asset/replacement-skill`));
+  await http.get(`/api/versions/${restricted.intake.version_id}/manifest`).expect(404);
 });
 
 test('目录不可用时仍交付首次接入说明、随附资料和完整包', async (context) => {

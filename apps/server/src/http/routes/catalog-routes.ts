@@ -46,7 +46,14 @@ export function registerCatalogRoutes(app: Express, { hub, security }: HttpConte
     '/api/assets/:id',
     read,
     send(async (req, res) =>
-      etag(res, await hub.catalog.getDetail(res.locals.viewer ?? null, String(req.params.id))),
+      etag(
+        res,
+        await hub.catalog.getDetail(
+          res.locals.viewer ?? null,
+          String(req.params.id),
+          req.query.latest_readable === '1',
+        ),
+      ),
     ),
   );
   app.get(
@@ -54,7 +61,11 @@ export function registerCatalogRoutes(app: Express, { hub, security }: HttpConte
     read,
     send(
       async (req, res) =>
-        await hub.catalog.listHistory(res.locals.viewer ?? null, String(req.params.id)),
+        await hub.catalog.listHistory(
+          res.locals.viewer ?? null,
+          String(req.params.id),
+          req.query.latest_readable === '1',
+        ),
     ),
   );
   app.get(

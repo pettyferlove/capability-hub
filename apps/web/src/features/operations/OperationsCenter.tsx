@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import { Activity, Bot, Layers3, ScrollText, Workflow } from '../../shared/icons/lucide.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { canOpenOperations, operationsHref } from './navigation.js';
@@ -15,18 +15,21 @@ import {
 } from './OperationsSkeleton.js';
 import { SkeletonBlock, SkeletonRegion, TableSkeleton } from '../../shared/components/Skeleton.js';
 import { panelStyles, formStackStyles } from '../../shared/styles/recipes.js';
+import { lazyView } from '../../shared/navigation/lazy-view.js';
 
-const Overview = lazy(async () => ({
+const Overview = lazyView(async () => ({
   default: (await import('./overview/ResourceOverview.js')).ResourceOverview,
 }));
-const Usage = lazy(async () => ({
+const Usage = lazyView(async () => ({
   default: (await import('./usage/TokenUsagePanel.js')).TokenUsagePanel,
 }));
-const Snapshot = lazy(async () => ({
+const Snapshot = lazyView(async () => ({
   default: (await import('./OperationsPanel.js')).OperationsPanel,
 }));
-const Audit = lazy(async () => ({ default: (await import('./audit/AuditPanel.js')).AuditPanel }));
-const Agents = lazy(async () => ({
+const Audit = lazyView(async () => ({
+  default: (await import('./audit/AuditPanel.js')).AuditPanel,
+}));
+const Agents = lazyView(async () => ({
   default: (await import('./agents/AgentSection.js')).AgentSection,
 }));
 

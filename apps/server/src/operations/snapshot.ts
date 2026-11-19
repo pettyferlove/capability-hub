@@ -7,6 +7,7 @@ import { statfs } from 'node:fs/promises';
 import type { HubServices } from '../bootstrap/hub-services.js';
 import type { HubWorker } from '../workers/hub-worker.js';
 import type { RequestMetrics } from '../observability/request-metrics.js';
+import { hubBuild } from '../hub-build.js';
 
 const executionErrorCodes = new Set(
   Object.keys(aiExecutionErrorLabels satisfies Record<AiError['code'], string>),
@@ -138,6 +139,7 @@ export async function operationsSnapshot(
   ]);
   const storage = config.objectStorage;
   return {
+    ...hubBuild,
     observed_at: observedAt.toISOString(),
     http: metrics.snapshot(),
     jobs: jobs && jobSnapshot(jobs),

@@ -2,7 +2,16 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -17,6 +26,7 @@ import { serveTestHub } from '../support/server.js';
 import { publishSkill, submitPublication } from '../support/application.js';
 import { hubClientSkillFiles } from '../support/content.js';
 import { deferred } from '../support/store.js';
+import cliPackage from '../../apps/cli/package.json' with { type: 'json' };
 
 const execute = promisify(execFile);
 
@@ -26,6 +36,7 @@ function cli(
   options: {
     terminal?: boolean;
     environment?: NodeJS.ProcessEnv;
+    cwd?: string;
     answers?: { prompt: string; input: string }[];
   } = {},
 ) {
@@ -45,13 +56,13 @@ function cli(
       [
         '--conditions=development',
         '--import',
-        'tsx',
+        import.meta.resolve('tsx'),
         ...(options.terminal
           ? ['--input-type=module', '--eval', bootstrap, '--']
-          : ['bin/capability-hub.mjs']),
+          : [fileURLToPath(new URL('../../bin/capability-hub.mjs', import.meta.url))]),
         ...arguments_,
       ],
-      { env: environment, stdio: ['pipe', 'pipe', 'pipe'], timeout: 15000 },
+      { cwd: options.cwd, env: environment, stdio: ['pipe', 'pipe', 'pipe'], timeout: 15000 },
     );
     let stdout = '',
       stderr = '';
@@ -124,7 +135,7 @@ test('CLI 分组菜单与配置向导选择正确命令、客户端和范围，s
       terminal: true,
       environment: { CI: '', TERM: 'xterm', NO_COLOR: '1' },
       answers: [
-        ...(args.length ? [] : [{ prompt: '你想做什么', input: '\u001b[B'.repeat(5) + '\r' }]),
+        ...(args.length ? [] : [{ prompt: '你想做什么', input: '\u001b[B'.repeat(6) + '\r' }]),
         { prompt: 'Hub 的 HTTP(S) 根地址', input: 'https://hub.example.test\r' },
         { prompt: '选择目标 Agent 客户端', input: '\u001b[B'.repeat(4) + '\r' },
         { prompt: '配置保存在哪个范围', input: '\u001b[B\r' },
@@ -567,9 +578,60 @@ test('CLI 使用落盘登录凭据执行非交互搜索，返回可解析 JSON �
   assert.equal((result.stdout + result.stderr).includes(token.token), false);
 });
 
+test('CLI 版本提示区分最低与推荐版本，忽略无效头，不污染 JSON 输出', async (context) => {
+  const data = { items: [], total: 0 };
+  let header: string | undefined;
+  const server = createServer((_req, res) => {
+    if (header) res.setHeader('X-Capability-Hub-CLI', header);
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(data));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  context.after(() => promisify(server.close.bind(server))());
+  const address = server.address();
+  assert(address && typeof address === 'object');
+  const origin = `http://127.0.0.1:${address.port}`;
+  const current = cliPackage.version;
+  const nextMajor = Number(current.split('.')[0]) + 1;
+  const minimum = `${nextMajor}.1.0`;
+  const recommended = `${nextMajor}.2.0`;
+  for (const [advertised, quiet, expected] of [
+    [`recommended=${recommended}, minimum=${minimum}`, false, minimum],
+    [`recommended=${recommended}, minimum=${current}`, false, recommended],
+    [`recommended=${current}, minimum=${current}`, false, null],
+    ['recommended=0.0.1, minimum=0.0.1', false, null],
+    [undefined, false, null],
+    [`recommended=v${recommended}, minimum=${current}`, false, null],
+    [`recommended=${recommended}, minimum=${minimum}-01`, false, null],
+    [`recommended=${recommended}, minimum=${current}, url=https://wrong.example`, false, null],
+    [`recommended=${recommended}, minimum=${minimum}`, true, null],
+  ] as const) {
+    header = advertised;
+    const result = await cli(['search', '--url', origin, '--json'], 'fixture-token', {
+      environment: { CAPABILITY_HUB_NO_UPDATE_NOTICE: quiet ? '1' : '0' },
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stdout, JSON.stringify(data, null, 2) + '\n');
+    if (expected) {
+      assert.equal(result.stderr.trimEnd().split('\n').length, 1);
+      assert(result.stderr.includes(current));
+      assert(result.stderr.includes(expected));
+      if (expected === minimum) assert(!result.stderr.includes(recommended));
+      assert(result.stderr.includes(`${origin}/connect/cli`));
+    } else {
+      assert.equal(result.stderr, '', advertised);
+    }
+  }
+});
+
 test('CLI 子进程通过真实 HTTP 搜索和安装已发布内容，撤权后不能再次交付，错误不输出令牌', async (context) => {
   const fixture = await serveTestHub(context);
-  await publishSkill(fixture);
+  const { intake } = await publishSkill(fixture, { body: '固定旧版测试正文' });
+  await publishSkill(fixture, {
+    assetId: intake.asset_id,
+    version: '2.0.0',
+    body: '最新版测试正文',
+  });
   const token = await fixture.hub.tokens.issue(fixture.admin, { name: 'CLI', scope: 'hub:read' });
   const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-cli-'));
   context.after(() => rm(root, { recursive: true, force: true }));
@@ -601,11 +663,14 @@ test('CLI 子进程通过真实 HTTP 搜索和安装已发布内容，撤权后�
   await assert.rejects(() => readFile(join(root, 'skills/sample-skill/SKILL.md')), {
     code: 'ENOENT',
   });
-  const installed = await cli(arguments_, token.token);
+  const installed = await cli(arguments_, token.token, {
+    environment: { CAPABILITY_HUB_NO_UPDATE_NOTICE: '0' },
+  });
   assert.equal(installed.code, 0, installed.stderr);
-  assert(
-    (await readFile(join(root, 'skills/sample-skill/SKILL.md'), 'utf8')).includes('sample-skill'),
-  );
+  assert(installed.stderr.includes('2.0.0'));
+  const installedBody = await readFile(join(root, 'skills/sample-skill/SKILL.md'), 'utf8');
+  assert(installedBody.includes('固定旧版测试正文'));
+  assert(!installedBody.includes('最新版测试正文'));
   const second = await cli(arguments_, token.token);
   assert.equal(second.code, 1);
   assert(second.stderr.includes('TARGET_EXISTS'));
@@ -660,6 +725,8 @@ test('CLI 可匿名预览和安装公开 Skill，来源记录与下载审计保�
   assert.equal(receipt.hub_url, fixture.origin);
   assert.equal(receipt.asset_id, intake.asset_id);
   assert.equal(receipt.version_id, intake.version_id);
+  assert.equal(receipt.slug, slug);
+  assert.equal(receipt.version_label, '1.0.0');
   assert.equal(
     receipt.release_id,
     (await fixture.hub.assetAccess.getAsset(intake.asset_id)).current_release_id,
@@ -673,6 +740,171 @@ test('CLI 可匿名预览和安装公开 Skill，来源记录与下载审计保�
     ],
   );
   await assert.rejects(() => readdir(join(root, 'unused-config')), { code: 'ENOENT' });
+});
+
+test('outdated 按安装状态检查来源、补全旧记录，并且只向匹配实例发送凭据', async (context) => {
+  const fixture = await serveTestHub(context);
+  const root = await realpath(fixture.directory);
+  const config = join(root, 'outdated-config');
+  const token = await fixture.hub.tokens.issue(fixture.reader, {
+    name: 'outdated',
+    scope: 'hub:read',
+  });
+  await saveCredentials(join(config, 'auth.json'), { url: fixture.origin, token: token.token });
+
+  const slug = 'sample-skill';
+  const { intake: old } = await publishSkill(fixture, { body: '旧版核对说明' });
+  await publishSkill(fixture, {
+    slug,
+    assetId: old.asset_id,
+    version: '2.0.0',
+    body: '较新可读版本',
+  });
+  const { intake: withdrawn } = await publishSkill(fixture, {
+    slug,
+    assetId: old.asset_id,
+    version: '3.0.0',
+    body: '即将撤销的版本',
+  });
+  const deprecated = await publishSkill(fixture, {
+    slug: 'deprecated-skill',
+    distribution: { mode: 'approved_audience', audience: ['organization'] },
+  });
+  const successor = await publishSkill(fixture, { slug: 'successor-skill' });
+
+  let foreignContact = false;
+  const foreign = createServer((_req, res) => {
+    foreignContact = true;
+    res.writeHead(404).end();
+  });
+  foreign.listen(0, '127.0.0.1');
+  await once(foreign, 'listening');
+  context.after(() => promisify(foreign.close.bind(foreign))());
+  const address = foreign.address();
+  assert(address && typeof address === 'object');
+  const otherHub = `http://127.0.0.1:${address.port}`;
+
+  const cases = [
+    ['current', '.agents/skills', slug, '2.0.0'],
+    ['update_available', '.claude/skills', slug, '1.0.0'],
+    ['deprecated', 'old-client', 'deprecated-skill', '1.0.0'],
+    ['unavailable', 'withdrawn', slug, '3.0.0'],
+    ['modified', 'edited', slug, '1.0.0'],
+    ['other_hub', 'another-instance', slug, '2.0.0'],
+  ] as const;
+  const sourceFile = '.capability-hub-source';
+  const parent = (name: string) => join(root, name);
+  const receiptPath = (name: string, skill: string) => join(parent(name), skill, sourceFile);
+  for (const [status, directory, skill, version] of cases) {
+    const result = await cli([
+      'add',
+      skill,
+      '--version',
+      version,
+      '--to',
+      parent(directory),
+      '--config-dir',
+      config,
+    ]);
+    assert.equal(result.code, 0, result.stderr);
+    const path = receiptPath(directory, skill);
+    if (status === 'update_available') {
+      const legacy = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+      delete legacy.slug;
+      delete legacy.version_label;
+      await writeFile(path, JSON.stringify(legacy));
+    }
+    if (status === 'modified')
+      await writeFile(join(parent(directory), skill, 'SKILL.md'), 'Edited locally');
+    if (status === 'other_hub') {
+      const receipt = JSON.parse(await readFile(path, 'utf8'));
+      await writeFile(path, JSON.stringify({ ...receipt, hub_url: otherHub }));
+    }
+  }
+  const legacyBefore = await readFile(receiptPath('.claude/skills', slug), 'utf8');
+  const asset = await fixture.hub.assetAccess.getAsset(deprecated.intake.asset_id);
+  await fixture.hub.lifecycle.updateState(
+    fixture.admin,
+    asset.id,
+    {
+      lifecycle: 'deprecated',
+      reason: '已有继任资源',
+      replacement_asset_id: successor.intake.asset_id,
+    },
+    `"${asset.revision}"`,
+  );
+  await fixture.hub.lifecycle.revokeVersion(fixture.admin, withdrawn.version_id, '停止旧安装分发');
+  async function check(directories: readonly string[], expected: number, exitCode = false) {
+    const result = await cli([
+      'outdated',
+      '--config-dir',
+      config,
+      '--json',
+      ...directories.flatMap((name) => ['--to', parent(name)]),
+      ...(exitCode ? ['--exit-code'] : []),
+    ]);
+    assert.equal(result.code, expected, result.stderr);
+    return JSON.parse(result.stdout);
+  }
+  const entries = await check(
+    cases.map(([, name]) => name),
+    0,
+  );
+  assert.equal(entries[0].status, 'unavailable');
+  assert.deepEqual(
+    Object.fromEntries(
+      entries.map((row: { path: string; status: string }) => [row.path, row.status]),
+    ),
+    Object.fromEntries(cases.map(([status, dir, skill]) => [join(parent(dir), skill), status])),
+  );
+  const [available, abandoned, modified, other] = [
+    'update_available',
+    'deprecated',
+    'modified',
+    'other_hub',
+  ].map((status) => entries.find((row: { status: string }) => row.status === status));
+  assert.equal(available.slug, slug);
+  assert.equal(available.version_label, '1.0.0');
+  assert.equal(available.latest_release.version_label, '2.0.0');
+  assert.equal(abandoned.deprecation_reason, '已有继任资源');
+  assert.equal(abandoned.replacement_asset_slug, 'successor-skill');
+  assert(modified.differences.some((difference: string) => difference.includes('SKILL.md')));
+  assert.equal(other.hub_url, otherHub);
+  assert.equal(foreignContact, false);
+  for (const [directories, expected] of [
+    [['.claude/skills'], 2],
+    [['withdrawn'], 2],
+    [['.agents/skills', 'old-client', 'edited', 'another-instance'], 0],
+  ] as const)
+    await check(directories, expected, true);
+
+  const previewArgs = await execute('sh', [
+    '-c',
+    `capture() { printf '%s\\n' "$@"; }\n${available.next_step.replace(/^capability-hub /, 'capture ')}`,
+  ]);
+  const preview = await cli(previewArgs.stdout.trimEnd().split('\n'));
+  assert.equal(preview.code, 0, preview.stderr);
+  assert.equal(JSON.parse(preview.stdout).destination, join(parent('.claude/skills'), slug));
+  assert.equal(await readFile(receiptPath('.claude/skills', slug), 'utf8'), legacyBefore);
+
+  // 默认扫描遇到经过链接的预设目录时跳过它，其余目录照常检查。
+  await symlink(parent('withdrawn'), join(root, '.cursor'));
+  const anon = await cli(
+    ['outdated', '--url', fixture.origin, '--config-dir', join(root, 'no-auth'), '--json'],
+    undefined,
+    { cwd: root },
+  );
+  assert.equal(anon.code, 0, anon.stderr);
+  assert.deepEqual(
+    JSON.parse(anon.stdout)
+      .map((row: { status: string }) => row.status)
+      .sort(),
+    ['current', 'update_available'],
+  );
+  const table = await cli(['outdated', '--config-dir', config, '--to', parent('withdrawn')]);
+  assert.equal(table.code, 0, table.stderr);
+  assert.match(table.stdout, /STATUS.*SKILL.*INSTALLED.*LATEST.*PATH/);
+  assert.match(table.stdout, /unavailable\s+sample-skill\s+3\.0\.0/);
 });
 
 test('匿名 CLI 安装不可见 Skill 时提示登录且不创建目录；无效凭据不会降级', async (context) => {
@@ -732,6 +964,13 @@ test('CLI 票据预览和目标冲突不消费票据；安装忽略其他实例�
     slug,
     distribution: { mode: 'approved_audience', audience: ['organization'] },
   });
+  await publishSkill(fixture, {
+    slug,
+    assetId: intake.asset_id,
+    version: '2.0.0',
+    body: '票据资产最新发布',
+    distribution: { mode: 'approved_audience', audience: ['organization'] },
+  });
   const token = await fixture.hub.tokens.issue(fixture.reader, {
     name: '安装票据',
     scope: 'hub:read',
@@ -752,8 +991,15 @@ test('CLI 票据预览和目标冲突不消费票据；安装忽略其他实例�
   });
   const ticketUrl = `${fixture.origin}/api/install-tickets/${ticket}`;
   const arguments_ = ['add', '--ticket', ticketUrl, '--to', to, '--config-dir', config];
-  const preview = await cli([...arguments_, '--url', fixture.origin + '/', '--dry-run']);
+  const preview = await cli(
+    [...arguments_, '--url', fixture.origin + '/', '--dry-run'],
+    undefined,
+    {
+      environment: { CAPABILITY_HUB_NO_UPDATE_NOTICE: '0' },
+    },
+  );
   assert.equal(preview.code, 0, preview.stderr);
+  assert(preview.stderr.includes('2.0.0'));
   assert.deepEqual(JSON.parse(preview.stdout), {
     dry_run: true,
     destination,
@@ -783,7 +1029,9 @@ test('CLI 票据预览和目标冲突不消费票据；安装忽略其他实例�
     hub_url: fixture.origin,
     asset_id: intake.asset_id,
     version_id: intake.version_id,
-    release_id: (await fixture.hub.assetAccess.getAsset(intake.asset_id)).current_release_id,
+    slug,
+    version_label: '1.0.0',
+    release_id: (await fixture.store.find('releases', 'version_id', intake.version_id))?.id,
     content_digest: version.content_digest,
     files: version.manifest.files,
   });

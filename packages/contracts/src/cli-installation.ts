@@ -1,8 +1,17 @@
 import { z } from 'zod';
+import { cliCompatibility } from './hub-version.js';
+
+/** 三处安装说明使用同一实例要求，不探测本机版本。 */
+export const cliVersionGuidance = `本实例推荐 CLI ${cliCompatibility.recommended}，最低 ${cliCompatibility.minimum}（${cliCompatibility.minimum_reason}）。若 --cli-version 显示低于最低版本，使用同一安装命令升级。`;
 
 /** 网页与公开 Markdown 共用的 CLI 安装步骤，不包含仓库凭据。 */
 export const cliInstallationResponseSchema = z.strictObject({
   registry_url: z.url().nullable(),
+  cli: z.strictObject({
+    recommended: z.string(),
+    minimum: z.string(),
+    minimum_reason: z.string(),
+  }),
   steps: z.array(
     z.strictObject({
       title: z.string(),
@@ -24,6 +33,7 @@ export const shellArgument = (value: string) => `'${value.replaceAll("'", "'\"'\
 export function cliInstallationGuide(origin: string, registry?: string): CliInstallationResponse {
   return {
     registry_url: registry ?? null,
+    cli: cliCompatibility,
     steps: [
       {
         title: '准备运行环境',
@@ -44,8 +54,7 @@ export function cliInstallationGuide(origin: string, registry?: string): CliInst
         : []),
       {
         title: '安装并验证 CLI',
-        description:
-          '安装仓库默认发布版本；需要固定版本时，将包名改为 @capability-hub/cli@VERSION。升级也使用此命令。--cli-version 显示 CLI 版本，--version 用于指定资源版本。',
+        description: `${cliVersionGuidance} 如需固定 CLI 版本，使用 @capability-hub/cli@VERSION；--version 只用于指定资源版本。`,
         command: `npm install -g @capability-hub/cli${registry ? ` --registry=${shellArgument(registry)} --@capability-hub:registry=${shellArgument(registry)}` : ''}\ncapability-hub --cli-version`,
       },
       {

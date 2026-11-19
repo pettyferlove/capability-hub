@@ -2,7 +2,7 @@
 
 以下使用 Hub MCP 工具名，以客户端实际发现的名称为准。成功调用 `search_skills` 即可验证连接，空结果也算成功。
 
-用户指定固定版本链接时，以其中的资源名称和版本号调用 `get_asset_version`，将 `release.version_id` 用于后续读取、安装或配置。返回不可读时说明无法访问，不改用最新版。未发布内容与发布审核、权限及凭据变更使用 Hub 网页入口。
+用户指定固定版本时用 `get_asset_version` 取得 `release.version_id`，不可读时不改用最新版。`get_asset_version` 或 `load_skill` 的 `is_latest: false` 且 `latest_release` 非空时，提示最新版本，由用户决定是否切换。审核、权限及凭据变更使用网页。
 
 ## 查找并使用团队规范
 
@@ -13,7 +13,7 @@
 ## 安装 Skill
 
 1. 用固定的 `version_id` 调用 `install_skill`，预设客户端可传 `client`。向用户说明 `suggested_directory` 和 `manifest.files` 中的文件与脚本，确认父目录。
-2. 能运行 CLI 时，执行返回的 `cli_command`，把 `--to` 换成已确认的父目录：先加 `--dry-run` 查看本地差异，确认后去掉。提示未知选项 `--ticket` 时，按实例的 `/connect/cli` 升级。沙箱禁止联网时，请用户批准当前命令联网。
+2. 能运行 CLI 时先执行 `cli_requirement.check_command`，低于 `minimum_version` 时经用户同意按 `upgrade_url` 升级。将 `cli_command` 的 `--to` 换成已确认的父目录，先加 `--dry-run` 核对差异；确认后去掉。沙箱禁止联网时，请用户批准当前命令联网。
 3. 不能运行 CLI 时，下载 `download.url`，核对 ZIP 的 SHA-256 与 `artifact_digest`。解包后逐项核对文件集合、相对路径、大小、SHA-256 和执行属性，再按[本地写入](../SKILL.md#本地写入)处理；不符时停止并保留已有安装。
 4. 非公开票据 10 分钟内只能下载一次。遇到 `INSTALL_TICKET_INVALID`、`INSTALL_TICKET_USED` 或下载中断时重新调用。不要在回复中复述票据地址。
 5. 只有无法下载时才传 `transfer: "inline"`，保留首块清单，逐块解码 `archive_chunk.data`，按 `offset` 拼接，传 `next_offset` 续读直到 `complete: true`；核对摘要和清单后再写入。

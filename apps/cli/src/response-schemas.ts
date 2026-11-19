@@ -12,6 +12,10 @@ export const assetSchema = z.looseObject({
   slug: assetSlugSchema,
   kind: z.enum(['skill', 'mcp']),
   description: text,
+  lifecycle: z.enum(['active', 'deprecated', 'blocked']).optional(),
+  deprecation_reason: text.optional(),
+  replacement_asset_id: id.nullish(),
+  replacement_asset_slug: assetSlugSchema.nullish(),
   current_release: z.looseObject({ version_id: id, version_label: text }),
   installation_options: z.array(option),
 });
@@ -44,6 +48,15 @@ export const manifestResponseSchema = z.object({
   release_id: id.nullable(),
 });
 
+/** 查验固定版本可用性时无需解码文件清单。 */
+export const versionIdentitySchema = z.object({ version_id: id, asset_id: id });
+
+const latestReleaseSchema = z.object({
+  version_id: id,
+  version_label: text,
+  published_at: z.iso.datetime(),
+});
+
 /** 票据绑定已发布版本；归档被消费后仍可读取清单。 */
 export const installTicketSchema = manifestResponseSchema.extend({
   hub_url: z.url(),
@@ -53,6 +66,7 @@ export const installTicketSchema = manifestResponseSchema.extend({
   version_label: text,
   release_id: id,
   expires_at: z.iso.datetime(),
+  latest_release: latestReleaseSchema.nullish(),
   archive_available: z.boolean(),
 });
 

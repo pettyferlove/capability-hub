@@ -9,7 +9,8 @@ COPY scripts scripts
 COPY skills skills
 COPY tests tests
 RUN pnpm install --frozen-lockfile
-RUN pnpm build
+ARG CAPABILITY_HUB_BUILD_COMMIT
+RUN CAPABILITY_HUB_BUILD_COMMIT="$CAPABILITY_HUB_BUILD_COMMIT" pnpm build
 RUN pnpm --filter @capability-hub/server deploy --prod /out/server
 
 FROM node:24.22.1-bookworm-slim AS server

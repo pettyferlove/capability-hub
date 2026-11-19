@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { agentClientIds, agentClients, hubConnectionCheck } from './agent-clients.js';
 import { manifestSchema } from './content.js';
+import { cliVersionGuidance } from './cli-installation.js';
 
 /** 官方 Skill 的目录名、frontmatter name 与目录发布名称一致。 */
 export const hubClientSkillName = 'use-capability-hub';
@@ -87,7 +88,7 @@ export function hubInstallationGuide(origin: string, publishedSkillUrl?: string)
     `如需结构化配置，可读取 ${base}/api/hub-mcp-config?client=CLIENT&scope=SCOPE，将 CLIENT 替换为表中标识，SCOPE 替换为 project 或 user。`,
     '',
     '## 3. CLI：独立搜索和安装',
-    `按 [CLI 安装说明](${base}/connect/cli) 验证命令。没有 CLI 凭据时，公开 Skill 可用 add --url 直接安装；独立搜索或安装团队资源先 login，在浏览器核对授权码并批准。此流程无需本机回调，也不写入 Agent 的 MCP 配置。`,
+    `按 [CLI 安装说明](${base}/connect/cli) 验证命令。${cliVersionGuidance} 公开 Skill 可用 add --url 匿名安装；独立搜索或安装团队资源先 login，在浏览器批准。`,
     '使用 search --json 搜索资源；安装 Skill 时明确版本和 --to 目录，先用 add --dry-run 预览。独立 CLI 不要求客户端标识；mcp-config 的配置生成仍限上表客户端。',
     'CLI 尚无正文读取或贡献命令，搜索摘要不能代替正文。需要这些能力时使用 MCP 或网页，不为仅读取擅自持久安装 Skill。',
     '',
@@ -109,7 +110,7 @@ export function hubInstallationGuide(origin: string, publishedSkillUrl?: string)
     `按需阅读 [${hubClientSkillName} 使用指南](${base}${hubClientSkillPath})，区分当次读取、持久安装、接入目标 MCP 和提交分享。只用本次能力时无需安装。`,
     ...(publishedSkillUrl
       ? [
-          `需要持久安装时，按[本实例已审核的固定版本](${publishedSkillUrl})的说明校验并安装完整 Skill。`,
+          `需要持久安装时，按[本实例已审核的固定版本](${publishedSkillUrl})使用 CLI 安装并保留来源记录；不能运行 CLI 时按该说明手动校验完整包。`,
         ]
       : [
           `需要持久安装时，下载[随附完整包](${base}${hubClientSkillBasePath}/download)及[校验清单](${base}${hubClientSkillBasePath}/manifest)。先核对 ZIP 的 SHA-256 与 artifact_digest，再核对解包后的文件集合、相对路径、大小、SHA-256 和执行属性与 manifest.files 完全一致；不符时停止并重新获取包与清单。`,

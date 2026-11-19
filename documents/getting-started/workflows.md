@@ -6,14 +6,15 @@
 
 公开资源可匿名阅读、下载或复制安装指令；团队资源按入口授权。Skill 详情的「内容说明」优先展示发布包根目录的 `README.md`，缺少、无正文或不支持预览时展示 `SKILL.md`。
 
-直接安装公开 Skill 无需登录；未连接 MCP 时，安装团队 Skill 先用 `capability-hub login --url https://hub.example.com`：
+公开 Skill 可匿名安装；未连接 MCP 时，安装团队 Skill 前先运行 `capability-hub login --url https://hub.example.com`：
 
 ```sh
 capability-hub add NAME --version VERSION --url https://hub.example.com --to .agents/skills --dry-run
-capability-hub add NAME --version VERSION --url https://hub.example.com --to .agents/skills
 ```
 
-已连接 MCP 时，执行 `install_skill` 返回的 CLI 命令，无需单独登录 CLI。核对 dry-run 的文件和差异后再安装；已有目录需显式 `--replace`，备份路径随结果返回，CLI 不执行脚本。
+核对预览后去掉 `--dry-run`，已有目录须显式 `--replace` 并保留备份。连接 MCP 时可用 `install_skill` 返回的命令，无需 CLI 登录。固定版本不会被替换，CLI 不执行脚本。
+
+定期运行 `capability-hub outdated` 检查当前项目的预设技能目录，或重复传入 `--to`。有更新时先执行建议的 `--dry-run`，确认后再替换；不可用、弃用或本地已修改时先复核。检查不改写安装或旧来源记录。
 
 MCP 用 `mcp-config NAME --version VERSION --client CLIENT --option OPTION_ID` 输出配置。支持的客户端、Skill 目录与官方依据见 [Agent 客户端接入](../reference/agent-clients.md)。设置本机所需变量，保留客户端原配置，并在目标客户端自行完成连接核验。Skill 的 `--to` 应选用目标客户端支持的目录。
 

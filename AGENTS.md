@@ -243,6 +243,8 @@ relax package boundaries, RBAC, concurrency, persistence, or test rules.
   drizzle-kit 0.31.11 is pinned for migrations.
 - No CI config in-repo: `pnpm check` is the gate. Run `pnpm test:cli-runtime` before publishing the CLI.
   Use `pnpm test:external`, `docker build`, and `pnpm test:image <tag>` for server release confidence.
+  Bump the root version for a server release; deploy a higher `cliCompatibility` recommendation only
+  after that CLI version is published.
 - `.env` is loaded by child processes via `--env-file-if-exists`; see
   `documents/reference/configuration.md`. Production needs `NODE_ENV=production`, an HTTP(S) public URL,
   64-hex `CAPABILITY_HUB_INSTANCE_SECRET`, and `CAPABILITY_HUB_SETUP_TOKEN`.

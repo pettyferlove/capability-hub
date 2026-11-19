@@ -7,7 +7,7 @@ docker build -t YOUR_REGISTRY/capability-hub:VERSION .
 pnpm test:image YOUR_REGISTRY/capability-hub:VERSION
 ```
 
-多阶段构建使用锁定的 Node/pnpm，编译各 workspace 和运维脚本，最终镜像由 node 用户运行已编译的 JavaScript。运行资产包括两方言完整迁移目录（SQL、快照与 journal）、扫描子进程、官方 MCP Schema 和 Web dist。
+多阶段构建使用锁定的 Node/pnpm，编译各 workspace 和运维脚本，最终镜像由 node 用户运行已编译的 JavaScript。运行资产包括两方言完整迁移目录（SQL、快照与 journal）、扫描子进程、官方 MCP Schema 和 Web dist。可用 `--build-arg CAPABILITY_HUB_BUILD_COMMIT=<提交>` 记录构建来源；提高 CLI 推荐版本前先发布对应 CLI。
 
 部署方配置客户端可达的 HTTP 或 HTTPS 根地址、出站网络及持久卷。生产需要 64 位十六进制实例密钥和首次初始化令牌，由部署秘密存储注入。
 
@@ -30,7 +30,7 @@ server 默认发布到回环地址。内网 HTTP 直连可设 `CAPABILITY_HUB_BI
 ## 验收
 
 - /health/live 表示进程存活，/health/ready 校验数据库和内容存储。
-- 检查非 root 用户、编译入口、SQL/Schema/扫描资产及静态页面实际存在。
+- 检查非 root 用户、编译入口、SQL/Schema/扫描资产及静态页面实际存在，并在运营中心 → 实例运行核对 Hub 版本与构建提交。
 - 初始化账号，走上传、扫描、独立审核、权限收窄和公开访问链路。
 - 使用真实目标 Agent 客户端核验 MCP 协议、变量和配置，不把生成文本视为已连接成功。
 

@@ -6,7 +6,7 @@ import { serveTestHub } from '../support/server.js';
 import { publishSkill, receiveSkill, submitPublication } from '../support/application.js';
 import { skillDocument } from '../support/content.js';
 import { signIn } from '../support/http.js';
-import { agentClientIds } from '@capability-hub/contracts';
+import { agentClientIds, cliCompatibility } from '@capability-hub/contracts';
 import { digest } from '@capability-hub/domain/canonical';
 import { archive } from '@capability-hub/infrastructure/content';
 
@@ -176,6 +176,12 @@ test('MCP 默认交付公开链接或受限票据，续传参数只用于显式 
   assert(!publicInstall.isError);
   const publicResult = object(publicInstall.structuredContent);
   assert.equal(publicResult.archive_chunk, undefined);
+  assert.deepEqual(publicResult.cli_requirement, {
+    minimum_version: cliCompatibility.minimum,
+    recommended_version: cliCompatibility.recommended,
+    check_command: 'capability-hub --cli-version',
+    upgrade_url: fixture.origin + '/connect/cli',
+  });
   assert.deepEqual(publicResult.download, {
     url: `${fixture.origin}/skills/sample-skill/1.0.0/download`,
     expires_at: null,
@@ -201,6 +207,7 @@ test('MCP 默认交付公开链接或受限票据，续传参数只用于显式 
   });
   assert(!delivery.isError);
   const result = object(delivery.structuredContent);
+  assert.deepEqual(result.cli_requirement, publicResult.cli_requirement);
   assert.equal(result.archive_chunk, undefined);
   const download = object(result.download);
   assert.equal(download.single_use, true);
@@ -397,7 +404,7 @@ test('MCP 按资源名称解析固定版本，仍受历史与当前受众约束�
     body: '旧版正文',
     distribution: { mode: 'approved_audience', audience: ['group:' + fixture.teamId] },
   });
-  await publishSkill(fixture, {
+  const second = await publishSkill(fixture, {
     assetId: first.intake.asset_id,
     version: '2.0.0',
     body: '新版正文',
@@ -424,11 +431,21 @@ test('MCP 按资源名称解析固定版本，仍受历史与当前受众约束�
   assert(!pinned.isError);
   const release = object(object(pinned.structuredContent).release);
   assert.equal(release.version_id, first.intake.version_id);
+  assert.equal(object(pinned.structuredContent).is_latest, false);
+  assert.equal(
+    object(object(pinned.structuredContent).latest_release).version_id,
+    second.intake.version_id,
+  );
   const loaded = await owner.callTool({
     name: 'load_skill',
     arguments: { version_id: release.version_id },
   });
   assert.match(String(object(loaded.structuredContent).body), /旧版正文/);
+  assert.equal(object(loaded.structuredContent).is_latest, false);
+  assert.deepEqual(
+    object(loaded.structuredContent).latest_release,
+    object(pinned.structuredContent).latest_release,
+  );
   for (const [client, version] of [
     [reader, '1.0.0'],
     [owner, '3.0.0'],
@@ -446,7 +463,7 @@ test('MCP 按资源名称解析固定版本，仍受历史与当前受众约束�
     arguments: { asset_id: first.intake.asset_id, version_label: '2.0.0' },
   });
   assert(!visible.isError);
-  await publishSkill(fixture, {
+  const current = await publishSkill(fixture, {
     assetId: first.intake.asset_id,
     version: '4.0.0',
     distribution: { mode: 'approved_audience', audience: ['group:' + fixture.teamId] },
@@ -457,6 +474,20 @@ test('MCP 按资源名称解析固定版本，仍受历史与当前受众约束�
   });
   assert.equal(restricted.isError, true);
   assert.match(JSON.stringify(restricted.content), /NOT_FOUND/);
+  await fixture.hub.lifecycle.revokeVersion(fixture.admin, current.intake.version_id, '撤销最新版');
+  for (const [name, args] of [
+    ['get_asset_version', { asset_id: first.intake.asset_id, version_label: '1.0.0' }],
+    ['load_skill', { version_id: first.intake.version_id }],
+  ] as const) {
+    const result = await owner.callTool({ name, arguments: args });
+    assert(!result.isError);
+    const data = object(result.structuredContent);
+    assert.equal(data.is_latest, false);
+    const latest = object(data.latest_release);
+    assert.equal(latest.version_id, second.intake.version_id);
+    assert.equal(latest.version_label, '2.0.0');
+    assert.equal(typeof latest.published_at, 'string');
+  }
 });
 
 test('按名称更新未发布 Skill 与按 UUID 更新复用同一幂等结果，仍检查维护权限', async (context) => {

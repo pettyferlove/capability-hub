@@ -1,9 +1,17 @@
-import { cp } from 'node:fs/promises';
+import { cp, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import rootPackage from '../../package.json' with { type: 'json' };
 
 if (process.argv[2] === 'server') {
   const root = resolve(import.meta.dirname, '../..');
   await cp(resolve(root, 'skills'), resolve(root, 'apps/server/dist/skills'), { recursive: true });
+  await writeFile(
+    resolve(root, 'apps/server/dist/hub-build.json'),
+    JSON.stringify({
+      version: rootPackage.version,
+      commit: process.env.CAPABILITY_HUB_BUILD_COMMIT?.trim() ?? '',
+    }),
+  );
 } else {
   const root = resolve(import.meta.dirname, '../../packages/infrastructure');
   await cp(

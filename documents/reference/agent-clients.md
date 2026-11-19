@@ -87,7 +87,7 @@ capability-hub hub-config --url https://hub.example.com --client pi --scope user
 
 ## 接入助手与高级入口
 
-实例的 `/connect/cli` 提供安装及独立 CLI 授权步骤；私有仓库参数临时覆盖已有作用域设置，仓库认证与 Hub 授权独立。`login/search/add` 无需客户端标识；CLI 暂无正文读取或贡献命令。接入助手仅适用于表中客户端，在 Agent 运行环境执行：
+实例的 `/connect/cli` 提供安装、独立 CLI 授权步骤及本实例推荐和最低 CLI 版本；私有仓库参数临时覆盖已有作用域设置，仓库认证与 Hub 授权独立。`login/search/add/outdated` 无需客户端标识；CLI 暂无正文读取或贡献命令。运行 Hub 返回的安装命令前，先用 `capability-hub --cli-version` 核对最低版本。接入助手仅适用于表中客户端，在 Agent 运行环境执行：
 
 ```sh
 capability-hub connect --url https://hub.example.com --client cursor --scope project
@@ -96,7 +96,7 @@ capability-hub status --url https://hub.example.com --client cursor
 
 `connect` 先检查已有配置，再启动仅监听 loopback 的 PKCE 授权回调。默认尝试打开浏览器，也会输出授权链接；`--no-browser` 只输出链接。远程终端需要转发回调端口；无法建立回调时，按 `/INSTALL.md` 选择可用方式。独立 CLI 的 `login` 使用设备码轮询，无需本机回调。
 
-助手先用临时私有凭据完成工具发现和检索，再合并配置并保存正式凭据；失败时保留原连接并尝试撤销未使用的新授权。不向 stdout、配置文件或对话输出凭据。配置中的 `bridge` 命令通过 stdio 向客户端提供 Hub 工具，通过 HTTP 连接 Hub，并自动刷新凭据。凭据按 Hub 地址和客户端隔离，默认保存在 `~/.config/capability-hub/connections/`，可使用 `--config-dir` 指定位置。相同客户端与 Hub 的不同项目共用该助手连接；不同客户端和原生 OAuth 连接独立撤销。
+助手先用临时私有凭据完成工具发现和检索，再合并配置并保存正式凭据；失败时保留原连接并尝试撤销未使用的新授权。不向 stdout、配置文件或对话输出凭据。配置中的 `bridge` 命令通过 stdio 向客户端提供 Hub 工具，通过 HTTP 连接 Hub，并自动刷新凭据；桥接低于本实例推荐版本时，Hub 在 MCP 握手说明中提示升级，不写终端。凭据按 Hub 地址和客户端隔离，默认保存在 `~/.config/capability-hub/connections/`，可使用 `--config-dir` 指定位置。相同客户端与 Hub 的不同项目共用该助手连接；不同客户端和原生 OAuth 连接独立撤销。
 
 JSON/JSONC 合并保留其他设置与注释；TOML 新增普通表条目保留原文，内联表需要重新序列化。已有同名不同配置时拒绝覆盖，核对后可使用 `--replace`，写入前在 CLI 私有目录的 `config-backups/` 保存权限为 `0600` 的原文备份，避免配置中的秘密随项目提交；替换现有 TOML 条目会重新序列化文件，设置保留、注释保存在备份中。拒绝符号链接和特殊文件，检查读取后配置被其他程序修改的情况。
 

@@ -75,30 +75,17 @@ export class CatalogService {
   ) {
     const s = (await this.context.store.get('sources', release.policy_source_id))!;
     const group = await this.context.store.get('groups', asset.owner_group_id);
+    const replacement = await this.access.readableReplacement(p, asset);
     return {
       asset_id: asset.id,
       slug: asset.slug,
       kind: asset.kind,
       requires_api_key: asset.requires_api_key === true,
       lifecycle: asset.lifecycle,
-      deprecation_reason: asset.deprecation_reason ?? '',
+      deprecation_reason: asset.lifecycle === 'deprecated' ? (asset.deprecation_reason ?? '') : '',
       replacement_asset_id:
-        asset.replacement_asset_id &&
-        (await (async () => {
-          const replacement = await this.context.store.get('assets', asset.replacement_asset_id);
-          const rv =
-            replacement &&
-            (await this.context.store.get('releases', replacement.current_release_id ?? ''));
-          return replacement &&
-            rv &&
-            (await this.access.canRead(
-              p,
-              replacement,
-              (await this.context.store.get('versions', rv.version_id))!,
-            ))
-            ? replacement.id
-            : null;
-        })()),
+        asset.replacement_asset_id === undefined ? undefined : (replacement?.id ?? null),
+      replacement_asset_slug: replacement?.slug ?? null,
       owner: { id: asset.owner_group_id, name: group?.name ?? '团队' },
       source: { kind: s.kind, repository_url: s.kind === 'git' ? s.canonical_url : undefined },
       description: version.metadata.description,
@@ -438,8 +425,16 @@ export class CatalogService {
    * 详情先用 id 或 slug 解析（{@link AssetAccessService.getAsset}），再做可读性校验，
    * 所以不可见与不存在对外都是 404，不泄露资源是否存在。没有当前发布的资源同样 404。
    * 结果与搜索结果条目同形，但不带 `score`/`match_reasons`。
+   * 显式查询最新可读发布时可退到历史，不改变发布指针。
    */
-  async getDetail(p: Principal | null, id: string) {
+  async getDetail(p: Principal | null, id: string, latestReadable = false) {
+    if (latestReadable)
+      return this.context.store.tx(async () => {
+        const asset = await this.access.getAsset(id);
+        const latest = await this.access.latestReadablePublication(p, asset);
+        if (!latest) notFound();
+        return await this.describeAsset(asset, latest.version, latest.release, p);
+      });
     const { asset, version, release } = await this.access.requirePublishedAsset(p, id);
     return await this.describeAsset(asset, version, release, p);
   }
@@ -455,7 +450,13 @@ export class CatalogService {
       const version = await this.access.requireReadableVersion(p, candidate.id);
       const release = await this.access.latestReleaseForVersion(version);
       const { current_release, ...detail } = await this.describeAsset(asset, version, release, p);
-      return { ...detail, release: current_release };
+      const latest = await this.access.latestReadableRelease(p, asset);
+      return {
+        ...detail,
+        release: current_release,
+        latest_release: latest,
+        is_latest: latest?.version_id === version.id,
+      };
     });
   }
 
@@ -464,9 +465,11 @@ export class CatalogService {
    * 反推不可见版本；资源本身不可见时仍先由 `requirePublishedAsset` 抛 404。
    * 条目里的 `release_id` 取该版本最新的发布记录。
    */
-  async listHistory(p: Principal | null, id: string) {
+  async listHistory(p: Principal | null, id: string, latestReadable = false) {
     const a = await this.access.getAsset(id);
-    await this.access.requirePublishedAsset(p, id);
+    if (latestReadable) {
+      if (!(await this.access.latestReadablePublication(p, a))) notFound();
+    } else await this.access.requirePublishedAsset(p, id);
     return await Promise.all(
       (
         await filterAsync(

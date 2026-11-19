@@ -12,6 +12,9 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, readlink } from 'node:fs/promises';
 
+/** 来源记录不是资源文件，不参与本地内容差异。 */
+export const installSourceFile = '.capability-hub-source';
+
 /**
  * 清单校验：路径必须已排序且无大小写/规范化碰撞、不能同时是文件与目录，单文件 ≤10 MiB、
  * 总计 ≤100 MiB；`skill` 必须恰有一个非执行的 SKILL.md，`mcp` 只能是单个非执行的 server.json。
@@ -64,26 +67,29 @@ export function validateManifest(value: unknown): asserts value is Manifest {
     fail(422, 'MANIFEST_INVALID', '内容清单根文件或总大小无效');
 }
 
-async function localDiff(path: string) {
+/** 替换预览与只读检查共用判定；符号链接按变更处理。 */
+export async function localDiff(path: string, receiptFiles?: ManifestFile[]) {
   const files: string[] = [];
   async function walk(dir: string, prefix = '') {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const name = prefix + entry.name;
       if (entry.isSymbolicLink()) files.push(name + ' (symlink)');
       else if (entry.isDirectory()) await walk(join(dir, entry.name), name + '/');
-      else if (name !== '.capability-hub-source') files.push(name);
+      else if (name !== installSourceFile) files.push(name);
     }
   }
-  let expected: ManifestFile[];
-  try {
-    const recordPath = join(path, '.capability-hub-source');
-    if (!(await lstat(recordPath)).isFile()) return ['本地来源记录不是普通文件'];
-    const value: unknown = JSON.parse(await readFile(join(path, '.capability-hub-source'), 'utf8'));
-    if (!value || typeof value !== 'object' || !('files' in value))
-      throw new Error('Invalid receipt');
-    expected = manifestFileSchema.array().parse(value.files);
-  } catch {
-    return ['目录不是已验证的 Hub 安装'];
+  let expected = receiptFiles;
+  if (!expected) {
+    try {
+      const recordPath = join(path, installSourceFile);
+      if (!(await lstat(recordPath)).isFile()) return ['本地来源记录不是普通文件'];
+      const value: unknown = JSON.parse(await readFile(recordPath, 'utf8'));
+      if (!value || typeof value !== 'object' || !('files' in value))
+        throw new Error('Invalid receipt');
+      expected = manifestFileSchema.array().parse(value.files);
+    } catch {
+      return ['目录不是已验证的 Hub 安装'];
+    }
   }
   await walk(path);
   const diff: string[] = [];
@@ -224,10 +230,11 @@ export async function install(
       });
     }
     await writeFile(
-      join(staging, '.capability-hub-source'),
+      join(staging, installSourceFile),
       JSON.stringify(
         {
           ...input.source,
+          slug: input.slug,
           content_digest: input.content_digest,
           files: input.manifest.files,
         },

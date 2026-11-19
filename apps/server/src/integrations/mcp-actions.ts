@@ -5,6 +5,7 @@ import {
   agentClientSchema,
   agentClients,
   assetSlugSchema,
+  cliCompatibility,
   publicResourcePath,
   shellArgument,
   uploadIntakeRequestSchema,
@@ -83,6 +84,13 @@ export async function deliverSkill(
   input: z.output<typeof skillInstallationInput>,
 ) {
   const directory = input.client ? agentClients[input.client].skillDirectory : '.agents/skills';
+  const origin = hub.config.publicUrl;
+  const cliRequirement = {
+    minimum_version: cliCompatibility.minimum,
+    recommended_version: cliCompatibility.recommended,
+    check_command: 'capability-hub --cli-version',
+    upgrade_url: new URL('/connect/cli', origin).href,
+  };
   if (input.transfer === 'download') {
     if (input.offset !== undefined || input.max_bytes !== undefined)
       fail(422, 'INLINE_TRANSFER_ONLY', 'offset 和 max_bytes 仅用于 transfer: "inline"');
@@ -91,7 +99,6 @@ export async function deliverSkill(
       credential,
       input.version_id,
     );
-    const origin = hub.config.publicUrl;
     const ticketUrl = ticket ? `${origin}/api/install-tickets/${ticket}` : null;
     const target = ticketUrl
       ? `--ticket ${shellArgument(ticketUrl)}`
@@ -113,9 +120,10 @@ export async function deliverSkill(
         single_use: ticketUrl !== null,
       },
       cli_command: `capability-hub add ${target} --to ${shellArgument(directory)}`,
+      cli_requirement: cliRequirement,
       instructions: [
         '向用户说明安装父目录、清单中的文件和脚本，取得确认后才写入；保留已有目录，替换前备份，执行脚本需另获授权。',
-        `能运行 CLI 时执行 cli_command，将 --to 换成已确认的父目录，先加 --dry-run；若提示未知选项，按 ${origin}/connect/cli 升级 CLI。沙箱禁止联网时，请用户批准当前命令联网。`,
+        '能运行 CLI 时，先用 cli_requirement.check_command 核对版本；低于 minimum_version 时征得用户同意后按 upgrade_url 升级。执行 cli_command 时将 --to 换成已确认的父目录，先加 --dry-run；沙箱禁止联网时，请用户批准当前命令联网。',
         '不能运行 CLI 时下载 download.url，核对 SHA-256 和清单再写入；只有无法下载时才改用 transfer: "inline"。',
         '非公开下载地址 10 分钟内一次有效；若失效或下载中断，重新调用 install_skill，不要在回复中复述该地址。',
       ],
@@ -148,6 +156,7 @@ export async function deliverSkill(
       complete: end === bytes.length,
     },
     suggested_directory: `${directory}/${asset.slug}`,
+    cli_requirement: cliRequirement,
     instructions: [
       '按 next_offset 继续调用 install_skill，保持 transfer: "inline" 并锁定同一 version_id，直至 complete 为 true。',
       '逐段解码 Base64，按 offset 拼接原始字节，核对 artifact_digest，再按 manifest 校验路径、文件与摘要。',

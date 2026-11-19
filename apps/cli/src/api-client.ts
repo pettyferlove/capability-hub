@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import { boundedJson } from '@capability-hub/infrastructure/content/json';
+import { observeCliResponse } from './update-notice.js';
 
 /**
  * Hub 返回非 2xx 时抛出的错误：`status` 是 HTTP 状态码，`code` 是 Hub 错误码，
@@ -52,6 +53,7 @@ export class HubApiClient {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal,
     });
+    observeCliResponse(this.url, response);
     if (!response.ok) {
       let detail: unknown;
       try {

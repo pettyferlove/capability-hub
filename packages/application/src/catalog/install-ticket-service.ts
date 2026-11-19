@@ -70,7 +70,7 @@ export class InstallTicketService {
 
   async describe(ticket: string) {
     return await this.context.store.tx(async () => {
-      const { record, version } = await this.authorize(ticket);
+      const { record, principal, version } = await this.authorize(ticket);
       const asset = await this.access.getAsset(version.asset_id);
       const release = await this.access.latestReleaseForVersion(version);
       if (!release) invalidTicket();
@@ -80,6 +80,7 @@ export class InstallTicketService {
         version_id: version.id,
         version_label: version.version_label,
         release_id: release.id,
+        latest_release: await this.access.latestReadableRelease(principal, asset),
         content_digest: version.content_digest,
         artifact_digest: version.artifact_digest,
         manifest: version.manifest,

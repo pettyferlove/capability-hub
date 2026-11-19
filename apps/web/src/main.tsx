@@ -6,11 +6,13 @@ import { startLogging } from './shared/logging.js';
 import App from './app/App.js';
 import { initializeAppearance } from './app/appearance.js';
 import { navigate } from './shared/navigation/history-navigation.js';
+import { watchPreloadErrors } from './shared/navigation/lazy-view.js';
 import './styles/index.css';
 
 // 先安装错误上报，再应用外观偏好：外观要在首次渲染前落到 <html> 上，否则会先闪一帧默认配色。
 startLogging();
 initializeAppearance();
+watchPreloadErrors();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

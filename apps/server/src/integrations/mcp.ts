@@ -5,13 +5,16 @@ import {
   hubClientSkillPath,
   assetRecommendationRequestSchema,
   assetSlugSchema,
+  cliCompatibility,
 } from '@capability-hub/contracts';
 import type { InstallTicketCredential, TokenRecord } from '@capability-hub/domain/models';
 import { fail, HubError } from '@capability-hub/domain/errors';
+import { compareVersionLabels, isFixedVersionLabel } from '@capability-hub/domain/version-labels';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { HubServices } from '../bootstrap/hub-services.js';
+import { hubBuild } from '../hub-build.js';
 import { createClientConfiguration } from './client-config.js';
 import {
   deliverSkill,
@@ -39,24 +42,36 @@ export function createMcp(
   p: Principal,
   scope: TokenRecord['scope'],
   credential: InstallTicketCredential,
-  publishedSkillUrl?: string,
+  handshake?: { publishedSkillUrl?: string; bridgeVersion?: string },
 ) {
+  const bridgeVersion = handshake?.bridgeVersion;
+  const upgradeBridge =
+    bridgeVersion &&
+    isFixedVersionLabel(bridgeVersion) &&
+    compareVersionLabels(bridgeVersion, cliCompatibility.recommended) < 0;
   const handler = createMcpHandler(
     () => {
       const server = new McpServer(
-        { name: 'capability-hub', version: '0.1.0' },
+        { name: 'capability-hub', version: hubBuild.hub_version },
         {
-          instructions: [
-            `邀请同事接入 Hub 时，原样转交公开接口 ${hub.config.publicUrl}/api/hub-share 返回的 prompt。`,
-            scope === 'hub:read'
-              ? `当前连接可搜索和使用资源。提交本地 Skill、推荐或取消推荐资源、上报版本反馈时，请从当前客户端重新申请贡献权限，授权后刷新工具列表。可在 ${hub.config.publicUrl}/connect?permission=contribute 获取接入指令。不要索取访问令牌。`
-              : '当前连接支持搜索、使用与贡献，操作受账号权限约束。提交 Skill 前取得用户授权，新建前先调用 list_share_teams 选择归属团队，发布仍需独立审核。',
-            `当次使用 Skill 可搜索并加载正文。持久安装 Skill 时调用 install_skill 取得下载地址，用返回的 cli_command 交给 CLI 校验写入。接入目标 MCP 或贡献资源时，可阅读官方使用指南 ${hub.config.publicUrl}${hubClientSkillPath}`,
-            '发布审核、资源删除或撤销、权限和共享密钥变更须在 Hub 网页完成。MCP 读取工具只交付已发布且当前可读的内容。',
-            publishedSkillUrl
-              ? `如需安装该指南，使用本实例已审核的固定版本 ${publishedSkillUrl}`
-              : `如需安装该指南，按 ${hub.config.publicUrl}/INSTALL.md 校验并安装随附完整包，保留全部附属文件。`,
-          ].join('\n'),
+          instructions:
+            handshake &&
+            [
+              `邀请同事接入 Hub 时，原样转交公开接口 ${hub.config.publicUrl}/api/hub-share 返回的 prompt。`,
+              scope === 'hub:read'
+                ? `当前连接可搜索和使用资源。提交本地 Skill、推荐或取消推荐资源、上报版本反馈时，请从当前客户端重新申请贡献权限，授权后刷新工具列表。可在 ${hub.config.publicUrl}/connect?permission=contribute 获取接入指令。不要索取访问令牌。`
+                : '当前连接支持搜索、使用与贡献，操作受账号权限约束。提交 Skill 前取得用户授权，新建前先调用 list_share_teams 选择归属团队，发布仍需独立审核。',
+              `当次使用 Skill 可搜索并加载正文。持久安装 Skill 时调用 install_skill 取得下载地址，用返回的 cli_command 交给 CLI 校验写入。接入目标 MCP 或贡献资源时，可阅读官方使用指南 ${hub.config.publicUrl}${hubClientSkillPath}`,
+              '发布审核、资源删除或撤销、权限和共享密钥变更须在 Hub 网页完成。MCP 读取工具只交付已发布且当前可读的内容。',
+              handshake.publishedSkillUrl
+                ? `如需安装该指南，使用本实例已审核的固定版本 ${handshake.publishedSkillUrl}`
+                : `如需安装该指南，按 ${hub.config.publicUrl}/INSTALL.md 校验并安装随附完整包，保留全部附属文件。`,
+              ...(upgradeBridge
+                ? [
+                    `当前 CLI 桥接版本 ${bridgeVersion}，本实例推荐 ${cliCompatibility.recommended}，最低 ${cliCompatibility.minimum}（${cliCompatibility.minimum_reason}）。升级前请征得用户同意，方法：${new URL('/connect/cli', hub.config.publicUrl).href}`,
+                  ]
+                : []),
+            ].join('\n'),
         },
       );
       const register = <S extends z.ZodRawShape, R extends object>(
@@ -176,14 +191,22 @@ export function createMcp(
         '读取固定版本 Skill 正文和清单；不执行、不安装',
         z.object({ version_id: z.uuid() }).strict(),
         async ({ version_id, _principal }) => {
-          const v = await hub.assetAccess.requireReadableVersion(_principal, version_id);
-          if ((await hub.assetAccess.getAsset(v.asset_id)).kind !== 'skill')
-            fail(422, 'NOT_SKILL', '需要 Skill 版本');
-          await hub.store.audit(_principal.id, 'skill.loaded', v.id);
+          const metadata = await hub.store.tx(async () => {
+            const v = await hub.assetAccess.requireReadableVersion(_principal, version_id);
+            const asset = await hub.assetAccess.getAsset(v.asset_id);
+            if (asset.kind !== 'skill') fail(422, 'NOT_SKILL', '需要 Skill 版本');
+            return {
+              ...(await hub.content.getManifest(_principal, v.id)),
+              ...(await hub.assetAccess.versionNotice(_principal, asset, v.id)),
+              compatibility: v.metadata.frontmatter?.compatibility ?? '',
+            };
+          });
+          await hub.store.audit(_principal.id, 'skill.loaded', version_id);
           return {
-            ...(await hub.content.getManifest(_principal, v.id)),
-            body: (await hub.content.getFile(_principal, v.id, 'SKILL.md')).bytes.toString('utf8'),
-            compatibility: v.metadata.frontmatter?.compatibility ?? '',
+            ...metadata,
+            body: (await hub.content.getFile(_principal, version_id, 'SKILL.md')).bytes.toString(
+              'utf8',
+            ),
           };
         },
       );

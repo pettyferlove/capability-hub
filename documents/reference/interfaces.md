@@ -2,7 +2,7 @@
 
 ## HTTP
 
-HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，请求 Schema 由同包公开导出。请求体/查询在入口校验，错误返回 code、message、details、retryable 和 request_id；意外内部错误不暴露原文。响应已经开始时终止连接，错误仍只进入脱敏日志。
+HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，请求 Schema 由同包公开导出。请求体/查询在入口校验，错误返回 code、message、details、retryable 和 request_id；意外内部错误不暴露原文。响应已经开始时终止连接，错误仍只进入脱敏日志。响应头 `X-Capability-Hub-Version` 为实例版本，`X-Capability-Hub-CLI` 为 `recommended=版本, minimum=版本`；交付网页时另带 `X-Capability-Hub-Web-Build`。
 
 | 入口组                                                   | 用途                                   |
 | -------------------------------------------------------- | -------------------------------------- |
@@ -19,12 +19,15 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 | /api/me/*、/api/tokens、/api/git-credentials             | 个人资料、会话、令牌与仓库凭据         |
 | /api/admin/*                                             | 账号、角色、审计及运行管理             |
 | /api/hub-mcp-config、/connect/mcp                        | 首次接入配置与 Markdown 说明，无秘密值 |
-| /api/cli-installation、/connect/cli                      | 匿名 CLI 安装步骤与 Markdown，无凭据   |
+| /api/cli-installation、/connect/cli                      | 匿名 CLI 安装步骤；JSON 含 `cli`       |
 | /api/hub-share、/INSTALL.md                              | 公开分享邀请与不预选客户端的接入引导   |
 | /connect/skills/use-capability-hub/SKILL.md              | 随产品交付的官方客户端使用指南         |
 | /mcp                                                     | Hub MCP；需要有效身份                  |
 
 需要修订的修改携带 If-Match，幂等用例携带 Idempotency-Key。Cookie 写入还需 CSRF。
+
+资产详情与版本历史接受 `latest_readable=1`：当前发布被撤销时仍可查询按当前及历史受众可读的发布，不改写发布指针。固定版本安装说明可提示最新可读版本。
+安装步骤的 `cli` 给出 `recommended`、`minimum` 和 `minimum_reason`。
 
 「团队与权限」的账号详情区分直接与继承授权，团队详情区分授给团队的角色和仅以该团队为范围的授权。`GET /api/admin/role-scope-options` 仅向持有平台级 `identity:manage` 的账号返回来源和资产的 ID、名称及所属团队，不返回内容或凭据。
 
@@ -48,19 +51,21 @@ Skill 的上传与提交审核请求均可携带布尔字段 `requires_api_key`�
 
 服务器通过官方 SDK 在同一 `/mcp` 入口支持现代 `2026-07-28` 协议及使用 `initialize` 握手的 `2025-03-26`、`2025-06-18`、`2025-11-25` Streamable HTTP 客户端。握手协议采用无会话模式，各版本共用工具定义、令牌作用域与逐请求身份校验。MCP 标准协议兼容不属于项目旧数据或旧业务接口的兼容；不通过伪造版本 Header 转换协议，也不提供旧式 HTTP+SSE 独立端点。
 
-集成测试覆盖现代协议发现，以及上述三个握手版本的初始化、工具列表、工具调用、贡献权限隔离和令牌撤销；具体 Agent 产品仍须另行完成真实连接验收。
+集成测试覆盖现代协议发现，以及上述三个握手版本的初始化、工具列表、工具调用、贡献权限隔离和令牌撤销；具体 Agent 产品仍须另行完成真实连接验收。`serverInfo.version` 为实例版本，CLI 桥接升级提示见[接入助手](agent-clients.md#接入助手与高级入口)。
 
-| 工具                          | 交付结果                                             |
-| ----------------------------- | ---------------------------------------------------- |
-| search_skills / search_mcp    | 可见固定版本资源及分页                               |
-| get_asset_version             | 按资源名称和版本号定位可读已发布版本及安装项         |
-| load_skill / read_skill_file  | 根正文或指定参考文件                                 |
-| install_skill                 | 固定版本清单、地址与 CLI 命令；`inline`：分段 Base64 |
-| get_mcp_config / activate_mcp | 客户端配置、变量及连接步骤；Hub 不实际连接目标       |
-| list_share_teams              | 已加入且有创建权限的启用团队名称与 ID                |
-| share_skill                   | 接收 Skill 并进入静态扫描和网页审核流程              |
-| report_asset_feedback         | 上报固定版本的问题或建议，返回编号、状态与详情链接   |
-| rate_asset                    | 按 asset_id 推荐或取消推荐资源                       |
+| 工具                          | 交付结果                                               |
+| ----------------------------- | ------------------------------------------------------ |
+| search_skills / search_mcp    | 可见固定版本资源及分页                                 |
+| get_asset_version             | 按资源名称和版本号定位可读已发布版本、安装项及版本提示 |
+| load_skill / read_skill_file  | 根正文或指定参考文件；load_skill 含版本提示            |
+| install_skill                 | 清单、下载命令或分段 Base64；`cli_requirement`         |
+| get_mcp_config / activate_mcp | 客户端配置、变量及连接步骤；Hub 不实际连接目标         |
+| list_share_teams              | 已加入且有创建权限的启用团队名称与 ID                  |
+| share_skill                   | 接收 Skill 并进入静态扫描和网页审核流程                |
+| report_asset_feedback         | 上报固定版本的问题或建议，返回编号、状态与详情链接     |
+| rate_asset                    | 按 asset_id 推荐或取消推荐资源                         |
+
+`cli_requirement` 提供 `minimum_version`、`recommended_version`、`check_command` 和 `upgrade_url`。版本提示含 `latest_release`（`version_id`、`version_label`、`published_at`，不可读时为 `null`）、`is_latest`、`lifecycle`、`deprecation_reason` 和可读替代的 `replacement_asset_slug`；不替换固定版本。
 
 hub:read 不注册贡献工具。hub:contribute 的分享操作需要创建或维护权限，推荐要求当前发布可读，反馈要求指定版本可读。工具调用重新解析当前身份，读取只交付可读已发布内容。发布审核、资源删除撤销、权限及共享凭据变更使用网页入口。客户端配置与变量格式见 [Agent 客户端接入](agent-clients.md)。
 
@@ -87,12 +92,15 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 | login            | --url；显示浏览器批准地址，保存 CLI 读取凭据                                        |
 | search           | 可选查询文本、--json；省略查询列出资源                                              |
 | add              | NAME、--version 或 --ticket URL，均需 --to；--dry-run 预览、--replace 备份替换      |
+| outdated         | 检查已安装 Skill；可重复 `--to`，支持 `--json`、`--exit-code`                       |
 | hub-config       | --url、--client；离线生成配置，可选 --method、--scope、--contribute、--conversation |
 | mcp-config       | NAME、--version、--client；可选 --option、--scope                                   |
 
-`-h` / `help <命令>` 查看帮助，`-V` 查看版本。终端提供菜单和参数向导，等待时显示点阵动效、下载时显示字节进度；`--no-animation` 保留向导和静态状态。`--no-interactive`、CI、重定向、`--json` 和 `bridge` 禁用交互。JSON、配置和协议写 stdout，提示写 stderr。
+`-h` / `help <命令>` 查看帮助，`-V` / `--cli-version` 查看 CLI 版本。终端提供菜单和参数向导，等待时显示点阵动效、下载时显示字节进度；`--no-animation` 保留向导和静态状态。`--no-interactive`、CI、重定向、`--json` 和 `bridge` 禁用交互。JSON、配置和协议写 stdout，提示写 stderr；`CAPABILITY_HUB_NO_UPDATE_NOTICE=1` 关闭自动版本提示。
 
-`--config-dir` 隔离凭据，默认 `~/.config/capability-hub`。读取使用登录凭据或 `CAPABILITY_HUB_TOKEN` + 显式 `--url`；两者都没有时，`add --url` 可匿名安装公开 Skill。`add --ticket` 和 `hub-config` 不读取 CLI 凭据；票据模式如提供 `--url`，其 origin 必须与票据一致。下载限制大小，不跟随重定向。
+`--config-dir` 隔离凭据，默认 `~/.config/capability-hub`。读取使用登录凭据或 `CAPABILITY_HUB_TOKEN` + 显式 `--url`；两者都没有时，`add` 和 `outdated` 可用 `--url` 匿名访问公开 Skill。`add --ticket` 和 `hub-config` 不读取 CLI 凭据；票据模式如提供 `--url`，其 origin 必须与票据一致。下载限制大小，不跟随重定向。
+
+`outdated` 输出表格或 JSON 数组；检查成功退出 0，`--exit-code` 下存在 `update_available` 或 `unavailable` 时退出 2。其他状态为 `current`、`deprecated`、`modified`、`other_hub`；不同实例的安装不发请求。
 
 ## OAuth 与客户端连接
 

@@ -38,6 +38,8 @@ import {
   pollResponseSchema,
 } from './response-schemas.js';
 import type { CliUi } from './cli-ui.js';
+import { outdated } from './outdated.js';
+import { readSkillAsset } from './skill-versions.js';
 
 /** Commander 选项使用驼峰字段；version 只表示资源版本。 */
 export interface CliOptions {
@@ -59,6 +61,7 @@ export interface CliOptions {
   dryRun?: boolean;
   replace?: boolean;
   json?: boolean;
+  exitCode?: boolean;
 }
 
 /**
@@ -70,7 +73,7 @@ export async function runCommand(
   args: readonly string[],
   flags: CliOptions,
   ui: CliUi,
-): Promise<void> {
+): Promise<number | undefined> {
   const guided = ui.interactive && !flags.client;
   if (['connect', 'status', 'bridge', 'login', 'hub-config'].includes(command)) {
     flags.url = await ui.input(flags.url, '--url', 'Hub 的 HTTP(S) 根地址', (value) => {
@@ -187,6 +190,14 @@ export async function runCommand(
     ui.outro('已登录 · 下一步：capability-hub search <关键词>');
     return;
   }
+  const getCredentials = () =>
+    resolveConsumerCredentials({
+      url: flags.url,
+      environmentToken: process.env.CAPABILITY_HUB_TOKEN,
+      allowAnonymous: command === 'add' || command === 'outdated',
+      load: () => loadCredentials(credentialsFile),
+    });
+  if (command === 'outdated') return await outdated(args, flags, getCredentials);
   let slug: string | undefined;
   if (command === 'add' || command === 'mcp-config') {
     slug = await ui.input(
@@ -203,12 +214,7 @@ export async function runCommand(
     if (command === 'add')
       flags.to = await ui.input(flags.to, '--to', '安装父目录（将创建该目录下的资源子目录）');
   }
-  const credentials = await resolveConsumerCredentials({
-    url: flags.url,
-    environmentToken: process.env.CAPABILITY_HUB_TOKEN,
-    allowAnonymous: command === 'add',
-    load: () => loadCredentials(credentialsFile),
-  });
+  const credentials = await getCredentials();
   const api = new HubApiClient(credentials.url, credentials.token);
   if (command === 'search') {
     const result = await ui.task('搜索可见资源', '搜索完成', () =>
@@ -245,14 +251,19 @@ export async function runCommand(
       throw error;
     }
   }
-  const asset = await readResource(api.json('/api/assets/' + slug, assetSchema));
+  const installDetail = command === 'add' ? await readResource(readSkillAsset(api, slug)) : null;
+  const asset =
+    installDetail?.asset ?? (await readResource(api.json('/api/assets/' + slug, assetSchema)));
   if (asset.slug !== slug) throw new Error('Hub 返回的资源名称与请求不一致');
   if (command === 'mcp-config' && asset.kind !== 'mcp')
     throw new Error('mcp-config 仅用于 MCP 资源');
   if (command === 'add' && asset.kind !== 'skill')
     throw new Error('add 只安装 Skill；MCP 请使用 mcp-config');
   const versions = await readResource(
-    api.json(`/api/assets/${asset.asset_id}/versions`, versionsSchema),
+    api.json(
+      installDetail?.historyPath ?? `/api/assets/${asset.asset_id}/versions`,
+      versionsSchema,
+    ),
   );
   if (flags.version === undefined)
     flags.version = await ui.choose(
@@ -321,6 +332,7 @@ export async function runCommand(
       hub_url: credentials.url,
       asset_id: asset.asset_id,
       version_id: version.version_id,
+      version_label: version.version_label,
       release_id: manifest.release_id,
     },
     dryRun: flags.dryRun,
@@ -330,6 +342,7 @@ export async function runCommand(
     },
   });
   printInstallResult(ui, result);
+  showLatestVersion(ui, version.version_id, asset.current_release);
 }
 
 async function installTicket(ticket: string, flags: CliOptions, ui: CliUi) {
@@ -364,6 +377,7 @@ async function installTicket(ticket: string, flags: CliOptions, ui: CliUi) {
   showInstallTarget(ui, to, metadata.slug, metadata.version_label, flags.dryRun);
   if (preview) {
     printInstallResult(ui, preview);
+    showLatestVersion(ui, metadata.version_id, metadata.latest_release);
     return;
   }
   const archive = await readTicket(downloadSkillArchive(ui, api, pathname + '/archive'));
@@ -374,6 +388,7 @@ async function installTicket(ticket: string, flags: CliOptions, ui: CliUi) {
       hub_url: origin,
       asset_id: metadata.asset_id,
       version_id: metadata.version_id,
+      version_label: metadata.version_label,
       release_id: metadata.release_id,
     },
     beforeCommit: async () => {
@@ -391,6 +406,7 @@ async function installTicket(ticket: string, flags: CliOptions, ui: CliUi) {
     },
   });
   printInstallResult(ui, result);
+  showLatestVersion(ui, metadata.version_id, metadata.latest_release);
 }
 
 function parseTicketUrl(value: string): URL {
@@ -439,6 +455,19 @@ function showInstallTarget(ui: CliUi, to: string, slug: string, version: string,
       dryRun ? '安装预览' : '安装 Skill',
       `资源名称  ${slug}\n资源版本  ${terminalText(version)}\n安装目录  ${terminalText(resolve(to, slug))}`,
     );
+}
+
+function showLatestVersion(
+  ui: CliUi,
+  installed: string,
+  latest: { version_id: string; version_label: string } | null | undefined,
+) {
+  if (
+    latest &&
+    latest.version_id !== installed &&
+    process.env.CAPABILITY_HUB_NO_UPDATE_NOTICE !== '1'
+  )
+    ui.message(`有更新的可读发布：${terminalText(latest.version_label)}。指定的固定版本不变。`);
 }
 
 function downloadSkillArchive(ui: CliUi, api: HubApiClient, path: string) {

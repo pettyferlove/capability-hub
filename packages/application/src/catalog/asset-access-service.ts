@@ -9,7 +9,7 @@ import type {
 } from '@capability-hub/domain/models';
 import type { RecordStore } from '../ports/index.js';
 import { someAsync } from '@capability-hub/domain/async';
-import { fail, notFound } from '@capability-hub/domain/errors';
+import { fail, HubError, notFound } from '@capability-hub/domain/errors';
 import { has } from '@capability-hub/domain/rbac';
 import type { IdentityService } from '../identity/identity-service.js';
 
@@ -215,6 +215,55 @@ export class AssetAccessService {
       (await this.matchesAudience(p, current)) &&
       (await this.matchesAudience(p, resolved))
     );
+  }
+  /** 以当前发布限制受众；撤销其内容不会把发布指针或受众退回历史。 */
+  async latestReadablePublication(p: Principal | null, asset: AssetRecord) {
+    if ((p && !p.active) || asset.lifecycle === 'blocked') return null;
+    const current = await this.store.get('releases', asset.current_release_id);
+    if (!current || !(await this.matchesAudience(p, current))) return null;
+    const version = await this.store.get('versions', current.version_id);
+    if (version?.availability === 'released') return { release: current, version };
+
+    // 同一版本只按其最近一次发布授权，不能通过旧发布放宽受众。
+    const seen = new Set([current.version_id]);
+    const releases = await this.store.where('releases', 'asset_id', asset.id);
+    for (const release of releases.sort((a, b) => b.release_seq - a.release_seq)) {
+      if (seen.has(release.version_id)) continue;
+      seen.add(release.version_id);
+      const candidate = await this.store.get('versions', release.version_id);
+      if (candidate?.availability === 'released' && (await this.matchesAudience(p, release)))
+        return { release, version: candidate };
+    }
+    return null;
+  }
+  async latestReadableRelease(p: Principal | null, asset: AssetRecord) {
+    const latest = await this.latestReadablePublication(p, asset);
+    if (!latest) return null;
+    return {
+      version_id: latest.version.id,
+      version_label: latest.version.version_label,
+      published_at: latest.release.published_at,
+    };
+  }
+  async readableReplacement(p: Principal | null, asset: AssetRecord) {
+    if (!asset.replacement_asset_id) return null;
+    try {
+      return (await this.requirePublishedAsset(p, asset.replacement_asset_id)).asset;
+    } catch (error) {
+      if (error instanceof HubError && error.code === 'NOT_FOUND') return null;
+      throw error;
+    }
+  }
+  async versionNotice(p: Principal | null, asset: AssetRecord, versionId: string) {
+    const latest = await this.latestReadableRelease(p, asset);
+    const replacement = await this.readableReplacement(p, asset);
+    return {
+      latest_release: latest,
+      is_latest: latest?.version_id === versionId,
+      lifecycle: asset.lifecycle,
+      deprecation_reason: asset.lifecycle === 'deprecated' ? (asset.deprecation_reason ?? '') : '',
+      replacement_asset_slug: replacement?.slug ?? null,
+    };
   }
   /** 版本不存在与不可读统一抛 404/`NOT_FOUND`，避免泄露未发布版本的存在性。 */
   async requireReadableVersion(p: Principal | null, id: string) {

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { cliCompatibility, hubVersionHeaders } from '@capability-hub/contracts';
 import { boundedJson } from '@capability-hub/infrastructure/content';
 import { HubError } from '@capability-hub/domain/errors';
 import type { Express } from 'express';
@@ -5,6 +8,37 @@ import express from 'express';
 import type { LogContext } from '@capability-hub/logging/server';
 import { type RequestMetrics } from '../../observability/request-metrics.js';
 import type { ServerConfig } from '../../config/server-config.js';
+import { hubBuild } from '../../hub-build.js';
+
+function readWebBuild(index: string): string | undefined {
+  try {
+    const html = readFileSync(index, 'utf8');
+    return /<meta name="capability-hub-build" content="([a-zA-Z0-9_-]+)">/.exec(html)?.[1];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+}
+
+/**
+ * 镜像部署时网页随进程一起替换；`pnpm dev` 交付的 dist 可能在服务运行期间重建，
+ * 因此按间隔重读构建号，避免页面持续误报“已更新”。
+ */
+function webBuildSource(directory: string) {
+  const index = join(directory, 'index.html');
+  let build = readWebBuild(index);
+  let checkedAt = Date.now();
+  return () => {
+    if (Date.now() - checkedAt >= 5000) {
+      checkedAt = Date.now();
+      try {
+        build = readWebBuild(index);
+      } catch {
+        // 重建过程中的读取失败只影响刷新提示，沿用上次的构建号。
+      }
+    }
+    return build;
+  };
+}
 
 /** 顺序影响安全边界：先记录请求并校验来源，再解析有大小限制的 JSON。 */
 export function configureHttp(
@@ -32,18 +66,24 @@ export function configureHttp(
     res.once('close', () => done(!res.writableFinished));
     next();
   });
+  const webBuild = webBuildSource(config.webDirectory);
+  const cli = `recommended=${cliCompatibility.recommended}, minimum=${cliCompatibility.minimum}`;
   app.use((req, res, next) => {
     if (!('id' in req) || typeof req.id !== 'string')
       throw new Error('HTTP request id was not initialized');
     res.locals.request_id = req.id;
     res.set({
       'X-Request-Id': res.locals.request_id,
+      [hubVersionHeaders.version]: hubBuild.hub_version,
+      [hubVersionHeaders.cli]: cli,
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'no-referrer',
       'Cache-Control': 'private, no-store',
       'Content-Security-Policy':
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
     });
+    const build = webBuild();
+    if (build) res.set(hubVersionHeaders.webBuild, build);
     const allowed = [
       new URL(config.publicUrl).host,
       ...(!config.production ? ['127.0.0.1:5173', 'localhost:4100'] : []),

@@ -22,6 +22,8 @@ export interface AgentExecutionDay {
  * 成功采样后的空计数表示没有记录。
  */
 export interface OperationsResponse {
+  hub_version: string;
+  hub_commit: string;
   observed_at: string;
   memory_rss_bytes: number;
   /** null 表示没有成功备份记录；读取备份审计失败时省略。 */

@@ -4,9 +4,11 @@ import packageJson from '../package.json' with { type: 'json' };
 import { terminalText } from './api-client.js';
 import { runCommand, type CliOptions } from './cli-commands.js';
 import { CliUi } from './cli-ui.js';
+import { withCliUpdateNotice } from './update-notice.js';
 
 /** 命令定义与帮助共用一份参数声明；退出由 main 处理，便于嵌入与测试。 */
-export async function runCli(arguments_: readonly string[] = process.argv.slice(2)): Promise<void> {
+export async function runCli(arguments_: readonly string[] = process.argv.slice(2)) {
+  let exitCode: number | undefined;
   const program = new Command()
     .name('capability-hub')
     .description('Capability Hub · 连接 Agent、发现资源与安装 Skill')
@@ -63,7 +65,8 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
       flags.animation !== false,
     );
     ui.intro(command.name());
-    await runCommand(command.name(), args, flags, ui);
+    const run = () => runCommand(command.name(), args, flags, ui);
+    exitCode = command.name() === 'bridge' ? await run() : await withCliUpdateNotice(run);
   }
 
   command(
@@ -120,6 +123,23 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     );
 
   command(
+    'outdated',
+    '检查已安装的 Skill，不改动本地目录',
+    '示例：\n  capability-hub outdated --url https://hub.example.com --to .agents/skills --to .claude/skills\n  capability-hub outdated --json --exit-code\n\n默认扫描当前项目已存在的预设技能目录；未登录时用 --url 匿名检查公开 Skill。',
+  )
+    .option(
+      '--to <DIR>',
+      '技能父目录，可重复指定',
+      (directory: string, directories: string[] = []) => {
+        directories.push(directory);
+        return directories;
+      },
+    )
+    .option('--json', '输出 JSON 数组')
+    .option('--exit-code', '有可用更新或不可用安装时返回 2')
+    .action(async (options: { to?: string[] }, command: Command) => execute(command, options.to));
+
+  command(
     'hub-config',
     '离线生成 Hub 配置或接入说明',
     '示例：\n  capability-hub hub-config --url https://hub.example.com --client codex\n  capability-hub hub-config --url https://hub.example.com --client pi --scope user --conversation\n\n不读取凭据、不请求 Hub、不写文件。配置或对话说明写到 stdout，提示写到 stderr。',
@@ -170,7 +190,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
       '你想做什么？',
       [
         { title: 'Agent 接入', commands: ['connect', 'status'] },
-        { title: 'CLI 资源', commands: ['login', 'search', 'add'] },
+        { title: 'CLI 资源', commands: ['login', 'search', 'add', 'outdated'] },
         { title: '配置生成', commands: ['hub-config', 'mcp-config'] },
       ].flatMap((group) => [
         { value: group.title, label: group.title, disabled: true },
@@ -184,7 +204,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
           })),
       ]),
     );
-    await runCommand(selected, [], flags, ui);
+    exitCode = await withCliUpdateNotice(() => runCommand(selected, [], flags, ui));
   });
 
   try {
@@ -192,4 +212,5 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
   } catch (error) {
     if (!(error instanceof CommanderError) || error.exitCode !== 0) throw error;
   }
+  return exitCode;
 }

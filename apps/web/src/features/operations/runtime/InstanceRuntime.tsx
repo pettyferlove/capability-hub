@@ -37,6 +37,10 @@ export function InstanceRuntime({ data }: { data: OperationsResponse }) {
     .reduce((sum, [, count]) => sum + Number(count), 0);
   return (
     <>
+      <p className="text-sm text-muted-ink">
+        实例版本 <strong>{data.hub_version}</strong> · 构建提交{' '}
+        <code className="break-all">{data.hub_commit || '—'}</code>
+      </p>
       <OperationsStorage data={data} />
       <div className={operationsCardsStyles}>
         <div>

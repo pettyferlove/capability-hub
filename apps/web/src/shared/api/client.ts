@@ -1,6 +1,7 @@
 import { browserUuid } from '@capability-hub/logging/browser';
 import { reportError } from '../logging.js';
 import { readPreviewText } from './preview.js';
+import { observeWebBuild } from './web-build.js';
 
 export { PreviewUnavailable } from './preview.js';
 let csrfToken = '';
@@ -80,9 +81,22 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
       reportError('http.failed', { error });
     throw error;
   });
+  observeWebBuild(response);
   if (!response.ok) throw await responseError(response, path);
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+/** 仅在懒加载失败时探测，不让缓存的文档或会话状态决定是否重载。 */
+export async function checkWebBuild(): Promise<string | null> {
+  const response = await fetch('/health/live', {
+    method: 'HEAD',
+    cache: 'no-store',
+    credentials: 'same-origin',
+    redirect: 'error',
+    signal: AbortSignal.timeout(3000),
+  });
+  return response.ok ? observeWebBuild(response) : null;
 }
 
 /**
@@ -118,6 +132,7 @@ export async function fileText(
 ): Promise<string> {
   const url = `/api/${management ? 'management/' : ''}versions/${version}/files?path=${encodeURIComponent(path)}`;
   const response = await fetch(url, { credentials: 'same-origin', redirect: 'error', signal });
+  observeWebBuild(response);
   if (!response.ok) throw await responseError(response, url);
   return readPreviewText(response);
 }
@@ -151,6 +166,7 @@ export async function streamEvents(
       ...(lastEventId ? { 'Last-Event-ID': lastEventId } : {}),
     },
   });
+  observeWebBuild(response);
   if (!response.ok) throw await responseError(response, path);
   if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream'))
     throw new ApiError(502, 'STREAM_INVALID', '事件连接不可用');

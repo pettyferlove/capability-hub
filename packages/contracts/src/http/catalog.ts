@@ -62,6 +62,8 @@ export interface AssetResponse {
   deprecation_reason: string;
   /** 弃用后指向的替代资产，可能为空表示暂无替代。 */
   replacement_asset_id?: string | null;
+  /** 可读替代资产的 slug；没有替代或替代不可读时为 `null`。 */
+  replacement_asset_slug: string | null;
 }
 
 /** 仅管理侧返回原始上传或同步的发起人，重扫不改变版本归属。 */

@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { sha256 } from '@capability-hub/domain/canonical';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { cliCompatibility } from '@capability-hub/contracts';
 import { serveTestHub } from '../support/server.js';
 import { publishSkill } from '../support/application.js';
+import rootPackage from '../../package.json' with { type: 'json' };
 
 function object(value: unknown): Record<string, unknown> {
   assert(value && typeof value === 'object' && !Array.isArray(value));
@@ -132,3 +135,40 @@ for (const version of ['2025-03-26', '2025-06-18', '2025-11-25']) {
     assert.equal(object(object(await revoked.json()).error).code, 'UNAUTHENTICATED');
   });
 }
+
+test('两种 MCP 握手都只向低于推荐版本的 CLI 桥接提示升级', async (context) => {
+  const fixture = await serveTestHub(context);
+  const { token } = await fixture.hub.tokens.issue(fixture.reader, {
+    name: 'bridge discovery',
+    scope: 'hub:read',
+  });
+  for (const modern of [false, true]) {
+    for (const [name, version, needsUpgrade] of [
+      ['capability-hub-bridge', '0.1.0', true],
+      ['capability-hub-bridge', cliCompatibility.recommended, false],
+      ['capability-hub-bridge', 'v0.1.0', false],
+      ['native-agent', '0.1.0', false],
+    ] as const) {
+      const client = new Client(
+        { name, version },
+        modern ? { versionNegotiation: { mode: { pin: '2026-07-28' } } } : undefined,
+      );
+      try {
+        await client.connect(
+          new StreamableHTTPClientTransport(new URL(fixture.origin + '/mcp'), {
+            requestInit: { headers: { Authorization: 'Bearer ' + token } },
+          }),
+        );
+        assert.equal(client.getServerVersion()?.version, rootPackage.version);
+        const instructions = client.getInstructions() ?? '';
+        assert.equal(instructions.includes(fixture.origin + '/connect/cli'), needsUpgrade);
+        if (needsUpgrade)
+          for (const value of [version, cliCompatibility.recommended, cliCompatibility.minimum])
+            assert(instructions.includes(value));
+        assert.equal((await client.listTools()).tools.length, 9);
+      } finally {
+        await client.close();
+      }
+    }
+  }
+});

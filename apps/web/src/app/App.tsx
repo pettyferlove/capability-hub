@@ -7,7 +7,7 @@ import { cn } from '../shared/styles/cn.js';
 import { bootErrorStyles, skipLinkStyles, mainShellStyles, appFooterStyles } from './styles.js';
 import { pageContentStyles } from '../shared/styles/recipes.js';
 import type { ReviewResponse } from '@capability-hub/contracts/http';
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import Login from '../features/auth/LoginPage.js';
 import Discover from '../features/catalog/DiscoverPage.js';
 import { useQuery } from '../shared/api/use-query.js';
@@ -26,12 +26,14 @@ import OperationsCenter from '../features/operations/OperationsCenter.js';
 import { CommandPalette } from './CommandPalette.js';
 import { PageBoundary } from './PageBoundary.js';
 import { NotFoundPage } from './NotFoundPage.js';
+import { WebUpdateNotice } from './WebUpdateNotice.js';
+import { lazyView } from '../shared/navigation/lazy-view.js';
 
-const AssetSheet = lazy(() => import('../features/catalog/AssetSheet.js'));
-const Publish = lazy(() => import('../features/publishing/PublishPage.js'));
-const Review = lazy(() => import('../features/review/ReviewPage.js'));
-const Connect = lazy(() => import('../features/connect/ConnectPage.js'));
-const Account = lazy(() => import('../features/identity/AccountPage.js'));
+const AssetSheet = lazyView(() => import('../features/catalog/AssetSheet.js'));
+const Publish = lazyView(() => import('../features/publishing/PublishPage.js'));
+const Review = lazyView(() => import('../features/review/ReviewPage.js'));
+const Connect = lazyView(() => import('../features/connect/ConnectPage.js'));
+const Account = lazyView(() => import('../features/identity/AccountPage.js'));
 const pagePlaceholders = {
   discover: { title: '资源目录', variant: 'cards' },
   publish: { title: '分享 Skill 与 MCP', variant: 'publish' },
@@ -115,6 +117,7 @@ export default function App() {
   )
     return (
       <LoadingScope scopeKey={pageScrollKey}>
+        <WebUpdateNotice />
         <Login
           initialized={initialized}
           setupRequired={setupRequired}
@@ -139,6 +142,7 @@ export default function App() {
         >
           跳到主要内容
         </a>
+        <WebUpdateNotice />
         <AppHeader
           page={view.page}
           returnTo={location.pathname + location.search}

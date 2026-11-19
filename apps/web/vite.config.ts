@@ -17,6 +17,8 @@ function registerPageRoutes({ middlewares }: { middlewares: Connect.Server }) {
   });
 }
 
+const webBuild = crypto.randomUUID();
+
 // 开发服务器把后端路由整体代理到本地 API（4100），因此前端代码里的路径始终写成以 `/` 开头的绝对路径；
 // 新增后端顶层路由时要同步加到这里，否则仅生产环境可用，开发时会 404。
 export default defineConfig({
@@ -28,6 +30,14 @@ export default defineConfig({
       name: 'hub-pages',
       configureServer: registerPageRoutes,
       configurePreviewServer: registerPageRoutes,
+    },
+    {
+      name: 'hub-web-build',
+      apply: 'build',
+      config: () => ({ define: { __HUB_WEB_BUILD__: JSON.stringify(webBuild) } }),
+      transformIndexHtml: () => [
+        { tag: 'meta', attrs: { name: 'capability-hub-build', content: webBuild } },
+      ],
     },
   ],
   server: {

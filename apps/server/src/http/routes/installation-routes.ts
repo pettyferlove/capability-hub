@@ -45,12 +45,13 @@ export function registerInstallationRoutes(app: Express, { hub }: HttpContext): 
     app.get(
       route,
       send(async (req, res) => {
-        const version = await hub.assetAccess.requirePublicVersion(
+        const document = await createInstallationGuide(
+          hub,
           kind,
           String(req.params.slug),
           String(req.params.version),
         );
-        res.type('text/markdown').send(await createInstallationGuide(hub, version.id));
+        res.type('text/markdown').send(document);
       }),
     );
     app.get(
