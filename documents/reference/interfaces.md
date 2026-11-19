@@ -65,6 +65,8 @@ Skill 的上传与提交审核请求均可携带布尔字段 `requires_api_key`�
 | report_asset_feedback         | 上报固定版本的问题或建议，返回编号、状态与详情链接     |
 | rate_asset                    | 按 asset_id 推荐或取消推荐资源                         |
 
+`install_skill` 的 `download.mode` 区分 `public`（按名称、`--version`、`--url` 安装）和 `ticket`（使用 `cli_command` 中的 `--ticket` 地址）。`download.url` 是直接下载的归档地址，不是票据入参。
+
 `cli_requirement` 提供 `minimum_version`、`recommended_version`、`check_command` 和 `upgrade_url`。版本提示含 `latest_release`（`version_id`、`version_label`、`published_at`，不可读时为 `null`）、`is_latest`、`lifecycle`、`deprecation_reason` 和可读替代的 `replacement_asset_slug`；不替换固定版本。
 
 hub:read 不注册贡献工具。hub:contribute 的分享操作需要创建或维护权限，推荐要求当前发布可读，反馈要求指定版本可读。工具调用重新解析当前身份，读取只交付可读已发布内容。发布审核、资源删除撤销、权限及共享凭据变更使用网页入口。客户端配置与变量格式见 [Agent 客户端接入](agent-clients.md)。

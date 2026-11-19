@@ -31,6 +31,9 @@ export const shellArgument = (value: string) => `'${value.replaceAll("'", "'\"'\
 
 /** 私有仓库地址由部署配置校验；未配置时遵循使用者的 npm 配置。 */
 export function cliInstallationGuide(origin: string, registry?: string): CliInstallationResponse {
+  const registryOptions = registry
+    ? ` --registry=${shellArgument(registry)} --@capability-hub:registry=${shellArgument(registry)}`
+    : '';
   return {
     registry_url: registry ?? null,
     cli: cliCompatibility,
@@ -54,8 +57,15 @@ export function cliInstallationGuide(origin: string, registry?: string): CliInst
         : []),
       {
         title: '安装并验证 CLI',
-        description: `${cliVersionGuidance} 如需固定 CLI 版本，使用 @capability-hub/cli@VERSION；--version 只用于指定资源版本。`,
-        command: `npm install -g @capability-hub/cli${registry ? ` --registry=${shellArgument(registry)} --@capability-hub:registry=${shellArgument(registry)}` : ''}\ncapability-hub --cli-version`,
+        description: `${cliVersionGuidance} 如需固定 CLI 版本，将 @latest 换成具体版本号；--version 只用于指定资源版本。`,
+        command: `npm install -g @capability-hub/cli@latest --prefer-online${registryOptions}\ncapability-hub --cli-version`,
+      },
+      {
+        title: '升级遇到 ETARGET',
+        description:
+          '先用带 --prefer-online 的安装命令重试，再用下方命令查询同一仓库的可用版本。若缺少目标版本，请核对版本号、发布状态和代理是否已同步；若版本可见但安装仍失败，可用 --cache 指定空目录重试，最后才考虑 npm cache clean --force（清空本机 npm 缓存）。',
+        command: `npm view @capability-hub/cli versions --prefer-online --global${registryOptions}`,
+        optional: true,
       },
       {
         title: '首次使用或授权失效时登录 CLI',
@@ -75,8 +85,8 @@ export function cliInstallationGuide(origin: string, registry?: string): CliInst
       '连接超时或域名无法解析：确认当前终端、容器或远程开发环境能够访问 npm 仓库；内网仓库还需接入相应网络或 VPN。',
       '401 / 403：核对仓库认证是否有效、账号是否有包读取权限；不能用 Hub 访问令牌代替 npm 凭据。',
       registry
-        ? '404 / 找不到包或版本：确认包名和指定版本已发布到本实例的 npm 仓库。'
-        : '404 / 找不到包或版本：用 npm config get @capability-hub:registry 和 npm config get registry 核对仓库地址，再确认包名和已发布版本。',
+        ? '404 / 找不到包：确认 CLI 包已发布到本实例配置的 npm 仓库。'
+        : '404 / 找不到包：用 npm config get @capability-hub:registry 和 npm config get registry 核对仓库地址，再确认 CLI 包已发布。',
       '找不到 capability-hub 命令：检查 npm prefix -g 对应的可执行目录是否在 PATH 中；切换 Node.js 版本或运行环境后需重新检查安装位置。',
     ],
   };

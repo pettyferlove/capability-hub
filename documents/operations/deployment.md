@@ -34,5 +34,6 @@ server 默认发布到回环地址。内网 HTTP 直连可设 `CAPABILITY_HUB_BI
 - 部署后，让旧页面发起一次请求，确认出现更新提示。打开「刷新页面」菜单，选择立即刷新或 10 秒后刷新；计时中可直接点击按钮取消，关闭提示或切换页面也会取消。
 - 初始化账号，走上传、扫描、独立审核、权限收窄和公开访问链路。
 - 使用真实目标 Agent 客户端核验 MCP 协议、变量和配置，不把生成文本视为已连接成功。
+- npm 仓库需发布即见时，对包元数据（packument）返回 `Cache-Control: no-cache`，保留有效的 `Last-Modified` 或 `ETag`，检查代理的元数据有效期和 404 负缓存，无需调整归档缓存。策略生效后先缓存旧版，再发布新版，分别用空缓存和已有缓存执行不带 `--prefer-online` 的 `npm i -g @capability-hub/cli@latest`，核对安装版本。
 
 运维脚本在镜像内为 `node scripts/backup.js`、`restore-import.js`、`restore-check.js`、`maintenance.js` 、`recover-account.js` 和 `migrate.js`。对现有实例操作前明确数据卷与配置；服务启动与迁移命令均会应用当前迁移历史中的待执行变更，不转换未纳入当前迁移体系的旧数据库。部署前审查 SQL 并备份，详见[数据库迁移](../development/database-migrations.md)。

@@ -183,6 +183,7 @@ test('MCP 默认交付公开链接或受限票据，续传参数只用于显式 
     upgrade_url: fixture.origin + '/connect/cli',
   });
   assert.deepEqual(publicResult.download, {
+    mode: 'public',
     url: `${fixture.origin}/skills/sample-skill/1.0.0/download`,
     expires_at: null,
     single_use: false,
@@ -210,6 +211,7 @@ test('MCP 默认交付公开链接或受限票据，续传参数只用于显式 
   assert.deepEqual(result.cli_requirement, publicResult.cli_requirement);
   assert.equal(result.archive_chunk, undefined);
   const download = object(result.download);
+  assert.equal(download.mode, 'ticket');
   assert.equal(download.single_use, true);
   assert.equal(typeof download.expires_at, 'string');
   const archiveUrl = new URL(String(download.url));

@@ -37,10 +37,17 @@ test('CLI 说明直接提供 npm 安装命令，仅配置私有仓库时附带�
     assert.equal(guide.registry_url, registry ?? null);
     assert.deepEqual(guide.cli, cliCompatibility);
     const commands = guide.steps.flatMap((step) => (step.command ? [step.command] : []));
+    const registryOptions = registry
+      ? ` --registry='${registry}' --@capability-hub:registry='${registry}'`
+      : '';
     assert(
       commands.includes(
-        `npm install -g @capability-hub/cli${registry ? ` --registry='${registry}' --@capability-hub:registry='${registry}'` : ''}\ncapability-hub --cli-version`,
+        `npm install -g @capability-hub/cli@latest --prefer-online${registryOptions}\ncapability-hub --cli-version`,
       ),
+    );
+    assert.equal(
+      guide.steps.find((step) => step.title === '升级遇到 ETARGET')?.command,
+      `npm view @capability-hub/cli versions --prefer-online --global${registryOptions}`,
     );
     assert.equal(
       commands.some((command) => command.startsWith('npm config')),

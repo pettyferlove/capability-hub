@@ -113,6 +113,7 @@ export async function deliverSkill(
       manifest: version.manifest,
       suggested_directory: `${directory}/${slug}`,
       download: {
+        mode: ticketUrl ? 'ticket' : 'public',
         url: ticketUrl
           ? `${ticketUrl}/archive`
           : `${origin}${publicResourcePath('skill', slug, version.version_label)}/download`,
@@ -125,7 +126,9 @@ export async function deliverSkill(
         '向用户说明安装父目录、清单中的文件和脚本，取得确认后才写入；保留已有目录，替换前备份，执行脚本需另获授权。',
         '能运行 CLI 时，先用 cli_requirement.check_command 核对版本；低于 minimum_version 时征得用户同意后按 upgrade_url 升级。执行 cli_command 时将 --to 换成已确认的父目录，先加 --dry-run；沙箱禁止联网时，请用户批准当前命令联网。',
         '不能运行 CLI 时下载 download.url，核对 SHA-256 和清单再写入；只有无法下载时才改用 transfer: "inline"。',
-        '非公开下载地址 10 分钟内一次有效；若失效或下载中断，重新调用 install_skill，不要在回复中复述该地址。',
+        ticketUrl
+          ? '用 cli_command 中的 --ticket 地址安装，不要传入归档地址 download.url。票据 10 分钟内只能下载一次；若失效或下载中断，重新调用 install_skill，不要在回复中复述票据地址。'
+          : '公开版本按 cli_command 中的名称、--version 和 --url 安装；download.url 是公开归档地址，不可传给 --ticket。',
       ],
     };
   }

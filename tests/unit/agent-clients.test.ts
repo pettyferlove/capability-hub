@@ -23,7 +23,20 @@ test('CLI 仓库命令保留完整路径和参数边界，地址中的 Shell 表
       [
         'install',
         '-g',
+        '@capability-hub/cli@latest',
+        '--prefer-online',
+        `--registry=${registry}`,
+        `--@capability-hub:registry=${registry}`,
+      ],
+    ],
+    [
+      'npm view',
+      [
+        'view',
         '@capability-hub/cli',
+        'versions',
+        '--prefer-online',
+        '--global',
         `--registry=${registry}`,
         `--@capability-hub:registry=${registry}`,
       ],

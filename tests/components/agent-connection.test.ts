@@ -23,7 +23,7 @@ test('CLI 安装可直接复制，仓库认证按需展开且不混入安装命�
   await user.click(installation.getByRole('button', { name: '复制' }));
   assert.equal(
     await navigator.clipboard.readText(),
-    `npm install -g @capability-hub/cli --registry='${registry}' --@capability-hub:registry='${registry}'\ncapability-hub --cli-version`,
+    `npm install -g @capability-hub/cli@latest --prefer-online --registry='${registry}' --@capability-hub:registry='${registry}'\ncapability-hub --cli-version`,
   );
   assert.equal(screen.queryByRole('region', { name: '配置 CLI 仓库' }), null);
   const authentication = screen.getByText('仓库需要认证时', { selector: 'summary' });
@@ -49,7 +49,7 @@ test('未配置私有仓库时可直接复制 npm 安装命令，不要求获取
   await user.click(installation.getByRole('button', { name: '复制' }));
   assert.equal(
     await navigator.clipboard.readText(),
-    'npm install -g @capability-hub/cli\ncapability-hub --cli-version',
+    'npm install -g @capability-hub/cli@latest --prefer-online\ncapability-hub --cli-version',
   );
   assert.equal(screen.queryByRole('region', { name: '配置 CLI 仓库' }), null);
   assert.equal(screen.queryByText(/请联系部署方获取安装方式/), null);
