@@ -30,6 +30,40 @@ export const skipLinkStyles = cn(
   '[&:focus]:top-2.5',
 );
 
+export const webUpdateSurfaceStyles = cn(
+  'relative isolate grid items-center gap-2.5 overflow-hidden sm:grid-cols-[minmax(0,1fr)_auto]',
+  'rounded-xl border border-brand/25 bg-linear-to-r from-brand-soft via-paper to-brand-soft',
+  'px-3 py-2.5 shadow-[0_8px_24px_-16px_var(--brand)] sm:gap-x-5 sm:px-4',
+  'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px',
+  'before:bg-linear-to-r before:from-transparent before:via-brand/75 before:to-transparent',
+  'before:[background-size:180%_100%] motion-safe:before:animate-[react-bits-shine_700ms_var(--ease-out)]',
+  'motion-safe:animate-[theme-appear_220ms_var(--ease-out)_both]',
+);
+
+export const webUpdateGridStyles = cn(
+  'pointer-events-none absolute inset-y-0 right-0 -z-10 w-2/3 opacity-30',
+  'bg-[radial-gradient(circle,var(--brand)_1px,transparent_1.7px)] [background-size:12px_12px]',
+  '[mask-image:linear-gradient(90deg,transparent,var(--mask-solid)_50%,transparent)]',
+);
+
+export const webUpdateMarkStyles = cn(
+  'grid size-10 shrink-0 place-items-center rounded-xl border border-on-brand/25',
+  'bg-linear-to-br from-brand to-brand-hover text-on-brand',
+  'shadow-[0_4px_14px_-5px_var(--brand)] sm:size-11',
+);
+
+export const webUpdateRefreshButtonStyles =
+  'relative min-h-11 flex-1 overflow-hidden rounded-xl px-3.5 sm:w-40 sm:flex-none';
+
+export const webUpdateMenuStyles =
+  'z-[100] w-40 rounded-xl border border-line bg-paper p-1.5 text-ink shadow-[var(--shadow-floating)]';
+
+export const webUpdateMenuItemStyles = cn(
+  'flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-body outline-none',
+  'data-[focused]:bg-brand-soft data-[focused]:text-brand',
+  'data-[hovered]:bg-brand-soft data-[hovered]:text-brand',
+);
+
 export const mainShellStyles = cn(
   'max-w-310 pt-[var(--page-inset)] pr-7 pb-17.5 pl-7 mt-0 mr-auto mb-0 ml-auto',
   'min-h-[calc(100vh_-_150px)] min-[1400px]:pl-7 min-[1400px]:pr-7 max-[850px]:pt-0',

@@ -1,10 +1,11 @@
 import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { createElement, Suspense } from 'react';
 import { PageBoundary } from '../../apps/web/src/app/PageBoundary.js';
+import { navigate } from '../../apps/web/src/shared/navigation/history-navigation.js';
 
 // 模拟编译常量，先于读取它的网页模块载入。
 Object.defineProperty(globalThis, '__HUB_WEB_BUILD__', { value: 'bundled-build' });
@@ -76,4 +77,106 @@ test('旧 chunk 失败时只对新版重载一次，之后沿用错误边界', a
       cleanup();
     }
   }
+});
+
+test('打开刷新菜单不重载，选中立即刷新才重载', async (context) => {
+  context.mock.method(globalThis, 'fetch', async () =>
+    Response.json({}, { headers: { 'X-Capability-Hub-Web-Build': 'refresh-options-build' } }),
+  );
+  await api('/api/me');
+  const user = userEvent.setup();
+  let reloads = 0;
+  render(
+    createElement(WebUpdateNotice, {
+      onReload: () => {
+        reloads++;
+      },
+    }),
+  );
+  await user.click(screen.getByRole('button', { name: '刷新页面' }));
+  const immediate = await screen.findByRole('menuitem', { name: '立即刷新' });
+  assert.equal(reloads, 0);
+  await user.click(immediate);
+  assert.equal(reloads, 1);
+});
+
+async function startCountdown() {
+  await act(async () => {
+    fireEvent.keyDown(screen.getByRole('button', { name: '刷新页面' }), { key: 'ArrowDown' });
+  });
+  fireEvent.click(screen.getByRole('menuitem', { name: '10 秒后刷新' }));
+}
+
+test('倒计时只在主动启动后生效，取消后重新计时才会刷新', async (context) => {
+  context.mock.method(globalThis, 'fetch', async () =>
+    Response.json({}, { headers: { 'X-Capability-Hub-Web-Build': 'countdown-build' } }),
+  );
+  await api('/api/me');
+  const { timers } = context.mock;
+  timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
+  context.mock.method(performance, 'now', () => Date.now());
+  let reloads = 0;
+  render(
+    createElement(WebUpdateNotice, {
+      onReload: () => {
+        reloads++;
+      },
+    }),
+  );
+  const advance = (milliseconds: number) => act(() => timers.tick(milliseconds));
+  advance(10_000);
+  assert.equal(reloads, 0);
+
+  await startCountdown();
+  advance(2_500);
+  const running = within(screen.getByRole('button', { name: '取消刷新' }));
+  assert(running.getByText('08s'));
+  fireEvent.click(screen.getByRole('button', { name: '取消刷新' }));
+  assert.equal(document.activeElement, screen.getByRole('button', { name: '刷新页面' }));
+  advance(10_000);
+  assert.equal(reloads, 0);
+
+  await startCountdown();
+  advance(9_999);
+  assert.equal(reloads, 0);
+  advance(1);
+  assert.equal(reloads, 1);
+  advance(10_000);
+  assert.equal(reloads, 1);
+});
+
+test('切换页面、新构建或关闭提示都会撤销当前倒计时', async (context) => {
+  const { href } = location;
+  const state: unknown = history.state;
+  context.after(() => history.replaceState(state, '', href));
+  let build = 'countdown-original';
+  context.mock.method(globalThis, 'fetch', async () =>
+    Response.json({}, { headers: { 'X-Capability-Hub-Web-Build': build } }),
+  );
+  await api('/api/me');
+  const { timers } = context.mock;
+  timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
+  context.mock.method(performance, 'now', () => Date.now());
+  let reloads = 0;
+  render(
+    createElement(WebUpdateNotice, {
+      onReload: () => {
+        reloads++;
+      },
+    }),
+  );
+  await startCountdown();
+  act(() => navigate('/connect', { replace: true }));
+  assert.equal(screen.queryByRole('button', { name: '取消刷新' }), null);
+
+  await startCountdown();
+  build = 'countdown-replacement';
+  await act(async () => void (await api('/api/me')));
+  assert.equal(screen.queryByRole('button', { name: '取消刷新' }), null);
+
+  await startCountdown();
+  fireEvent.click(screen.getByRole('button', { name: '关闭版本提示' }));
+  assert.equal(screen.queryByRole('region', { name: '版本更新' }), null);
+  act(() => timers.tick(10_000));
+  assert.equal(reloads, 0);
 });
