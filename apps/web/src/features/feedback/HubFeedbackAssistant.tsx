@@ -30,6 +30,8 @@ import {
   btnPrimaryStyles,
   btnStyles,
   iconBtnStyles,
+  segmentedIndicatorStyles,
+  segmentedStyles,
   subtleStyles,
   textBtnStyles,
 } from '../../shared/styles/recipes.js';
@@ -156,8 +158,8 @@ function GuestFeedback({
       <AssistantHeader onClose={onClose} />
       <div className={cn(feedbackScrollStyles, 'grid content-start gap-3 border-t border-line')}>
         <h3 className="text-section font-semibold">需要登录</h3>
-        <p className={subtleStyles}>
-          登录后可提交反馈和查看回复。如果无法登录，可以复制诊断信息，通过组织已有渠道联系管理员。
+        <p className={cn(subtleStyles, 'max-w-lg text-pretty')}>
+          登录后可提交反馈并查看回复。无法登录时，可复制诊断信息，通过组织已有渠道联系管理员。
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <a
@@ -167,9 +169,9 @@ function GuestFeedback({
               if (shouldHandleLink(event, '', false)) onClose();
             }}
           >
-            去登录 <ArrowRight size={15} aria-hidden="true" />
+            去登录 <ArrowRight size={14} aria-hidden="true" />
           </a>
-          <CopyButton text={diagnostic} label="复制诊断信息" />
+          <CopyButton text={diagnostic} label="复制诊断信息" variant="secondary" />
         </div>
       </div>
     </>
@@ -196,11 +198,11 @@ function RecentFeedback({ onNavigate, refresh }: { onNavigate: () => void; refre
           />
         )}
         {list.data?.items.length ? (
-          <ul className="divide-y divide-line rounded-[14px] border border-line bg-paper">
+          <ul className="divide-y divide-line overflow-hidden rounded-[14px] border border-line bg-paper">
             {list.data.items.map((item) => (
               <li key={item.id}>
                 <a
-                  className="flex items-center justify-between gap-4 rounded-[10px] px-4 py-3 text-body hover:bg-brand-soft"
+                  className="flex items-center justify-between gap-4 px-4 py-3 text-body hover:bg-brand-soft focus-visible:bg-brand-soft focus-visible:outline-offset-[-3px]"
                   href={myHubFeedbackHref(item.id)}
                   onClick={closeOnNavigation}
                 >
@@ -424,17 +426,35 @@ function AccountAssistant({
           isDisabled={locked}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <TabList
-            aria-label="反馈助手"
-            className="flex shrink-0 gap-5 border-b border-line bg-paper px-6 max-[600px]:px-[17px]"
-          >
-            <Tab id="new" className={feedbackTabStyles}>
-              新反馈
-            </Tab>
-            <Tab id="recent" className={feedbackTabStyles}>
-              我的反馈{unread > 0 ? ` · ${unread}` : ''}
-            </Tab>
-          </TabList>
+          <div className="shrink-0 border-b border-line bg-paper px-6 pb-3 max-[600px]:px-[17px]">
+            <TabList
+              aria-label="反馈助手"
+              className={cn(segmentedStyles, 'inline-flex max-w-full gap-1 rounded-xl p-1')}
+            >
+              <Tab
+                id="new"
+                className={({ isSelected }) =>
+                  cn(feedbackTabStyles, isSelected && segmentedIndicatorStyles)
+                }
+              >
+                新反馈
+              </Tab>
+              <Tab
+                id="recent"
+                className={({ isSelected }) =>
+                  cn(feedbackTabStyles, isSelected && segmentedIndicatorStyles)
+                }
+              >
+                我的反馈
+                {unread > 0 && (
+                  <span className="rounded-full bg-brand-soft px-1.5 text-caption tabular-nums text-brand">
+                    <span className="sr-only">未读 </span>
+                    {unread}
+                  </span>
+                )}
+              </Tab>
+            </TabList>
+          </div>
           <TabPanel id="new" className="flex min-h-0 flex-1 flex-col">
             {receipt ? (
               <div className={cn(feedbackScrollStyles, 'grid content-start gap-4')}>

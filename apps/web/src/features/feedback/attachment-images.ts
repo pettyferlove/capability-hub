@@ -71,24 +71,62 @@ export function editorImage(bitmap: ImageBitmap): HTMLCanvasElement {
   return canvas;
 }
 
+type AnnotationColors = { ink: string; paper: string; brand: string };
+const mosaicShades = [0.28, 0.16, 0.34, 0.2, 0.4, 0.25, 0.36, 0.24, 0.13];
+const mosaicPatterns = new WeakMap<
+  CanvasRenderingContext2D,
+  { cell: number; ink: string; paper: string; fill: CanvasPattern }
+>();
+
+function mosaicFill(
+  context: CanvasRenderingContext2D,
+  { ink, paper }: AnnotationColors,
+  cell: number,
+): CanvasPattern | string {
+  const cached = mosaicPatterns.get(context);
+  if (cached?.cell === cell && cached.ink === ink && cached.paper === paper) return cached.fill;
+  const tile = document.createElement('canvas');
+  tile.width = tile.height = 3 * cell;
+  // 色阶只混合主题色，图块没有透明通道，也不读取底图像素。
+  const tileContext = tile.getContext('2d', { alpha: false });
+  if (!tileContext) return ink;
+  tileContext.fillStyle = paper;
+  tileContext.fillRect(0, 0, tile.width, tile.height);
+  tileContext.fillStyle = ink;
+  for (const [index, shade] of mosaicShades.entries()) {
+    tileContext.globalAlpha = shade;
+    tileContext.fillRect((index % 3) * cell, Math.floor(index / 3) * cell, cell, cell);
+  }
+  const fill = context.createPattern(tile, 'repeat');
+  if (!fill) return ink;
+  mosaicPatterns.set(context, { cell, ink, paper, fill });
+  return fill;
+}
+
 /** 以目标画布的像素坐标栅格化同一组标注。 */
 export function drawAnnotations(
   canvas: HTMLCanvasElement,
   source: CanvasImageSource,
   annotations: readonly ImageAnnotation[],
-  colors: { ink: string; brand: string },
+  colors: AnnotationColors,
 ): void {
   const context = imageContext(canvas);
   const { width, height } = canvas;
   context.clearRect(0, 0, width, height);
   context.drawImage(source, 0, 0, width, height);
+  let maskFill: CanvasPattern | string | undefined;
   for (const { tool, start, end } of annotations) {
     const left = Math.floor(Math.min(start.x, end.x) * width);
     const top = Math.floor(Math.min(start.y, end.y) * height);
     const right = Math.ceil(Math.max(start.x, end.x) * width);
     const bottom = Math.ceil(Math.max(start.y, end.y) * height);
     if (tool === 'mask') {
-      context.fillStyle = colors.ink;
+      maskFill ??= mosaicFill(
+        context,
+        colors,
+        Math.max(3, Math.round(Math.max(width, height) / 120)),
+      );
+      context.fillStyle = maskFill;
       context.fillRect(left, top, right - left, bottom - top);
     } else {
       context.lineWidth = Math.max(2, Math.round(Math.max(width, height) / 360));
@@ -107,7 +145,7 @@ export async function encodeAttachmentImage(
   source: HTMLCanvasElement,
   name: string,
   annotations: readonly ImageAnnotation[],
-  colors: { ink: string; brand: string },
+  colors: AnnotationColors,
 ): Promise<File> {
   const canvas = annotations.length ? document.createElement('canvas') : source;
   try {

@@ -16,6 +16,11 @@ const views = [
 ] as const;
 
 type View = (typeof views)[number]['id'];
+const empty = {
+  open: { title: '没有未结束的反馈', description: '提交后的反馈及处理进展会显示在这里。' },
+  closed: { title: '没有已结束的反馈', description: '已解决或不采纳的反馈会显示在这里。' },
+  all: { title: '还没有反馈', description: '遇到 Hub 的问题，可以从「新反馈」告诉我们。' },
+} as const;
 
 export default function MyHubFeedback({ query }: { query: string }) {
   const { refresh } = useHub();
@@ -67,6 +72,7 @@ export default function MyHubFeedback({ query }: { query: string }) {
           onRetry={refreshList}
           hrefFor={myHubFeedbackHref}
           onPageChange={onPageChange}
+          empty={empty[view]}
         />
       </div>
       <HubFeedbackThread

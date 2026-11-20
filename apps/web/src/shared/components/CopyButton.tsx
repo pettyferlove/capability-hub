@@ -24,8 +24,8 @@ export function CopyButton({
   text: string;
   /** 空闲态文案，同时作为 `aria-label`；成功态固定显示「已复制」。 */
   label?: string;
-  /** `primary` 为强调按钮，`code` 为代码块内的紧凑样式，两者高度与配色不同。 */
-  variant?: 'code' | 'primary';
+  /** `secondary` 与同一行标准按钮等高；`code` 仅用于紧凑的代码或编号操作。 */
+  variant?: 'code' | 'primary' | 'secondary';
 }) {
   const [done, setDone] = useState(false);
   const [manual, setManual] = useState(false);
@@ -49,17 +49,17 @@ export function CopyButton({
         onClick={onCopy}
         aria-label={done ? '已复制' : label}
         className={
-          variant === 'primary'
+          variant === 'code'
             ? cn(
-                btnStyles,
-                btnPrimaryStyles,
-                copyInvitationStyles,
-                kfocusStyles,
-                'relative overflow-hidden',
-              )
-            : cn(
                 kfocusStyles,
                 'relative inline-flex h-8 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full bg-code-control px-3 text-xs text-[var(--code-fg)] transition-colors hover:bg-code-control-hover',
+              )
+            : cn(
+                btnStyles,
+                variant === 'primary' && btnPrimaryStyles,
+                variant === 'primary' && copyInvitationStyles,
+                kfocusStyles,
+                'relative overflow-hidden',
               )
         }
       >

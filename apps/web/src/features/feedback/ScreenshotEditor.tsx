@@ -24,6 +24,7 @@ function annotationColors(canvas: HTMLCanvasElement) {
   const theme = getComputedStyle(canvas);
   return {
     ink: theme.getPropertyValue('--ink').trim(),
+    paper: theme.getPropertyValue('--paper').trim(),
     brand: theme.getPropertyValue('--brand').trim(),
   };
 }
@@ -54,7 +55,7 @@ export function ScreenshotEditor({
   const [draft, setDraft] = useState<ImageAnnotation>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const { width, height } = fitImage(image.width, image.height, 960);
+  const { width, height } = fitImage(image.width, image.height, 1440);
 
   useEffect(() => {
     const node = canvas.current;
@@ -103,46 +104,50 @@ export function ScreenshotEditor({
   }
 
   return (
-    <Overlay open label="标注图片" variant="showcase" onClose={close}>
-      <div data-overlay-child="true" className="grid gap-3 p-4 sm:p-5">
-        <header className="min-w-0">
-          <h2 className="text-section">标注图片</h2>
-          <p className={cn(subtleStyles, 'break-all')}>{name}</p>
-        </header>
-        <div role="group" aria-label="标注工具" className="flex flex-wrap gap-2">
-          {tools.map(({ id, label }) => (
+    <Overlay open label="标注图片" variant="showcase" size="workspace" onClose={close}>
+      <div data-overlay-child="true" className="flex h-full min-w-0 flex-col gap-3 p-3 sm:p-4">
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-1 basis-40">
+            <h2 className="text-section">标注图片</h2>
+            <p className={cn(subtleStyles, 'truncate')} title={name}>
+              {name}
+            </p>
+          </div>
+          <div role="group" aria-label="标注工具" className="flex flex-wrap gap-2">
+            {tools.map(({ id, label }) => (
+              <Button
+                key={id}
+                className={cn(btnStyles, tool === id && 'border-brand bg-brand-soft text-brand')}
+                aria-pressed={tool === id}
+                isDisabled={busy}
+                onPress={() => setTool(id)}
+              >
+                {label}
+              </Button>
+            ))}
             <Button
-              key={id}
-              className={cn(btnStyles, tool === id && 'border-brand bg-brand-soft text-brand')}
-              aria-pressed={tool === id}
-              isDisabled={busy}
-              onPress={() => setTool(id)}
+              className={btnStyles}
+              isDisabled={busy || !marks.length}
+              onPress={() => setMarks((current) => current.slice(0, -1))}
             >
-              {label}
+              撤销
             </Button>
-          ))}
-          <Button
-            className={btnStyles}
-            isDisabled={busy || !marks.length}
-            onPress={() => setMarks((current) => current.slice(0, -1))}
-          >
-            撤销
-          </Button>
-          <Button
-            className={btnStyles}
-            isDisabled={busy || !marks.length}
-            onPress={() => setMarks([])}
-          >
-            重置
-          </Button>
-        </div>
-        <div className="flex justify-center overflow-hidden rounded-lg border border-line bg-page">
+            <Button
+              className={btnStyles}
+              isDisabled={busy || !marks.length}
+              onPress={() => setMarks([])}
+            >
+              重置
+            </Button>
+          </div>
+        </header>
+        <div className="flex min-h-28 flex-1 items-center justify-center overflow-hidden rounded-lg border border-line bg-page [container-type:size]">
           <canvas
             ref={canvas}
             role="img"
             aria-label="图片标注预览"
             className="block h-auto touch-none cursor-crosshair"
-            style={{ width: `min(100%, ${width}px, ${(width / height) * 50}dvh)` }}
+            style={{ width: `min(100%, ${width}px, ${(width / height) * 100}cqh)` }}
             width={width}
             height={height}
             onPointerDown={(event) => {
@@ -162,31 +167,32 @@ export function ScreenshotEditor({
             onLostPointerCapture={(event) => endPointer(event, false)}
           />
         </div>
-        <p className={subtleStyles}>选择工具后在图片上拖动。完成后，遮挡会写入图片，不能撤销。</p>
-        {busy && (
-          <p role="status" className={subtleStyles}>
-            正在保存图片…
-          </p>
-        )}
-        {error && (
-          <p ref={errorAlert} role="alert" tabIndex={-1} className="text-label text-danger">
-            {error}
-          </p>
-        )}
-        <footer className="flex flex-wrap justify-end gap-2">
-          <Button className={btnStyles} isDisabled={busy} onPress={close}>
-            取消
-          </Button>
-          <Button className={btnStyles} isDisabled={busy} onPress={() => void save([])}>
-            跳过标注
-          </Button>
-          <Button
-            className={cn(btnStyles, btnPrimaryStyles)}
-            isDisabled={busy || !marks.length}
-            onPress={() => void save(marks)}
-          >
-            完成
-          </Button>
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0 flex-1 basis-64">
+            <p className={subtleStyles}>在图片上拖动标注。遮挡会覆盖原图像素，完成后不可撤销。</p>
+            {busy && (
+              <p role="status" className={subtleStyles}>
+                正在保存图片…
+              </p>
+            )}
+            {error && (
+              <p ref={errorAlert} role="alert" tabIndex={-1} className="text-label text-danger">
+                {error}
+              </p>
+            )}
+          </div>
+          <div className="ml-auto flex flex-wrap justify-end gap-2">
+            <Button className={btnStyles} isDisabled={busy} onPress={close}>
+              取消
+            </Button>
+            <Button
+              className={cn(btnStyles, btnPrimaryStyles)}
+              isDisabled={busy}
+              onPress={() => void save(marks)}
+            >
+              {marks.length ? '完成' : '跳过标注'}
+            </Button>
+          </div>
         </footer>
       </div>
     </Overlay>

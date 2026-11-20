@@ -8,6 +8,7 @@ import type { HubFeedbackDetailResponse } from '@capability-hub/contracts/http';
 import type { ReactNode } from 'react';
 import { CopyButton } from '../../shared/components/CopyButton.js';
 import { bytesLabel } from '../../shared/format/labels.js';
+import { ChevronDown } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import { monoStyles, subtleStyles } from '../../shared/styles/recipes.js';
 import { feedbackChannels } from './HubFeedbackList.js';
@@ -20,8 +21,6 @@ const diagnosticLabels: Readonly<Record<string, string>> = {
   hub_version: 'Hub 版本',
   asset_slug: '资产标识',
   viewport: '窗口尺寸',
-  width: '宽',
-  height: '高',
   device_pixel_ratio: '像素比',
   theme: '外观模式',
   palette: '配色',
@@ -59,20 +58,25 @@ const diagnosticLabels: Readonly<Record<string, string>> = {
   message: '错误信息',
 };
 
-const fieldGrid = 'grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-label';
+const fieldGrid =
+  'grid grid-cols-[min(7rem,38%)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2 text-label';
+const nestedFieldGrid =
+  'grid grid-cols-[fit-content(40%)_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1';
 
 function EvidenceField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="text-muted-ink">{label}</dt>
-      <dd className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{children}</dd>
+      <dt className="text-muted-ink [overflow-wrap:anywhere]">{label}</dt>
+      <dd className="min-w-0 whitespace-pre-wrap tabular-nums [overflow-wrap:anywhere]">
+        {children}
+      </dd>
     </>
   );
 }
 
-function DiagnosticFieldList({ value }: { value: object }) {
+function DiagnosticFieldList({ value, nested = false }: { value: object; nested?: boolean }) {
   return (
-    <dl className={fieldGrid}>
+    <dl className={nested ? nestedFieldGrid : fieldGrid}>
       {Object.entries(value as Record<string, unknown>).map(([key, data]) => (
         <EvidenceField key={key} label={diagnosticLabels[key] ?? key}>
           <DiagnosticValue name={key} value={data} />
@@ -97,13 +101,41 @@ function DiagnosticValue({ name, value }: { name: string; value: unknown }) {
       '无'
     );
   }
-  if (typeof value === 'object' && value !== null) return <DiagnosticFieldList value={value} />;
+  if (typeof value === 'object' && value !== null) {
+    if (
+      name === 'viewport' &&
+      'width' in value &&
+      typeof value.width === 'number' &&
+      'height' in value &&
+      typeof value.height === 'number'
+    ) {
+      return `${value.width} × ${value.height} px`;
+    }
+    if (name === 'query') {
+      const entries = Object.entries(value as Record<string, string>);
+      return entries.length ? (
+        <ul className="flex flex-wrap gap-1.5">
+          {entries.map(([key, param]) => (
+            <li key={key} className="min-w-0 rounded-md border border-line bg-paper px-1.5">
+              <code className={monoStyles}>
+                <span className="text-muted-ink">{key}=</span>
+                {param}
+              </code>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        '无'
+      );
+    }
+    return <DiagnosticFieldList value={value} nested />;
+  }
   if (typeof value === 'boolean') return value ? '是' : '否';
   if (typeof value !== 'string' && typeof value !== 'number') return '—';
   if (typeof value === 'string' && (name === 'request_id' || name === 'telemetry_session_id')) {
     return (
-      <span className="flex flex-wrap items-center gap-2">
-        <code className={monoStyles}>{value}</code>
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <code className={cn(monoStyles, 'min-w-0')}>{value}</code>
         <CopyButton text={value} label={name === 'request_id' ? '复制请求编号' : '复制会话编号'} />
       </span>
     );
@@ -111,16 +143,31 @@ function DiagnosticValue({ name, value }: { name: string; value: unknown }) {
   return value;
 }
 
+function EvidenceSection({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <details className="group/evidence">
+      <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-label font-medium hover:bg-brand-soft focus-visible:outline-offset-[-3px] sm:px-4 [&::-webkit-details-marker]:hidden">
+        {label}
+        <ChevronDown
+          size={16}
+          className="shrink-0 text-muted-ink group-open/evidence:rotate-180"
+          aria-hidden="true"
+        />
+      </summary>
+      <div className="space-y-3 px-3 pb-3 pt-1 sm:px-4">{children}</div>
+    </details>
+  );
+}
+
 export function HubFeedbackEvidence({ detail }: { detail: HubFeedbackDetailResponse }) {
   const { submission, submitter, diagnostics } = detail;
   const client = submission?.client;
   const browser = [client?.browser_name, client?.browser_version].filter(Boolean).join(' ');
   return (
-    <div className="space-y-3 rounded-xl border border-line bg-page px-4 py-3">
+    <div className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-page">
       {submission && (
-        <details>
-          <summary className="cursor-pointer text-label font-medium">提交上下文</summary>
-          <dl className={cn(fieldGrid, 'mt-3')}>
+        <EvidenceSection label="提交上下文">
+          <dl className={fieldGrid}>
             <EvidenceField label="提交人">
               {submitter
                 ? `${submitter.display_name} · ${submitter.auth_provider === 'ldap' ? 'LDAP 账号' : '本地账号'}`
@@ -145,29 +192,26 @@ export function HubFeedbackEvidence({ detail }: { detail: HubFeedbackDetailRespo
               <DiagnosticValue name="request_id" value={submission.request_id} />
             </EvidenceField>
           </dl>
-        </details>
+        </EvidenceSection>
       )}
-      <details>
-        <summary className="cursor-pointer text-label font-medium">诊断信息</summary>
-        <div className="mt-3 space-y-3">
-          {diagnostics ? (
-            <DiagnosticFieldList value={diagnostics.client} />
-          ) : (
-            <p className={subtleStyles}>提交人未附上客户端诊断。</p>
-          )}
-          {submission && (
-            <p className={subtleStyles}>
-              在服务端日志中按 <code className={monoStyles}>request_id</code> 检索。
-              {detail.channel === 'web' && (
-                <>
-                  网页反馈也可按 <code className={monoStyles}>telemetry_session_id</code>{' '}
-                  查找浏览器诊断。
-                </>
-              )}
-            </p>
-          )}
-        </div>
-      </details>
+      <EvidenceSection label="诊断信息">
+        {diagnostics ? (
+          <DiagnosticFieldList value={diagnostics.client} />
+        ) : (
+          <p className={subtleStyles}>提交人未附上客户端诊断。</p>
+        )}
+        {submission && (
+          <p className={cn(subtleStyles, 'border-t border-line pt-2')}>
+            在服务端日志中按 <code className={monoStyles}>request_id</code> 检索。
+            {detail.channel === 'web' && (
+              <>
+                网页反馈也可按 <code className={monoStyles}>telemetry_session_id</code>{' '}
+                查找浏览器诊断。
+              </>
+            )}
+          </p>
+        )}
+      </EvidenceSection>
     </div>
   );
 }

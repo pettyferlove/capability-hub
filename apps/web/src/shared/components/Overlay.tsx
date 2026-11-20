@@ -38,7 +38,7 @@ export function Overlay({
   children: ReactNode;
   /** `sheet` 右侧抽屉、`palette` 顶部居中面板、`showcase` 居中展示，三者的遮罩与尺寸规则不同。 */
   variant: 'sheet' | 'palette' | 'showcase';
-  /** 只在 `sheet` 上生效：`wide` 放宽抽屉，`workspace` 在宽屏占 60vw；其余变体忽略此值。 */
+  /** `wide` 放宽抽屉；`workspace` 用于宽抽屉或占满可用高度的居中工作区。 */
   size?: 'default' | 'wide' | 'workspace';
   /** 内容切换时用它重置加载计时（如详情 slug），缺省回落到 `label`。 */
   loadingKey?: string;
@@ -127,6 +127,8 @@ export function Overlay({
                         ? cn(
                             hubShowcaseDialogStyles,
                             'pointer-events-auto w-full max-h-full overflow-y-auto',
+                            size === 'workspace' &&
+                              'h-full max-w-360 rounded-xl border border-line bg-paper shadow-[var(--shadow-floating)]',
                           )
                         : 'pointer-events-auto max-h-full w-full max-w-[620px] overflow-x-hidden overflow-y-auto rounded-[22px] border border-line bg-paper shadow-[var(--shadow-floating)]'
                     }

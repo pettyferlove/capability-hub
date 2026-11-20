@@ -11,9 +11,8 @@ export const feedbackFooterStyles =
 
 export const feedbackTabStyles = cn(
   kfocusStyles,
-  'relative cursor-pointer rounded-sm px-1 py-2.5 text-label font-medium text-muted-ink',
-  'border-b-2 border-transparent data-[selected]:border-brand data-[selected]:text-brand',
-  'data-[disabled]:cursor-default',
+  'inline-flex min-h-8.5 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 text-label font-medium whitespace-nowrap text-muted-ink',
+  'hover:text-ink data-[selected]:text-brand data-[disabled]:cursor-default data-[disabled]:opacity-50 pointer-coarse:min-h-11',
 );
 
 export const feedbackFieldStyles = 'grid min-w-0 gap-1.5 text-label font-medium';

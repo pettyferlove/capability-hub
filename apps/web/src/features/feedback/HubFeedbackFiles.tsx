@@ -125,23 +125,28 @@ function FeedbackFile({
         open={preview && available}
         label={'附件预览：' + file.name}
         variant="showcase"
+        size={image ? 'workspace' : undefined}
         onClose={() => setPreview(false)}
       >
-        <DialogTitle title={file.name} onClose={() => setPreview(false)} />
-        <div className="space-y-3 p-4 sm:p-6">
+        <div className={image ? 'flex h-full flex-col [&_h2]:min-w-0 [&_h2]:truncate' : undefined}>
+          <DialogTitle title={file.name} onClose={() => setPreview(false)} />
           {image ? (
-            imageFailed ? (
-              <p>图片无法显示，请尝试下载附件。</p>
-            ) : (
-              <img
-                src={path}
-                alt={file.name}
-                className="mx-auto max-h-[68dvh] max-w-full object-contain"
-                onError={() => setImageFailed(true)}
-              />
-            )
+            <div className="flex min-h-0 flex-1 items-center justify-center bg-page p-2 sm:p-4">
+              {imageFailed ? (
+                <p className={subtleStyles}>图片无法显示，请尝试下载附件。</p>
+              ) : (
+                <img
+                  src={path}
+                  alt={file.name}
+                  className="block size-full object-scale-down"
+                  onError={() => setImageFailed(true)}
+                />
+              )}
+            </div>
           ) : preview && available ? (
-            <TextPreview path={path} />
+            <div className="space-y-3 p-4 sm:p-6">
+              <TextPreview path={path} />
+            </div>
           ) : null}
         </div>
       </Overlay>

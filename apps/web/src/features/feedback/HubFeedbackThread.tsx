@@ -27,6 +27,7 @@ import { X } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import {
   btnDangerStyles,
+  btnPrimaryStyles,
   btnStyles,
   iconBtnStyles,
   subtleStyles,
@@ -510,7 +511,9 @@ function FeedbackThread({
           }
           footer={
             <>
-              {handler && !replyOpen && <CopyButton text={markdown} label="复制 Markdown" />}
+              {handler && !replyOpen && (
+                <CopyButton text={markdown} label="复制 Markdown" variant="secondary" />
+              )}
               {!handler && !detail.closed_at && !replyOpen && (
                 <button
                   type="button"
@@ -523,7 +526,7 @@ function FeedbackThread({
               )}
               <button
                 type="button"
-                className={btnStyles}
+                className={cn(btnStyles, !replyOpen && btnPrimaryStyles)}
                 disabled={saving}
                 aria-expanded={replyOpen}
                 onClick={() => setReplyOpen((open) => !open)}

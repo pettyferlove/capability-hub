@@ -50,7 +50,7 @@ function cli(
   } = {},
 ) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    const environment = {
+    const environment: NodeJS.ProcessEnv = {
       ...process.env,
       HOME: testHome,
       USERPROFILE: testHome,
