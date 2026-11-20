@@ -5,13 +5,18 @@ const id = z.string().min(1).max(200);
 
 /**
  * 发起 AI 执行：操作定义负责校验 `input`，`model_profile` 省略时使用默认档。
- * 审核简报可按当前审核员和申请复用已有执行。
+ * 审核简报按本人和申请复用，资源审计按本人和版本复用。
  */
 export const submitAiExecutionRequestSchema = z.union([
   z.strictObject({ operation_id: id, model_profile: id.optional(), input: json }),
   z.strictObject({
     operation_id: z.literal('publication-review'),
     input: z.strictObject({ publication_request_id: z.uuid() }),
+    reuse_existing: z.literal(true),
+  }),
+  z.strictObject({
+    operation_id: z.literal('resource-audit'),
+    input: z.strictObject({ version_id: z.uuid() }),
     reuse_existing: z.literal(true),
   }),
 ]);

@@ -172,7 +172,9 @@ export default function ReviewPage({ query = location.search }: { query?: string
               </div>
             </aside>
             <div className={reviewStageStyles}>
-              {active && <ReviewDetail key={active.id} request={active} />}
+              {active && (
+                <ReviewDetail key={active.id} request={active} autoStartBrief={!isPreviousData} />
+              )}
             </div>
           </div>
         )}

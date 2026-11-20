@@ -115,7 +115,13 @@ const reviewScopeNotices: Record<PlatformReviewReason | 'scenario' | 'team', str
  * 退回必须填审核意见，否则只聚焦意见框而不发请求。受众被放宽（`expanded`）时会额外提示。
  * 版本冲突类错误只提示刷新重核，系统不自动重试。
  */
-export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
+export function ReviewDetail({
+  request: r,
+  autoStartBrief = true,
+}: {
+  request: ReviewResponse;
+  autoStartBrief?: boolean;
+}) {
   const { reload, me } = useHub();
   const [draft, setDraft] = useState<{ comment: string; advice?: ReviewAuditAdvice }>({
       comment: '',
@@ -223,6 +229,7 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
     <PublicationReviewAssistant
       key={me?.id}
       request={r}
+      autoStart={autoStartBrief}
       decisionSlot={decisionOpen ? decisionBriefSlot : null}
       onEvidence={locateEvidence}
     />
@@ -653,6 +660,7 @@ export function ReviewDetail({ request: r }: { request: ReviewResponse }) {
                 )}
                 {r.can_audit_version && (
                   <ReviewAuditEvidence
+                    key={me?.id}
                     request={r}
                     onAdvice={receiveAdvice}
                     onEvidence={locateEvidence}

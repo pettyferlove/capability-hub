@@ -48,20 +48,29 @@ export function registerAiRoutes(app: Express, context: HttpContext) {
         'ai.execute',
         idempotencyKey(req),
         'sha256:' + digest(input),
-        async () =>
-          executionResponse(
-            reuse
+        async () => {
+          if (!reuse)
+            return executionResponse(
+              await runtime.submit(
+                principal.id,
+                input.operation_id,
+                input.input,
+                input.model_profile,
+              ),
+            );
+          return executionResponse(
+            input.operation_id === 'publication-review'
               ? await hub.ai.ensurePublicationReview(principal, input.input.publication_request_id)
-              : await runtime.submit(
-                  principal.id,
-                  input.operation_id,
-                  input.input,
-                  input.model_profile,
-                ),
-          ),
+              : await hub.ai.ensureResourceAudit(principal, input.input.version_id),
+          );
+        },
       );
-      if (input.operation_id === 'publication-review')
-        await hub.ai.principal(principal, await runtime.get(result.id), true);
+      if (reuse || input.operation_id === 'publication-review')
+        await hub.ai.principal(
+          principal,
+          await runtime.get(result.id),
+          input.operation_id === 'publication-review',
+        );
       res.status(reuse ? 200 : 201);
       return withRevision(res, result);
     }),

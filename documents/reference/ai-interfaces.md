@@ -8,7 +8,7 @@
 | GET `/api/admin/operations/agents/executions?limit=30&cursor=…`   | 按 `status`、`operation_id`、`q` 跨用户检索可读执行，倒序分页；`view=summary` 返回概要     |
 | GET `/api/admin/operations/agents/executions/:id/diagnostics`     | 单次执行的诊断快照。可用 `download=json` 或 `download=markdown` 下载                       |
 | GET `/api/ai/model-options`                                       | 业务面板的模型选项，需 `ai:execute`。仅返回默认模型档案 ID 及各档案的 ID、标签             |
-| POST `/api/ai/executions`                                         | `{operation_id, model_profile?, input}` → 201 执行 DTO、ETag；简报可[复用](#业务任务)      |
+| POST `/api/ai/executions`                                         | `{operation_id, model_profile?, input}` → 201 执行 DTO、ETag；支持[复用](#业务任务)        |
 | GET `/api/ai/executions`                                          | 业务历史，须提供 `version_id`、`feedback_id` 或 `publication_request_id`，否则返回 422     |
 | GET `/api/ai/executions/:id`                                      | `{execution, interactions, artifacts, activity, activity_truncated, watermark}`、执行 ETag |
 | POST `/api/ai/executions/:id/cancel`                              | `{}`、`If-Match: "<执行 revision>"` → 更新后的执行                                         |
@@ -23,7 +23,7 @@
 
 ## 业务任务
 
-`resource-audit` 输入 `{version_id}`，`feedback-triage` 输入 `{version_id, feedback_id}`，`publication-review` 输入 `{publication_request_id}`。仅审核简报可在请求外层传 `reuse_existing: true`（不指定模型），原子复用本人对同一申请的最近任务，不论状态；没有任务才入队，返回 200 和执行 DTO、ETag。
+`resource-audit` 输入 `{version_id}`，`feedback-triage` 输入 `{version_id, feedback_id}`，`publication-review` 输入 `{publication_request_id}`。审计和简报可在请求外层传 `reuse_existing: true`（不指定模型），分别按本人和版本、本人和申请原子复用最近任务，不论状态；无任务才入队，返回 200、执行 DTO 和 ETag。
 
 业务历史只分页本人任务；空页仍可有 `next_cursor`。反馈首页额外返回可读的 `automatic_triage`（含 `owner_display_name`）。权限见 [业务 Agent](../design/business-agents.md)。
 

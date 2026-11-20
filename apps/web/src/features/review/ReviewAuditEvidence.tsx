@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useIsPresent } from 'motion/react';
 import {
   aiExecutionListResponseSchema,
   aiExecutionResponseSchema,
@@ -90,6 +91,8 @@ export function ReviewAuditEvidence({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [responded, setResponded] = useState('');
+  const autoAttempted = useRef(false);
+  const present = useIsPresent();
   const command = useAiCommand();
   const models = useQuery<AiModelOptionsResponse>('/api/ai/model-options', refresh + hubRefresh);
   const latest =
@@ -141,8 +144,9 @@ export function ReviewAuditEvidence({
       onAdvice({ executionId: adviceId, text: adviceText, acceptedAt });
   }, [adviceId, adviceText, acceptedAt, execution.error, onAdvice]);
 
+  const canStart = !busy && !active && record !== undefined && !!models.data?.profiles.length;
   const start = async () => {
-    if (busy || active || record === undefined || !models.data?.profiles.length) return;
+    if (!canStart) return;
     setBusy(true);
     setError('');
     try {
@@ -150,6 +154,7 @@ export function ReviewAuditEvidence({
         await command('/api/ai/executions', {
           operation_id: 'resource-audit',
           input: { version_id: versionId },
+          ...(record === null && { reuse_existing: true }),
         }),
       );
       setRecord(latest);
@@ -161,6 +166,15 @@ export function ReviewAuditEvidence({
       setBusy(false);
     }
   };
+  const startFirstAudit = useEffectEvent(() => {
+    void start();
+  });
+  const canAutoStart = present && record === null && canStart && !models.loading && !models.error;
+  useEffect(() => {
+    if (!canAutoStart || autoAttempted.current) return;
+    autoAttempted.current = true;
+    startFirstAudit();
+  }, [canAutoStart]);
   const respond = async (approved: boolean) => {
     if (!pending || !task || !report || busy || responded === pending.id) return;
     setBusy(true);
@@ -202,7 +216,7 @@ export function ReviewAuditEvidence({
           <button
             type="button"
             className="group/audit-retry inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-line bg-paper px-2.5 text-label font-medium whitespace-nowrap text-brand hover:border-brand/40 hover:bg-brand-soft disabled:opacity-50"
-            disabled={busy || record === undefined || !models.data?.profiles.length}
+            disabled={!canStart}
             onClick={() => void start()}
           >
             <RefreshCw

@@ -1273,10 +1273,6 @@ test('审核底栏只给出一项可定位的核对建议，基线变化和历�
       }),
     );
   const page = render(panel(true));
-  const start = screen.getByRole<HTMLButtonElement>('button', { name: '生成审核简报' });
-  await waitFor(() => assert(!start.disabled));
-  assert.equal(started, false);
-  fireEvent.click(start);
   assert(await screen.findByText('需要关注'));
   assert(screen.getByText('明确错误反馈'));
   assert.equal(screen.queryByText('这是次要建议'), null);
@@ -1497,46 +1493,76 @@ test('待审页按身份展示工具，版本审计只出现在独立审核员�
   await within(drawer).findByText('尚无报告');
 });
 
-test('打开审核决定才自动生成首份简报，失败后重开不再自动提交', async (t) => {
+test('查看待审申请先生成简报，打开决定抽屉才审计，重新打开不重跑失败任务', async (t) => {
   const f = await createTestHub(t);
   const request = await submitPublication(f, await receiveSkill(f));
   const review = await f.hub.publicationQueries.getReview(f.reviewer, request.id);
-  const input = { publication_request_id: request.id };
-  const failed = executionView({
+  const brief = executionView({
     owner_id: f.reviewer.id,
     operation_id: 'publication-review',
     status: 'failed',
-    input,
+    input: { publication_request_id: request.id },
     error: { code: 'AI_PROVIDER_FAILED', message: '模型暂不可用', retryable: false },
   }).execution;
-  const writes: { path: string; body: unknown }[] = [];
+  const audit = executionView({
+    id: 'audit',
+    owner_id: f.reviewer.id,
+    operation_id: 'resource-audit',
+    status: 'failed',
+    input: { version_id: review.version_id },
+    error: { code: 'AI_PROVIDER_FAILED', message: '审计执行失败', retryable: false },
+  });
+  const writes: { path: string; body: { operation_id: string } }[] = [];
+  let auditStarted = false;
   t.mock.method(globalThis, 'fetch', async (path: string, init?: RequestInit) => {
     if (init?.method === 'POST') {
-      writes.push({ path, body: JSON.parse(String(init.body)) as unknown });
-      return Response.json(failed);
+      const body = JSON.parse(String(init.body)) as { operation_id: string };
+      writes.push({ path, body });
+      if (body.operation_id === 'publication-review') return Response.json(brief);
+      assert.equal(body.operation_id, 'resource-audit');
+      auditStarted = true;
+      return Response.json(audit.execution);
     }
     if (path === '/api/ai/model-options')
       return Response.json({
         default_profile: 'primary',
         profiles: [{ id: 'primary', label: '模型' }],
       });
-    if (path.startsWith('/api/ai/executions?'))
-      return Response.json({ items: [], next_cursor: null });
+    if (path.startsWith('/api/ai/executions?')) {
+      const query = new URL(path, 'http://localhost').searchParams;
+      return Response.json({
+        items:
+          auditStarted && query.get('version_id') === review.version_id ? [audit.execution] : [],
+        next_cursor: null,
+      });
+    }
+    if (path === '/api/ai/executions/audit/events')
+      return new Response(
+        'event: stream.snapshot\ndata: ' + JSON.stringify({ schema_version: 1, ...audit }) + '\n\n',
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    if (path === '/api/ai/executions/audit') return Response.json(audit);
     assert(path.startsWith('/api/management/versions/'));
     return new Response('审核证据');
   });
   const user = userEvent.setup();
   render(withHub(createElement(ReviewDetail, { request: review }), f.reviewer.id));
-  await waitFor(() => {
-    const button = screen.getByRole<HTMLButtonElement>('button', { name: '生成审核简报' });
-    assert(!button.disabled);
-  });
-  assert.deepEqual(writes, []);
+  await screen.findByRole('button', { name: '重试研判' });
+  assert.equal(screen.queryByRole('dialog'), null);
+  const briefWrite = {
+    path: '/api/ai/executions',
+    body: {
+      operation_id: 'publication-review',
+      input: { publication_request_id: request.id },
+      reuse_existing: true,
+    },
+  };
+  assert.deepEqual(writes, [briefWrite]);
 
   await user.click(screen.getAllByRole('button', { name: '审核决定' })[0]);
   const dialog = within(await screen.findByRole('dialog', { name: '记录审核决定' }));
   await dialog.findByRole('button', { name: '重试研判' });
-  assert(dialog.getByRole('button', { name: '发起审计' }));
+  await dialog.findByRole('button', { name: '重新审计' });
   assert(dialog.getByRole<HTMLButtonElement>('button', { name: '通过并发布' }).disabled);
 
   await user.click(dialog.getByRole('button', { name: '关闭审核决定' }));
@@ -1544,10 +1570,16 @@ test('打开审核决定才自动生成首份简报，失败后重开不再自�
   await user.click(screen.getAllByRole('button', { name: '审核决定' })[0]);
   const reopened = within(await screen.findByRole('dialog', { name: '记录审核决定' }));
   await reopened.findByRole('button', { name: '重试研判' });
+  await reopened.findByRole('button', { name: '重新审计' });
   assert.deepEqual(writes, [
+    briefWrite,
     {
       path: '/api/ai/executions',
-      body: { operation_id: 'publication-review', input, reuse_existing: true },
+      body: {
+        operation_id: 'resource-audit',
+        input: { version_id: review.version_id },
+        reuse_existing: true,
+      },
     },
   ]);
 });
@@ -1586,6 +1618,12 @@ test('采纳版本审计自动填空白意见，手写草稿由人追加，告�
     return view;
   };
   let view = pendingView();
+  const brief = executionView({
+    owner_id: f.reviewer.id,
+    operation_id: 'publication-review',
+    status: 'cancelled',
+    input: { publication_request_id: review.id },
+  }).execution;
   let decision: { comment: string; decision: string; accepted_warnings: unknown[] } | undefined;
   t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
     if (path === '/api/ai/model-options')
@@ -1596,7 +1634,7 @@ test('采纳版本审计自动填空白意见，手写草稿由人追加，告�
     if (path.startsWith('/api/ai/executions?')) {
       const query = new URL(path, 'http://localhost').searchParams;
       return Response.json({
-        items: query.get('version_id') === review.version_id ? [view.execution] : [],
+        items: query.get('version_id') === review.version_id ? [view.execution] : [brief],
         next_cursor: null,
       });
     }

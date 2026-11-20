@@ -268,10 +268,7 @@ test('审核详情可重复定位 Skill 文件，未声明不推断无需认证'
   review.diff.push({ ...otherFile, status: 'added' });
   context.mock.method(globalThis, 'fetch', async (path: string) => {
     if (path === '/api/ai/model-options')
-      return Response.json({
-        default_profile: 'primary',
-        profiles: [{ id: 'primary', label: '模型' }],
-      });
+      return Response.json({ default_profile: '', profiles: [] });
     if (path.startsWith('/api/ai/executions?'))
       return Response.json({ items: [], next_cursor: null });
     assert(path.startsWith('/api/management/versions/'));
@@ -279,10 +276,6 @@ test('审核详情可重复定位 Skill 文件，未声明不推断无需认证'
   });
   const user = userEvent.setup();
   const view = render(page(createElement(ReviewDetail, { request: review })));
-  const generate = within(
-    screen.getByRole('region', { name: '发布审核助手' }),
-  ).getByRole<HTMLButtonElement>('button', { name: '生成审核简报' });
-  await waitFor(() => assert(!generate.disabled));
   const usage = screen.getByRole('region', { name: '认证与使用要求' });
   assert(within(usage).getByText('需 API Key'));
   assert.match(usage.textContent ?? '', /不代表没有登录、OAuth/);

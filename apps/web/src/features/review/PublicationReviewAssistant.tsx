@@ -117,10 +117,12 @@ async function loadTask(requestId: string, ownerId: string, signal: AbortSignal)
 /** 底栏与决定抽屉共用简报进度，最终决定仍由审核员提交。 */
 export function PublicationReviewAssistant({
   request,
+  autoStart = true,
   decisionSlot,
   onEvidence,
 }: {
   request: Pick<ReviewResponse, 'id' | 'revision' | 'policy_digest' | 'can_decide'>;
+  autoStart?: boolean;
   decisionSlot?: HTMLDivElement | null;
   onEvidence: (path: string, start: number, end: number) => void;
 }) {
@@ -212,15 +214,16 @@ export function PublicationReviewAssistant({
       setBusy(false);
     }
   };
-  const startOnOpen = useEffectEvent(() => {
+  const startFirstBrief = useEffectEvent(() => {
     void update();
   });
-  const canAutoStart = record === null && canStart && !busy && !models.loading && !models.error;
+  const canAutoStart =
+    autoStart && record === null && canStart && !busy && !models.loading && !models.error;
   useEffect(() => {
-    if (!decisionSlot || !canAutoStart || autoAttempted.current) return;
+    if (!canAutoStart || autoAttempted.current) return;
     autoAttempted.current = true;
-    startOnOpen();
-  }, [decisionSlot, canAutoStart]);
+    startFirstBrief();
+  }, [canAutoStart]);
 
   if (!request.can_decide && !task && !readError) return null;
   const signal = reviewBriefSignal(request, task, view);

@@ -1527,6 +1527,42 @@ test('首份审核简报跨请求并发复用同一任务，历史不重跑且�
   assert.equal((await start(reviewer, next.id).expect(200)).body.id, manual.id);
 });
 
+test('首份版本审计在并发打开时按审核员和版本复用，取消后只允许手动重跑', async (t) => {
+  const f = await createTestHub(t, { ai: frameworkConfig('http://127.0.0.1:1/v1') });
+  const intake = await receiveSkill(f);
+  await submitPublication(f, intake);
+  const reviewer = await signIn(f, f.reviewer.username);
+  const start = (client: typeof reviewer, reuse = true) =>
+    client
+      .post('/api/ai/executions')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        operation_id: 'resource-audit',
+        input: { version_id: intake.version_id },
+        ...(reuse && { reuse_existing: true }),
+      });
+  await start(await signIn(f)).expect(409);
+  await start(await signIn(f, f.reader.username)).expect(403);
+  const [first, concurrent] = await Promise.all([
+    start(reviewer).expect(200),
+    start(reviewer).expect(200),
+  ]);
+  assert.equal(first.body.owner_id, f.reviewer.id);
+  assert.equal(first.body.status, 'queued');
+  assert.equal(concurrent.body.id, first.body.id);
+
+  await reviewer
+    .post(`/api/ai/executions/${first.body.id}/cancel`)
+    .set('Idempotency-Key', randomUUID())
+    .set('If-Match', first.headers.etag)
+    .send({})
+    .expect(200);
+  const stopped = (await start(reviewer).expect(200)).body;
+  assert.equal(stopped.id, first.body.id);
+  assert.equal(stopped.status, 'cancelled');
+  assert.notEqual((await start(reviewer, false).expect(201)).body.id, stopped.id);
+});
+
 test('审核助手要求独立审核及目标范围的 AI 权限，撤权后简报、事件与提交重放均受限', async (t) => {
   const f = await createTestHub(t, { ai: frameworkConfig('http://127.0.0.1:1/v1') });
   const intake = await receiveSkill(f);

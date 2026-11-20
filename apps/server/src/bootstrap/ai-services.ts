@@ -246,33 +246,65 @@ export class HubAiServices {
     // 查找与入队共享写事务，避免并发打开时创建多份首报。
     return this.runtime.store.tx(async () => {
       await this.publications.requireAgentAccess(principal, requestId, 'execute');
-      let after: { position: number; id: string } | undefined;
-      for (;;) {
-        const rows = await this.runtime.store.list('ai_executions', {
-          owner_id: principal.id,
-          lookup_key: 'publication-review',
-          descending: true,
-          after,
-          limit: 100,
-        });
-        const existing = rows.find(({ payload }) => {
-          const input = payload.input;
-          return (
-            input &&
-            typeof input === 'object' &&
-            !Array.isArray(input) &&
-            input.publication_request_id === requestId
-          );
-        });
-        if (existing) return existing;
-        if (rows.length < 100) break;
-        const last = rows[rows.length - 1];
-        after = { position: last.position, id: last.id };
-      }
-      return this.runtime.submit(principal.id, 'publication-review', {
-        publication_request_id: requestId,
-      });
+      const existing = await this.latestOwnedExecution(
+        principal.id,
+        'publication-review',
+        'publication_request_id',
+        requestId,
+      );
+      return (
+        existing ??
+        this.runtime.submit(principal.id, 'publication-review', {
+          publication_request_id: requestId,
+        })
+      );
     });
+  }
+
+  async ensureResourceAudit(principal: Principal, versionId: string) {
+    return this.runtime.store.tx(async () => {
+      const existing = await this.latestOwnedExecution(
+        principal.id,
+        'resource-audit',
+        'version_id',
+        versionId,
+      );
+      if (!existing)
+        return this.runtime.submit(principal.id, 'resource-audit', { version_id: versionId });
+      try {
+        await this.recheckResources(principal, existing, 'audit-write');
+      } catch (error) {
+        if (error instanceof HubError)
+          throw new AiError('AI_FORBIDDEN', '执行引用的业务资源不可访问');
+        throw error;
+      }
+      return existing;
+    });
+  }
+
+  private async latestOwnedExecution(
+    ownerId: string,
+    operation: 'publication-review' | 'resource-audit',
+    key: 'publication_request_id' | 'version_id',
+    id: string,
+  ) {
+    let after: { position: number; id: string } | undefined;
+    for (;;) {
+      const rows = await this.runtime.store.list('ai_executions', {
+        owner_id: ownerId,
+        lookup_key: operation,
+        descending: true,
+        after,
+        limit: 100,
+      });
+      const existing = rows.find(({ payload: { input } }) => {
+        return input && typeof input === 'object' && !Array.isArray(input) && input[key] === id;
+      });
+      if (existing) return existing;
+      if (rows.length < 100) return;
+      const last = rows[rows.length - 1];
+      after = { position: last.position, id: last.id };
+    }
   }
 
   private async hasPendingSubmission(ownerId: string, versionId: string) {
