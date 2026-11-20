@@ -7,7 +7,7 @@ export interface CliCompatibility {
 
 /** 推荐值与 CLI 包版本一起维护；部署前该版本必须已发布。 */
 export const cliCompatibility: Readonly<CliCompatibility> = {
-  recommended: '0.3.0',
+  recommended: '0.4.0',
   minimum: '0.2.0',
   minimum_reason: '使用一次性票据安装 Skill 需要 add --ticket',
 };
