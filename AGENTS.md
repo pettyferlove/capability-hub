@@ -232,7 +232,7 @@ relax package boundaries, RBAC, concurrency, persistence, or test rules.
 
 ## Runtime/Tooling Preferences
 
-- Node `>=24.22.0` and pnpm `>=10.33.0 <11` (`engines`); `.nvmrc` selects 24.x. Dockerfile pins
+- Node `>=24.22.0` and pnpm `>=10.33.0` (`engines`); `.nvmrc` selects 24.x. Dockerfile pins
   Node 24.22.1 and pnpm 10.33.0; `preinstall` rejects other package managers
   (`scripts/setup/require-pnpm.mjs`).
 - The published CLI runs on Node `>=22.12.0` and bundles for `node22`; the workspace pin is unchanged.

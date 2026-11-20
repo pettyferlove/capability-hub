@@ -2,7 +2,7 @@
 
 ## 环境与命令
 
-Node `>=24.22.0`、pnpm `>=10.33.0 <11`，兼容范围由 engines 限定；.nvmrc 选择 24.x。依赖使用锁文件安装，公共版本集中在 pnpm-workspace.yaml catalog，包间为 workspace:*。
+Node `>=24.22.0`、pnpm `>=10.33.0`，兼容范围由 engines 限定；.nvmrc 选择 24.x。依赖使用锁文件安装，公共版本集中在 pnpm-workspace.yaml catalog，包间为 workspace:*。
 
 `pnpm check` 依次执行架构、文档链接、typed ESLint、Prettier/SQL 格式、类型、编译构建和默认测试。`pnpm build` 编译 Node packages/apps、Web 及运维脚本；生产入口在 dist，开发显式使用 development 条件及 tsx。
 
