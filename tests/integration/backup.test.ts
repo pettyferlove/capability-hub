@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { readFile, unlink, utimes, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+import type {
+  HubFeedbackAttachmentRecord,
+  HubFeedbackEventRecord,
+  HubFeedbackRecord,
+} from '@capability-hub/domain/models';
 import {
   snapshotStore,
   parseSnapshot,
@@ -12,9 +21,109 @@ import {
   publishSkill,
   receiveSkill,
   submitPublication,
+  type TestHub,
 } from '../support/application.js';
 import { createSqliteStore } from '../support/store.js';
 import { assertFrozenEvidence } from '../support/evidence.js';
+
+const execute = promisify(execFile);
+
+function runOperation(
+  operation: 'backup' | 'restore-import' | 'restore-check' | 'maintenance',
+  dataDir: string,
+  ...args: string[]
+) {
+  return execute(
+    process.execPath,
+    ['--conditions=development', '--import', 'tsx', `scripts/operations/${operation}.ts`, ...args],
+    {
+      env: {
+        CAPABILITY_HUB_DATA_DIR: dataDir,
+        CAPABILITY_HUB_INSTANCE_SECRET: 'ab'.repeat(32),
+        CAPABILITY_HUB_LOG_LEVEL: 'silent',
+      },
+    },
+  );
+}
+
+async function addFeedbackAttachment(
+  fixture: TestHub,
+  number: number,
+  closedAt: string | null = null,
+) {
+  const createdAt = '2024-01-01T00:00:00.000Z';
+  const bytes = Buffer.from(`反馈附件 ${number}\n`);
+  const feedback: HubFeedbackRecord = {
+    id: randomUUID(),
+    number,
+    submitted_by: fixture.reader.id,
+    channel: 'web',
+    kind: 'bug',
+    surface: 'web',
+    area: null,
+    title: '反馈标题',
+    description: '反馈正文',
+    steps: '',
+    expected: '',
+    blocking: false,
+    status: closedAt ? 'resolved' : 'pending',
+    decline_reason: null,
+    duplicate_of_id: null,
+    assignee_id: null,
+    diagnostics: null,
+    submission: {},
+    description_redacted_at: null,
+    created_at: createdAt,
+    updated_at: closedAt ?? createdAt,
+    closed_at: closedAt,
+    last_activity_at: closedAt ?? createdAt,
+    last_submitter_activity_at: createdAt,
+    last_handler_public_at: closedAt,
+    submitter_seen_at: createdAt,
+    revision: 2,
+  };
+  const hash = await fixture.blobs.put(bytes);
+  const eventId = randomUUID();
+  const attachment: HubFeedbackAttachmentRecord = {
+    id: randomUUID(),
+    feedback_id: feedback.id,
+    event_id: eventId,
+    uploaded_by: fixture.reader.id,
+    kind: 'text',
+    media_type: 'text/plain',
+    name: '详情.txt',
+    size: bytes.length,
+    width: null,
+    height: null,
+    sha256: hash,
+    created_at: createdAt,
+    removed_at: null,
+    removed_by: null,
+    removal_reason: null,
+  };
+  const event: HubFeedbackEventRecord = {
+    id: eventId,
+    feedback_id: feedback.id,
+    sequence: 1,
+    actor_id: fixture.reader.id,
+    actor_role: 'submitter',
+    kind: 'comment',
+    visibility: 'public',
+    body: '补充详情',
+    status_from: null,
+    status_to: null,
+    decline_reason: null,
+    attachment_ids: [attachment.id],
+    redacted_at: null,
+    created_at: createdAt,
+  };
+  await fixture.store.tx(async () => {
+    await fixture.store.insert('hub_feedback', feedback);
+    await fixture.store.insert('hub_feedback_events', event);
+    await fixture.store.insert('hub_feedback_attachments', attachment);
+  });
+  return { feedback, event, attachment, bytes, hash };
+}
 
 test('扫描与冻结申请不能被删除或替换，审核完成后的决定也不能重写', async (context) => {
   const fixture = await createTestHub(context);
@@ -69,6 +178,78 @@ test('备份完整发布图后可恢复到空数据库，审计与固定内容�
   for (const reference of references) assert(await fixture.blobs.exists(reference));
   await assert.rejects(() => restoreStore(restored, snapshot), /必须为空/);
   assert.deepEqual(await snapshotStore(restored), snapshot);
+});
+
+test('反馈附件随备份复制和恢复，恢复检查拒绝损坏或缺失的对象', async (context) => {
+  const fixture = await createTestHub(context);
+  const { feedback, event, attachment, bytes, hash } = await addFeedbackAttachment(fixture, 1);
+  const backupPath = join(fixture.directory, 'backup');
+  const { directory, store } = await createSqliteStore(context);
+
+  await runOperation('backup', fixture.directory, backupPath);
+  assert.deepEqual(await readFile(join(backupPath, 'blobs', hash)), bytes);
+  await runOperation('restore-import', directory, backupPath);
+  assert.deepEqual(await store.get('hub_feedback', feedback.id), feedback);
+  assert.deepEqual(await store.get('hub_feedback_events', event.id), event);
+  assert.deepEqual(await store.get('hub_feedback_attachments', attachment.id), attachment);
+  const restoredBlob = join(directory, 'blobs', hash);
+  assert.deepEqual(await readFile(restoredBlob), bytes);
+  await runOperation('restore-check', directory);
+
+  const error = {
+    code: 1,
+    stderr: `hub_feedback ${feedback.id}: attachment ${attachment.id} missing or corrupt\n`,
+  };
+  await writeFile(restoredBlob, '损坏的内容');
+  await assert.rejects(() => runOperation('restore-check', directory), error);
+  await unlink(restoredBlob);
+  await assert.rejects(() => runOperation('restore-check', directory), error);
+});
+
+test('维护先解除过期反馈附件引用，再回收无引用的旧对象', async (context) => {
+  const fixture = await createTestHub(context);
+  const old = '2024-01-02T00:00:00.000Z';
+  const recent = new Date().toISOString();
+  const expired = await addFeedbackAttachment(fixture, 1, old);
+  const open = await addFeedbackAttachment(fixture, 2);
+  const closedRecently = await addFeedbackAttachment(fixture, 3, recent);
+  const freshBlob = await addFeedbackAttachment(fixture, 4, old);
+  for (const { hash } of [expired, open, closedRecently])
+    await utimes(join(fixture.directory, 'blobs', hash), new Date(old), new Date(old));
+
+  await runOperation('maintenance', fixture.directory, '--collect-blobs');
+  for (const { attachment, feedback } of [expired, freshBlob]) {
+    const updatedAttachment = await fixture.store.get('hub_feedback_attachments', attachment.id);
+    assert(updatedAttachment?.removed_at);
+    assert.deepEqual(updatedAttachment, {
+      ...attachment,
+      sha256: null,
+      removed_at: updatedAttachment.removed_at,
+      removed_by: null,
+      removal_reason: 'retention',
+    });
+    assert.deepEqual(await fixture.store.get('hub_feedback', feedback.id), {
+      ...feedback,
+      revision: feedback.revision + 1,
+      updated_at: updatedAttachment.removed_at,
+    });
+    const audited = (await fixture.store.all('audit')).filter(
+      (row) => row.action === 'hub_feedback.attachment_removed' && row.entity_id === feedback.id,
+    );
+    assert.equal(audited.length, 1);
+    assert.equal(audited[0].actor_id, 'system');
+    assert.deepEqual(audited[0].metadata, { attachment_id: attachment.id, reason: 'retention' });
+  }
+  assert.equal(await fixture.blobs.exists(expired.hash), false);
+  for (const { attachment, hash } of [open, closedRecently]) {
+    assert.deepEqual(
+      await fixture.store.get('hub_feedback_attachments', attachment.id),
+      attachment,
+    );
+    assert.equal(await fixture.blobs.exists(hash), true);
+  }
+  assert.equal(await fixture.blobs.exists(freshBlob.hash), true);
+  await runOperation('restore-check', fixture.directory);
 });
 
 test('快照拒绝缺失字段、无效内容引用、重复记录和未知表，损坏关联恢复全部回滚', async (context) => {

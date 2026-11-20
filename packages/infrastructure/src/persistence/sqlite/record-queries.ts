@@ -1,11 +1,29 @@
-import type { ReadyJobsQuery, ScenarioReferenceCounts } from '@capability-hub/application/ports';
+import type {
+  HubFeedbackRecordQuery,
+  ReadyJobsQuery,
+  ScenarioReferenceCounts,
+} from '@capability-hub/application/ports';
 import {
   parseRecord,
   type GitSourceRecord,
   type RecordMap,
   type TableName,
 } from '@capability-hub/domain/models';
-import { and, count, eq, gt, inArray, lte, not, or, sql } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  not,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { RecordQueries } from '../record-driver.js';
 import { resourceActivityQuery } from '../resource-activity-query.js';
@@ -14,6 +32,9 @@ import { sqliteRevision, type sqliteSchema, sqliteTableFor } from './record-sche
 import {
   audit,
   bindings,
+  hub_feedback,
+  hub_feedback_attachments,
+  hub_feedback_events,
   jobs,
   releases,
   requests,
@@ -21,6 +42,10 @@ import {
   scenarios,
   sources,
 } from './schema.js';
+
+const feedbackOpen = isNull(hub_feedback.closed_at);
+const feedbackClosed = isNotNull(hub_feedback.closed_at);
+const feedbackAwaiting = sql`${hub_feedback.awaiting_reply} = true`;
 
 type Session = Pick<
   SqliteRemoteDatabase<typeof sqliteSchema>,
@@ -151,6 +176,171 @@ export class SqliteQueries implements RecordQueries {
       .from(scenarios)
       .where(eq(scenarios.id, id));
     return references;
+  }
+  async findHubFeedback(ref: string | number, submittedBy?: string) {
+    const t = hub_feedback;
+    const [row] = await this.db
+      .select({ data: t.data })
+      .from(t)
+      .where(
+        and(
+          typeof ref === 'number' ? eq(t.number, ref) : eq(t.id, ref),
+          submittedBy === undefined ? undefined : eq(t.submitted_by, submittedBy),
+        ),
+      )
+      .limit(1);
+    return row && parseRecord('hub_feedback', row.data);
+  }
+  async listHubFeedback(query: HubFeedbackRecordQuery) {
+    const t = hub_feedback;
+    const { status, submittedBy, kind, surface, area, channel, assignee, awaiting, q } = query;
+    const filters = and(
+      submittedBy === undefined ? undefined : eq(t.submitted_by, submittedBy),
+      status === 'all'
+        ? undefined
+        : status === 'open'
+          ? feedbackOpen
+          : status === 'closed'
+            ? feedbackClosed
+            : eq(t.status, status),
+      kind === undefined ? undefined : eq(t.kind, kind),
+      surface === undefined ? undefined : eq(t.surface, surface),
+      area === undefined ? undefined : eq(t.area, area),
+      channel === undefined ? undefined : eq(t.channel, channel),
+      assignee === null
+        ? isNull(t.assignee_id)
+        : assignee === undefined
+          ? undefined
+          : eq(t.assignee_id, assignee),
+      awaiting === undefined ? undefined : awaiting ? feedbackAwaiting : not(feedbackAwaiting),
+      q
+        ? or(
+            sql`instr(lower(${t.data} ->> 'title'), lower(${q})) > 0`,
+            sql`instr(lower(${t.data} ->> 'description'), lower(${q})) > 0`,
+          )
+        : undefined,
+    );
+    const order = [desc(t.last_activity_at), desc(t.number)];
+    if (submittedBy === undefined) order.unshift(desc(t.blocking));
+    const [total] = await this.db.select({ value: count() }).from(t).where(filters);
+    const rows = await this.db
+      .select({ data: t.data })
+      .from(t)
+      .where(filters)
+      .orderBy(...order)
+      .limit(query.limit)
+      .offset((query.page - 1) * query.limit);
+    return { items: rows.map(({ data }) => parseRecord('hub_feedback', data)), total: total.value };
+  }
+  async summarizeHubFeedbackForSubmitter(submittedBy: string) {
+    const t = hub_feedback;
+    const [summary] = await this.db
+      .select({
+        unread:
+          sql`count(*) filter (where ${t.last_handler_public_at} > ${t.submitter_seen_at})`.mapWith(
+            Number,
+          ),
+        open: sql`count(*) filter (where ${feedbackOpen})`.mapWith(Number),
+      })
+      .from(t)
+      .where(eq(t.submitted_by, submittedBy));
+    return summary;
+  }
+  async summarizeHubFeedbackForHandler(assigneeId: string) {
+    const t = hub_feedback;
+    const [summary] = await this.db
+      .select({
+        pending: sql`count(*) filter (where ${eq(t.status, 'pending')})`.mapWith(Number),
+        awaiting_reply: sql`count(*) filter (where ${feedbackAwaiting})`.mapWith(Number),
+        assigned_to_me:
+          sql`count(*) filter (where ${feedbackOpen} and ${eq(t.assignee_id, assigneeId)})`.mapWith(
+            Number,
+          ),
+      })
+      .from(t);
+    return summary;
+  }
+  async listHubFeedbackEvents(feedbackId: string, publicOnly: boolean) {
+    const t = hub_feedback_events;
+    const rows = await this.db
+      .select({ data: t.data })
+      .from(t)
+      .where(
+        and(eq(t.feedback_id, feedbackId), publicOnly ? eq(t.visibility, 'public') : undefined),
+      )
+      .orderBy(t.sequence);
+    return rows.map(({ data }) => parseRecord('hub_feedback_events', data));
+  }
+  async listHubFeedbackAttachments(feedbackId: string, publicOnly: boolean) {
+    const t = hub_feedback_attachments;
+    const event = hub_feedback_events;
+    const select = this.db.select({ data: t.data }).from(t);
+    const rows = publicOnly
+      ? await select
+          .leftJoin(event, and(eq(t.event_id, event.id), eq(t.feedback_id, event.feedback_id)))
+          .where(
+            and(
+              eq(t.feedback_id, feedbackId),
+              or(isNull(t.event_id), eq(event.visibility, 'public')),
+            ),
+          )
+          .orderBy(t.created_at, t.id)
+      : await select.where(eq(t.feedback_id, feedbackId)).orderBy(t.created_at, t.id);
+    return rows.map(({ data }) => parseRecord('hub_feedback_attachments', data));
+  }
+  async nextHubFeedbackNumber() {
+    const t = hub_feedback;
+    const [row] = await this.db
+      .select({ number: t.number })
+      .from(t)
+      .orderBy(desc(t.number))
+      .limit(1);
+    return (row?.number ?? 0) + 1;
+  }
+  async nextHubFeedbackEventSequence(feedbackId: string) {
+    const t = hub_feedback_events;
+    const [row] = await this.db
+      .select({ sequence: t.sequence })
+      .from(t)
+      .where(eq(t.feedback_id, feedbackId))
+      .orderBy(desc(t.sequence))
+      .limit(1);
+    return (row?.sequence ?? 0) + 1;
+  }
+  async countRecentHubFeedback(submittedBy: string, since: string) {
+    const t = hub_feedback;
+    const [row] = await this.db
+      .select({ value: count() })
+      .from(t)
+      .where(and(eq(t.submitted_by, submittedBy), gte(t.created_at, since)));
+    return row.value;
+  }
+  async countRecentHubFeedbackComments(actorId: string, since: string) {
+    const t = hub_feedback_events;
+    const [row] = await this.db
+      .select({ value: count() })
+      .from(t)
+      .where(and(eq(t.actor_id, actorId), eq(t.kind, 'comment'), gte(t.created_at, since)));
+    return row.value;
+  }
+  async summarizeHubFeedbackAttachments(feedbackId: string) {
+    const t = hub_feedback_attachments;
+    const [summary] = await this.db
+      .select({ count: count(), size: sql`coalesce(sum(${t.size}), 0)`.mapWith(Number) })
+      .from(t)
+      .where(and(eq(t.feedback_id, feedbackId), isNotNull(t.sha256)));
+    return summary;
+  }
+  async listExpiredHubFeedbackAttachments(before: string, limit: number) {
+    const t = hub_feedback_attachments;
+    const rows = await this.db
+      .select({ data: t.data })
+      .from(t)
+      .innerJoin(hub_feedback, eq(t.feedback_id, hub_feedback.id))
+      .where(and(lte(hub_feedback.closed_at, before), isNotNull(t.sha256)))
+      .orderBy(hub_feedback.closed_at, t.id)
+      .limit(limit);
+    return rows.map(({ data }) => parseRecord('hub_feedback_attachments', data));
   }
   async where<K extends TableName>(
     table: K,

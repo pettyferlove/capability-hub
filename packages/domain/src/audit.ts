@@ -37,6 +37,7 @@ export type AuditSubjectKind =
   | 'source'
   | 'credential'
   | 'scenario'
+  | 'feedback'
   | 'instance'
   | 'unknown';
 interface AuditDefinition {
@@ -170,6 +171,23 @@ export const auditDefinitions: Record<string, AuditDefinition> = {
   'scenario.merged': { label: '合并适用场景', category: 'publication', subject: 'scenario' },
   'scenario.disabled': { label: '停用适用场景', category: 'publication', subject: 'scenario' },
   'scenario.deleted': { label: '删除适用场景', category: 'publication', subject: 'scenario' },
+  'hub_feedback.submitted': { label: '提交平台反馈', category: 'operations', subject: 'feedback' },
+  'hub_feedback.status_changed': {
+    label: '更新平台反馈状态',
+    category: 'operations',
+    subject: 'feedback',
+  },
+  'hub_feedback.assigned': { label: '分派平台反馈', category: 'operations', subject: 'feedback' },
+  'hub_feedback.redacted': {
+    label: '隐去平台反馈内容',
+    category: 'operations',
+    subject: 'feedback',
+  },
+  'hub_feedback.attachment_removed': {
+    label: '移除平台反馈附件',
+    category: 'operations',
+    subject: 'feedback',
+  },
   'backup.completed': { label: '完成数据备份', category: 'operations', subject: 'instance' },
 };
 

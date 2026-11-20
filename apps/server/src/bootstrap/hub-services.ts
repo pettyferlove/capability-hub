@@ -12,6 +12,7 @@ import {
   CliLoginService,
   InstallTicketService,
   GitCredentialService,
+  HubFeedbackService,
   McpSharedKeyService,
   IdempotencyService,
   IdentityAdministrationService,
@@ -34,6 +35,7 @@ import type { BlobStorage } from '@capability-hub/application/ports';
 import type { RecordStore } from '@capability-hub/application/ports';
 import { GitRepositoryAdapter } from '@capability-hub/infrastructure/git';
 import { scanIsolated } from '@capability-hub/infrastructure/scanning';
+import { secretFindings } from '@capability-hub/infrastructure/content/secret-detection';
 import {
   ScryptPasswordHasher,
   LdapAuthenticator,
@@ -53,6 +55,7 @@ export class HubServices {
   readonly catalog: CatalogService;
   readonly content: AssetContentService;
   readonly feedback: AssetFeedbackService;
+  readonly hubFeedback: HubFeedbackService;
   readonly installTickets: InstallTicketService;
   readonly community: AssetCommunityService;
   readonly idempotency: IdempotencyService;
@@ -99,6 +102,7 @@ export class HubServices {
         : undefined,
     );
     this.idempotency = new IdempotencyService(store, this.identity);
+    this.hubFeedback = new HubFeedbackService(context, this.idempotency, secretFindings);
     this.administration = new IdentityAdministrationService(
       store,
       this.identity,

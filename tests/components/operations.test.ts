@@ -39,6 +39,7 @@ function renderCenter(query: string, audit: boolean, inspect: boolean) {
             features: { git_hosts: [] },
             capabilities: {
               can_audit: audit,
+              can_manage_feedback: false,
               can_ai_console: inspect,
               can_ai: false,
               can_admin: false,

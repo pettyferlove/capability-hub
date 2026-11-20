@@ -27,6 +27,11 @@ import type { PublicationRequestRecord, ReleaseRecord } from './publication.js';
 import type { JobRecord } from './job.js';
 import type { AuditRecord } from './audit.js';
 import type { IdempotencyRecord } from './idempotency.js';
+import type {
+  HubFeedbackRecord,
+  HubFeedbackEventRecord,
+  HubFeedbackAttachmentRecord,
+} from './hub-feedback.js';
 
 /**
  * 表名到记录类型的唯一映射，也是持久化层的类型契约：键即数据库表名（snake_case），
@@ -62,6 +67,9 @@ export interface RecordMap {
   git_credentials: GitCredentialRecord;
   recommendations: RecommendationRecord;
   asset_feedback: AssetFeedbackRecord;
+  hub_feedback: HubFeedbackRecord;
+  hub_feedback_events: HubFeedbackEventRecord;
+  hub_feedback_attachments: HubFeedbackAttachmentRecord;
 }
 
 /**

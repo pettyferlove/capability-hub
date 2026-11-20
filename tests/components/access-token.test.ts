@@ -45,6 +45,7 @@ test('LDAP 账号安全页指向目录改密，保留 Hub 会话与令牌入口'
       can_ai_console: false,
       can_admin: false,
       can_audit: false,
+      can_manage_feedback: false,
       can_publish: false,
       can_review: false,
     },

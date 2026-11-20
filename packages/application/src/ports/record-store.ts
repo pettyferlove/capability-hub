@@ -1,4 +1,17 @@
-import type { GitSourceRecord, JobKind, RecordMap, TableName } from '@capability-hub/domain/models';
+import type {
+  GitSourceRecord,
+  HubFeedbackArea,
+  HubFeedbackAttachmentRecord,
+  HubFeedbackChannel,
+  HubFeedbackEventRecord,
+  HubFeedbackKind,
+  HubFeedbackRecord,
+  HubFeedbackStatus,
+  HubFeedbackSurface,
+  JobKind,
+  RecordMap,
+  TableName,
+} from '@capability-hub/domain/models';
 
 /** 就绪筛选复用租约检查的时间快照，并限制返回剩余名额。 */
 export interface ReadyJobsQuery {
@@ -33,6 +46,20 @@ export interface ScenarioReferenceCounts {
   merges: number;
 }
 
+export interface HubFeedbackRecordQuery {
+  submittedBy?: string;
+  status: HubFeedbackStatus | 'open' | 'closed' | 'all';
+  kind?: HubFeedbackKind;
+  surface?: HubFeedbackSurface;
+  area?: HubFeedbackArea;
+  channel?: HubFeedbackChannel;
+  assignee?: string | null;
+  awaiting?: boolean;
+  q?: string;
+  page: number;
+  limit: number;
+}
+
 /**
  * 持久化调用统一异步，嵌套操作共享同一事务。
  *
@@ -56,6 +83,32 @@ export interface RecordStore {
   listCancellationRequestedJobs(): Promise<RecordMap['jobs'][]>;
   listDueSources(now: number): Promise<GitSourceRecord[]>;
   countScenarioReferences(id: string): Promise<ScenarioReferenceCounts | undefined>;
+  findHubFeedback(
+    ref: string | number,
+    submittedBy?: string,
+  ): Promise<HubFeedbackRecord | undefined>;
+  listHubFeedback(
+    query: HubFeedbackRecordQuery,
+  ): Promise<{ items: HubFeedbackRecord[]; total: number }>;
+  summarizeHubFeedbackForSubmitter(submittedBy: string): Promise<{ unread: number; open: number }>;
+  summarizeHubFeedbackForHandler(
+    assigneeId: string,
+  ): Promise<{ pending: number; awaiting_reply: number; assigned_to_me: number }>;
+  listHubFeedbackEvents(feedbackId: string, publicOnly: boolean): Promise<HubFeedbackEventRecord[]>;
+  listHubFeedbackAttachments(
+    feedbackId: string,
+    publicOnly: boolean,
+  ): Promise<HubFeedbackAttachmentRecord[]>;
+  /** 编号与序列必须在写入该记录的同一事务内分配。 */
+  nextHubFeedbackNumber(): Promise<number>;
+  nextHubFeedbackEventSequence(feedbackId: string): Promise<number>;
+  countRecentHubFeedback(submittedBy: string, since: string): Promise<number>;
+  countRecentHubFeedbackComments(actorId: string, since: string): Promise<number>;
+  summarizeHubFeedbackAttachments(feedbackId: string): Promise<{ count: number; size: number }>;
+  listExpiredHubFeedbackAttachments(
+    before: string,
+    limit: number,
+  ): Promise<HubFeedbackAttachmentRecord[]>;
   /** 无索引保证，返回顺序由驱动决定，需要稳定顺序时调用方自行排序。 */
   where<K extends TableName>(
     table: K,

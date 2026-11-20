@@ -17,6 +17,7 @@ export * from './hub-installation.js';
 export * from './hub-version.js';
 export * from './cli-installation.js';
 export * from './feedback.js';
+export * from './hub-feedback.js';
 export * from './connections.js';
 export * from './ai.js';
 export * from './http/operations/agents.js';

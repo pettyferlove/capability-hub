@@ -10,19 +10,20 @@
 | 来源       | sources、bindings、git_credentials                                    |
 | 内容       | assets、versions、intakes、scans                                      |
 | 发布       | requests、releases、scenarios、recommendations、asset_feedback        |
+| 平台反馈   | hub_feedback、hub_feedback_events、hub_feedback_attachments           |
 | 运行与证据 | jobs、audit、idempotency、login_attempts、cli_logins、install_tickets |
 
 SQLite 与 PostgreSQL 各以完整 Drizzle Schema 生成迁移：`migrations/0000_init.sql` 初始化表、唯一约束、关联守卫、不可变触发器及目录修订，后续结构变更按迁移历史追加。启动时在互斥事务中执行官方 migrator，应用待执行变更；迁移历史必须与文件摘要一致，不转换未纳入当前迁移体系的旧数据库。详见[数据库迁移](../development/database-migrations.md)。SQLite 不可变 JSON 比较使用结构路径和值；PostgreSQL 使用 JSONB，均不依赖对象属性顺序。
 
 事务作用域通过异步上下文传递，嵌套事务共享成败状态。内部失败即使被调用方捕获也不能部分提交；未等待的写入或回调结束后的迟到任务被拒绝。连接内操作顺序执行，同文件多 SQLite 连接和跨 PostgreSQL 连接仍受数据库边界约束。
 
-反馈表以提交用户和请求键建立唯一约束，绑定资产与版本；创建、频率核验、修订更新和审计在同一事务内完成。反馈随当前结构快照备份和恢复，不转换旧格式。
+资源反馈绑定资产与版本。平台反馈独立存储正文、诊断、时间线和附件元数据；附件移除只解除对象引用，保留元数据与审计。
 
 ## 内容存储
 
 BlobStorage 使用 SHA-256 十六进制地址，读取复算摘要。文件系统通过临时文件和硬链接原子安装，不覆盖已存在对象，拒绝链接或特殊文件。MinIO 使用私有桶和条件 PUT，发生同名竞争后读取验证；不静默修复损坏对象。
 
-BlobMaintenance 的枚举和删除能力仅用于明确的维护工具。回收必须停止 API 和 Worker，并保留所有 intake 原始包以及版本内容引用。
+BlobMaintenance 仅供停机回收，保留原始包、版本和未移除附件引用；具体保留期见[运维维护](../operations/recovery.md#维护与账号恢复)。
 
 ## 幂等和租约
 
@@ -38,6 +39,6 @@ Worker 按 run_after 和事务内的有效租约领取作业。AI 与内容任�
 
 ## 快照恢复
 
-记录快照在一个事务中读取，内容块不可变，可随后复制。备份记录包括原始 intake 包、不可变版本、运行记录、封禁/撤销状态及审计。记录文件和每个内容块都有摘要校验。
+记录在同一事务读取，随后复制不可变内容对象（包括未移除的反馈附件）。记录文件和内容对象均校验摘要。
 
-恢复只写入空的当前结构数据库，校验重复 ID 和引用内容后按关联顺序在事务中写入。跨后端重放同一结构属于恢复操作。恢复 Git 凭据和 MCP 共享密钥均须使用原实例密钥。
+空库导入要求当前表集合完全一致：不含平台反馈三表的备份无法直接导入。导入校验重复 ID 与内容，按关联顺序写入事务；相同结构可跨后端恢复。Git 凭据与 MCP 共享密钥须用原实例密钥。

@@ -26,23 +26,24 @@ export class IdentityAdministrationService {
     private readonly idempotency: IdempotencyService,
   ) {}
   /**
-   * 按稳定的 `key` 补齐内置角色；给已有审核者补权时保留角色 ID 和原有绑定。
+   * 按稳定的 `key` 补齐内置角色；仅追加指定权限，保留已有角色 ID 和绑定。
    */
   async initialize() {
     const store = this.store;
     await store.tx(async () => {
       for (const r of builtinRoles) {
         const existing = await store.find('roles', 'key', r.key);
-        if (!existing)
+        if (!existing) {
           await store.insert('roles', { id: randomUUID(), ...r, builtin: true, revision: 1 });
-        else if (
-          existing.builtin &&
-          r.key === 'reviewer' &&
-          !existing.permissions.includes('ai:execute')
-        )
+          continue;
+        }
+        if (!existing.builtin) continue;
+        const permission =
+          r.key === 'reviewer' ? 'ai:execute' : r.key === 'admin' ? 'feedback:manage' : null;
+        if (permission && !existing.permissions.includes(permission))
           await store.put('roles', {
             ...existing,
-            permissions: [...existing.permissions, 'ai:execute'],
+            permissions: [...existing.permissions, permission],
             revision: existing.revision + 1,
           });
       }

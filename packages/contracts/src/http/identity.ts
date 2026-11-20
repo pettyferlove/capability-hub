@@ -18,6 +18,7 @@ export interface MeResponse {
     can_ai_console: boolean;
     can_admin: boolean;
     can_audit: boolean;
+    can_manage_feedback: boolean;
     can_manage_assets?: boolean;
     can_publish: boolean;
     can_review: boolean;

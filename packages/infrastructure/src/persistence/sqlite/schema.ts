@@ -734,6 +734,114 @@ export const asset_feedback = sqliteTable(
   ],
 );
 
+function feedbackText(key: string) {
+  return text(key).generatedAlwaysAs(sql.raw(`json_extract(data, '$.${key}')`), {
+    mode: 'stored',
+  });
+}
+
+function feedbackInteger(key: string) {
+  return integer(key).generatedAlwaysAs(sql.raw(`json_extract(data, '$.${key}')`), {
+    mode: 'stored',
+  });
+}
+
+const feedbackDataCheck = sql`(json_valid(data) AND json_type(data) = 'object' AND json_type(data, '$.id') = 'text' AND json_extract(data, '$.id') = id) IS 1`;
+
+export const hub_feedback = sqliteTable(
+  'hub_feedback',
+  {
+    id: text('id').primaryKey().notNull(),
+    data: text('data', { mode: 'json' }).$type<RecordMap['hub_feedback']>().notNull(),
+    number: feedbackInteger('number').notNull().unique(),
+    submitted_by: feedbackText('submitted_by').notNull(),
+    channel: feedbackText('channel').notNull(),
+    kind: feedbackText('kind').notNull(),
+    surface: feedbackText('surface').notNull(),
+    area: feedbackText('area'),
+    status: feedbackText('status').notNull(),
+    blocking: feedbackInteger('blocking').notNull(),
+    created_at: feedbackText('created_at').notNull(),
+    closed_at: feedbackText('closed_at'),
+    last_activity_at: feedbackText('last_activity_at').notNull(),
+    last_handler_public_at: feedbackText('last_handler_public_at'),
+    submitter_seen_at: feedbackText('submitter_seen_at').notNull(),
+    assignee_id: feedbackText('assignee_id'),
+    duplicate_of_id: feedbackText('duplicate_of_id'),
+    awaiting_reply: integer('awaiting_reply').generatedAlwaysAs(
+      sql`((data ->> 'last_handler_public_at') IS NULL OR (data ->> 'last_handler_public_at') < (data ->> 'last_submitter_activity_at'))
+        AND ((data ->> 'closed_at') IS NULL OR (data ->> 'last_submitter_activity_at') > (data ->> 'closed_at'))`,
+      { mode: 'stored' },
+    ),
+  },
+  (t): SQLiteTableExtraConfigValue[] => [
+    check('hub_feedback_data_check', feedbackDataCheck),
+    check('hub_feedback_number_positive', sql`number > 0`),
+    foreignKey({ columns: [t.submitted_by], foreignColumns: [users.id] }),
+    foreignKey({ columns: [t.assignee_id], foreignColumns: [users.id] }),
+    foreignKey({ columns: [t.duplicate_of_id], foreignColumns: [t.id] }),
+    index('hub_feedback_submitter_created').on(t.submitted_by, t.created_at),
+    index('hub_feedback_submitter_order').on(t.submitted_by, t.last_activity_at, t.number),
+    index('hub_feedback_queue').on(t.blocking, t.last_activity_at, t.number),
+    index('hub_feedback_status_queue').on(t.status, t.blocking, t.last_activity_at, t.number),
+    index('hub_feedback_assignee').on(t.assignee_id),
+    index('hub_feedback_closed').on(t.closed_at),
+  ],
+);
+
+export const hub_feedback_events = sqliteTable(
+  'hub_feedback_events',
+  {
+    id: text('id').primaryKey().notNull(),
+    data: text('data', { mode: 'json' }).$type<RecordMap['hub_feedback_events']>().notNull(),
+    feedback_id: feedbackText('feedback_id').notNull(),
+    sequence: feedbackInteger('sequence').notNull(),
+    kind: feedbackText('kind').notNull(),
+    actor_id: feedbackText('actor_id'),
+    visibility: feedbackText('visibility').notNull(),
+    created_at: feedbackText('created_at').notNull(),
+  },
+  (t): SQLiteTableExtraConfigValue[] => [
+    check('hub_feedback_events_data_check', feedbackDataCheck),
+    check('hub_feedback_events_sequence_positive', sql`sequence > 0`),
+    foreignKey({ columns: [t.feedback_id], foreignColumns: [hub_feedback.id] }),
+    foreignKey({ columns: [t.actor_id], foreignColumns: [users.id] }),
+    unique().on(t.feedback_id, t.sequence),
+    unique().on(t.feedback_id, t.id),
+    index('hub_feedback_events_visibility').on(t.feedback_id, t.visibility, t.sequence),
+    index('hub_feedback_events_actor_created').on(t.actor_id, t.kind, t.created_at),
+  ],
+);
+
+export const hub_feedback_attachments = sqliteTable(
+  'hub_feedback_attachments',
+  {
+    id: text('id').primaryKey().notNull(),
+    data: text('data', { mode: 'json' }).$type<RecordMap['hub_feedback_attachments']>().notNull(),
+    feedback_id: feedbackText('feedback_id').notNull(),
+    event_id: feedbackText('event_id'),
+    uploaded_by: feedbackText('uploaded_by').notNull(),
+    removed_by: feedbackText('removed_by'),
+    sha256: feedbackText('sha256'),
+    size: feedbackInteger('size').notNull(),
+    created_at: feedbackText('created_at').notNull(),
+  },
+  (t): SQLiteTableExtraConfigValue[] => [
+    check('hub_feedback_attachments_data_check', feedbackDataCheck),
+    foreignKey({ columns: [t.feedback_id], foreignColumns: [hub_feedback.id] }),
+    foreignKey({
+      columns: [t.feedback_id, t.event_id],
+      foreignColumns: [hub_feedback_events.feedback_id, hub_feedback_events.id],
+    }),
+    foreignKey({ columns: [t.uploaded_by], foreignColumns: [users.id] }),
+    foreignKey({ columns: [t.removed_by], foreignColumns: [users.id] }),
+    index('hub_feedback_attachments_order').on(t.feedback_id, t.created_at, t.id),
+    index('hub_feedback_attachments_active')
+      .on(t.feedback_id)
+      .where(sql`sha256 IS NOT NULL`),
+  ],
+);
+
 export {
   ai_executions,
   ai_events,

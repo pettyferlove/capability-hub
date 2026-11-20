@@ -25,6 +25,7 @@ const changeLabels: Record<string, string> = {
 const permissionLabels: Record<string, string> = {
   'identity:manage': '管理账号与权限',
   'audit:read': '查看审计',
+  'feedback:manage': '处理平台反馈',
   'source:create': '创建来源',
   'source:manage': '管理来源',
   'source:share': '授权共享',

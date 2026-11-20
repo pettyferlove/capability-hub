@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { sha256 } from '@capability-hub/domain/canonical';
 import { openRecordStore, snapshotStore, restoreStore } from '@capability-hub/infrastructure/store';
 import { JobQueue } from '@capability-hub/application';
 import { MinioBlobStore } from '@capability-hub/infrastructure/content';
@@ -10,7 +11,7 @@ import type {
   JobRecord,
   PublicationRequestRecord,
 } from '@capability-hub/domain/models';
-import type { OperationsResponse } from '@capability-hub/contracts/http';
+import type { HubFeedbackDetailResponse, OperationsResponse } from '@capability-hub/contracts/http';
 import { createTestHub, publishSkill, receiveSkill } from '../support/application.js';
 import { frameworkConfig } from '../support/ai-framework.js';
 import { signIn } from '../support/http.js';
@@ -642,5 +643,98 @@ test('运维接口从 PostgreSQL 汇总执行与容量，从受限 MinIO 存储�
     await fixture.close();
     await resource.close();
     await database.close();
+  }
+});
+
+test('PostgreSQL 并发提交平台反馈仍分配唯一编号，编号可用于读取原反馈', async (context) => {
+  const database = await externalDatabase();
+  try {
+    const fixture = await createTestHub(context, {
+      database: { driver: 'postgresql', url: database.url, poolSize: 4 },
+    });
+    try {
+      const clients = await Promise.all(
+        ['owner', 'reader', 'reviewer'].map((username) => signIn(fixture, username)),
+      );
+      const created = await Promise.all(
+        clients.map((client, index) =>
+          client
+            .post('/api/hub-feedback')
+            .set('Idempotency-Key', randomUUID())
+            .field(
+              'metadata',
+              JSON.stringify({
+                kind: 'bug',
+                surface: 'web',
+                title: `Concurrent feedback ${index}`,
+                description: 'Submitted concurrently over HTTP.',
+              }),
+            )
+            .expect(201),
+        ),
+      );
+      const numbers = created.map(({ body }: { body: HubFeedbackDetailResponse }) => body.number);
+      assert.deepEqual(
+        numbers.toSorted((a, b) => a - b),
+        [1, 2, 3],
+      );
+      for (const [index, response] of created.entries()) {
+        const feedback: HubFeedbackDetailResponse = response.body;
+        const found = await clients[index].get(`/api/hub-feedback/${feedback.number}`).expect(200);
+        assert.equal(found.body.id, feedback.id);
+      }
+    } finally {
+      await fixture.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
+
+test('平台反馈附件存入受限 MinIO 存储桶并经反馈接口读回原内容', async (context) => {
+  const resource = await externalBucket();
+  try {
+    const fixture = await createTestHub(context, {
+      objectStorage: {
+        driver: 'minio',
+        endpoint: resource.endpoint,
+        accessKey: resource.options.accessKey,
+        secretKey: resource.options.secretKey,
+        bucket: resource.bucket,
+        region: 'us-east-1',
+        prefix: 'blobs/',
+      },
+    });
+    try {
+      const submitter = await signIn(fixture, 'reader');
+      const bytes = Buffer.from('反馈附件\nOriginal output\n', 'utf8');
+      const uploaded = await submitter
+        .post('/api/hub-feedback')
+        .set('Idempotency-Key', randomUUID())
+        .field(
+          'metadata',
+          JSON.stringify({
+            kind: 'bug',
+            surface: 'web',
+            title: 'Upload a reproduction log',
+            description: 'The attached log shows how to reproduce the issue.',
+            files: [{ part: 0, kind: 'text', name: 'reproduction.txt' }],
+          }),
+        )
+        .attach('files', bytes, 'reproduction.txt')
+        .expect(201);
+      const object = await resource.admin.statObject(resource.bucket, `blobs/${sha256(bytes)}`);
+      assert.equal(object.size, bytes.length);
+      const feedback: HubFeedbackDetailResponse = uploaded.body;
+      const [attachment] = feedback.attachments;
+      const downloaded = await submitter
+        .get(`/api/hub-feedback/${feedback.id}/attachments/${attachment.id}`)
+        .expect(200);
+      assert.deepEqual(Buffer.from(downloaded.text, 'utf8'), bytes);
+    } finally {
+      await fixture.close();
+    }
+  } finally {
+    await resource.close();
   }
 });

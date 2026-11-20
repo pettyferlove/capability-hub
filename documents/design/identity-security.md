@@ -36,6 +36,8 @@ CLI 登录为 challenge/verifier、设备码和一次性浏览器批准。终端
 
 浏览器诊断使用固定事件/页面集合、请求 ID、批次与字节上限；服务端独立校验来源并限流。采集失败丢弃当前批次，不递归重试。
 
+平台反馈的附件下载先校验反馈和事件的可见性，再按检测类型返回：图片 `inline`，文本与 JSON `attachment`。响应使用 `nosniff`、`no-store`、`Cross-Origin-Resource-Policy: same-origin` 和 `Content-Security-Policy: default-src 'none'; img-src 'self'; sandbox`。审计不保存正文、诊断或文件名。
+
 ## Agent OAuth 连接
 
 Hub 同时承载授权服务与 MCP 资源服务。公开元数据提供 DCR、授权码 + S256 PKCE、刷新和撤销端点；只接收公开客户端 `token_endpoint_auth_method=none`，不支持 implicit、密码模式或客户端凭据模式。不抓取客户端远程元数据，因此不声明 CIMD 支持。

@@ -43,6 +43,13 @@
       "when": 1795005373717,
       "tag": "0005_install_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795137862079,
+      "tag": "0006_hub_feedback",
+      "breakpoints": true
     }
   ]
 }

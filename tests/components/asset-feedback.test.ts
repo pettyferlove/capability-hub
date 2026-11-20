@@ -191,6 +191,7 @@ function feedbackPage(canAi = false) {
             can_publish: false,
             can_review: false,
             can_audit: false,
+            can_manage_feedback: false,
           },
           features: { git_hosts: [] },
         },

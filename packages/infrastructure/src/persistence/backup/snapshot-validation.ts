@@ -43,7 +43,9 @@ export function parseSnapshot(value: unknown): StoreSnapshot {
  *
  * 引用格式固定为小写 64 位十六进制 SHA-256；出现其它形态说明快照被篡改或来历不符，直接抛错。
  */
-export function blobReferences(snapshot: Pick<StoreSnapshot, 'versions' | 'intakes'>): string[] {
+export function blobReferences(
+  snapshot: Pick<StoreSnapshot, 'versions' | 'intakes' | 'hub_feedback_attachments'>,
+): string[] {
   const references = [
     ...new Set([
       ...snapshot.versions.flatMap((version) => [
@@ -52,6 +54,9 @@ export function blobReferences(snapshot: Pick<StoreSnapshot, 'versions' | 'intak
         ...version.files.map((file) => file.blob_ref),
       ]),
       ...snapshot.intakes.flatMap((intake) => (intake.payload_ref ? [intake.payload_ref] : [])),
+      ...snapshot.hub_feedback_attachments.flatMap((attachment) =>
+        attachment.removed_at === null && attachment.sha256 !== null ? [attachment.sha256] : [],
+      ),
     ]),
   ].sort();
   if (references.some((ref) => typeof ref !== 'string' || !/^[a-f0-9]{64}$/.test(ref)))

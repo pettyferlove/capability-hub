@@ -39,3 +39,5 @@ export { AssetFeedbackService } from './catalog/asset-feedback-service.js';
 export { AgentEvidenceService } from './catalog/agent-evidence-service.js';
 
 export { OAuthService, OAuthError } from './identity/oauth-service.js';
+export { HubFeedbackService } from './hub-feedback/hub-feedback-service.js';
+export type * from './hub-feedback/commands.js';

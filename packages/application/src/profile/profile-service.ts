@@ -52,6 +52,7 @@ export class ProfileService {
         can_ai_console: has(principal, 'ai:inspect'),
         can_admin: has(principal, 'identity:manage'),
         can_audit: has(principal, 'audit:read'),
+        can_manage_feedback: has(principal, 'feedback:manage'),
         can_manage_assets: has(principal, 'asset:lifecycle'),
         can_publish: principal.bindings.some((binding) =>
           (principal.permissions[binding.role_id] ?? []).some(

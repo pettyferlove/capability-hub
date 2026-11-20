@@ -1,6 +1,10 @@
 import { auditDefinitions } from '@capability-hub/domain/audit';
 import type { RecordMap, TableName } from '@capability-hub/domain/models';
-import type { ReadyJobsQuery, RecordStore } from '@capability-hub/application/ports';
+import type {
+  HubFeedbackRecordQuery,
+  ReadyJobsQuery,
+  RecordStore,
+} from '@capability-hub/application/ports';
 import { randomUUID } from 'node:crypto';
 import { resolveAuditActor, resolveAuditSubject } from '@capability-hub/application/audit';
 import type { RecordDriver, RecordQueries } from './record-driver.js';
@@ -49,6 +53,42 @@ class DrizzleStore implements RecordStore {
   }
   countScenarioReferences(id: string) {
     return this.execute((queries) => queries.countScenarioReferences(id));
+  }
+  findHubFeedback(ref: string | number, submittedBy?: string) {
+    return this.execute((queries) => queries.findHubFeedback(ref, submittedBy));
+  }
+  listHubFeedback(query: HubFeedbackRecordQuery) {
+    return this.execute((queries) => queries.listHubFeedback(query));
+  }
+  summarizeHubFeedbackForSubmitter(submittedBy: string) {
+    return this.execute((queries) => queries.summarizeHubFeedbackForSubmitter(submittedBy));
+  }
+  summarizeHubFeedbackForHandler(assigneeId: string) {
+    return this.execute((queries) => queries.summarizeHubFeedbackForHandler(assigneeId));
+  }
+  listHubFeedbackEvents(feedbackId: string, publicOnly: boolean) {
+    return this.execute((queries) => queries.listHubFeedbackEvents(feedbackId, publicOnly));
+  }
+  listHubFeedbackAttachments(feedbackId: string, publicOnly: boolean) {
+    return this.execute((queries) => queries.listHubFeedbackAttachments(feedbackId, publicOnly));
+  }
+  nextHubFeedbackNumber() {
+    return this.execute((queries) => queries.nextHubFeedbackNumber());
+  }
+  nextHubFeedbackEventSequence(feedbackId: string) {
+    return this.execute((queries) => queries.nextHubFeedbackEventSequence(feedbackId));
+  }
+  countRecentHubFeedback(submittedBy: string, since: string) {
+    return this.execute((queries) => queries.countRecentHubFeedback(submittedBy, since));
+  }
+  countRecentHubFeedbackComments(actorId: string, since: string) {
+    return this.execute((queries) => queries.countRecentHubFeedbackComments(actorId, since));
+  }
+  summarizeHubFeedbackAttachments(feedbackId: string) {
+    return this.execute((queries) => queries.summarizeHubFeedbackAttachments(feedbackId));
+  }
+  listExpiredHubFeedbackAttachments(before: string, limit: number) {
+    return this.execute((queries) => queries.listExpiredHubFeedbackAttachments(before, limit));
   }
   where<K extends TableName>(
     table: K,

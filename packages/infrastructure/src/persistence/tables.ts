@@ -34,4 +34,7 @@ export const tables = [
   'scenarios',
   'recommendations',
   'asset_feedback',
+  'hub_feedback',
+  'hub_feedback_events',
+  'hub_feedback_attachments',
 ] as const satisfies readonly TableName[];

@@ -14,6 +14,7 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 | /api/install-tickets/:ticket、/archive                   | 清单与一次性归档；HEAD 归档返回 405    |
 | /skills/:slug/:version、/mcp-servers/:slug/:version      | 人可读公开资源地址，按匿名权限         |
 | /api/feedback、/api/assets/:id/feedback                  | 私有反馈提交、详情、处理与分页         |
+| /api/hub-feedback、/api/admin/hub-feedback               | 本人平台反馈与处理队列                 |
 | /api/management/*                                        | 维护和候选审查                         |
 | /api/intakes、/api/sources、/api/publication-requests    | 接收与团队候选、来源、审核             |
 | /api/me/*、/api/tokens、/api/git-credentials             | 个人资料、会话、令牌与仓库凭据         |
@@ -84,6 +85,27 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 网页与 MCP 复用同一用例。网页使用 POST `/api/feedback`（请求体携带上述幂等键）、GET `/api/feedback/:id`、GET `/api/assets/:id/feedback?page=1&limit=10&status=pending` 和 PATCH `/api/feedback/:id`。列表由服务端筛选与分页，limit 最大 50。写入要求浏览器会话与 CSRF；个人令牌不能通过 HTTP 写入或处理反馈，只能用贡献 MCP 工具上报。
 
 维护者可切换 pending、in_progress、resolved、declined；PATCH 请求体包含 `revision`、`status`、`resolution`、`fixed_version_id`（可空），旧修订返回 409。已解决和不采纳必须填写说明；只有已解决可关联同资产修复版本。未对提交者开放的修复候选不会暴露编号或版本名。详情链接为 `/asset/:slug?feedback=:id`，固定反馈版本与当前目录版本分别展示。审计只保存操作、目标版本和处理状态，不复制反馈正文。
+
+## 平台反馈
+
+本人接口前缀 `/api/hub-feedback`，仅接受网页会话，只返回当前账号的反馈；不存在或不属于本人均返回 404。处理前缀 `/api/admin/hub-feedback` 另需平台级 `feedback:manage`，可查看内部备注及提交上下文。资源反馈不走这些接口。
+
+| 方法与路径（相对前缀）                                      | 本人                                         | 处理                                                                                                        |
+| ----------------------------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `GET /`                                                     | `status=open\|closed\|all`、`page`、`limit`  | 同左；另可按具体状态、`kind`、`surface`、`area`、`channel`、`assignee=me\|none\|ID`、`awaiting=1`、`q` 过滤 |
+| `GET /summary`                                              | `unread`、`open`                             | `pending`、`awaiting_reply`、`assigned_to_me`                                                               |
+| `GET /:ref`                                                 | 编号或 UUID，公开详情和 `ETag`               | 编号或 UUID，完整详情和 `ETag`                                                                              |
+| `POST /`                                                    | 提交，201                                    | —                                                                                                           |
+| `POST /:id/comments`                                        | 公开留言                                     | 按 `visibility` 公开回复或内部备注                                                                          |
+| `POST /:id/close`、`POST /:id/read`                         | 关闭、标已读；已读不增加修订                 | —                                                                                                           |
+| `PATCH /:id`、`POST /:id/redactions`                        | —                                            | 状态或负责人变更；隐去描述或时间线正文                                                                      |
+| `GET /:id/attachments/:aid`、`DELETE /:id/attachments/:aid` | 下载可见附件；仅在未结束时移除本人上传的附件 | 下载或移除附件                                                                                              |
+
+列表默认未结束，最多每页 50 条。结束后留言不重开，但会计入待回复。转入待补充、已解决或不采纳须提供公开说明；不采纳须指定原因，重复须指定有效编号，该编号不向提交者显示。
+
+提交与留言使用 multipart，`metadata` 为不超过 64 KiB 的 JSON，`files` 与 `metadata.files` 中的序号一一对应。每次最多 5 个文件，共 12 MiB；单条反馈最多保留 20 个文件，共 40 MiB。接受 PNG、JPEG、WebP（5 MiB、最长边 8192、最多 4000 万像素）及 UTF-8 文本或 JSON（1 MiB）。诊断仅接受白名单字段，合计 24 KiB；渠道、凭据类型和实例版本由服务端确定。
+
+写入带 `Idempotency-Key`，修改还需 `If-Match`；缺失或过期修订返回 428 或 412。每账号每小时最多提交 10 条反馈、发 60 条留言（429），24 小时内的同内容幂等重放不占额度。上传超限返回 413；类型、诊断、凭据扫描或状态校验失败返回 422，凭据命中仅提供字段或附件序号与行号。
 
 ## CLI
 

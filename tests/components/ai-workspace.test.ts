@@ -37,6 +37,7 @@ function workspaceUser(canExecute: boolean, consoleAccess: boolean): MeResponse 
       can_ai_console: consoleAccess,
       can_admin: false,
       can_audit: consoleAccess && canExecute,
+      can_manage_feedback: false,
       can_publish: canExecute,
       can_review: false,
     },

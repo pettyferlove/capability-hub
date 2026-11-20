@@ -51,6 +51,11 @@
       "types": "./dist/content/json.d.ts",
       "default": "./dist/content/json.js"
     },
+    "./content/secret-detection": {
+      "development": "./src/content/hub-feedback-secret-detection.ts",
+      "types": "./dist/content/hub-feedback-secret-detection.d.ts",
+      "default": "./dist/content/hub-feedback-secret-detection.js"
+    },
     "./content/zip-archive": {
       "development": "./src/content/zip-archive.ts",
       "types": "./dist/content/zip-archive.d.ts",

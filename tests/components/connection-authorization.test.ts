@@ -24,6 +24,7 @@ const state: HubState = {
       can_ai_console: false,
       can_admin: false,
       can_audit: false,
+      can_manage_feedback: false,
       can_publish: false,
       can_review: false,
     },

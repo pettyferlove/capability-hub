@@ -13,6 +13,16 @@ try {
     for (const ref of [version.manifest_ref, version.artifact_ref])
       if (!(await blobs.exists(ref))) errors.push(`version ${version.id}: ${ref}`);
   }
+  for (const attachment of await store.all('hub_feedback_attachments')) {
+    if (attachment.removed_at !== null || attachment.sha256 === null) continue;
+    try {
+      await blobs.read(attachment.sha256);
+    } catch {
+      errors.push(
+        `hub_feedback ${attachment.feedback_id}: attachment ${attachment.id} missing or corrupt`,
+      );
+    }
+  }
   for (const asset of await store.all('assets'))
     if (asset.current_release_id) {
       const release = await store.get('releases', asset.current_release_id);

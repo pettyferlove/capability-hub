@@ -51,6 +51,7 @@ export const permissionLabels: Record<string, string> = {
   'ai:inspect': '查看 Agent 运行诊断',
   'identity:manage': '管理账号、团队和授权',
   'audit:read': '查看运营数据和审计记录',
+  'feedback:manage': '处理平台反馈',
   'source:create': '创建 Git 来源',
   'source:manage': '管理 Git 来源',
   'source:share': '管理来源共享',

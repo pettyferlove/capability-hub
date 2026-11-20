@@ -12,6 +12,7 @@ import {
 import { registerErrorHandler } from './http/middleware/error-handler.js';
 import { registerIdentityRoutes } from './http/routes/identity-routes.js';
 import { registerOperationsRoutes } from './http/routes/operations/routes.js';
+import { registerHubFeedbackRoutes } from './http/routes/hub-feedback-routes.js';
 import { registerIntakesRoutes } from './http/routes/intakes-routes.js';
 import { registerInstallationRoutes } from './http/routes/installation-routes.js';
 import { registerLifecycleRoutes } from './http/routes/lifecycle-routes.js';
@@ -82,6 +83,7 @@ export async function createApp(
     registerIdentityRoutes(app, context);
     registerOperationsRoutes(app, context);
     registerProtectedCatalogRoutes(app, context);
+    registerHubFeedbackRoutes(app, context);
     registerSourcesRoutes(app, context);
     registerIntakesRoutes(app, context);
     registerPublicationRoutes(app, context);

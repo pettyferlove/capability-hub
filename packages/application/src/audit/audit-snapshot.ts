@@ -164,6 +164,10 @@ export async function resolveAuditSubject(
     const row = await store.get('scenarios', id);
     return row ? { kind, name: row.name, detail: '适用场景' } : null;
   }
+  if (kind === 'feedback') {
+    const row = await store.get('hub_feedback', id);
+    return row ? { kind, name: `平台反馈 #${row.number}`, detail: '' } : null;
+  }
   if (kind === 'instance') return { kind, name: 'Capability Hub 实例', detail: '平台数据' };
   return null;
 }

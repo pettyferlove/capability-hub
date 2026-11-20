@@ -11,6 +11,7 @@ export const PERMISSIONS = [
   'ai:inspect',
   'identity:manage',
   'audit:read',
+  'feedback:manage',
   'source:create',
   'source:manage',
   'source:share',
@@ -33,6 +34,7 @@ export function bindingMatchesScope(
 /**
  * 按角色绑定的作用域判定权限：`platform` 绑定全局生效，其余绑定只有在调用方传入同名作用域 id 且相等时才生效；
  * 调用方没传的作用域一律按不匹配处理，因此漏传上下文得到的是拒绝而不是放行。
+ * `feedback:manage` 仅接受平台绑定，即使调用方传入了其他作用域。
  * 停用主体（`active` 为 false）即使仍持有绑定也立即失去全部权限。
  *
  * @param p - 已展开角色权限的主体快照，`permissions` 以 role_id 为键
@@ -40,17 +42,20 @@ export function bindingMatchesScope(
  * @param context - 当前请求所处的作用域 id，未提供的作用域视作不匹配
  */
 export function has(p: Principal, permission: string, context: PermissionScope = {}) {
+  const platformOnly = permission === 'feedback:manage';
   return (
     p.active &&
     p.bindings.some(
       (b) =>
-        (p.permissions[b.role_id] ?? []).includes(permission) && bindingMatchesScope(b, context),
+        (p.permissions[b.role_id] ?? []).includes(permission) &&
+        (platformOnly ? b.scope_type === 'platform' : bindingMatchesScope(b, context)),
     )
   );
 }
 
-/** 未指定作用域时只检查是否持有权限，执行具体操作须用目标作用域调用 {@link has}。 */
+/** 按权限允许的任一作用域检查；执行具体操作须用目标作用域调用 {@link has}。 */
 export function hasInAnyScope(p: Principal, permission: string) {
+  if (permission === 'feedback:manage') return has(p, permission);
   return p.active && p.bindings.some((b) => (p.permissions[b.role_id] ?? []).includes(permission));
 }
 
@@ -68,6 +73,7 @@ export const builtinRoles = [
       'ai:inspect',
       'identity:manage',
       'audit:read',
+      'feedback:manage',
       'source:manage',
       'source:share',
       'review:decide',

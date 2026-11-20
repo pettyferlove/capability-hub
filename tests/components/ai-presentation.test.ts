@@ -53,6 +53,7 @@ function withHub(content: ReactElement, ownerId = 'owner') {
             can_ai_console: false,
             can_admin: false,
             can_audit: false,
+            can_manage_feedback: false,
             can_publish: true,
             can_review: false,
           },

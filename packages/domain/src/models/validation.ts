@@ -132,6 +132,7 @@ const subject = z.strictObject({
     'source',
     'credential',
     'scenario',
+    'feedback',
     'instance',
     'unknown',
   ]),
@@ -164,6 +165,31 @@ const jobBase = {
     })
     .optional(),
 };
+
+const hubFeedbackStatus = z.enum(['pending', 'in_progress', 'needs_info', 'resolved', 'declined']);
+const hubFeedbackDeclineReason = z.enum([
+  'duplicate',
+  'cannot_reproduce',
+  'not_hub_issue',
+  'wont_do',
+]);
+
+function boundedHubFeedbackValue(value: unknown, depth: number): boolean {
+  if (depth > 8) return false;
+  if (value === null || typeof value === 'boolean') return true;
+  if (typeof value === 'string') return value.length <= 5000;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value))
+    return value.length <= 128 && value.every((item) => boundedHubFeedbackValue(item, depth + 1));
+  if (typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) return false;
+  const entries = Object.entries(value);
+  return (
+    entries.length <= 64 &&
+    entries.every(([key, item]) => key.length <= 120 && boundedHubFeedbackValue(item, depth + 1))
+  );
+}
+
+const hubFeedbackJson = jsonObject.refine((value) => boundedHubFeedbackValue(value, 0));
 
 /** 外部快照和数据库 JSON 在进入类型化记录之前必须满足当前结构。 */
 const schemas = {
@@ -555,6 +581,93 @@ const schemas = {
     created_at: date,
     updated_at: date,
   }),
+  hub_feedback: z
+    .strictObject({
+      ...versioned,
+      number: revision,
+      submitted_by: id,
+      channel: z.enum(['web', 'cli']),
+      kind: z.enum(['bug', 'ux', 'suggestion', 'question']),
+      surface: z.enum(['web', 'cli', 'mcp', 'other']),
+      area: z
+        .enum(['discover', 'publish', 'review', 'connect', 'account', 'operations', 'other'])
+        .nullable(),
+      title: text.min(1).max(120),
+      description: text.max(5000),
+      steps: text.max(3000),
+      expected: text.max(2000),
+      blocking: z.boolean(),
+      status: hubFeedbackStatus,
+      decline_reason: hubFeedbackDeclineReason.nullable(),
+      duplicate_of_id: id.nullable(),
+      assignee_id: id.nullable(),
+      diagnostics: hubFeedbackJson.nullable(),
+      submission: hubFeedbackJson,
+      description_redacted_at: date.nullable(),
+      created_at: date,
+      updated_at: date,
+      closed_at: date.nullable(),
+      last_activity_at: date,
+      last_submitter_activity_at: date,
+      last_handler_public_at: date.nullable(),
+      submitter_seen_at: date,
+    })
+    .refine(
+      (row) =>
+        (row.closed_at !== null) === (row.status === 'resolved' || row.status === 'declined') &&
+        (row.decline_reason !== null) === (row.status === 'declined') &&
+        (row.duplicate_of_id !== null) === (row.decline_reason === 'duplicate'),
+      '反馈状态与结束信息不一致',
+    ),
+  hub_feedback_events: z.strictObject({
+    ...base,
+    feedback_id: id,
+    sequence: revision,
+    actor_id: id.nullable(),
+    actor_role: z.enum(['submitter', 'handler', 'system']),
+    kind: z.enum(['comment', 'status', 'assignment', 'attachment_removed', 'redaction']),
+    visibility: z.enum(['public', 'internal']),
+    body: text.max(5000),
+    status_from: hubFeedbackStatus.nullable(),
+    status_to: hubFeedbackStatus.nullable(),
+    decline_reason: hubFeedbackDeclineReason.nullable(),
+    attachment_ids: z.array(id).max(5),
+    redacted_at: date.nullable(),
+    created_at: date,
+  }),
+  hub_feedback_attachments: z
+    .strictObject({
+      ...base,
+      feedback_id: id,
+      event_id: id.nullable(),
+      uploaded_by: id,
+      kind: z.enum(['screenshot', 'image', 'text', 'json']),
+      media_type: z.enum([
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+        'text/plain',
+        'application/json',
+      ]),
+      name: text.min(1).max(120),
+      size: revision.max(5 * 1024 * 1024),
+      width: revision.max(8192).nullable(),
+      height: revision.max(8192).nullable(),
+      sha256: hash.nullable(),
+      created_at: date,
+      removed_at: date.nullable(),
+      removed_by: id.nullable(),
+      removal_reason: z.enum(['submitter', 'handler', 'retention']).nullable(),
+    })
+    .refine(
+      (row) =>
+        row.sha256 === null
+          ? row.removed_at !== null &&
+            row.removal_reason !== null &&
+            (row.removed_by === null) === (row.removal_reason === 'retention')
+          : row.removed_at === null && row.removed_by === null && row.removal_reason === null,
+      '附件引用与移除信息不一致',
+    ),
   recommendations: z.strictObject({ ...base, user_id: id, asset_id: id, created_at: date }),
 } satisfies { [K in TableName]: z.ZodType<RecordMap[K]> };
 

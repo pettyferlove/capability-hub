@@ -6,6 +6,7 @@ export type * from './intake.js';
 export type * from './publication.js';
 export type * from './job.js';
 export type * from './audit.js';
+export type * from './hub-feedback.js';
 export type * from './idempotency.js';
 export type * from './record-map.js';
 export { parseRecord } from './validation.js';

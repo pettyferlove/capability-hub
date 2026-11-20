@@ -31,6 +31,7 @@ export type AuditSubjectKind =
   | 'source'
   | 'credential'
   | 'scenario'
+  | 'feedback'
   | 'instance'
   | 'unknown';
 
