@@ -155,3 +155,8 @@ export const contentScanRuleset = '2026-10-31.2';
  * 资产类型：`skill` 是整包分发的文档与脚本，`mcp` 是单个 `server.json` 描述的服务器接入定义。
  */
 export type AssetKind = 'skill' | 'mcp';
+
+export {
+  hubFeedbackAttachmentName,
+  inspectHubFeedbackAttachment,
+} from './hub-feedback-attachments.js';

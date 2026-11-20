@@ -214,7 +214,7 @@ test('CLI 授权码只供核对，批准原请求时锁定操作，更换链接�
   assert.equal(code.textContent, 'A1B2–C3D4');
   assert.equal(screen.queryByRole('textbox', { name: '授权码' }), null);
   assert(screen.getByText('读者'));
-  assert(screen.getByText('只读权限'));
+  assert(screen.getByText(/提交和跟进本人的平台反馈/));
   await user.click(screen.getByRole('button', { name: '允许 CLI 登录' }));
   assert.deepEqual(requests, [
     { path: '/api/cli/approve', method: 'POST', body: { code: 'A1B2C3D4' } },

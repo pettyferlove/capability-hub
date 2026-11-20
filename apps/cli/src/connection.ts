@@ -19,8 +19,9 @@ import {
   type ConnectionConfigOptions,
 } from './connection-config.js';
 import { savePrivateJson } from './private-json.js';
-import { HubApiClient, HubApiError, terminalText } from './api-client.js';
+import { HubApiClient, HubApiError, responseRequestId, terminalText } from './api-client.js';
 import { CliUi } from './cli-ui.js';
+import { recordLastFailure } from './diagnostics.js';
 import { observeCliResponse } from './update-notice.js';
 
 /**
@@ -28,8 +29,18 @@ import { observeCliResponse } from './update-notice.js';
  * 因此刷新后无需重建连接；401 转成 `UNAUTHENTICATED` 提示重新 `connect`。
  * 连接建立失败会先 `close()` 再抛错，不留下半开的会话。
  */
-export async function openHubConnection(url: string, path: string) {
-  const identity = await readConnection(path, url);
+export async function openHubConnection(
+  url: string,
+  path: string,
+  diagnostics?: {
+    credentialError(error: unknown): Promise<void>;
+    httpError(error: HubApiError): Promise<void>;
+  },
+) {
+  const identity = await readConnection(path, url).catch(async (error: unknown) => {
+    await diagnostics?.credentialError(error);
+    throw error;
+  });
   const client = new Client({ name: 'capability-hub-bridge', version: packageJson.version });
   try {
     await client.connect(
@@ -39,15 +50,30 @@ export async function openHubConnection(url: string, path: string) {
           if (target.origin !== url || target.pathname !== '/mcp')
             throw new Error('桥接请求不能离开当前 Hub MCP');
           const headers = new Headers(init?.headers);
-          headers.set(
-            'Authorization',
-            'Bearer ' + (await connectionToken(path, url, identity.client_id)),
-          );
+          const token = await connectionToken(path, url, identity.client_id);
+          headers.set('Authorization', 'Bearer ' + token);
           const response = await fetch(input, { ...init, headers, redirect: 'error' });
           observeCliResponse(url, response);
-          if (response.status === 401) {
-            await response.body?.cancel();
-            throw new HubApiError(401, 'UNAUTHENTICATED', '连接已失效，请重新运行 connect 授权');
+          const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+          // SDK 将 GET/DELETE 405 视为不支持可选的流或会话关闭。
+          if (
+            !response.ok &&
+            !(response.status === 405 && (method === 'GET' || method === 'DELETE'))
+          ) {
+            const unauthorized = response.status === 401;
+            const error = new HubApiError(
+              response.status,
+              unauthorized ? 'UNAUTHENTICATED' : String(response.status),
+              unauthorized ? '连接已失效，请重新运行 connect 授权' : 'Hub MCP 请求失败',
+              { origin: url, requestId: responseRequestId(response, undefined, token) },
+            );
+            if (diagnostics) await diagnostics.httpError(error);
+            else if (!unauthorized && error.requestId)
+              process.stderr.write(`请求编号：${error.requestId}\n`);
+            if (unauthorized) {
+              await response.body?.cancel();
+              throw error;
+            }
           }
           return response;
         },
@@ -189,8 +215,22 @@ async function revokeConnection(url: string, credentials: ConnectionCredentials)
  * stdio 桥：把 Hub 的工具原样转发给本地客户端，参数与结果都不改写。
  * 监听 stdin 结束与 SIGTERM/SIGINT 关闭两端，宿主进程退出后不留孤儿子进程。
  */
-export async function bridgeAgent(url: string, directory: string, agent: AgentClient) {
-  const client = await openHubConnection(url, connectionFile(directory, url, agent));
+export async function bridgeAgent(
+  url: string,
+  directory: string,
+  agent: AgentClient,
+  optionNames: readonly string[] = [],
+) {
+  let serving = false;
+  const context = { command: 'bridge', options: optionNames, arguments: [], origin: url };
+  const client = await openHubConnection(url, connectionFile(directory, url, agent), {
+    credentialError: (error) => recordLastFailure(directory, context, error),
+    async httpError(error) {
+      await recordLastFailure(directory, context, error);
+      if (error.requestId && (serving || error.status !== 401))
+        process.stderr.write(`请求编号：${error.requestId}\n`);
+    },
+  });
   const server = new McpServer(
     { name: 'capability-hub', version: packageJson.version },
     { instructions: client.getInstructions() },
@@ -213,6 +253,7 @@ export async function bridgeAgent(url: string, directory: string, agent: AgentCl
       );
     const transport = new StdioServerTransport();
     await server.connect(transport);
+    serving = true;
     const close = () => {
       void Promise.allSettled([server.close(), client.close()]);
     };

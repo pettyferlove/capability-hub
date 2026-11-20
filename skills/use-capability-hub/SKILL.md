@@ -1,6 +1,6 @@
 ---
 name: use-capability-hub
-description: 接入 Capability Hub，查找并使用团队共享的 Skill 和 MCP。适用于任务需要 Hub 中的团队规范或服务、用户给出 Hub 邀请或资源链接、要邀请同事接入 Hub，或要向 Hub 提交本地 Skill、推荐资源或上报版本反馈的场景。
+description: 接入 Capability Hub，查找并使用团队共享的 Skill 和 MCP。适用于任务需要 Hub 中的团队规范或服务、用户给出 Hub 邀请或资源链接、要邀请同事接入 Hub、提交本地 Skill、推荐资源、反馈版本问题，或反馈 Hub 平台本身的问题。
 ---
 
 # 使用 Capability Hub
@@ -15,7 +15,8 @@ description: 接入 Capability Hub，查找并使用团队共享的 Skill 和 MC
 
 - 通过终端搜索或持久安装 Skill：读取 [CLI 搜索和安装](references/cli.md)。能运行 CLI 时用它校验写入。
 - 通过 MCP 查找、读取 Skill，取得安装票据，或配置目录中的 MCP 服务：读取 [MCP 使用](references/mcp.md)。
-- 提交本地 Skill、推荐资源或上报反馈：读取 [向 Hub 贡献](references/contribution.md)。
+- 提交本地 Skill、推荐资源或反馈固定版本的问题：读取 [向 Hub 贡献](references/contribution.md)。
+- 反馈 Hub 本身的连接、授权、安装命令或网页问题：读取 [CLI 平台反馈](references/cli.md#反馈-hub-本身)。先预览，再经用户确认，不调用资源反馈工具。
 
 只读取当前任务需要的资料。在线读取时，相对链接以当前文档 URL 为基准；通过 Hub MCP 加载时，从同一 `version_id` 的 `manifest.files` 选路径并调用 `read_skill_file`，不要混用不同版本的正文和附属文件。
 
@@ -25,4 +26,4 @@ description: 接入 Capability Hub，查找并使用团队共享的 Skill 和 MC
 
 说明目标目录、文件和脚本后写入完整目录，保留 `SKILL.md` 及全部附属文件。同名内容有差异时先确定处理方式，替换前备份。核对落盘文件后报告位置，执行附带脚本需另获授权。
 
-工具返回 `isError: true` 时，读取错误码和原因，说明受影响的步骤，按 `retryable` 判断是否原样重试。
+工具返回 `isError: true` 时，读取错误码和原因，说明受影响的步骤；有 `request_id` 时保留请求编号，按 `retryable` 判断是否原样重试。

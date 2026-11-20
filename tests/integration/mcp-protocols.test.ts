@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { sha256 } from '@capability-hub/domain/canonical';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
@@ -104,6 +105,19 @@ for (const version of ['2025-03-26', '2025-06-18', '2025-11-25']) {
       }),
     );
     assert.equal(object(object(pinned.structuredContent).release).version_id, intake.version_id);
+
+    const missing = await post('tools/call', {
+      name: 'load_skill',
+      arguments: { version_id: randomUUID() },
+    });
+    const requestId = missing.headers.get('x-request-id');
+    assert.match(requestId ?? '', /^[a-f0-9-]{36}$/);
+    const missingResult = await rpcResult(missing);
+    assert.equal(missingResult.isError, true);
+    assert(Array.isArray(missingResult.content));
+    const toolError = object(JSON.parse(String(object(missingResult.content[0]).text)));
+    assert.equal(object(toolError.error).code, 'NOT_FOUND');
+    assert.equal(object(toolError.error).request_id, requestId);
 
     const denied = await rpcMessage(
       await post('tools/call', {

@@ -27,7 +27,7 @@ const bridgeHandshake = z.union([
 export function registerMcpRoutes(app: Express, { hub }: HttpContext): void {
   app.all('/mcp', async (req, res, next) => {
     try {
-      const { principal, token, credential } = res.locals;
+      const { principal, token, credential, request_id } = res.locals;
       if (!token || !credential) fail(401, 'BEARER_REQUIRED', '请在客户端发起 Hub 连接授权');
       const request: unknown = req.body;
       const method =
@@ -39,7 +39,7 @@ export function registerMcpRoutes(app: Express, { hub }: HttpContext): void {
               bridgeVersion: bridgeHandshake.safeParse(request).data,
             }
           : undefined;
-      const m = createMcp(hub, principal, token.scope, credential, handshake);
+      const m = createMcp(hub, principal, token.scope, credential, request_id, handshake);
       res.on('close', () => void m.handler.close());
       await m.node(req, res, req.body);
     } catch (e) {

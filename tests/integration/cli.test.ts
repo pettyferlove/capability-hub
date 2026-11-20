@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { after, test, type TestContext } from 'node:test';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
@@ -9,17 +9,23 @@ import {
   readdir,
   realpath,
   rm,
+  stat,
   symlink,
   writeFile,
 } from 'node:fs/promises';
 import { once } from 'node:events';
-import { createServer } from 'node:http';
+import { createServer, type RequestListener } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { cliInstallationGuide } from '@capability-hub/contracts';
+import {
+  cliInstallationGuide,
+  hubFeedbackCreateRequestSchema,
+  hubFeedbackLastFailureSchema,
+} from '@capability-hub/contracts';
 import { sha256 } from '@capability-hub/domain/canonical';
+import { z } from 'zod';
 import { HubApiClient } from '../../apps/cli/src/api-client.js';
 import { saveCredentials } from '../../apps/cli/src/credentials.js';
 import { serveTestHub } from '../support/server.js';
@@ -29,6 +35,9 @@ import { deferred } from '../support/store.js';
 import cliPackage from '../../apps/cli/package.json' with { type: 'json' };
 
 const execute = promisify(execFile);
+const testHome = await mkdtemp(join(await realpath(tmpdir()), 'hub-cli-home-'));
+
+after(() => rm(testHome, { recursive: true, force: true }));
 
 function cli(
   arguments_: string[],
@@ -41,7 +50,12 @@ function cli(
   } = {},
 ) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    const environment = { ...process.env, ...options.environment };
+    const environment = {
+      ...process.env,
+      HOME: testHome,
+      USERPROFILE: testHome,
+      ...options.environment,
+    };
     if (token !== undefined) environment.CAPABILITY_HUB_TOKEN = token;
     else delete environment.CAPABILITY_HUB_TOKEN;
     const bootstrap = `
@@ -170,7 +184,9 @@ test('CLI 缺少 Agent 连接凭据时提示 connect，不暴露底层路径或�
     assert.match(result.stderr, /capability-hub connect/);
     assert.match(result.stderr, /--config-dir/);
     assert.doesNotMatch(result.stderr, /ENOENT|[a-f0-9]{64}\.json/);
-    await assert.rejects(readdir(directory), { code: 'ENOENT' });
+    assert.deepEqual(await readdir(directory), ['last-failure.json']);
+    const raw = await readFile(join(directory, 'last-failure.json'), 'utf8');
+    assert.equal(hubFeedbackLastFailureSchema.parse(JSON.parse(raw)).command, command);
   }
 });
 
@@ -624,6 +640,240 @@ test('CLI 版本提示区分最低与推荐版本，忽略无效头，不污染 
   }
 });
 
+const feedbackReport = {
+  kind: 'bug',
+  surface: 'mcp',
+  title: 'Agent connection hangs',
+  description: 'The terminal stays on the connection screen.',
+};
+
+function feedbackNew(origin: string, directory: string, report = feedbackReport) {
+  return [
+    'feedback',
+    'new',
+    '--url',
+    origin,
+    '--config-dir',
+    directory,
+    '--kind',
+    report.kind,
+    '--surface',
+    report.surface,
+    '--title',
+    report.title,
+    '--description',
+    report.description,
+  ];
+}
+
+async function serveCliFeedbackBoundary(context: TestContext, respond?: RequestListener) {
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-cli-feedback-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    requests.push(`${request.method} ${request.url}`);
+    request.resume();
+    if (respond) respond(request, response);
+    else response.writeHead(500).end();
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  context.after(() => promisify(server.close.bind(server))());
+  const address = server.address();
+  assert(address && typeof address === 'object');
+  return {
+    root,
+    directory: join(root, 'cli-config'),
+    origin: `http://127.0.0.1:${address.port}`,
+    requests,
+  };
+}
+
+const feedbackAttachmentFields = {
+  name: z.string(),
+  kind: z.string(),
+  media_type: z.string(),
+  size: z.number(),
+};
+
+const feedbackPreview = z.strictObject({
+  metadata: hubFeedbackCreateRequestSchema,
+  attachments: z.array(z.strictObject(feedbackAttachmentFields)),
+});
+
+test('CLI 反馈 JSON 预览不访问 Hub，只展示元数据和附件清单', async (context) => {
+  const { root, directory, origin, requests } = await serveCliFeedbackBoundary(context);
+  const name = 'debug.log';
+  const file = join(root, name);
+  const content = '附件原文不得通过预览输出';
+  await writeFile(file, content);
+  const token = 'cli-feedback-preview-token';
+  const result = await cli(
+    [...feedbackNew(origin, directory), '--attach', file, '--dry-run', '--json'],
+    token,
+  );
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(requests, []);
+  const { metadata, attachments } = feedbackPreview.parse(JSON.parse(result.stdout));
+  assert.deepEqual(
+    {
+      kind: metadata.kind,
+      surface: metadata.surface,
+      title: metadata.title,
+      description: metadata.description,
+    },
+    feedbackReport,
+  );
+  assert.deepEqual(attachments, [
+    { name, kind: 'text', media_type: 'text/plain', size: Buffer.byteLength(content) },
+  ]);
+  for (const hidden of [token, content, file]) {
+    assert(!(result.stdout + result.stderr).includes(hidden));
+  }
+});
+
+test('CLI 非交互反馈缺少 --yes 时拒绝发送', async (context) => {
+  const { directory, origin, requests } = await serveCliFeedbackBoundary(context);
+  const result = await cli(
+    [...feedbackNew(origin, directory), '--no-interactive'],
+    'cli-feedback-unconfirmed-token',
+  );
+  assert.equal(result.code, 1, result.stderr);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /确认.*--yes/);
+  assert.deepEqual(requests, []);
+});
+
+test('CLI 向真实 Hub 提交反馈附件并返回编号和详情地址，同内容跨进程重试返回同一条', async (context) => {
+  const fixture = await serveTestHub(context);
+  const { token } = await fixture.hub.tokens.issue(fixture.reader, {
+    name: 'CLI 反馈',
+    scope: 'hub:read',
+  });
+  const directory = await realpath(fixture.directory);
+  const name = 'diagnostics.txt';
+  const file = join(directory, name);
+  const content = '连接进度停在等待授权。';
+  await writeFile(file, content);
+  const arguments_ = [
+    ...feedbackNew(fixture.origin, join(directory, 'cli-config')),
+    '--attach',
+    file,
+    '--yes',
+    '--json',
+  ];
+  const result = await cli(arguments_, token);
+  assert.equal(result.code, 0, result.stderr);
+  const created = z
+    .object({
+      id: z.uuid(),
+      number: z.number().int().positive(),
+      status: z.literal('pending'),
+      detail_url: z.url(),
+      attachments: z.array(z.object({ ...feedbackAttachmentFields, id: z.uuid() })),
+    })
+    .parse(JSON.parse(result.stdout));
+  assert.equal(created.number, 1);
+  assert.equal(created.detail_url, `${fixture.origin}/account?tab=feedback&feedback=${created.id}`);
+  assert.equal(created.attachments.length, 1);
+  const [{ id, ...attachment }] = created.attachments;
+  assert.deepEqual(attachment, {
+    name,
+    kind: 'text',
+    media_type: 'text/plain',
+    size: Buffer.byteLength(content),
+  });
+  const attachmentUrl = `${fixture.origin}/api/hub-feedback/${created.id}/attachments/${id}`;
+  const response = await fetch(attachmentUrl, { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), content);
+  const replayed = await cli(arguments_, token);
+  assert.equal(replayed.code, 0, replayed.stderr);
+  assert.deepEqual(JSON.parse(replayed.stdout), JSON.parse(result.stdout));
+  assert(!(result.stdout + result.stderr + replayed.stdout + replayed.stderr).includes(token));
+});
+
+test('CLI 向旧版 Hub 提交反馈收到 404 时提示改用网页', async (context) => {
+  const { directory, origin, requests } = await serveCliFeedbackBoundary(context, (_req, res) => {
+    res.writeHead(404).end();
+  });
+  const result = await cli(
+    [...feedbackNew(origin, directory), '--yes', '--json'],
+    'cli-feedback-older-hub-token',
+  );
+  assert.equal(result.code, 1, result.stderr);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /尚不支持 CLI 反馈.*网页/);
+  assert.deepEqual(requests, ['POST /api/hub-feedback']);
+});
+
+test('CLI 私有记录失败请求，反馈预览只附带脱敏诊断', async (context) => {
+  const requestId = randomUUID();
+  const error = { code: 'SERVICE_UNAVAILABLE', message: '实例维护中', request_id: requestId };
+  const { directory, origin, requests } = await serveCliFeedbackBoundary(context, (_req, res) => {
+    res.writeHead(503, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error }));
+  });
+  const token = 'environment-value-must-not-leak';
+  const storedToken = 'auth-file-value-must-not-leak';
+  await saveCredentials(join(directory, 'auth.json'), { url: origin, token: storedToken });
+  const title = 'Failed report title must not leak';
+  const description = 'Failed report description must not leak';
+  const failed = await cli(
+    [
+      ...feedbackNew(origin, directory, { ...feedbackReport, title, description }),
+      '--yes',
+      '--json',
+    ],
+    token,
+  );
+  assert.equal(failed.code, 1, failed.stderr);
+  assert.equal(failed.stdout, '');
+  assert(failed.stderr.includes(`请求编号：${requestId}`));
+  const path = join(directory, 'last-failure.json');
+  const rawRecord = await readFile(path, 'utf8');
+  assert(Buffer.byteLength(rawRecord) <= 16 * 1024);
+  if (process.platform !== 'win32') assert.equal((await stat(path)).mode & 0o077, 0);
+  const record = hubFeedbackLastFailureSchema.parse(JSON.parse(rawRecord));
+  assert.equal(record.command, 'feedback new');
+  assert.equal(record.exit_code, 1);
+  assert.equal(record.status, 503);
+  assert.equal(record.code, 'SERVICE_UNAVAILABLE');
+  assert.equal(record.request_id, requestId);
+  assert.equal(record.hub_origin, origin);
+  assert.deepEqual(record.arguments, []);
+  for (const option of ['--title', '--description', '--config-dir']) {
+    assert(record.options.includes(option));
+  }
+  const result = await cli(
+    [...feedbackNew(origin, directory), '--last-error', '--dry-run', '--json'],
+    token,
+  );
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(requests, ['POST /api/hub-feedback']);
+  const client = feedbackPreview.parse(JSON.parse(result.stdout)).metadata.diagnostics?.client;
+  assert(client?.kind === 'cli');
+  assert.deepEqual(client.last_failure, record);
+  for (const hidden of [token, storedToken, title, description, directory]) {
+    assert(!(failed.stderr + rawRecord + result.stdout + result.stderr).includes(hidden));
+  }
+});
+
+test('CLI 反馈遇到附件凭据时在联网前拒绝并隐藏匹配内容', async (context) => {
+  const { root, directory, origin, requests } = await serveCliFeedbackBoundary(context);
+  const file = join(root, 'debug.log');
+  const fakeSecret = `ghp_${'x'.repeat(36)}`;
+  await writeFile(file, `Unrelated message\n${fakeSecret}`);
+  const result = await cli(
+    [...feedbackNew(origin, directory), '--attach', file, '--yes', '--json'],
+    'cli-feedback-attachment-token',
+  );
+  assert.equal(result.code, 1, result.stderr);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /debug\.log.*第 2 行/);
+  assert(!result.stderr.includes(fakeSecret));
+  assert.deepEqual(requests, []);
+});
+
 test('CLI 子进程通过真实 HTTP 搜索和安装已发布内容，撤权后不能再次交付，错误不输出令牌', async (context) => {
   const fixture = await serveTestHub(context);
   const { intake } = await publishSkill(fixture, { body: '固定旧版测试正文' });
@@ -739,7 +989,7 @@ test('CLI 可匿名预览和安装公开 Skill，来源记录与下载审计保�
       ['anonymous', intake.version_id],
     ],
   );
-  await assert.rejects(() => readdir(join(root, 'unused-config')), { code: 'ENOENT' });
+  assert.deepEqual(await readdir(join(root, 'unused-config')), ['last-failure.json']);
 });
 
 test('outdated 按安装状态检查来源、补全旧记录，并且只向匹配实例发送凭据', async (context) => {

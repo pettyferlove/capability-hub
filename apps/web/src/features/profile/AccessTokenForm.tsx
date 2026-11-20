@@ -116,8 +116,8 @@ export function AccessTokenForm({
       />
       <p className={subtleStyles}>
         {scope === 'hub:read'
-          ? '支持搜索、加载、安装包交付和 MCP 接入方案；分享、推荐与反馈需要另行授权。'
-          : '允许分享 Skill、推荐资源与提交脱敏反馈；资产创建与维护仍按你的角色权限校验。'}
+          ? '可搜索、加载和安装资源，也可在 CLI 提交和跟进本人的平台反馈；MCP 贡献需另行授权。'
+          : '另可经 MCP 分享 Skill、推荐资源与提交资源反馈；资产权限仍由你的角色决定。'}
       </p>
       <p className={subtleStyles}>令牌长期有效，可在账号安全中随时撤销。创建后请立即复制保存。</p>
       {error && <Message error>{error}</Message>}

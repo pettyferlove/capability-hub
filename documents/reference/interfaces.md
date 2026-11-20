@@ -82,13 +82,13 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 
 同一用户的幂等键永久绑定一次反馈：同内容重试返回已有记录的当前状态，不同内容返回 409。每用户每小时最多创建 20 条，重试不占额度；超限返回 429。提交、重试和读取均核验当前身份与版本受众。反馈默认只对提交者及资产维护者可见，提交者失去版本访问权后不能继续读取；维护者可从资产维护页处理封禁资源的反馈。审核权限不自动授予反馈读取权。
 
-网页与 MCP 复用同一用例。网页使用 POST `/api/feedback`（请求体携带上述幂等键）、GET `/api/feedback/:id`、GET `/api/assets/:id/feedback?page=1&limit=10&status=pending` 和 PATCH `/api/feedback/:id`。列表由服务端筛选与分页，limit 最大 50。写入要求浏览器会话与 CSRF；个人令牌不能通过 HTTP 写入或处理反馈，只能用贡献 MCP 工具上报。
+网页与 MCP 复用同一用例。网页使用 POST `/api/feedback`（请求体携带上述幂等键）、GET `/api/feedback/:id`、GET `/api/assets/:id/feedback?page=1&limit=10&status=pending` 和 PATCH `/api/feedback/:id`。列表由服务端筛选与分页，limit 最大 50。HTTP 写入资源反馈要求浏览器会话与 CSRF；个人令牌只能通过贡献 MCP 工具上报资源反馈。
 
 维护者可切换 pending、in_progress、resolved、declined；PATCH 请求体包含 `revision`、`status`、`resolution`、`fixed_version_id`（可空），旧修订返回 409。已解决和不采纳必须填写说明；只有已解决可关联同资产修复版本。未对提交者开放的修复候选不会暴露编号或版本名。详情链接为 `/asset/:slug?feedback=:id`，固定反馈版本与当前目录版本分别展示。审计只保存操作、目标版本和处理状态，不复制反馈正文。
 
 ## 平台反馈
 
-本人接口前缀 `/api/hub-feedback`，仅接受网页会话，只返回当前账号的反馈；不存在或不属于本人均返回 404。处理前缀 `/api/admin/hub-feedback` 另需平台级 `feedback:manage`，可查看内部备注及提交上下文。资源反馈不走这些接口。
+本人接口 `/api/hub-feedback` 只返回当前账号的反馈，不存在或不属于本人均返回 404。个人令牌（含 `hub:read`）仅按表中本人接口的精确 `GET`、`POST` 组合放行，不放行 `HEAD` 或移除附件。`/api/admin/hub-feedback` 只接受持有平台级 `feedback:manage` 的网页会话，返回内部备注及提交上下文；OAuth 连接凭据仍仅用于 `/mcp`。
 
 | 方法与路径（相对前缀）                                      | 本人                                         | 处理                                                                                                        |
 | ----------------------------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -119,12 +119,15 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 | outdated         | 检查已安装 Skill；可重复 `--to`，支持 `--json`；退出码见下文                        |
 | hub-config       | --url、--client；离线生成配置，可选 --method、--scope、--contribute、--conversation |
 | mcp-config       | NAME、--version、--client；可选 --option、--scope                                   |
+| feedback         | new / list / show / reply / close；不带子命令时在交互终端开启向导                   |
 
 `-h` / `help <命令>` 查看帮助，`-V` / `--cli-version` 查看 CLI 版本。终端提供菜单和参数向导，等待时显示点阵动效、下载时显示字节进度；`--no-animation` 保留向导和静态状态。`--no-interactive`、CI、重定向、`--json` 和 `bridge` 禁用交互。JSON、配置和协议写 stdout，提示写 stderr；`CAPABILITY_HUB_NO_UPDATE_NOTICE=1` 关闭自动版本提示。
 
 `--config-dir` 隔离凭据，默认 `~/.config/capability-hub`。读取使用登录凭据或 `CAPABILITY_HUB_TOKEN` + 显式 `--url`；两者都没有时，`add` 和 `outdated` 可用 `--url` 匿名访问公开 Skill。`add --ticket` 和 `hub-config` 不读取 CLI 凭据；票据模式如提供 `--url`，其 origin 必须与票据一致。下载限制大小，不跟随重定向。
 
 `outdated` 输出表格或 JSON 数组。含 `SKILL.md` 但缺少来源记录的 Skill 报告 `unknown_source`（来源和版本字段为 `null`），与 `other_hub` 一样不查询远端。Windows 不比较磁盘执行位，仍校验文件内容。`--exit-code` 在 `update_available` 或 `unavailable` 时退出 2；`--fail-on-modified` 在 `modified` 时退出 3，优先于 2。其余状态为 `current`、`deprecated`；未触发上述条件且检查成功时退出 0。
+
+`feedback new` 可传 `--title`、`--description` 或 `--description-file`、`--attach`、`--last-error`，也可用 `--no-diagnostics` 不带诊断。非交互写入须确认后带 `--yes`；`new --dry-run --json` 只预览，不发请求。成功返回反馈编号和详情地址。CLI 不把令牌或配置文件内容写入最近一次失败诊断；Hub 有请求编号时输出该编号。
 
 ## OAuth 与客户端连接
 

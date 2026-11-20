@@ -1,10 +1,37 @@
 import { Command, CommanderError, Option } from 'commander';
-import { agentClientIds } from '@capability-hub/contracts';
+import { resolve } from 'node:path';
+import {
+  agentClientIds,
+  assetSlugSchema,
+  hubFeedbackAreas,
+  hubFeedbackKinds,
+  hubFeedbackSurfaces,
+} from '@capability-hub/contracts';
 import packageJson from '../package.json' with { type: 'json' };
 import { terminalText } from './api-client.js';
 import { runCommand, type CliOptions } from './cli-commands.js';
-import { CliUi } from './cli-ui.js';
+import { CliCancelled, CliUi } from './cli-ui.js';
+import { hubUrl } from './credentials.js';
+import { recordLastFailure } from './diagnostics.js';
+import { defaultConfigDirectory } from './feedback-files.js';
 import { withCliUpdateNotice } from './update-notice.js';
+
+function commandPath(command: Command) {
+  const names: string[] = [];
+  for (let item = command; item.parent; item = item.parent) names.unshift(item.name());
+  return names.join(' ');
+}
+
+function parsedOptionNames(command: Command) {
+  const names = new Set<string>();
+  for (let item: Command | null = command; item; item = item.parent) {
+    for (const option of item.options) {
+      if (option.long && item.getOptionValueSource(option.attributeName()) === 'cli')
+        names.add(option.long);
+    }
+  }
+  return [...names];
+}
 
 /** 命令定义与帮助共用一份参数声明；退出由 main 处理，便于嵌入与测试。 */
 export async function runCli(arguments_: readonly string[] = process.argv.slice(2)) {
@@ -33,16 +60,16 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
   capability-hub login --url https://hub.example.com
   capability-hub search "code review"
 
-连接 Agent 用 connect；登录 CLI 后可 search、add 和 mcp-config。
+连接 Agent 用 connect；登录 CLI 后可 search、add、mcp-config 和 feedback。
 公开 Skill 的 add 无需登录，但须提供 --url。
 交互终端省略命令可打开菜单；使用 help <命令> 查看详细示例。
-读取命令也可使用 CAPABILITY_HUB_TOKEN，但必须显式提供 --url。
+读取命令和平台反馈也可使用 CAPABILITY_HUB_TOKEN，但必须显式提供 --url。
 --version 指资源版本；查看 CLI 版本请用 -V / --cli-version。
 `,
     );
 
-  function command(name: string, description: string, examples: string) {
-    return program.command(name).description(description).addHelpText('after', `\n${examples}\n`);
+  function command(name: string, description: string, examples: string, parent = program) {
+    return parent.command(name).description(description).addHelpText('after', `\n${examples}\n`);
   }
 
   function clientOption() {
@@ -58,15 +85,47 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     ]);
   }
 
-  async function execute(command: Command, args: string[] = []) {
+  async function execute(command: Command, args: string[] = [], menuUi?: CliUi) {
+    const path = commandPath(command);
     const flags = command.optsWithGlobals<CliOptions>();
-    const ui = new CliUi(
-      flags.interactive !== false && !flags.json && command.name() !== 'bridge',
-      flags.animation !== false,
-    );
-    ui.intro(command.name());
-    const run = () => runCommand(command.name(), args, flags, ui);
-    exitCode = command.name() === 'bridge' ? await run() : await withCliUpdateNotice(run);
+    const ui =
+      menuUi ??
+      new CliUi(
+        flags.interactive !== false && !flags.json && path !== 'bridge',
+        flags.animation !== false,
+      );
+    if (!menuUi) ui.intro(path);
+    const options = parsedOptionNames(command);
+    const run = () => runCommand(path, args, flags, ui, options);
+    try {
+      exitCode = path === 'bridge' ? await run() : await withCliUpdateNotice(run);
+    } catch (error) {
+      if (
+        path !== 'bridge' &&
+        !(error instanceof CliCancelled || error instanceof CommanderError)
+      ) {
+        const directory = flags.configDir ? resolve(flags.configDir) : defaultConfigDirectory();
+        const slug =
+          path === 'add' || path === 'mcp-config' ? assetSlugSchema.safeParse(args[0]) : undefined;
+        let origin: string | undefined;
+        try {
+          if (flags.url !== undefined) origin = hubUrl(flags.url);
+        } catch {
+          // 无效地址可能含凭据，不进入失败记录。
+        }
+        await recordLastFailure(
+          directory,
+          {
+            command: path,
+            options,
+            arguments: slug?.success ? [slug.data] : [],
+            origin,
+          },
+          error,
+        ).catch(() => {});
+      }
+      throw error;
+    }
   }
 
   command(
@@ -178,6 +237,98 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     .addOption(clientOption())
     .action(async (_options: CliOptions, command: Command) => execute(command));
 
+  const feedback = command(
+    'feedback',
+    '提交或跟进 Capability Hub 的平台问题',
+    '示例：\n  capability-hub feedback\n  capability-hub feedback list --status all\n  capability-hub feedback show 42\n\n不带子命令时打开交互向导。需要 CLI 登录，或 CAPABILITY_HUB_TOKEN + --url。',
+  ).action(async (_options: CliOptions, command: Command) => execute(command));
+
+  const jsonOption = () => new Option('--json', '输出 JSON，便于脚本处理');
+  const yesOption = () => new Option('--yes', '经用户确认后提交，无需再次询问');
+  const attachOption = () =>
+    new Option('--attach <PATH>', '本地附件文件，最多指定 5 次').argParser(
+      (path: string, paths: string[] = []) => {
+        paths.push(path);
+        return paths;
+      },
+    );
+
+  command(
+    'new',
+    '预览或提交平台反馈',
+    '示例：\n  capability-hub feedback new --kind bug --surface mcp --title "接入失败" --description-file - --last-error --dry-run --json < report.md\n\n将预览交给用户确认后，再用相同参数去掉 --dry-run 并加 --yes。',
+    feedback,
+  )
+    .option('--title <TEXT>', '反馈标题')
+    .addOption(new Option('--description <TEXT>', '问题描述').conflicts('descriptionFile'))
+    .option('--description-file <PATH>', '从 UTF-8 普通文件或标准输入（-）读取描述')
+    .addOption(
+      new Option('--kind <KIND>', '反馈类型（默认 bug）').choices(Object.keys(hubFeedbackKinds)),
+    )
+    .addOption(
+      new Option('--surface <SURFACE>', '问题位置（默认 cli）').choices(
+        Object.keys(hubFeedbackSurfaces),
+      ),
+    )
+    .addOption(new Option('--area <AREA>', '所属模块').choices(Object.keys(hubFeedbackAreas)))
+    .option('--blocking', '问题阻塞继续使用')
+    .addOption(attachOption())
+    .option('--last-error', '附带本机最近一次失败的诊断记录')
+    .option('--no-diagnostics', '不附带任何诊断信息')
+    .option('--dry-run', '预览反馈资料和附件清单，不请求 Hub')
+    .addOption(yesOption())
+    .addOption(jsonOption())
+    .action(async (_options: CliOptions, command: Command) => execute(command));
+
+  command(
+    'list',
+    '列出我的反馈并标明未读',
+    '示例：\n  capability-hub feedback list --status all',
+    feedback,
+  )
+    .addOption(
+      new Option('--status <STATUS>', '按开放或已结束筛选')
+        .choices(['open', 'closed', 'all'])
+        .default('open'),
+    )
+    .addOption(jsonOption())
+    .action(async (_options: CliOptions, command: Command) => execute(command));
+
+  command(
+    'show',
+    '查看反馈详情和公开时间线并标记已读',
+    '示例：\n  capability-hub feedback show 42',
+    feedback,
+  )
+    .argument('<ref>', '反馈编号或 ID')
+    .addOption(jsonOption())
+    .action(async (ref: string, _options: CliOptions, command: Command) => execute(command, [ref]));
+
+  command(
+    'reply',
+    '为我的反馈补充留言和附件',
+    '示例：\n  capability-hub feedback reply 42 --message-file follow-up.md --yes',
+    feedback,
+  )
+    .argument('<ref>', '反馈编号或 ID')
+    .addOption(new Option('--message <TEXT>', '留言内容').conflicts('messageFile'))
+    .option('--message-file <PATH>', '从 UTF-8 普通文件或标准输入（-）读取留言')
+    .addOption(attachOption())
+    .addOption(yesOption())
+    .addOption(jsonOption())
+    .action(async (ref: string, _options: CliOptions, command: Command) => execute(command, [ref]));
+
+  command(
+    'close',
+    '确认问题已解决并关闭反馈',
+    '示例：\n  capability-hub feedback close 42 --yes',
+    feedback,
+  )
+    .argument('<ref>', '反馈编号或 ID')
+    .addOption(yesOption())
+    .addOption(jsonOption())
+    .action(async (ref: string, _options: CliOptions, command: Command) => execute(command, [ref]));
+
   program.action(async (_options: CliOptions, command: Command) => {
     const flags = command.opts<CliOptions>();
     const ui = new CliUi(flags.interactive !== false, flags.animation !== false);
@@ -186,6 +337,9 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
       return;
     }
     ui.intro();
+    const menuCommands = new Map(
+      [...program.commands, ...feedback.commands].map((item) => [commandPath(item), item]),
+    );
     const selected = await ui.choose(
       '命令',
       '你想做什么？',
@@ -193,19 +347,18 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
         { title: 'Agent 接入', commands: ['connect', 'status'] },
         { title: 'CLI 资源', commands: ['login', 'search', 'add', 'outdated'] },
         { title: '配置生成', commands: ['hub-config', 'mcp-config'] },
+        { title: '问题反馈', commands: ['feedback', 'feedback list'] },
       ].flatMap((group) => [
         { value: group.title, label: group.title, disabled: true },
-        ...program.commands
-          .filter((item) => group.commands.includes(item.name()))
-          .map((item) => ({
-            value: item.name(),
-            label: item.name(),
-            hint: item.description(),
-            gapAfter: item.name() === group.commands.at(-1),
-          })),
+        ...group.commands.map((path) => ({
+          value: path,
+          label: path === 'feedback' ? '提交反馈' : path === 'feedback list' ? '我的反馈' : path,
+          hint: menuCommands.get(path)!.description(),
+          gapAfter: path === group.commands.at(-1),
+        })),
       ]),
     );
-    exitCode = await withCliUpdateNotice(() => runCommand(selected, [], flags, ui));
+    await execute(menuCommands.get(selected)!, [], ui);
   });
 
   try {

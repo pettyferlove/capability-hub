@@ -147,20 +147,20 @@ function feedbackDetailRoutes(router: Router, { hub }: HttpContext, access: HubF
 export function registerHubFeedbackRoutes(app: Express, context: HttpContext): void {
   const { hub } = context;
   const self = Router();
-  self.use(sessionOnly);
   self.post(
     '/',
     upload,
     jsonRoute(async (req, res) => {
       const { files, ...input } = hubFeedbackCreateRequestSchema.parse(decodeMetadata(req));
+      const personal = res.locals.credential?.kind === 'personal';
       const result = await hub.hubFeedback.create(
         res.locals.principal,
         input,
         uploadedFiles(req, files),
         {
-          channel: 'web',
-          credential_type: 'session',
-          token_name: null,
+          channel: personal ? 'cli' : 'web',
+          credential_type: personal ? 'personal_token' : 'session',
+          token_name: personal ? (res.locals.token?.name ?? null) : null,
           received_at: new Date().toISOString(),
           request_id: res.locals.request_id,
           ...hubBuild,

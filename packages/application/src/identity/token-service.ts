@@ -24,8 +24,7 @@ export class TokenService {
 
   /**
    * 签发个人访问令牌：32 字节随机明文只在此返回，库中仅存 `sha256` 摘要。
-   * `scope` 缺省 `hub:read`（只读）；`hub:contribute` 才允许经 MCP 提交内容，
-   * 权限细节仍由 {@link Principal} 的角色决定，scope 只是额外收窄。
+   * `hub:read` 可读取资源及跟进本人的平台反馈；经 MCP 贡献资源仍需 `hub:contribute` 和角色授权。
    * 事务内要求账号启用（401/`UNAUTHENTICATED`），写审计 `identity.token_created`。
    * @param input - 名称与 scope 由调用方校验，本方法不再做范围检查
    */

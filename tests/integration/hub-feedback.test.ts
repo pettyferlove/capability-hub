@@ -120,9 +120,12 @@ test('平台反馈自助读取只限本人，内部备注和附件仅处理人�
   );
   const token = await fixture.hub.tokens.issue(fixture.admin, { name: 'Feedback scope test' });
   const bearer = httpClient(fixture).set('Authorization', `Bearer ${token.token}`);
-  for (const path of [self, adminDetail]) {
-    await expectError(bearer.get(path), 403, 'TOKEN_SCOPE');
-  }
+  const bearerList = await bearer.get(self).expect(200);
+  assert.deepEqual(
+    bearerList.body.items.map((item: { id: string }) => item.id),
+    [handlerOwn.body.id],
+  );
+  await expectError(bearer.get(adminDetail), 403, 'TOKEN_SCOPE');
 });
 
 test('补充按负责人恢复状态，已关闭反馈的未回复留言不使其重开', async (context) => {

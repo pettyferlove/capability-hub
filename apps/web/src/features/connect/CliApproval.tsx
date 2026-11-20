@@ -190,12 +190,14 @@ export function CliApproval({ initialCode }: { initialCode: string }) {
               <span className={cn(consentPermissionIconStyles, 'bg-brand-soft text-brand')}>
                 <BookOpen size={18} />
               </span>
-              <strong className="col-start-2 row-start-1 text-base leading-snug">搜索和使用</strong>
+              <strong className="col-start-2 row-start-1 text-base leading-snug">
+                搜索、使用与反馈
+              </strong>
               <span className="col-span-2 col-start-3 row-start-1 justify-self-end rounded-full bg-brand-soft px-2 py-0.5 text-caption font-medium text-brand">
-                只读权限
+                个人令牌
               </span>
               <span className="col-span-3 col-start-2 row-start-2 text-label text-muted-ink">
-                查找、读取和安装你有权访问的 Skill，获取 MCP 配置。
+                查找、读取和安装可访问的 Skill，获取 MCP 配置，提交和跟进本人的平台反馈。
               </span>
             </div>
             <p className="flex items-start gap-2 text-label text-muted-ink">

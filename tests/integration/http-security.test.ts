@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { sha256 } from '@capability-hub/domain/canonical';
+import type { Agent } from 'supertest';
 import { createTestHub, publishSkill, testPassword } from '../support/application.js';
 import { httpClient, signIn } from '../support/http.js';
 
@@ -100,6 +102,167 @@ test('Bearer 只访问消费接口，不能读取个人管理资料；失效凭�
     401,
     'UNAUTHENTICATED',
   );
+});
+
+test('只读个人令牌只能通过精确允许的路径提交和跟进本人平台反馈', async (context) => {
+  const fixture = await createTestHub(context);
+  const tokenName = '终端反馈';
+  const token = await fixture.hub.tokens.issue(fixture.reader, {
+    name: tokenName,
+    scope: 'hub:read',
+  });
+  const reader = httpClient(fixture).set('Authorization', `Bearer ${token.token}`);
+  const admin = await signIn(fixture);
+  const self = '/api/hub-feedback';
+  const contents = 'Steps to reproduce the issue';
+  const create = (client: Agent) =>
+    client
+      .post(self)
+      .set('Idempotency-Key', randomUUID())
+      .field(
+        'metadata',
+        JSON.stringify({
+          kind: 'bug',
+          surface: 'cli',
+          title: 'CLI command does not finish',
+          description: contents,
+          files: [{ part: 0, kind: 'text', name: 'steps.txt' }],
+        }),
+      )
+      .attach('files', Buffer.from(contents), 'steps.txt')
+      .expect(201);
+  const created = await create(reader);
+  const other = await create(admin);
+  const id: string = created.body.id;
+  const aid: string = created.body.attachments[0].id;
+  const detail = `${self}/${id}`;
+  const file = `${detail}/attachments/${aid}`;
+
+  const processed = await admin.get(`/api/admin/hub-feedback/${id}`).expect(200);
+  assert.equal(processed.body.channel, 'cli');
+  assert.equal(processed.body.submission.credential_type, 'personal_token');
+  assert.equal(processed.body.submission.token_name, tokenName);
+  assert.equal(processed.body.submission.request_id, created.headers['x-request-id']);
+  const listed = await reader.get(`${self}?page=1`).expect(200);
+  assert.deepEqual(
+    listed.body.items.map((item: { id: string }) => item.id),
+    [id],
+  );
+  assert.deepEqual((await reader.get(`${self}/summary`).expect(200)).body, { unread: 0, open: 1 });
+  assert.equal((await reader.get(detail).expect(200)).body.id, id);
+  assert.equal((await reader.get(`${self}/${created.body.number}`).expect(200)).body.id, id);
+  assert.equal((await reader.get(file).expect(200)).text, contents);
+  assertFailure(await reader.get(`${self}/2147483647`), 404, 'NOT_FOUND');
+
+  const update = (path: string, etag: string) =>
+    reader.post(path).set('If-Match', etag).set('Idempotency-Key', randomUUID());
+  const updateText = 'The same issue occurs after reconnecting';
+  const commented = await update(`${detail}/comments`, created.headers.etag)
+    .field('metadata', JSON.stringify({ body: updateText }))
+    .expect(200);
+  assert.equal(commented.body.events[0].body, updateText);
+  const read = await update(`${detail}/read`, commented.headers.etag).expect(200);
+  const closed = await update(`${detail}/close`, read.headers.etag).expect(200);
+  assert.equal(closed.body.status, 'resolved');
+
+  const otherDetail = `${self}/${other.body.id}`;
+  for (const path of [
+    otherDetail,
+    `${self}/${other.body.number}`,
+    `${otherDetail}/attachments/${other.body.attachments[0].id}`,
+  ]) {
+    assertFailure(await reader.get(path), 404, 'NOT_FOUND');
+  }
+  for (const action of ['comments', 'close', 'read']) {
+    const request = update(`${otherDetail}/${action}`, other.headers.etag);
+    if (action === 'comments') request.field('metadata', JSON.stringify({ body: updateText }));
+    assertFailure(await request, 404, 'NOT_FOUND');
+  }
+
+  for (const path of [self, detail, file, `${self}/summary`]) {
+    await reader.head(path).expect(403);
+  }
+  for (const [method, path] of [
+    ['options', self],
+    ['delete', file],
+    ['patch', detail],
+    ['post', detail],
+    ['post', `${self}/summary`],
+    ['post', `${self}/summary/read`],
+    ['post', `${self}/${created.body.number}/comments`],
+    ['post', `${detail}/read/`],
+    ['get', `${detail}/comments`],
+    ['get', `${self}/`],
+    ['get', `${self}-other`],
+    ['get', `${self}/summary/`],
+    ['get', `${self}/%73ummary`],
+    ['get', `${detail}/`],
+    ['get', `${self}/${id.replace('-', '%2D')}`],
+    ['get', `${detail}/attachments/${aid.replace('-', '%2D')}`],
+    ['get', `${detail}/attachments/${created.body.number}`],
+    ['get', `${self}/${created.body.number}/attachments/${aid}`],
+    ['get', `${self}/12345678-1234-1234-1234-123456789abc`],
+    ['get', `${self}/0`],
+    ['get', `${self}/0${created.body.number}`],
+    ['get', `${self}/2147483648`],
+    ['get', `${self}/1.0`],
+    ['get', '/api/HUB-feedback'],
+  ] as const) {
+    const rejected = await reader[method](path);
+    assertFailure(rejected, 403, 'TOKEN_SCOPE');
+    assert.match(rejected.headers['www-authenticate'], /^Bearer /);
+  }
+});
+
+test('OAuth 连接即使有贡献权限也只能用于 MCP，不能访问平台反馈', async (context) => {
+  const fixture = await createTestHub(context);
+  const { oauth } = fixture.hub;
+  const redirectUri = 'http://127.0.0.1/callback';
+  const resource = fixture.config.publicUrl + '/mcp';
+  const verifier = randomBytes(32).toString('base64url');
+  const { client_id } = await oauth.register({ redirect_uris: [redirectUri] });
+  const request = await oauth.begin({
+    client_id,
+    redirect_uri: redirectUri,
+    resource,
+    response_type: 'code',
+    scope: 'hub:read hub:contribute',
+    code_challenge_method: 'S256',
+    code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+  });
+  const decision = await oauth.decide(fixture.admin, request, true, true);
+  const tokens = await oauth.exchange({
+    grant_type: 'authorization_code',
+    client_id,
+    redirect_uri: redirectUri,
+    resource,
+    code: new URL(decision.redirect_uri).searchParams.get('code'),
+    code_verifier: verifier,
+  });
+  const client = httpClient(fixture).set('Authorization', `Bearer ${tokens.access_token}`);
+  await client
+    .post('/mcp')
+    .set('Accept', 'application/json, text/event-stream')
+    .set('MCP-Protocol-Version', '2025-11-25')
+    .send({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+    .expect(200);
+
+  const self = '/api/hub-feedback';
+  const detail = `${self}/${randomUUID()}`;
+  for (const [method, path] of [
+    ['get', self],
+    ['get', `${self}/summary`],
+    ['get', `${self}/1`],
+    ['get', detail],
+    ['get', `${detail}/attachments/${randomUUID()}`],
+    ['post', self],
+    ['post', `${detail}/comments`],
+    ['post', `${detail}/close`],
+    ['post', `${detail}/read`],
+    ['get', '/api/admin/hub-feedback'],
+  ] as const) {
+    assertFailure(await client[method](path), 403, 'TOKEN_SCOPE');
+  }
 });
 
 test('HTTP 输入校验拒绝重复 JSON 字段、重复查询参数与超大请求', async (context) => {

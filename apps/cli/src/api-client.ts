@@ -1,19 +1,37 @@
 import type { z } from 'zod';
 import { boundedJson } from '@capability-hub/infrastructure/content/json';
+import { secretFindings } from '@capability-hub/infrastructure/content/secret-detection';
 import { observeCliResponse } from './update-notice.js';
+
+export interface HubApiRequestOptions {
+  method?: string;
+  idempotencyKey?: string;
+  ifMatch?: string;
+}
+
+interface HubApiErrorOptions extends ErrorOptions {
+  requestId?: string;
+  origin?: string;
+}
 
 /**
  * Hub 返回非 2xx 时抛出的错误：`status` 是 HTTP 状态码，`code` 是 Hub 错误码，
  * 调用方应按 `code` 分支（例如 `invalid_grant` 提示重新授权），不要解析拼接后的 `message`。
  */
 export class HubApiError extends Error {
+  readonly requestId?: string;
+  readonly origin?: string;
+
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
-    options?: ErrorOptions,
+    options?: HubApiErrorOptions,
   ) {
     super(`${code}: ${message}`, options);
+    const cause = options?.cause instanceof HubApiError ? options.cause : undefined;
+    this.requestId = safeRequestId(options?.requestId) ?? cause?.requestId;
+    this.origin = httpOrigin(options?.origin) ?? cause?.origin;
   }
 }
 
@@ -42,15 +60,21 @@ export class HubApiClient {
     path: string,
     body?: unknown,
     signal: AbortSignal = AbortSignal.timeout(30000),
+    options?: HubApiRequestOptions,
   ): Promise<Response> {
+    const multipart = body instanceof FormData;
     const response = await fetch(this.url + path, {
-      method: body === undefined ? 'GET' : 'POST',
+      method: options?.method ?? (body === undefined ? 'GET' : 'POST'),
       redirect: 'error',
       headers: {
         ...(this.token ? { Authorization: 'Bearer ' + this.token } : {}),
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(body === undefined || multipart ? {} : { 'Content-Type': 'application/json' }),
+        ...(options?.idempotencyKey === undefined
+          ? {}
+          : { 'Idempotency-Key': options.idempotencyKey }),
+        ...(options?.ifMatch === undefined ? {} : { 'If-Match': options.ifMatch }),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      body: multipart ? body : JSON.stringify(body),
       signal,
     });
     observeCliResponse(this.url, response);
@@ -63,12 +87,23 @@ export class HubApiClient {
       }
       const error =
         detail && typeof detail === 'object' && 'error' in detail ? detail.error : undefined;
+      const errorOptions = {
+        requestId: responseRequestId(
+          response,
+          error && typeof error === 'object' && 'request_id' in error
+            ? error.request_id
+            : undefined,
+          this.token,
+        ),
+        origin: this.url,
+      };
       if (typeof error === 'string') {
         const code = Object.hasOwn(oauthMessages, error) ? error : 'OAUTH_ERROR';
         throw new HubApiError(
           response.status,
           code,
           oauthMessages[code] ?? '授权失败，请检查连接状态后重试',
+          errorOptions,
         );
       }
       const code =
@@ -76,7 +111,8 @@ export class HubApiClient {
         typeof error === 'object' &&
         'code' in error &&
         typeof error.code === 'string' &&
-        /^[A-Z0-9_]{1,80}$/.test(error.code)
+        /^[A-Z0-9_]{1,80}$/.test(error.code) &&
+        redactCredentials(error.code, this.token) === error.code
           ? error.code
           : String(response.status);
       const message =
@@ -84,15 +120,20 @@ export class HubApiClient {
         typeof error === 'object' &&
         'message' in error &&
         typeof error.message === 'string'
-          ? terminalText(error.message).slice(0, 500)
+          ? redactCredentials(error.message, this.token).slice(0, 500)
           : '请求失败';
-      throw new HubApiError(response.status, code, message);
+      throw new HubApiError(response.status, code, message, errorOptions);
     }
     return response;
   }
 
-  async json<T>(path: string, schema: z.ZodType<T>, body?: unknown): Promise<T> {
-    const response = await this.request(path, body);
+  async json<T>(
+    path: string,
+    schema: z.ZodType<T>,
+    body?: unknown,
+    options?: HubApiRequestOptions,
+  ): Promise<T> {
+    const response = await this.request(path, body, undefined, options);
     const parsed = schema.safeParse(
       boundedJson((await this.readBytes(response, 1024 * 1024)).toString()),
     );
@@ -168,4 +209,46 @@ export class HubApiClient {
 /** 剔除控制字符与格式字符后再写入终端，避免 Hub 返回内容伪造颜色或改写已打印的行。 */
 export function terminalText(value: string): string {
   return value.replace(/[\p{Cc}\p{Cf}]/gu, ' ');
+}
+
+export function httpOrigin(value?: string): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.origin.length > 500) return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+}
+
+function safeRequestId(value: unknown, credential?: string): string | undefined {
+  if (
+    typeof value === 'string' &&
+    /^[A-Za-z0-9_-]{1,80}$/.test(value) &&
+    redactCredentials(value, credential) === value
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+export function responseRequestId(
+  response: Response,
+  payloadId?: unknown,
+  credential?: string,
+): string | undefined {
+  return (
+    safeRequestId(response.headers.get('X-Request-Id'), credential) ??
+    safeRequestId(payloadId, credential)
+  );
+}
+
+export function redactCredentials(value: string, credential?: string): string {
+  const text = credential ? value.replaceAll(credential, '[已隐藏]') : value;
+  const safe = terminalText(text)
+    .replace(/\bBearer[ \t]+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [已隐藏]')
+    .replace(/(\b(?:https?|ftp):\/\/)[^\s/@]+@/gi, '$1')
+    .replace(/(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g, '[已隐藏]');
+  return secretFindings(safe).next().done ? safe : '[已隐藏凭据信息]';
 }

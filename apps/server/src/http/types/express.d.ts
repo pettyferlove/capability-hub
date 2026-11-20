@@ -12,7 +12,7 @@ declare global {
       principal: Principal;
       viewer?: Principal | null;
       session?: SessionRecord;
-      token?: Pick<TokenRecord, 'scope' | 'user_id'>;
+      token?: Pick<TokenRecord, 'scope' | 'user_id' | 'name'>;
       credential?: InstallTicketCredential;
       identity_refresh_failed?: boolean;
     }

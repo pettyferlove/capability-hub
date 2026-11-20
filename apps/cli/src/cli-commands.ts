@@ -38,11 +38,12 @@ import {
   pollResponseSchema,
 } from './response-schemas.js';
 import type { CliUi } from './cli-ui.js';
+import { runFeedback, type FeedbackOptions } from './feedback.js';
 import { outdated } from './outdated.js';
 import { readSkillAsset } from './skill-versions.js';
 
 /** Commander 选项使用驼峰字段；version 只表示资源版本。 */
-export interface CliOptions {
+export interface CliOptions extends FeedbackOptions {
   url?: string;
   configDir?: string;
   interactive?: boolean;
@@ -74,7 +75,12 @@ export async function runCommand(
   args: readonly string[],
   flags: CliOptions,
   ui: CliUi,
+  optionNames: readonly string[] = [],
 ): Promise<number | undefined> {
+  if (command === 'feedback' || command.startsWith('feedback ')) {
+    await runFeedback(command, args, flags, ui);
+    return;
+  }
   const guided = ui.interactive && !flags.client;
   if (['connect', 'status', 'bridge', 'login', 'hub-config'].includes(command)) {
     flags.url = await ui.input(flags.url, '--url', 'Hub 的 HTTP(S) 根地址', (value) => {
@@ -141,7 +147,7 @@ export async function runCommand(
         },
         ui,
       );
-    } else if (command === 'bridge') await bridgeAgent(url, directory, client);
+    } else if (command === 'bridge') await bridgeAgent(url, directory, client, optionNames);
     else await checkConnection(url, directory, client, ui);
     return;
   }

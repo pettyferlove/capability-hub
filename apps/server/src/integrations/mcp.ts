@@ -42,6 +42,7 @@ export function createMcp(
   p: Principal,
   scope: TokenRecord['scope'],
   credential: InstallTicketCredential,
+  requestId: string,
   handshake?: { publishedSkillUrl?: string; bridgeVersion?: string },
 ) {
   const bridgeVersion = handshake?.bridgeVersion;
@@ -117,7 +118,12 @@ export function createMcp(
                   {
                     type: 'text' as const,
                     text: JSON.stringify({
-                      error: { code: e.code, message: e.message, retryable: e.retryable },
+                      error: {
+                        code: e.code,
+                        message: e.message,
+                        retryable: e.retryable,
+                        request_id: requestId,
+                      },
                     }),
                   },
                 ],

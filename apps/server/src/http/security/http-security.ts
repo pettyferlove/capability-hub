@@ -1,9 +1,27 @@
+import { hubFeedbackRefSchema } from '@capability-hub/contracts';
 import type { Principal } from '@capability-hub/domain/identity';
 import { tokenRecordSchema } from '@capability-hub/domain/token';
 import { fail, HubError } from '@capability-hub/domain/errors';
 import type { CookieOptions, NextFunction, Request, Response } from 'express';
+import { z } from 'zod';
 import { readSessionClient } from './session-client.js';
 import type { HubServices } from '../../bootstrap/hub-services.js';
+
+const feedbackPath =
+  /^\/api\/hub-feedback\/([\da-fA-F-]{1,36})(?:\/(comments|close|read)|\/attachments\/([\da-fA-F-]{36}))?$/;
+const feedbackUuid = z.regexes.uuid();
+
+function personalFeedbackRequest(method: string, path: string): boolean {
+  if (method !== 'GET' && method !== 'POST') return false;
+  if (path === '/api/hub-feedback') return true;
+  if (path === '/api/hub-feedback/summary') return method === 'GET';
+  const match = feedbackPath.exec(path);
+  if (!match) return false;
+  const [, ref, action, attachment] = match;
+  if (method === 'POST') return action !== undefined && feedbackUuid.test(ref);
+  if (attachment !== undefined) return feedbackUuid.test(ref) && feedbackUuid.test(attachment);
+  return action === undefined && hubFeedbackRefSchema.safeParse(ref).success;
+}
 
 /** 浏览器会话、Bearer 作用域和 CSRF 的 HTTP 边界。 */
 export class HttpSecurity {
@@ -69,7 +87,7 @@ export class HttpSecurity {
         if (
           path !== '/mcp' &&
           !(req.method === 'POST' && path === '/api/mcp-config') &&
-          !consumerRead
+          !(consumerRead || (!connection && personalFeedbackRequest(req.method, path)))
         )
           fail(403, 'TOKEN_SCOPE', '个人 CLI/MCP 令牌仅允许目录与内容读取，请通过网页会话管理');
         res.locals.token = r;

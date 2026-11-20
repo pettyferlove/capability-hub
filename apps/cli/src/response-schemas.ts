@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { assetSlugSchema, manifestSchema } from '@capability-hub/contracts';
+import {
+  assetSlugSchema,
+  hubFeedbackCreateRequestSchema,
+  hubFeedbackDiagnosticsSchema,
+  hubFeedbackStatusSchema,
+  hubFeedbackUpdateRequestSchema,
+  manifestSchema,
+} from '@capability-hub/contracts';
 
 const id = z.uuid();
 const text = z.string();
@@ -83,3 +90,78 @@ export const pollResponseSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('pending') }),
   z.object({ state: z.literal('complete'), token: text.regex(/^\S+$/) }),
 ]);
+
+const feedbackNumber = z.number().int().positive().max(2147483647);
+const feedbackItemSchema = z.object({
+  id,
+  number: feedbackNumber,
+  kind: hubFeedbackCreateRequestSchema.shape.kind,
+  surface: hubFeedbackCreateRequestSchema.shape.surface,
+  area: hubFeedbackCreateRequestSchema.shape.area.unwrap(),
+  channel: z.enum(['web', 'cli']),
+  title: text,
+  blocking: z.boolean(),
+  status: hubFeedbackStatusSchema,
+  created_at: z.iso.datetime(),
+  last_activity_at: z.iso.datetime(),
+  revision: z.number().int().positive(),
+  unread: z.boolean(),
+  awaiting_reply: z.boolean(),
+});
+
+const feedbackAttachmentSchema = z.object({
+  id,
+  event_id: id.nullable(),
+  kind: z.enum(['screenshot', 'image', 'json', 'text']),
+  media_type: z.enum(['image/png', 'image/jpeg', 'image/webp', 'application/json', 'text/plain']),
+  name: text,
+  size: z.number().int().nonnegative(),
+  width: z.number().int().positive().nullable(),
+  height: z.number().int().positive().nullable(),
+  removed_at: z.iso.datetime().nullable(),
+  can_remove: z.boolean(),
+});
+
+const feedbackEventSchema = z.object({
+  id,
+  sequence: z.number().int().positive(),
+  actor_role: z.enum(['submitter', 'handler', 'system']),
+  actor_name: text.nullable(),
+  kind: z.enum(['comment', 'status', 'assignment', 'attachment_removed', 'redaction']),
+  visibility: z.literal('public'),
+  body: text,
+  status_from: hubFeedbackStatusSchema.nullable(),
+  status_to: hubFeedbackStatusSchema.nullable(),
+  decline_reason: hubFeedbackUpdateRequestSchema.shape.decline_reason.unwrap().nullable(),
+  attachment_ids: z.array(id),
+  redacted_at: z.iso.datetime().nullable(),
+  created_at: z.iso.datetime(),
+});
+
+export const feedbackListSchema = z.object({
+  items: z.array(feedbackItemSchema),
+  total: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  limit: z.number().int().positive(),
+});
+
+export const feedbackResultSchema = feedbackItemSchema
+  .pick({ id: true, number: true, status: true })
+  .extend({ attachments: z.array(feedbackAttachmentSchema) });
+
+export const feedbackDetailSchema = feedbackItemSchema.extend({
+  description: text,
+  steps: text,
+  expected: text,
+  diagnostics: hubFeedbackDiagnosticsSchema.nullable(),
+  description_redacted_at: z.iso.datetime().nullable(),
+  closed_at: z.iso.datetime().nullable(),
+  decline_reason: feedbackEventSchema.shape.decline_reason,
+  events: z.array(feedbackEventSchema),
+  attachments: z.array(feedbackAttachmentSchema),
+});
+
+export const feedbackSummarySchema = z.object({
+  unread: z.number().int().nonnegative(),
+  open: z.number().int().nonnegative(),
+});

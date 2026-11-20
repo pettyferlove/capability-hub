@@ -1,9 +1,11 @@
 import { getColumns, SelectPrompt, wrapTextWithPrefix } from '@clack/core';
 import {
+  confirm,
   intro,
   isCancel,
   limitOptions,
   log,
+  multiline,
   note,
   outro,
   S_BAR,
@@ -25,6 +27,10 @@ export class CliCancelled extends Error {
   }
 }
 
+export function isCliCi() {
+  return Boolean(process.env.CI && !/^(false|0)$/i.test(process.env.CI));
+}
+
 /** 提示只用于人工终端；stdout 始终留给命令结果或 MCP 协议。 */
 export class CliUi {
   readonly interactive: boolean;
@@ -36,7 +42,7 @@ export class CliUi {
       !!process.stdin.isTTY &&
       !!process.stdout.isTTY &&
       !!process.stderr.isTTY &&
-      (!process.env.CI || /^(false|0)$/i.test(process.env.CI)) &&
+      !isCliCi() &&
       process.env.TERM !== 'dumb';
     this.animated = this.interactive && animation;
   }
@@ -82,6 +88,31 @@ export class CliUi {
     const error = validate(value);
     if (error) throw new Error(`${argument}：${error}`);
     return value;
+  }
+
+  async textarea(message: string, validate: (value: string) => string | undefined) {
+    const answer = await multiline({
+      message,
+      showSubmit: true,
+      validate: (value) => validate(value ?? ''),
+      input: process.stdin,
+      output: process.stderr,
+    });
+    if (isCancel(answer)) throw new CliCancelled();
+    return answer;
+  }
+
+  async confirm(message: string) {
+    const answer = await confirm({
+      message: terminalText(message),
+      active: '是',
+      inactive: '否',
+      initialValue: false,
+      input: process.stdin,
+      output: process.stderr,
+    });
+    if (isCancel(answer)) throw new CliCancelled();
+    return answer;
   }
 
   async choose(

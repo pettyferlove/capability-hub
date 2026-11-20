@@ -36,7 +36,7 @@ Hub `/mcp` 同时接受现代 `2026-07-28` 协议和 `2025-03-26`、`2025-06-18`
 
 Codex 使用 `codex mcp login capability-hub --scopes hub:read`，OpenCode 使用 `opencode mcp auth capability-hub`；其他客户端从各自 MCP 设置发起授权。是否支持原生 OAuth 及具体操作取决于客户端版本，不能把配置生成视为真实产品验收。Hub 支持 DCR，不声明 CIMD 支持。
 
-分享 Skill、推荐或反馈时再追加 `hub:contribute`。上述四种适配直接请求相应范围，其他适配提供接入助手的 `--contribute` 指令。用户勾选授权后刷新工具列表，账号权限仍决定可操作的资源。
+分享 Skill、推荐或反馈固定资源版本时再追加 `hub:contribute`，由用户批准后刷新工具列表。Hub 本身的接入、授权或命令问题走 [CLI 平台反馈](interfaces.md#cli)，先 `--dry-run` 预览，经用户确认再带 `--yes`；有 MCP 错误的 `request_id` 时一并记录，不附带凭据。
 
 客户端直接连接目标 MCP。同一资产、完整服务地址、请求头和认证方式共用绑定，改回自备凭据须在维护设置中移除绑定。团队 Bearer Token 只填原值，Hub 生成 `Authorization: Bearer <token>`。将安装配置保存到客户端的用户配置，轮换后重新获取并加载。已分发的旧凭据需在目标服务撤销。
 
@@ -87,7 +87,7 @@ capability-hub hub-config --url https://hub.example.com --client pi --scope user
 
 ## 接入助手与高级入口
 
-实例的 `/connect/cli` 提供安装、独立 CLI 授权步骤及本实例推荐和最低 CLI 版本；私有仓库参数临时覆盖已有作用域设置，仓库认证与 Hub 授权独立。`login/search/add/outdated` 无需客户端标识；CLI 暂无正文读取或贡献命令。运行 Hub 返回的安装命令前，先用 `capability-hub --cli-version` 核对最低版本。接入助手仅适用于表中客户端，在 Agent 运行环境执行：
+实例的 `/connect/cli` 提供安装、CLI 授权及推荐和最低 CLI 版本；私有仓库认证与 Hub 授权独立。`login/search/add/outdated/feedback` 无需客户端标识。运行 Hub 返回的安装命令前先用 `capability-hub --cli-version` 核对最低版本。接入助手仅适用于表中客户端，在 Agent 运行环境执行：
 
 ```sh
 capability-hub connect --url https://hub.example.com --client cursor --scope project
