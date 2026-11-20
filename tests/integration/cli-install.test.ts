@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import {
   chmod,
@@ -15,6 +16,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { install, localDiff, remove } from '../../apps/cli/src/install.js';
+import { installedSkills } from '../../apps/cli/src/installed-skills.js';
 import { archive, inspect } from '@capability-hub/infrastructure/content';
 import { digest, canonical } from '@capability-hub/domain/canonical';
 import { HubError } from '@capability-hub/domain/errors';
@@ -90,6 +92,31 @@ test('只差换行符的文件单独标注，仍计为本地修改', async (cont
   assert.deepEqual(await localDiff(directory), ['仅换行符不同 SKILL.md']);
   await writeFile(path, crlf + '追加内容');
   assert.deepEqual(await localDiff(directory), ['修改 SKILL.md']);
+});
+
+test('PowerShell 写出的带 BOM 或 UTF-16LE 来源记录仍能识别为已验证安装', async (context) => {
+  const input = await installation(context);
+  const source = {
+    hub_url: 'https://hub.example.test',
+    asset_id: randomUUID(),
+    version_id: randomUUID(),
+  };
+  await install({ ...input, source });
+  const directory = join(input.to, input.slug);
+  const recordPath = join(directory, '.capability-hub-source');
+  const record = await readFile(recordPath, 'utf8');
+  for (const bytes of [
+    Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(record)]),
+    Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(record, 'utf16le')]),
+  ]) {
+    await writeFile(recordPath, bytes);
+    assert.deepEqual(await localDiff(directory), []);
+    const { installs } = await installedSkills([input.to]);
+    assert.deepEqual(
+      installs.map(({ receipt }) => [receipt.version_id, receipt.slug]),
+      [[source.version_id, input.slug]],
+    );
+  }
 });
 
 test('删除拒绝无来源记录或已修改的目录，force 删除时报告丢弃的差异', async (context) => {

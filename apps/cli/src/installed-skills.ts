@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile } from 'node:fs/promises';
+import { lstat, readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
   agentClients,
@@ -12,7 +12,7 @@ import { terminalText } from './api-client.js';
 import { printTable } from './cli-ui.js';
 import { hubUrl } from './credentials.js';
 import { safeDirectory } from './filesystem.js';
-import { localDiff } from './install.js';
+import { localDiff, readSourceRecord } from './install.js';
 import { displayVersionLabel } from './skill-versions.js';
 
 /** 带有效来源记录的已安装 Skill；`receipt.hub_url` 已归一化为 origin。 */
@@ -86,7 +86,7 @@ export async function installedSkills(directories: readonly string[]) {
       }
       if (!stat.isFile()) throw new Error(`来源记录不是普通文件：${source}`);
       try {
-        const receipt = installSourceRecordSchema.parse(JSON.parse(await readFile(source, 'utf8')));
+        const receipt = installSourceRecordSchema.parse(await readSourceRecord(source));
         receipt.hub_url = hubUrl(receipt.hub_url);
         installs.push({ path, receipt });
       } catch (error) {

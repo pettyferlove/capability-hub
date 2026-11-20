@@ -74,12 +74,22 @@ export function validateManifest(value: unknown): asserts value is Manifest {
     fail(422, 'MANIFEST_INVALID', '内容清单根文件或总大小无效');
 }
 
+/**
+ * 来源记录可能由 Agent 自行写入：Windows PowerShell 5.1 的 `Set-Content -Encoding UTF8` 带 BOM，
+ * `Out-File` 默认写 UTF-16LE。按 BOM 选择编码，TextDecoder 会去掉 BOM。
+ */
+export async function readSourceRecord(path: string): Promise<unknown> {
+  const bytes = await readFile(path);
+  const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? 'utf-16le' : 'utf-8';
+  return JSON.parse(new TextDecoder(encoding).decode(bytes));
+}
+
 /** 来源记录中的文件清单；记录缺失、不是普通文件或格式无效时返回原因。 */
 async function recordedFiles(directory: string): Promise<ManifestFile[] | string> {
   try {
     const recordPath = join(directory, installSourceFile);
     if (!(await lstat(recordPath)).isFile()) return '本地来源记录不是普通文件';
-    const value: unknown = JSON.parse(await readFile(recordPath, 'utf8'));
+    const value = await readSourceRecord(recordPath);
     if (!value || typeof value !== 'object' || !('files' in value))
       throw new Error('Invalid receipt');
     return manifestFileSchema.array().parse(value.files);
