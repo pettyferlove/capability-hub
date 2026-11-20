@@ -347,23 +347,35 @@ export async function runCommand(
       throw new Error(`${terminalText(file)} 不是 UTF-8 文本，请用 add 安装后查看`);
     }
     const current = version.version_id === asset.current_release.version_id;
-    ui.note(
-      `${asset.slug} ${version.version_label}`,
-      [
-        asset.description,
-        `资源版本  ${version.version_label}${current ? '（当前发布）' : `（当前发布 ${asset.current_release.version_label}）`}`,
-        ...(asset.lifecycle === 'deprecated'
-          ? [
-              `已弃用  ${asset.deprecation_reason ?? ''}${asset.replacement_asset_slug ? ` · 替代资源：${asset.replacement_asset_slug}` : ''}`,
-            ]
-          : []),
-        `文件清单  ${manifest.files.length} 个`,
-        ...manifest.files.map(
-          (item) => `  ${item.path}  ${formatBytes(item.size)}${item.executable ? '  可执行' : ''}`,
-        ),
-        `正在显示  ${file}`,
-      ].join('\n'),
-    );
+    const release = `${version.version_label}${current ? '（当前发布）' : `（当前发布 ${asset.current_release.version_label}）`}`;
+    const deprecation =
+      asset.lifecycle === 'deprecated'
+        ? [
+            `已弃用  ${asset.deprecation_reason ?? ''}${asset.replacement_asset_slug ? ` · 替代资源：${asset.replacement_asset_slug}` : ''}`,
+          ]
+        : [];
+    // 脚本和 Agent 每次读取都会收到 stderr，只给版本摘要；缺少文件时的错误仍列出全部路径。
+    if (ui.interactive)
+      ui.note(
+        `${asset.slug} ${version.version_label}`,
+        [
+          asset.description,
+          `资源版本  ${release}`,
+          ...deprecation,
+          `文件清单  ${manifest.files.length} 个`,
+          ...manifest.files.map(
+            (item) =>
+              `  ${item.path}  ${formatBytes(item.size)}${item.executable ? '  可执行' : ''}`,
+          ),
+          `正在显示  ${file}`,
+        ].join('\n'),
+      );
+    else
+      ui.message(
+        [`${asset.slug} ${release} · ${manifest.files.length} 个文件 · ${file}`, ...deprecation]
+          .map(terminalText)
+          .join('\n'),
+      );
     // 正文来自 Hub，逐行剔除控制字符后再写入终端；需要原始字节时用 add。
     process.stdout.write(
       text.split('\n').map(terminalText).join('\n') + (text.endsWith('\n') ? '' : '\n'),

@@ -176,7 +176,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
   command(
     'show',
     '阅读固定版本 Skill 的正文或附属文件',
-    '示例：\n  capability-hub show example-skill --url https://hub.example.com\n  capability-hub show example-skill --version 1.0.0 --file references/guide.md\n\n默认显示当前发布的 SKILL.md。版本与文件清单写到 stderr，正文写到 stdout。\n只读取、不写文件；终端控制字符会被替换，需要原始文件时用 add。',
+    '示例：\n  capability-hub show example-skill --url https://hub.example.com\n  capability-hub show example-skill --version 1.0.0 --file references/guide.md\n\n默认显示当前发布的 SKILL.md。正文写到 stdout；版本写到 stderr，交互终端另列文件清单。\n读取多个文件时用 --version 固定同一版本。只读取、不写文件；终端控制字符会被替换，需要原始文件时用 add。',
   )
     .argument('[name]', 'Skill 资源名称')
     .option('--version <VERSION>', '资源版本（默认当前发布）')
@@ -217,7 +217,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
   command(
     'list',
     '离线列出已安装的 Skill 及本地修改',
-    '示例：\n  capability-hub list\n  capability-hub list --to .claude/skills --json\n\n默认扫描当前项目已存在的预设技能目录；只读来源记录并比对本地文件，不连接 Hub。',
+    '示例：\n  capability-hub list\n  capability-hub list --to .claude/skills --json\n\n默认扫描当前项目已存在的预设技能目录；只读来源记录并比对本地文件，不连接 Hub，也不判断来源是否为当前 Hub。',
   )
     .addOption(skillDirectoriesOption())
     .option('--json', '输出 JSON 数组')
@@ -226,13 +226,13 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
   command(
     'remove',
     '删除 CLI 安装的 Skill 或其替换备份',
-    '示例：\n  capability-hub remove example-skill --to .agents/skills --dry-run\n  capability-hub remove example-skill --to .agents/skills --backups\n\n只删除带有效来源记录的安装，本地有修改时须显式 --force。\n--backups 只删除 add --replace 留下的同名备份，不动当前安装。',
+    '示例：\n  capability-hub remove example-skill --to .agents/skills --dry-run\n  capability-hub remove example-skill --to .agents/skills --backups\n\n只删除带有效来源记录的安装，本地有修改时须显式 --force。\n--backups 只清理 NAME 的 add --replace 备份，不动当前安装。',
   )
     .argument('[name]', 'Skill 资源名称')
     .option('--to <PATH>', '安装父目录，必须明确指定或输入')
     .option('--dry-run', '预览将删除的目录，不改动文件')
     .option('--force', '本地有修改时仍删除')
-    .option('--backups', '只删除 add --replace 留下的同名备份')
+    .option('--backups', '只清理 NAME 的 add --replace 备份，仍需提供 NAME')
     .action(async (name: string | undefined, _options: CliOptions, command: Command) =>
       execute(command, name === undefined ? [] : [name]),
     );

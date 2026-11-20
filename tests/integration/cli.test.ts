@@ -994,7 +994,7 @@ test('CLI 可匿名预览和安装公开 Skill，来源记录与下载审计保�
   assert.deepEqual(await readdir(join(root, 'unused-config')), ['last-failure.json']);
 });
 
-test('show 用 CLI 令牌读取团队 Skill 的当前或指定版本与附属文件，过滤终端控制字符且不写文件', async (context) => {
+test('show 用 CLI 令牌读取团队 Skill 的指定版本与附属文件，过滤控制字符、不写文件，脚本模式只输出一行版本摘要', async (context) => {
   const fixture = await serveTestHub(context);
   const distribution = { mode: 'approved_audience' as const, audience: ['organization'] };
   const { intake } = await publishSkill(fixture, { body: '旧版正文', distribution });
@@ -1019,7 +1019,7 @@ test('show 用 CLI 令牌读取团队 Skill 的当前或指定版本与附属文
   assert.equal(current.code, 0, current.stderr);
   assert.match(current.stdout, /新版正文/);
   assert.match(current.stderr, /2\.0\.0（当前发布）/);
-  assert.match(current.stderr, /references\/guide\.md/);
+  assert.equal(current.stderr.trimEnd().split('\n').length, 1);
   const pinned = await show('--version', '1.0.0');
   assert.equal(pinned.code, 0, pinned.stderr);
   assert.match(pinned.stdout, /旧版正文/);
@@ -1028,7 +1028,7 @@ test('show 用 CLI 令牌读取团队 Skill 的当前或指定版本与附属文
   assert.equal(reference.stdout, '参考 [2J资料\n');
   const missing = await show('--file', 'notes.md');
   assert.equal(missing.code, 1);
-  assert.match(missing.stderr, /没有文件 notes\.md/);
+  assert.match(missing.stderr, /没有文件 notes\.md；可选：SKILL\.md、references\/guide\.md/);
   assert.deepEqual(await readdir(root), before);
 });
 

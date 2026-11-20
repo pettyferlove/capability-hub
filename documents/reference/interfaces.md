@@ -128,7 +128,7 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 
 `--config-dir` 隔离凭据，默认 `~/.config/capability-hub`。读取使用登录凭据或 `CAPABILITY_HUB_TOKEN` + 显式 `--url`；两者都没有时，`show`、`add` 和 `outdated` 可用 `--url` 匿名访问公开 Skill。`add --ticket`、`hub-config`、`list` 和 `remove` 不读取 CLI 凭据；票据模式如提供 `--url`，其 origin 必须与票据一致。下载限制大小，不跟随重定向。
 
-`outdated` 输出表格或 JSON 数组；`list` 不联网，输出同样的来源字段，状态为 `unmodified`、`modified` 或 `unknown_source`。含 `SKILL.md` 但缺少来源记录的 Skill 报告 `unknown_source`（来源和版本字段为 `null`），与 `other_hub` 一样不查询远端。默认扫描跳过经过链接的预设目录并在 stderr 说明。Windows 不比较磁盘执行位，仍校验文件内容；只有换行符不同的文件标为「仅换行符不同」。`status` 只取优先级最高的一项，本地差异在任何状态下都写入 `differences`。`--exit-code` 在有更新的发布（含 `modified`）、`deprecated` 或 `unavailable` 时退出 2；`--fail-on-modified` 在存在本地差异时退出 3，优先于 2；未触发上述条件且检查成功时退出 0。
+`outdated` 输出表格或 JSON 数组；`list` 不联网，也不判断来源是否为当前 Hub，输出同样的来源字段，状态为 `unmodified`、`modified` 或 `unknown_source`。含 `SKILL.md` 但缺少来源记录的 Skill 报告 `unknown_source`（来源和版本字段为 `null`），与 `other_hub` 一样不查询远端。默认扫描跳过经过链接的预设目录并在 stderr 说明。Windows 不比较磁盘执行位，仍校验文件内容；只有换行符不同的文件标为「仅换行符不同」。`status` 只取优先级最高的一项，本地差异在任何状态下都写入 `differences`。`--exit-code` 在有更新的发布（含 `modified`）、`deprecated` 或 `unavailable` 时退出 2；`--fail-on-modified` 在存在本地差异时退出 3，优先于 2；未触发上述条件且检查成功时退出 0。
 
 `feedback new` 可传 `--title`、`--description` 或 `--description-file`、`--attach`、`--last-error`，也可用 `--no-diagnostics` 不带诊断。非交互写入须确认后带 `--yes`；`new --dry-run --json` 只预览，不发请求。成功返回反馈编号和详情地址。CLI 不把令牌或配置文件内容写入最近一次失败诊断；Hub 有请求编号时输出该编号。
 
