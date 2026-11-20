@@ -8,6 +8,7 @@ import { panelStyles, btnStyles, btnPrimaryStyles } from '../shared/styles/recip
 import { cn } from '../shared/styles/cn.js';
 import { FileWarning, RefreshCw } from '../shared/icons/lucide.js';
 import { reportError } from '../shared/logging.js';
+import { openHubFeedback, type HubFeedbackSeed } from '../shared/hub-feedback-events.js';
 import { Component, type ReactNode } from 'react';
 
 /**
@@ -16,11 +17,17 @@ import { Component, type ReactNode } from 'react';
  */
 export class PageBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
+  private feedbackError: HubFeedbackSeed['pageError'];
   static getDerivedStateFromError() {
     return { failed: true };
   }
   componentDidCatch(error: Error): void {
-    reportError('react.error', { error });
+    const entry = reportError('react.error', { error });
+    this.feedbackError = {
+      event: 'react.error',
+      type: entry?.error?.type || 'Error',
+      stack: entry?.error?.stack?.slice(0, 2000),
+    };
   }
   render() {
     if (this.state.failed)
@@ -48,6 +55,13 @@ export class PageBoundary extends Component<{ children: ReactNode }, { failed: b
             >
               <RefreshCw size={16} aria-hidden="true" />
               刷新页面
+            </button>
+            <button
+              type="button"
+              className={btnStyles}
+              onClick={() => openHubFeedback({ pageError: this.feedbackError })}
+            >
+              反馈此问题
             </button>
           </div>
         </section>

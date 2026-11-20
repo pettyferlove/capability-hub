@@ -109,23 +109,12 @@ const webDiagnostics = z.strictObject({
           'files',
           'installation',
           'versions',
-        ])
-        .optional(),
-      view: z
-        .enum([
-          'native',
-          'oauth',
-          'cli',
-          'mcp',
-          'skill',
-          'intakes',
-          'sources',
-          'requests',
-          'assets',
-          'management',
           'upload',
+          'git',
+          'manage',
         ])
         .optional(),
+      view: z.enum(['teams', 'scenarios', 'definitions', 'analytics']).optional(),
       state: z.enum(['pending', 'approved', 'rejected', 'cancelled', 'stale']).optional(),
       request: z.uuid().optional(),
       execution: z.uuid().optional(),

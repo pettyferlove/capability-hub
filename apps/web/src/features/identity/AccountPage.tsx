@@ -4,7 +4,13 @@
 import { accountPageTabs } from '@capability-hub/contracts/web-pages';
 import { accountPageStyles } from './styles.js';
 import { pageContentStyles } from '../../shared/styles/recipes.js';
-import { KeyRound, ShieldCheck, UserRound, UsersRound } from '../../shared/icons/lucide.js';
+import {
+  KeyRound,
+  MessageSquare,
+  ShieldCheck,
+  UserRound,
+  UsersRound,
+} from '../../shared/icons/lucide.js';
 import { PageHead } from '../../shared/components/PageHead.js';
 import { PageTabs } from '../../shared/components/PageTabs.js';
 import { useHub } from '../../shared/context/HubContext.js';
@@ -12,12 +18,14 @@ import { GitCredentialsPanel } from '../profile/GitCredentialsPanel.js';
 import { PersonalProfile } from '../profile/PersonalProfile.js';
 import { PersonalSecurity } from '../profile/SecurityPanel.js';
 import { AdministrationPanel } from './AdministrationPanel.js';
+import MyHubFeedback from '../feedback/MyHubFeedback.js';
 import type { IdentityView } from './identity-directory.js';
 
 const sections = {
   profile: { name: '个人资料', icon: UserRound },
   credentials: { name: 'Git 凭据', icon: KeyRound },
   security: { name: '账号安全', icon: ShieldCheck },
+  feedback: { name: '我的反馈', icon: MessageSquare },
   identity: { name: '团队与权限', icon: UsersRound },
 };
 
@@ -96,6 +104,8 @@ export default function AccountPage({ query = location.search }: { query?: strin
           <PersonalProfile />
         ) : tab === 'credentials' ? (
           <GitCredentialsPanel />
+        ) : tab === 'feedback' ? (
+          <MyHubFeedback query={query} />
         ) : (
           <PersonalSecurity />
         )}

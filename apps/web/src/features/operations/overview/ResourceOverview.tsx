@@ -148,7 +148,7 @@ export function ResourceOverview() {
       </div>
       <QueryRegion label="资源趋势结果" loading={result.loading} showProgress={!!data}>
         {error ? (
-          <ErrorState message={error} retry={reload} />
+          <ErrorState message={error} {...result.errorProps} retry={reload} />
         ) : !data ? (
           <OverviewSkeleton />
         ) : (

@@ -36,7 +36,7 @@
 
 server 的 http/routes 只做协议解析、身份/CSRF 接入和结果交付；业务写入通过用例。integrations 保存 MCP 工具及目标客户端配置转换，observability 保存运行指标。
 
-Web 的 app 管理会话、路由、主题和导航。features 按 ai、auth、catalog、connect、identity、profile、publishing、review、sources 组织。shared 只放跨功能 API、控件、格式、上下文和导航能力。来源编辑表单与来源列表独立，发布策略字段归发布功能。
+Web 的 app 管理会话、路由、主题和导航。features 按业务划分，feedback 承载平台反馈面板、本人跟进和运营工作台。shared 只放跨功能 API、控件、格式、上下文和导航能力。
 
 Web 统一使用 Tailwind CSS v4。styles/index.css 加载主题、基础元素规则与关键帧；功能目录的 styles.ts 和 shared/styles 保存静态工具类组合，组件通过 cn 合并条件和覆盖。主题、变体与验证规范见[工程规范](../development/engineering.md#tailwind-样式)。
 

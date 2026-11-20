@@ -51,11 +51,9 @@ import type { ChangeFile } from './types.js';
 export default function ReviewPage({ query = location.search }: { query?: string }) {
   const { refresh, reload } = useHub();
   const { state, request: selected } = reviewLocation(query);
-  const { data, error, loading, isPreviousData } = useQuery<{ items: ReviewResponse[] }>(
-    '/api/publication-requests?state=' + state,
-    refresh,
-    { keepPreviousData: true },
-  );
+  const { data, error, errorProps, loading, isPreviousData } = useQuery<{
+    items: ReviewResponse[];
+  }>('/api/publication-requests?state=' + state, refresh, { keepPreviousData: true });
   const items = data?.items ?? [];
   const active = items.find((r) => r.id === selected) ?? items[0];
   return (
@@ -84,7 +82,7 @@ export default function ReviewPage({ query = location.search }: { query?: string
         {loading && !data ? (
           <ReviewSkeleton />
         ) : error ? (
-          <ErrorState message={error} retry={reload} />
+          <ErrorState message={error} {...errorProps} retry={reload} />
         ) : !items.length ? (
           <Empty
             title={state === 'pending' ? '待审事项已处理完毕' : '暂无这类审核记录'}

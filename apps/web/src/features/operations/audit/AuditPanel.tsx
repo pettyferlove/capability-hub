@@ -93,7 +93,7 @@ export function AuditPanel() {
   });
   if (interval.from) params.set('from', interval.from);
   if (interval.to) params.set('to', interval.to);
-  const { data, error, loading, isPreviousData } = useQuery<AuditLogResponse>(
+  const { data, error, errorProps, loading, isPreviousData } = useQuery<AuditLogResponse>(
     '/api/admin/audit?' + params.toString(),
     refresh,
     { keepPreviousData: true },
@@ -260,7 +260,7 @@ export function AuditPanel() {
         showProgress={!!data}
       >
         {error ? (
-          <ErrorState message={error} retry={reload} />
+          <ErrorState message={error} {...errorProps} retry={reload} />
         ) : !data && loading ? (
           <TableSkeleton label="正在加载审计事件…" rows={5} columns={6} paginated stackOnMobile />
         ) : data && !data.items.length ? (

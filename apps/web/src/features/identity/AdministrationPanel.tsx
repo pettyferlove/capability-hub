@@ -127,7 +127,8 @@ export function AdministrationPanel({
         ? 'showcase'
         : 'sheet';
 
-  if (snapshot.error) return <ErrorState message={snapshot.error} retry={reload} />;
+  if (snapshot.error)
+    return <ErrorState message={snapshot.error} {...snapshot.errorProps} retry={reload} />;
   if (!data || !directory) {
     return (
       <section className={panelStyles}>
@@ -169,7 +170,7 @@ export function AdministrationPanel({
             </button>
           </div>
           {scenarios.error ? (
-            <ErrorState message={scenarios.error} retry={reload} />
+            <ErrorState message={scenarios.error} {...scenarios.errorProps} retry={reload} />
           ) : scenarios.loading && !scenarios.data ? (
             <ListSkeleton label="正在加载业务场景…" rows={3} />
           ) : !scenarioList.length ? (

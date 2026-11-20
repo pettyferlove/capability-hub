@@ -137,7 +137,7 @@ export function AssetFeedback({ assetId, versionId }: { assetId: string; version
           {!formOpen &&
             (selected ? (
               detail.error ? (
-                <ErrorState message={detail.error} retry={reload} />
+                <ErrorState message={detail.error} {...detail.errorProps} retry={reload} />
               ) : !detail.data ? (
                 <p role="status">正在加载详情…</p>
               ) : detail.data.asset_id !== assetId ? (
@@ -169,7 +169,7 @@ export function AssetFeedback({ assetId, versionId }: { assetId: string; version
                   {list.data && <span className={subtleStyles}>{list.data.total} 条反馈</span>}
                 </div>
                 {list.error ? (
-                  <ErrorState message={list.error} retry={reload} />
+                  <ErrorState message={list.error} {...list.errorProps} retry={reload} />
                 ) : list.loading ? (
                   <p role="status">正在加载反馈…</p>
                 ) : (

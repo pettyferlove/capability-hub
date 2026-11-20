@@ -86,6 +86,8 @@ export function createBrowserLogTransport(
  */
 export function installBrowserLogging(options: BrowserLoggingOptions = {}) {
   const endpoint = options.endpoint ?? '/telemetry/browser';
+  const sessionId = options.sessionId ?? browserUuid();
+  const recentEntries: BrowserLogEntry[] = [];
   const transport = createBrowserLogTransport(
     options.send ??
       (async (batch) => {
@@ -98,7 +100,7 @@ export function installBrowserLogging(options: BrowserLoggingOptions = {}) {
           body: JSON.stringify(batch),
         });
       }),
-    options.sessionId ?? browserUuid(),
+    sessionId,
   );
   const logger = pino({
     level: 'warn',
@@ -132,7 +134,10 @@ export function installBrowserLogging(options: BrowserLoggingOptions = {}) {
       ...(detail.status ? { status: detail.status } : {}),
       ...(detail.code && /^[A-Z0-9_]{1,80}$/.test(detail.code) ? { code: detail.code } : {}),
     };
+    if (recentEntries.length === 20) recentEntries.shift();
+    recentEntries.push(entry);
     logger[entry.level](entry);
+    return entry;
   };
   const error = (event: ErrorEvent) => report('runtime.error', { error: event.error });
   const rejection = (event: PromiseRejectionEvent) =>
@@ -145,6 +150,11 @@ export function installBrowserLogging(options: BrowserLoggingOptions = {}) {
   window.addEventListener('pagehide', flush);
   const timer = setInterval(flush, 5000);
   return {
+    sessionId,
+    recent: () => recentEntries.slice(),
+    clearRecent: () => {
+      recentEntries.length = 0;
+    },
     report,
     flush: transport.flush,
     dispose() {

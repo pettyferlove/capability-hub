@@ -49,10 +49,11 @@ export function FeedbackForm({
   const pending = useRef(false);
   const retry = useRef<{ body: string; key: string } | null>(null);
   const [versionsRefresh, setVersionsRefresh] = useState(0);
-  const { data: versions, error: versionsError } = useQuery<VersionHistoryResponse[]>(
-    `/api/assets/${assetId}/versions`,
-    versionsRefresh,
-  );
+  const {
+    data: versions,
+    error: versionsError,
+    errorProps,
+  } = useQuery<VersionHistoryResponse[]>(`/api/assets/${assetId}/versions`, versionsRefresh);
   async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending.current) return;
@@ -134,6 +135,7 @@ export function FeedbackForm({
         </div>
         {versionsError && (
           <ErrorState
+            {...errorProps}
             message={`版本列表加载失败：${versionsError}`}
             retry={() => setVersionsRefresh((value) => value + 1)}
           />

@@ -35,10 +35,13 @@ function plain(node: ReactNode): string {
  */
 export function DataTable({
   label,
+  searchable = true,
   children,
 }: {
   /** 表格名，同时用于标题、`aria-label` 与搜索框的无障碍名称。 */
   label: string;
+  /** 服务端已筛选和分页的表格可禁用当前页搜索。 */
+  searchable?: boolean;
   /** 必须是单个 `<table>`；列数按 `thead` 首行各单元格的 `colSpan` 累加（缺省 1），用于让空态占满整行。 */
   children: ReactElement<React.TableHTMLAttributes<HTMLTableElement>>;
 }) {
@@ -57,8 +60,9 @@ export function DataTable({
         count + (isValidElement<{ colSpan?: number }>(cell) ? (cell.props.colSpan ?? 1) : 0),
       0,
     ) || 1;
-  const rows = Children.toArray(body?.props.children).filter(isValidElement),
-    filtered = rows.filter((r) => plain(r).toLowerCase().includes(query.trim().toLowerCase()));
+  const rows = Children.toArray(body?.props.children).filter(isValidElement);
+  const keyword = searchable ? query.trim().toLowerCase() : '';
+  const filtered = keyword ? rows.filter((r) => plain(r).toLowerCase().includes(keyword)) : rows;
   return (
     <div
       className={cn(
@@ -70,10 +74,10 @@ export function DataTable({
         <span>
           {label}
           <small role="status" aria-live="polite" aria-atomic="true">
-            {query.trim() ? `${filtered.length} / ${rows.length}` : rows.length} 条记录
+            {keyword ? `${filtered.length} / ${rows.length}` : rows.length} 条记录
           </small>
         </span>
-        {(rows.length > 10 || query) && (
+        {searchable && (rows.length > 10 || query) && (
           <label className={tableSearchStyles}>
             <Search size={15} />
             <input
@@ -102,7 +106,7 @@ export function DataTable({
                   ) : (
                     <tr>
                       <td colSpan={columns} className={tableEmptyStyles}>
-                        {query.trim() ? '没有匹配的记录' : '暂无记录'}
+                        {keyword ? '没有匹配的记录' : '暂无记录'}
                       </td>
                     </tr>
                   ),

@@ -48,16 +48,17 @@ import { AvatarPalettePicker } from './AvatarPalettePicker.js';
  */
 export function PersonalProfile() {
   const { me, refresh, reload } = useHub(),
-    { data, error, loading } = useQuery<ProfileResponse>('/api/me/profile', refresh),
-    { data: activity, error: activityError } = useQuery<ActivityResponse[]>(
-      '/api/me/activity',
-      refresh,
-    );
+    { data, error, errorProps, loading } = useQuery<ProfileResponse>('/api/me/profile', refresh),
+    {
+      data: activity,
+      error: activityError,
+      errorProps: activityErrorProps,
+    } = useQuery<ActivityResponse[]>('/api/me/activity', refresh);
   const [avatarDraft, setAvatarDraft] = useState<{ revision: number; color: AvatarColor }>();
   const [feedback, setFeedback] = useState(''),
     [failed, setFailed] = useState(false),
     [busy, setBusy] = useState(false);
-  if (error) return <ErrorState message={error} retry={reload} />;
+  if (error) return <ErrorState message={error} {...errorProps} retry={reload} />;
   if (!data) return <ProfileSkeleton />;
   const avatarColor =
     avatarDraft?.revision === data.revision ? avatarDraft.color : data.avatar_color;
@@ -217,7 +218,7 @@ export function PersonalProfile() {
               <History size={20} />
             </div>
             {activityError ? (
-              <ErrorState message={activityError} retry={reload} />
+              <ErrorState message={activityError} {...activityErrorProps} retry={reload} />
             ) : !activity ? (
               <ListSkeleton label="正在加载最近动态…" rows={3} />
             ) : activity.length ? (

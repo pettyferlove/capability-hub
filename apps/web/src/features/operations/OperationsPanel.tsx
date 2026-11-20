@@ -26,10 +26,13 @@ export function OperationsPanel({
   viewSwitch?: ReactNode;
 }) {
   const { refresh, reload } = useHub();
-  const { data, error, loading } = useQuery<OperationsResponse>('/api/admin/operations', refresh);
+  const { data, error, errorProps, loading } = useQuery<OperationsResponse>(
+    '/api/admin/operations',
+    refresh,
+  );
   let content: ReactNode;
   if (error) {
-    content = <ErrorState message={error} retry={reload} />;
+    content = <ErrorState message={error} {...errorProps} retry={reload} />;
   } else if (!data) {
     content = <SnapshotSkeleton section={section} />;
   } else if (section === 'agents') {

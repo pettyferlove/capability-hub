@@ -12,6 +12,7 @@ import {
   ArrowUpRight,
   Bot,
   Compass,
+  MessageSquare,
   Search,
   ShieldCheck,
   UploadCloud,
@@ -22,6 +23,7 @@ import { Overlay } from '../shared/components/Overlay.js';
 import { assetHref } from '../shared/navigation/history-route.js';
 import { navigate } from '../shared/navigation/history-navigation.js';
 import { useHub } from '../shared/context/HubContext.js';
+import { openHubFeedback } from '../shared/hub-feedback-events.js';
 
 interface PaletteLink {
   label: string;
@@ -86,6 +88,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     { label: '处理审核', href: '/review', icon: ShieldCheck },
     { label: '接入 Agent', href: '/connect', icon: Bot },
   ].filter((item) => me || item.href === '/discover' || item.href === '/connect');
+  actions.push({ label: '反馈问题', href: '', icon: MessageSquare });
   const current = result?.query === term ? result : undefined;
   const loading = !!term && !current;
   const links: PaletteLink[] = term
@@ -100,10 +103,11 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     if (open) activeOption.current?.scrollIntoView({ block: 'nearest' });
   }, [open, index, current]);
   function go(i: number) {
-    if (links[i]) {
-      navigate(links[i].href);
-      onClose();
-    }
+    const action = links[i];
+    if (!action) return;
+    onClose();
+    if (action.href) navigate(action.href);
+    else openHubFeedback();
   }
   return (
     <Overlay open={open} onClose={onClose} label="搜索与快速导航" variant="palette">

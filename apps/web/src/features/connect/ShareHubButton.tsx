@@ -98,7 +98,7 @@ function ShareHubInvitation({ onClose }: { onClose: () => void }) {
     tiltX.set((0.5 - (event.clientY - bounds.top) / bounds.height) * 5);
     tiltY.set(((event.clientX - bounds.left) / bounds.width - 0.5) * 7);
   };
-  const { data, loading, error } = useQuery<unknown>('/api/hub-share', refresh);
+  const { data, loading, error, errorProps } = useQuery<unknown>('/api/hub-share', refresh);
   const parsed = hubShareResponseSchema.safeParse(data);
   const invitation = parsed.success ? parsed.data : undefined;
   return (
@@ -187,6 +187,7 @@ function ShareHubInvitation({ onClose }: { onClose: () => void }) {
               </p>
             ) : error || !invitation ? (
               <ErrorState
+                {...errorProps}
                 message={error || '邀请暂时不可用，请重新加载'}
                 retry={() => setRefresh(refresh + 1)}
               />

@@ -86,6 +86,7 @@ export function IdentityAdminForm({
   const {
     data: references,
     error: referencesError,
+    errorProps: referencesErrorProps,
     loading: referencesLoading,
   } = useQuery<ScenarioReferencesResponse>(
     deletingScenario && scenario ? '/api/admin/scenarios/' + scenario.id + '/references' : null,
@@ -362,7 +363,11 @@ export function IdentityAdminForm({
           (referencesLoading ? (
             <Message>正在查询场景引用…</Message>
           ) : referencesError ? (
-            <ErrorState message={referencesError} retry={reloadReferences} />
+            <ErrorState
+              message={referencesError}
+              {...referencesErrorProps}
+              retry={reloadReferences}
+            />
           ) : references ? (
             <Message>
               {references.total === 0 ? (

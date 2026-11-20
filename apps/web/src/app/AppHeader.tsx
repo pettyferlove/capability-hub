@@ -17,10 +17,18 @@ import {
   brandStyles,
   activeStyles,
   btnStyles,
+  iconBtnStyles,
   btnPrimaryStyles,
 } from '../shared/styles/recipes.js';
 import { cn } from '../shared/styles/cn.js';
-import { Bot, Compass, Search, ShieldCheck, UploadCloud } from '../shared/icons/lucide.js';
+import {
+  Bot,
+  Compass,
+  MessageSquare,
+  Search,
+  ShieldCheck,
+  UploadCloud,
+} from '../shared/icons/lucide.js';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from 'react-aria-components';
 import { Glyph } from '../shared/components/Glyph.js';
@@ -31,6 +39,7 @@ import { loginHref } from '../shared/navigation/history-route.js';
 import { ThemePicker } from './ThemePicker.js';
 import type { useTheme } from './theme.js';
 import { ShareHubButton } from '../features/connect/ShareHubButton.js';
+import { openHubFeedback } from '../shared/hub-feedback-events.js';
 
 const navigation = [
   { id: 'discover', label: '发现', icon: Compass },
@@ -47,6 +56,8 @@ const navigation = [
 export function AppHeader({
   page,
   reviewCount,
+  feedbackUnread = 0,
+  feedbackPending = 0,
   theme,
   searchOpen,
   onSearch,
@@ -55,6 +66,8 @@ export function AppHeader({
   page: HubRoute['page'];
   /** 待审核数量；0 时隐藏角标，只表示前端已知的数量，不代表全部队列。 */
   reviewCount: number;
+  feedbackUnread?: number;
+  feedbackPending?: number;
   theme: ReturnType<typeof useTheme>;
   /** 命令面板是否展开，用于 `aria-expanded`；展开状态由父组件持有。 */
   searchOpen: boolean;
@@ -142,9 +155,24 @@ export function AppHeader({
             </kbd>
           </Button>
           <ShareHubButton />
+          <Button
+            type="button"
+            className={cn(iconBtnStyles, 'relative max-[600px]:hidden')}
+            aria-label={feedbackUnread ? `反馈问题（${feedbackUnread} 条未读）` : '反馈问题'}
+            aria-haspopup="dialog"
+            onPress={() => openHubFeedback()}
+          >
+            <MessageSquare size={16} aria-hidden="true" />
+            {feedbackUnread > 0 && (
+              <span
+                aria-hidden="true"
+                className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-brand"
+              />
+            )}
+          </Button>
           <ThemePicker {...theme} />
           {me ? (
-            <AvatarMenu />
+            <AvatarMenu feedbackUnread={feedbackUnread} feedbackPending={feedbackPending} />
           ) : (
             <a className={cn(btnStyles, btnPrimaryStyles)} href={loginHref(returnTo)}>
               登录

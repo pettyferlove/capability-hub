@@ -74,7 +74,7 @@ export function IntakeHistoryPanel({
     q: filters.q,
     state: filters.state,
   });
-  const { data, error, loading, isPreviousData } = useQuery<IntakeListResponse>(
+  const { data, error, errorProps, loading, isPreviousData } = useQuery<IntakeListResponse>(
     '/api/intakes?' + params.toString(),
     refresh + listRefresh,
     { keepPreviousData: true },
@@ -82,6 +82,7 @@ export function IntakeHistoryPanel({
   const {
     data: detail,
     error: detailError,
+    errorProps: detailErrorProps,
     loading: detailLoading,
     connection,
     recordSubmission,
@@ -170,7 +171,7 @@ export function IntakeHistoryPanel({
       {background && <Message>处理仍在后台继续，稍后刷新查看结果。</Message>}
       <QueryRegion label="接收记录查询结果" loading={loading} isPreviousData={isPreviousData}>
         {error ? (
-          <ErrorState message={error} retry={reload} />
+          <ErrorState message={error} {...errorProps} retry={reload} />
         ) : !data ? (
           <ListSkeleton label="正在加载接收记录…" rows={5} />
         ) : !data.items.length ? (
@@ -241,7 +242,7 @@ export function IntakeHistoryPanel({
             )}
           >
             {detailError ? (
-              <ErrorState message={detailError} retry={reload} />
+              <ErrorState message={detailError} {...detailErrorProps} retry={reload} />
             ) : detailLoading && !detail ? (
               <Loading label="正在加载接收详情…" />
             ) : (

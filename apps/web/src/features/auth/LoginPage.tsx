@@ -39,7 +39,9 @@ import {
   Sparkles,
 } from '../../shared/icons/lucide.js';
 import { useState, type SubmitEvent } from 'react';
-import { mutate } from '../../shared/api/client.js';
+import { latestFailedRequest, latestHubVersion, mutate } from '../../shared/api/client.js';
+import { bundledWebBuild } from '../../shared/api/web-build.js';
+import { CopyButton } from '../../shared/components/CopyButton.js';
 import { Message } from '../../shared/components/Message.js';
 import { PasswordField } from '../../shared/components/PasswordField.js';
 import { Submit } from '../../shared/components/Submit.js';
@@ -72,6 +74,7 @@ export default function LoginPage({
     [busy, setBusy] = useState(false);
   const [method, setMethod] = useState<LoginProvider>(ldapEnabled ? 'ldap' : 'local');
   const [backgroundPaused, setBackgroundPaused] = useState(false);
+  const [diagnosticsTime, setDiagnosticsTime] = useState('');
   const provider = initialized && ldapEnabled ? method : 'local';
   const directoryLogin = provider === 'ldap';
   async function submit(e: SubmitEvent<HTMLFormElement>) {
@@ -96,6 +99,20 @@ export default function LoginPage({
       setBusy(false);
     }
   }
+  const failure = latestFailedRequest(
+    ({ path }) => path === '/auth/login' || path === '/auth/setup',
+  );
+  const diagnostics = [
+    `时间：${diagnosticsTime}`,
+    `Hub 版本：${latestHubVersion() ?? '未知'}`,
+    `Web 构建：${bundledWebBuild ?? '未知'}`,
+    ...(failure
+      ? [
+          `错误码：${failure.code}`,
+          ...(failure.request_id ? [`请求编号：${failure.request_id}`] : []),
+        ]
+      : []),
+  ].join('\n');
   return (
     <div className={authLayoutStyles}>
       <section className={authStoryStyles} aria-labelledby="auth-story-title">
@@ -263,6 +280,19 @@ export default function LoginPage({
                 : '如需开通账号或重置密码，请联系平台管理员。'
               : '初始化完成后，请添加其他审核人员；发布者不能审核自己的提交。'}
           </p>
+          <details
+            onToggle={(event) => {
+              if (event.currentTarget.open) setDiagnosticsTime(new Date().toISOString());
+            }}
+          >
+            <summary className={cn(textBtnStyles, 'cursor-pointer')}>登录遇到问题？</summary>
+            <div className="mt-2 grid justify-items-start gap-2">
+              <pre className="max-w-full whitespace-pre-wrap break-all text-caption text-muted-ink">
+                {diagnostics}
+              </pre>
+              <CopyButton text={diagnostics} label="复制诊断信息" />
+            </div>
+          </details>
           <a className={textBtnStyles} href="/discover">
             浏览公开资源
             <ArrowUpRight size={14} aria-hidden="true" />

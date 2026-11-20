@@ -260,7 +260,7 @@ export function TokenUsagePanel() {
             </div>
           </div>
           {error ? (
-            <ErrorState message={error} retry={reload} />
+            <ErrorState message={error} {...query.errorProps} retry={reload} />
           ) : !data ? (
             <TokenTotalsSkeleton />
           ) : (

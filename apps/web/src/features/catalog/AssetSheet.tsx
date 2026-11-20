@@ -51,6 +51,7 @@ export default function AssetSheet({ slug }: { slug: string }) {
   const {
     data: a,
     error,
+    errorProps,
     loading,
   } = useQuery<AssetResponse>('/api/assets/' + encodeURIComponent(slug), refresh);
   const [expandedDescription, setExpandedDescription] = useState(false),
@@ -86,7 +87,7 @@ export default function AssetSheet({ slug }: { slug: string }) {
         <DetailSkeleton />
       ) : error ? (
         <>
-          <ErrorState message={error} retry={reload} />
+          <ErrorState message={error} {...errorProps} retry={reload} />
           {!me && (
             <Message>
               受限资源需要登录后访问。

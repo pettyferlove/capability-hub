@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { approveCliLoginRequestSchema } from '@capability-hub/contracts';
-import { ApiError, mutate } from '../../shared/api/client.js';
+import { ApiError, apiErrorContext, mutate } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { Glyph } from '../../shared/components/Glyph.js';
-import { Message } from '../../shared/components/Message.js';
+import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { UserAvatar } from '../../shared/components/UserAvatar.js';
 import { useHub } from '../../shared/context/HubContext.js';
@@ -201,7 +201,7 @@ export function CliApproval({ initialCode }: { initialCode: string }) {
               <LockKeyhole size={15} className="mt-0.5 shrink-0" />
               登录凭据由 CLI 保存在本机，可在账号安全中撤销。
             </p>
-            {failure && <Message error>{failure.message}</Message>}
+            {failure && <ErrorState message={failure.message} {...apiErrorContext(failure)} />}
           </div>
           <div className={cn(consentFooterStyles, 'flex-wrap justify-end')}>
             <button

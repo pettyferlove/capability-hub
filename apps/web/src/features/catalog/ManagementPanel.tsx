@@ -178,11 +178,10 @@ export default function ManagementPanel() {
     page: String(page),
     page_size: String(pageSize),
   });
-  const { data, error, loading, isPreviousData } = useQuery<ManagementAssetListResponse>(
-    '/api/management/assets?' + params.toString(),
-    refresh,
-    { keepPreviousData: true },
-  );
+  const { data, error, errorProps, loading, isPreviousData } =
+    useQuery<ManagementAssetListResponse>('/api/management/assets?' + params.toString(), refresh, {
+      keepPreviousData: true,
+    });
   const filtered = !!q || filter !== 'all';
   return (
     <div className={formStackStyles}>
@@ -243,7 +242,7 @@ export default function ManagementPanel() {
         showProgress={!!data}
       >
         {error ? (
-          <ErrorState message={error} retry={reload} />
+          <ErrorState message={error} {...errorProps} retry={reload} />
         ) : loading && !data ? (
           <TableSkeleton label="正在加载可维护资产…" rows={5} columns={6} paginated stackOnMobile />
         ) : !data?.items.length ? (
@@ -485,6 +484,7 @@ function Controls({
   const {
     data: versions,
     error: versionsError,
+    errorProps,
     loading: versionsLoading,
   } = useQuery<VersionHistoryResponse[]>(
     '/api/management/assets/' + a.id + '/versions',
@@ -609,6 +609,7 @@ function Controls({
               </p>
               {versionsError ? (
                 <ErrorState
+                  {...errorProps}
                   message={versionsError}
                   retry={() => setVersionsRefresh((value) => value + 1)}
                 />

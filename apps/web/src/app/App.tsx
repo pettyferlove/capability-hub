@@ -6,7 +6,11 @@ import { assetDetailScrollStyles } from '../features/catalog/styles.js';
 import { cn } from '../shared/styles/cn.js';
 import { bootErrorStyles, skipLinkStyles, mainShellStyles, appFooterStyles } from './styles.js';
 import { pageContentStyles } from '../shared/styles/recipes.js';
-import type { ReviewResponse } from '@capability-hub/contracts/http';
+import type {
+  HubFeedbackQueueSummaryResponse,
+  HubFeedbackSummaryResponse,
+  ReviewResponse,
+} from '@capability-hub/contracts/http';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import Login from '../features/auth/LoginPage.js';
 import Discover from '../features/catalog/DiscoverPage.js';
@@ -28,12 +32,14 @@ import { PageBoundary } from './PageBoundary.js';
 import { NotFoundPage } from './NotFoundPage.js';
 import { WebUpdateNotice } from './WebUpdateNotice.js';
 import { lazyView } from '../shared/navigation/lazy-view.js';
+import type { HubFeedbackSeed } from '../shared/hub-feedback-events.js';
 
 const AssetSheet = lazyView(() => import('../features/catalog/AssetSheet.js'));
 const Publish = lazyView(() => import('../features/publishing/PublishPage.js'));
 const Review = lazyView(() => import('../features/review/ReviewPage.js'));
 const Connect = lazyView(() => import('../features/connect/ConnectPage.js'));
 const Account = lazyView(() => import('../features/identity/AccountPage.js'));
+const HubFeedbackAssistant = lazyView(() => import('../features/feedback/HubFeedbackAssistant.js'));
 const pagePlaceholders = {
   discover: { title: '资源目录', variant: 'cards' },
   publish: { title: '分享 Skill 与 MCP', variant: 'publish' },
@@ -53,6 +59,16 @@ export default function App() {
   const view = useAppRoute();
   const [refresh, setRefresh] = useState(0);
   const [palette, setPalette] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    userId: string | undefined;
+    open: boolean;
+    seed?: HubFeedbackSeed;
+  }>();
+  const [feedbackRefresh, setFeedbackRefresh] = useState(0);
+  const [readFeedback, setReadFeedback] = useState<{
+    summary: HubFeedbackSummaryResponse;
+    ids: ReadonlySet<string>;
+  }>();
   const { me, initialized, setupRequired, ldapEnabled, loading, error, load, logout } =
     useSession(refresh);
   const theme = useTheme();
@@ -89,6 +105,47 @@ export default function App() {
     refresh,
   );
   const reviewCount = reviews.data?.items?.length ?? 0;
+  const feedbackSummary = useQuery<HubFeedbackSummaryResponse>(
+    me ? '/api/hub-feedback/summary' : null,
+    refresh + feedbackRefresh,
+  ).data;
+  const queueSummary = useQuery<HubFeedbackQueueSummaryResponse>(
+    me?.capabilities.can_manage_feedback ? '/api/admin/hub-feedback/summary' : null,
+    refresh + feedbackRefresh,
+  ).data;
+  const userId = me?.id;
+  const panel = feedback?.userId === userId ? feedback : undefined;
+  const feedbackUnread = Math.max(
+    0,
+    (feedbackSummary?.unread ?? 0) -
+      (readFeedback?.summary === feedbackSummary ? (readFeedback?.ids.size ?? 0) : 0),
+  );
+  const feedbackPending = queueSummary?.pending ?? 0;
+  useEffect(() => {
+    const open = (event: WindowEventMap['hub:feedback']) =>
+      setFeedback({ userId, open: true, seed: event.detail });
+    const change = (event: WindowEventMap['hub:feedback-changed']) => {
+      const detail = event.detail;
+      if (detail.kind !== 'read') setFeedbackRefresh((value) => value + 1);
+      else if (feedbackSummary)
+        setReadFeedback((previous) => ({
+          summary: feedbackSummary,
+          ids: new Set(
+            previous?.summary === feedbackSummary ? [...previous.ids, detail.id] : [detail.id],
+          ),
+        }));
+    };
+    window.addEventListener('hub:feedback', open);
+    window.addEventListener('hub:feedback-changed', change);
+    return () => {
+      window.removeEventListener('hub:feedback', open);
+      window.removeEventListener('hub:feedback-changed', change);
+    };
+  }, [feedbackSummary, userId]);
+  useEffect(() => {
+    setFeedback((current) => (current?.userId === userId ? current : undefined));
+    setReadFeedback(undefined);
+  }, [userId]);
   useEffect(() => {
     if (me && view.page === 'login') navigate(loginReturnPath(view.query), { replace: true });
   }, [me, view.page, view.query]);
@@ -147,6 +204,8 @@ export default function App() {
           page={view.page}
           returnTo={location.pathname + location.search}
           reviewCount={reviewCount}
+          feedbackUnread={feedbackUnread}
+          feedbackPending={feedbackPending}
           theme={theme}
           searchOpen={palette}
           onSearch={() => setPalette(true)}
@@ -175,7 +234,9 @@ export default function App() {
                 {view.page === 'review' && <Review query={view.query} />}
                 {view.page === 'connect' && <Connect routeQuery={view.query} />}
                 {view.page === 'account' && <Account query={view.query} />}
-                {view.page === 'operations' && <OperationsCenter query={view.query} />}
+                {view.page === 'operations' && (
+                  <OperationsCenter query={view.query} feedbackPending={feedbackPending} />
+                )}
                 {view.page === 'not-found' && <NotFoundPage />}
               </div>
             </Suspense>
@@ -199,11 +260,24 @@ export default function App() {
           <DialogTitle title="资源详情" onClose={closeAsset} />
           <div data-asset-detail-scroll className={cn(sheetScrollStyles, assetDetailScrollStyles)}>
             <Suspense fallback={<DetailSkeleton />}>
-              {view.asset && <AssetSheet key={view.asset} slug={view.asset} />}
+              {view.asset && <AssetSheet key={view.asset + location.search} slug={view.asset} />}
             </Suspense>
           </div>
         </Overlay>
         <CommandPalette open={palette} onClose={() => setPalette(false)} />
+        {panel && (
+          <Suspense fallback={null}>
+            <HubFeedbackAssistant
+              open={panel.open}
+              route={view}
+              seed={panel.seed}
+              unread={feedbackUnread}
+              onClose={() =>
+                setFeedback((current) => (current ? { ...current, open: false } : undefined))
+              }
+            />
+          </Suspense>
+        )}
       </HubCtx.Provider>
     </LoadingScope>
   );

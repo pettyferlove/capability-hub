@@ -4,6 +4,7 @@ import type {
   RoleScopeOptionsResponse,
 } from '@capability-hub/contracts/http';
 import { useState } from 'react';
+import type { ApiErrorContext } from '../../shared/api/client.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Message } from '../../shared/components/Message.js';
 import { SelectField } from '../../shared/components/SelectField.js';
@@ -30,6 +31,7 @@ export interface IdentityOptions<T> {
   data?: T;
   loading: boolean;
   error: string;
+  errorProps?: ApiErrorContext;
 }
 
 interface AssignmentProps {
@@ -239,7 +241,7 @@ export function BindingFields({
       {scope &&
         scope !== 'platform' &&
         (scopeLoad?.error ? (
-          <ErrorState message={scopeLoad.error} retry={retry} />
+          <ErrorState message={scopeLoad.error} {...scopeLoad.errorProps} retry={retry} />
         ) : options.length > 0 ? (
           <IdentityPicker
             key={scope}
@@ -265,6 +267,9 @@ export function BindingFields({
       )}
       {scope && scope !== 'platform' && role?.permissions.includes('identity:manage') && (
         <Message>管理账号、团队和授权需要平台作用域。所选范围不会赋予这些管理权限。</Message>
+      )}
+      {scope && scope !== 'platform' && role?.permissions.includes('feedback:manage') && (
+        <Message>处理平台反馈仅在平台范围生效。</Message>
       )}
       {role?.permissions.includes('review:decide') && scope ? (
         <Message>

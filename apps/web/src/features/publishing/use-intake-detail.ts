@@ -1,7 +1,7 @@
 import { intakeProgressResponseSchema } from '@capability-hub/contracts';
 import type { IntakeResponse, PublicationRequestResponse } from '@capability-hub/contracts/http';
 import { useEffect, useState } from 'react';
-import { api } from '../../shared/api/client.js';
+import { api, apiErrorContext, type ApiErrorContext } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 
 /**
@@ -16,6 +16,7 @@ export function useIntakeDetail(id: string, refresh: number) {
     id: string;
     data?: IntakeResponse;
     error: string;
+    errorProps?: ApiErrorContext;
     connection: IntakeConnection;
   }>({ id: '', error: '', connection: 'closed' });
   useEffect(() => {
@@ -25,7 +26,12 @@ export function useIntakeDetail(id: string, refresh: number) {
     const path = '/api/intakes/' + encodeURIComponent(id);
     const updateError = (error: unknown) => {
       if (!controller.signal.aborted)
-        setResult({ id, error: errorMessage(error), connection: 'closed' });
+        setResult({
+          id,
+          error: errorMessage(error),
+          errorProps: apiErrorContext(error),
+          connection: 'closed',
+        });
     };
     setResult({ id, error: '', connection: 'connecting' });
     const load = async () => {
@@ -98,6 +104,7 @@ export function useIntakeDetail(id: string, refresh: number) {
     },
     data: current ? result.data : undefined,
     error: current ? result.error : '',
+    errorProps: current ? result.errorProps : undefined,
     loading: !!id && (!current || (!result.data && !result.error)),
     connection: current ? result.connection : ('connecting' as const),
   };

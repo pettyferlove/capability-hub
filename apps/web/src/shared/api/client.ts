@@ -1,13 +1,71 @@
 import { browserUuid } from '@capability-hub/logging/browser';
-import { reportError } from '../logging.js';
+import {
+  hubFeedbackFailedRequestSchema,
+  hubVersionHeaders,
+  type HubFeedbackFailedRequest,
+} from '@capability-hub/contracts';
+import { clearBrowserDiagnostics, reportError } from '../logging.js';
 import { readPreviewText } from './preview.js';
 import { observeWebBuild } from './web-build.js';
 
 export { PreviewUnavailable } from './preview.js';
 let csrfToken = '';
+let hubVersion: string | undefined;
+const failedRequests: HubFeedbackFailedRequest[] = [];
+
+/** 最近失败仅保留白名单字段，不含请求和响应正文。 */
+export function recentFailedRequests(): readonly HubFeedbackFailedRequest[] {
+  return failedRequests.slice();
+}
+
+/** 最近一次匹配失败用于精确选中触发记录。 */
+export function latestFailedRequest(matches: (entry: HubFeedbackFailedRequest) => boolean) {
+  for (let i = failedRequests.length - 1; i >= 0; i--) {
+    if (matches(failedRequests[i])) return failedRequests[i];
+  }
+}
+
+/** 未带版本响应头的中间件错误不覆盖最近已知版本。 */
+export function latestHubVersion(): string | undefined {
+  return hubVersion;
+}
+
+function observeResponse(response: Response) {
+  const version = response.headers.get(hubVersionHeaders.version);
+  if (version && /^\d+\.\d+\.\d+(?:[-+][\w.+-]+)?$/.test(version)) hubVersion = version;
+  return observeWebBuild(response);
+}
+
+function rememberFailure(
+  method: string,
+  path: string,
+  status: number,
+  code: string,
+  requestId?: string,
+) {
+  const safePath = path
+    .split(/[?#]/, 1)[0]
+    .replace(/^(\/api\/install-tickets\/)[^/]+/, '$1~ticket');
+  const parsed = hubFeedbackFailedRequestSchema.safeParse({
+    at: new Date().toISOString(),
+    method,
+    path: safePath,
+    status,
+    code: /^[A-Za-z0-9_]{1,80}$/.test(code) ? code : 'REQUEST_FAILED',
+    request_id: requestId && /^[0-9a-f-]{36}$/i.test(requestId) ? requestId : undefined,
+  });
+  if (!parsed.success) return;
+  if (failedRequests.length === 20) failedRequests.shift();
+  failedRequests.push(parsed.data);
+  return parsed.data;
+}
 
 /** 注入 CSRF 令牌来源：由 `use-session` 在登录/刷新会话成功后写入，退出或失败时清空。 */
 export function setCsrf(value: string): void {
+  if (value !== csrfToken) {
+    failedRequests.length = 0;
+    clearBrowserDiagnostics();
+  }
   csrfToken = value;
 }
 
@@ -21,13 +79,28 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly requestId = '',
+    readonly failure?: HubFeedbackFailedRequest,
   ) {
     super(message);
     this.name = 'ApiError';
   }
 }
 
-async function responseError(response: Response, path: string): Promise<ApiError> {
+/** 只把可显示和预览的请求上下文交给错误组件。 */
+export interface ApiErrorContext {
+  status?: number;
+  requestId?: string;
+  failure?: HubFeedbackFailedRequest;
+}
+
+/** 非请求异常没有可预选的请求诊断。 */
+export function apiErrorContext(error: unknown): ApiErrorContext | undefined {
+  return error instanceof ApiError
+    ? { status: error.status, requestId: error.requestId, failure: error.failure }
+    : undefined;
+}
+
+async function responseError(response: Response, path: string, method = 'GET'): Promise<ApiError> {
   const body: unknown = await response.json().catch(() => null);
   const detail =
     body &&
@@ -43,15 +116,18 @@ async function responseError(response: Response, path: string): Promise<ApiError
       ? detail.message
       : '请求失败，请稍后重试';
   const requestId =
-    'request_id' in detail && typeof detail.request_id === 'string' ? detail.request_id : '';
-  if (response.status === 401 && !path.startsWith('/auth/') && path !== '/api/me')
-    window.dispatchEvent(new Event('hub:unauthenticated'));
+    ('request_id' in detail && typeof detail.request_id === 'string' && detail.request_id) ||
+    response.headers.get('X-Request-Id') ||
+    '';
+  const failure = rememberFailure(method, path, response.status, code, requestId);
   reportError('http.failed', {
     status: response.status,
     code,
-    requestId: requestId || response.headers.get('X-Request-Id') || undefined,
+    requestId: requestId || undefined,
   });
-  return new ApiError(response.status, code, message, requestId);
+  if (response.status === 401 && !path.startsWith('/auth/') && path !== '/api/me')
+    window.dispatchEvent(new Event('hub:unauthenticated'));
+  return new ApiError(response.status, code, message, requestId, failure);
 }
 
 /**
@@ -77,12 +153,19 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
     credentials: 'same-origin',
     redirect: 'error',
   }).catch((error) => {
-    if (!(error instanceof DOMException && error.name === 'AbortError'))
-      reportError('http.failed', { error });
-    throw error;
+    if (options.signal?.aborted || (error instanceof Error && error.name === 'AbortError'))
+      throw error;
+    reportError('http.failed', { error });
+    throw new ApiError(
+      0,
+      'NETWORK_ERROR',
+      error instanceof Error ? error.message : '暂时无法连接服务，请稍后重试',
+      '',
+      rememberFailure(options.method ?? 'GET', path, 0, 'NETWORK_ERROR'),
+    );
   });
-  observeWebBuild(response);
-  if (!response.ok) throw await responseError(response, path);
+  observeResponse(response);
+  if (!response.ok) throw await responseError(response, path, options.method);
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
@@ -96,7 +179,7 @@ export async function checkWebBuild(): Promise<string | null> {
     redirect: 'error',
     signal: AbortSignal.timeout(3000),
   });
-  return response.ok ? observeWebBuild(response) : null;
+  return response.ok ? observeResponse(response) : null;
 }
 
 /**
@@ -132,9 +215,23 @@ export async function fileText(
 ): Promise<string> {
   const url = `/api/${management ? 'management/' : ''}versions/${version}/files?path=${encodeURIComponent(path)}`;
   const response = await fetch(url, { credentials: 'same-origin', redirect: 'error', signal });
-  observeWebBuild(response);
+  observeResponse(response);
   if (!response.ok) throw await responseError(response, url);
   return readPreviewText(response);
+}
+
+/** 文本附件保留原始下载，只在处理详情里展示前 200 行。 */
+export async function hubFeedbackAttachmentText(
+  path: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const response = await fetch(path, { credentials: 'same-origin', redirect: 'error', signal });
+  observeResponse(response);
+  if (!response.ok) throw await responseError(response, path);
+  return (await response.text())
+    .split(/\r\n?|\n/, 201)
+    .slice(0, 200)
+    .join('\n');
 }
 
 /** SSE 帧被解析后的形状；`data` 已按 JSON 解析，解析失败会中断整条流而不是跳过该帧。 */
@@ -166,7 +263,7 @@ export async function streamEvents(
       ...(lastEventId ? { 'Last-Event-ID': lastEventId } : {}),
     },
   });
-  observeWebBuild(response);
+  observeResponse(response);
   if (!response.ok) throw await responseError(response, path);
   if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream'))
     throw new ApiError(502, 'STREAM_INVALID', '事件连接不可用');

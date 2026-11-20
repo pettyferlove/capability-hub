@@ -12,9 +12,16 @@ const pages = [
 export type HubPage = (typeof pages)[number];
 
 /** 账号页签的地址独立于查看者是否持有身份管理权限。 */
-export const accountPageTabs = ['profile', 'credentials', 'security', 'identity', 'roles'] as const;
+export const accountPageTabs = [
+  'profile',
+  'credentials',
+  'security',
+  'feedback',
+  'identity',
+  'roles',
+] as const;
 
-const operationsPageTabs = ['overview', 'agents', 'usage', 'runtime', 'audit'] as const;
+const operationsPageTabs = ['overview', 'agents', 'usage', 'runtime', 'audit', 'feedback'] as const;
 
 /** 运营页签可单独分享，读取权限由相应栏目检查。 */
 export type OperationsTab = (typeof operationsPageTabs)[number];

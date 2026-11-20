@@ -148,7 +148,7 @@ export default function DiscoverPage() {
     ...(scenario ? { scenario_id: scenario } : {}),
     ...(cursor ? { cursor } : {}),
   });
-  const { data, error, loading, isPreviousData } = useQuery<{
+  const { data, error, errorProps, loading, isPreviousData } = useQuery<{
     items: AssetResponse[];
     total: number;
     counts: Record<string, number>;
@@ -377,7 +377,7 @@ export default function DiscoverPage() {
           <AnimatePresence mode="popLayout">
             {error ? (
               <CatalogMotionItem key="error" className={catalogResultStateStyles}>
-                <ErrorState message={error} retry={reload} />
+                <ErrorState message={error} {...errorProps} retry={reload} />
               </CatalogMotionItem>
             ) : loading && !data ? (
               <CatalogMotionItem key="loading" className={catalogResultStateStyles}>

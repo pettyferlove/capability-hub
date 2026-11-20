@@ -593,6 +593,7 @@ export function UploadPanel({
                     </div>
                     {target === 'existing' && versionQuery.error && (
                       <ErrorState
+                        {...versionQuery.errorProps}
                         message={`获取版本建议失败：${versionQuery.error}`}
                         retry={() => setVersionRefresh((value) => value + 1)}
                       />
@@ -619,6 +620,7 @@ export function UploadPanel({
                         </label>
                         {teamQuery.error ? (
                           <ErrorState
+                            {...teamQuery.errorProps}
                             message={`获取可分享团队失败：${teamQuery.error}`}
                             retry={reload}
                           />

@@ -22,7 +22,7 @@ type SourceSheet =
 /** 来源按仓库展示，配置与接收详情在抽屉中打开，列表保留各仓库的同步进度。 */
 export default function SourcesPanel() {
   const { refresh, reload, me } = useHub();
-  const { data, error, loading } = useQuery<SourceResponse[]>('/api/sources', refresh);
+  const { data, error, errorProps, loading } = useQuery<SourceResponse[]>('/api/sources', refresh);
   const [sheet, setSheet] = useState<SourceSheet>();
   const intake = useQuery<IntakeResponse>(
     sheet?.kind === 'intake' ? '/api/intakes/' + encodeURIComponent(sheet.id) : null,
@@ -67,7 +67,7 @@ export default function SourcesPanel() {
           </button>
         </div>
       </header>
-      {error && <ErrorState message={error} retry={reload} />}
+      {error && <ErrorState message={error} {...errorProps} retry={reload} />}
       {loading && !data ? (
         <ListSkeleton label="正在加载 Git 来源…" rows={2} />
       ) : data?.length ? (
@@ -111,7 +111,7 @@ export default function SourcesPanel() {
             <DialogTitle title="接收详情" onClose={close} />
             <div className={publishIntakeBodyStyles} data-intake-scroll>
               {intake.error ? (
-                <ErrorState message={intake.error} retry={reload} />
+                <ErrorState message={intake.error} {...intake.errorProps} retry={reload} />
               ) : intake.data ? (
                 <IntakeDetail
                   key={intake.data.id}

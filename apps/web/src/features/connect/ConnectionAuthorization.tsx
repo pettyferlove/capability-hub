@@ -24,7 +24,7 @@ import { cn } from '../../shared/styles/cn.js';
 import type { ConnectionAuthorizationResponse } from '@capability-hub/contracts';
 import { useEffect, useState } from 'react';
 import { useQuery } from '../../shared/api/use-query.js';
-import { ApiError, mutate } from '../../shared/api/client.js';
+import { ApiError, apiErrorContext, mutate } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import {
@@ -40,7 +40,6 @@ import {
 import { ConnectionClientIcon } from '../../shared/icons/ConnectionClientIcon.js';
 import { Glyph } from '../../shared/components/Glyph.js';
 import { UserAvatar } from '../../shared/components/UserAvatar.js';
-import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { ListSkeleton } from '../../shared/components/Skeleton.js';
@@ -56,7 +55,10 @@ export function ConnectionAuthorization({ requestId }: { requestId: string }) {
   const [failure, setFailure] = useState<Error>();
   const [attempt, setAttempt] = useState(0);
   const path = '/api/connections/authorize/' + encodeURIComponent(requestId);
-  const { data, error, errorCode } = useQuery<ConnectionAuthorizationResponse>(path, attempt);
+  const { data, error, errorCode, errorProps } = useQuery<ConnectionAuthorizationResponse>(
+    path,
+    attempt,
+  );
   const [now, setNow] = useState(Date.now);
   const expired = !!data && data.expires_at <= now;
   useEffect(() => {
@@ -117,7 +119,11 @@ export function ConnectionAuthorization({ requestId }: { requestId: string }) {
       <section className={cn(panelStyles, formStackStyles, connectionAuthorizationStyles)}>
         <h1 className={pageHeadTitleStyles}>确认连接权限</h1>
         {error ? (
-          <ErrorState message={error} retry={() => setAttempt((value) => value + 1)} />
+          <ErrorState
+            message={error}
+            {...errorProps}
+            retry={() => setAttempt((value) => value + 1)}
+          />
         ) : (
           <ListSkeleton rows={3} label="正在读取连接请求…" />
         )}
@@ -278,7 +284,7 @@ export function ConnectionAuthorization({ requestId }: { requestId: string }) {
             <LockKeyhole size={15} className="mt-0.5 shrink-0" />
             权限受当前账号限制，可随时在账号安全中断开连接。
           </p>
-          {failure && <Message error>{failure.message}</Message>}
+          {failure && <ErrorState message={failure.message} {...apiErrorContext(failure)} />}
         </div>
         <div className={cn(consentFooterStyles, 'flex-wrap justify-end')}>
           <button

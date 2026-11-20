@@ -1,5 +1,12 @@
 import { Suspense, type ReactNode } from 'react';
-import { Activity, Bot, Layers3, ScrollText, Workflow } from '../../shared/icons/lucide.js';
+import {
+  Activity,
+  Bot,
+  Layers3,
+  MessageSquare,
+  ScrollText,
+  Workflow,
+} from '../../shared/icons/lucide.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { canOpenOperations, operationsHref } from './navigation.js';
 import { PageHead } from '../../shared/components/PageHead.js';
@@ -15,6 +22,7 @@ import {
 } from './OperationsSkeleton.js';
 import { SkeletonBlock, SkeletonRegion, TableSkeleton } from '../../shared/components/Skeleton.js';
 import { panelStyles, formStackStyles } from '../../shared/styles/recipes.js';
+import { navCountStyles } from '../../app/styles.js';
 import { lazyView } from '../../shared/navigation/lazy-view.js';
 
 const Overview = lazyView(async () => ({
@@ -32,6 +40,9 @@ const Audit = lazyView(async () => ({
 const Agents = lazyView(async () => ({
   default: (await import('./agents/AgentSection.js')).AgentSection,
 }));
+const Feedback = lazyView(async () => ({
+  default: (await import('../feedback/HubFeedbackWorkspace.js')).HubFeedbackWorkspace,
+}));
 
 function HeadingPlaceholder({ title }: { title: string }) {
   return (
@@ -47,22 +58,34 @@ function HeadingPlaceholder({ title }: { title: string }) {
 }
 
 /** 审计汇总和执行检查分别授权，进入子页时只挂载该页有权读取的数据。 */
-export default function OperationsCenter({ query }: { query: string }) {
+export default function OperationsCenter({
+  query,
+  feedbackPending = 0,
+}: {
+  query: string;
+  feedbackPending?: number;
+}) {
   const { me } = useHub();
   if (!canOpenOperations(me?.capabilities))
     return <ErrorState message="当前账号无权访问运营中心。" />;
   const canAudit = !!me?.capabilities.can_audit;
   const canInspect = !!me?.capabilities.can_ai_console;
-  const requested = new URLSearchParams(query).get('tab') ?? (canAudit ? 'overview' : 'agents');
+  const canManageFeedback = !!me?.capabilities.can_manage_feedback;
+  const requested =
+    new URLSearchParams(query).get('tab') ??
+    (canAudit ? 'overview' : canInspect ? 'agents' : 'feedback');
   const tabs = [
     ...(canAudit ? [{ id: 'overview' as const, label: '运营总览', Icon: Activity }] : []),
-    { id: 'agents' as const, label: 'Agent', Icon: Bot },
+    ...(canAudit || canInspect ? [{ id: 'agents' as const, label: 'Agent', Icon: Bot }] : []),
     ...(canAudit
       ? [
           { id: 'usage' as const, label: 'Token 用量', Icon: Layers3 },
           { id: 'runtime' as const, label: '实例运行', Icon: Workflow },
           { id: 'audit' as const, label: '操作审计', Icon: ScrollText },
         ]
+      : []),
+    ...(canManageFeedback
+      ? [{ id: 'feedback' as const, label: '平台反馈', Icon: MessageSquare }]
       : []),
   ];
   const tab = tabs.find((item) => item.id === requested)?.id;
@@ -150,6 +173,10 @@ export default function OperationsCenter({ query }: { query: string }) {
         </div>
       );
       break;
+    case 'feedback':
+      panel = <Feedback query={query} />;
+      placeholder = <TableSkeleton label="正在加载平台反馈…" columns={6} paginated stackOnMobile />;
+      break;
     default:
       panel = <ErrorState message="当前账号无法访问此运营栏目。" />;
   }
@@ -169,6 +196,9 @@ export default function OperationsCenter({ query }: { query: string }) {
             <>
               <Icon size={15} />
               {label}
+              {id === 'feedback' && feedbackPending > 0 && (
+                <span className={navCountStyles}>{feedbackPending}</span>
+              )}
             </>
           ),
         }))}

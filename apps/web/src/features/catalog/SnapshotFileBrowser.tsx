@@ -183,7 +183,7 @@ export function SnapshotFileBrowser({
                 {preview.error} <a href={download}>下载该文件</a>
               </Message>
             ) : (
-              <ErrorState message={preview.error} retry={preview.retry} />
+              <ErrorState message={preview.error} {...preview.errorProps} retry={preview.retry} />
             )
           ) : rendered ? (
             <SnapshotMarkdown

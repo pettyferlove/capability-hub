@@ -5,6 +5,7 @@ import {
   avatarMenuPopoverStyles,
   avatarMenuIdentityStyles,
   avatarMenuItemsStyles,
+  navCountStyles,
 } from './styles.js';
 import { dangerTextStyles, noticeErrorStyles } from '../shared/styles/recipes.js';
 import {
@@ -12,6 +13,7 @@ import {
   ChevronDown,
   KeyRound,
   LogOut,
+  MessageSquare,
   Settings2,
   ShieldCheck,
   UserRound,
@@ -21,12 +23,16 @@ import { Button, Menu, MenuItem, MenuTrigger, Popover, Separator } from 'react-a
 import { UserAvatar } from '../shared/components/UserAvatar.js';
 import { useHub } from '../shared/context/HubContext.js';
 import { canOpenOperations } from '../features/operations/navigation.js';
+import { openHubFeedback } from '../shared/hub-feedback-events.js';
 
 /**
  * 账号菜单：资料/凭据/安全入口按需显示「团队与权限」（需 `capabilities.can_admin`），
  * 菜单项用 `href` 走原生链接以保留浏览器行为。退出登录失败只在菜单内联提示，不关闭弹层也不阻塞再次点击。
  */
-export function AvatarMenu() {
+export function AvatarMenu({
+  feedbackUnread = 0,
+  feedbackPending = 0,
+}: { feedbackUnread?: number; feedbackPending?: number } = {}) {
   const { me, logout } = useHub();
   const [error, setError] = useState('');
   return (
@@ -68,10 +74,20 @@ export function AvatarMenu() {
                 <span>团队与权限</span>
               </MenuItem>
             )}
+            <MenuItem textValue="问题反馈" onAction={() => openHubFeedback()}>
+              <MessageSquare size={16} />
+              <span>问题反馈</span>
+            </MenuItem>
+            <MenuItem href="/account?tab=feedback" textValue="我的反馈">
+              <MessageSquare size={16} />
+              <span>我的反馈</span>
+              {feedbackUnread > 0 && <span className={navCountStyles}>{feedbackUnread}</span>}
+            </MenuItem>
             {canOpenOperations(me?.capabilities) && (
               <MenuItem href="/operations" textValue="运营中心">
                 <Activity size={16} />
                 <span>运营中心</span>
+                {feedbackPending > 0 && <span className={navCountStyles}>{feedbackPending}</span>}
               </MenuItem>
             )}
             <Separator />

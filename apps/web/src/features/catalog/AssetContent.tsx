@@ -268,6 +268,7 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
             <>
               <ErrorState
                 message={overview.error}
+                {...overview.errorProps}
                 retry={overview.unavailable ? undefined : overview.retry}
               />
               <a className={textBtnStyles} href={fileDownload + encodeURIComponent(overviewPath)}>
@@ -309,7 +310,7 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
         </div>
         <div hidden={view.tab !== 'versions'}>
           {history.error ? (
-            <ErrorState message={history.error} retry={reload} />
+            <ErrorState message={history.error} {...history.errorProps} retry={reload} />
           ) : !history.data ? (
             view.tab === 'versions' && <ListSkeleton label="正在加载版本历史…" rows={3} />
           ) : !history.data.length ? (

@@ -33,7 +33,10 @@ import { dateLabel } from '../../shared/format/labels.js';
  */
 export function ConnectedAgents({ className }: { className?: string } = {}) {
   const { refresh, reload } = useHub();
-  const { data, error, refreshing } = useQuery<ConnectionResponse[]>('/api/connections', refresh);
+  const { data, error, errorProps, refreshing } = useQuery<ConnectionResponse[]>(
+    '/api/connections',
+    refresh,
+  );
   const [failure, setFailure] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   async function disconnect(id: string) {
@@ -80,7 +83,7 @@ export function ConnectedAgents({ className }: { className?: string } = {}) {
         </button>
       </div>
       {error ? (
-        <ErrorState message={error} retry={reload} />
+        <ErrorState message={error} {...errorProps} retry={reload} />
       ) : !active ? (
         <TableSkeleton rows={2} columns={4} label="正在加载连接…" />
       ) : (

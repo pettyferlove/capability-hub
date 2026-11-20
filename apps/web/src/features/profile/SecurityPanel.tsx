@@ -45,11 +45,16 @@ import { AccessTokenForm } from './AccessTokenForm.js';
  */
 export function PersonalSecurity() {
   const { me, refresh, reload } = useHub(),
-    { data: sessions, error: sessionError } = useQuery<SessionResponse[]>(
-      '/api/me/sessions',
-      refresh,
-    ),
-    { data: tokens, error: tokenError } = useQuery<TokenResponse[]>('/api/tokens', refresh);
+    {
+      data: sessions,
+      error: sessionError,
+      errorProps: sessionErrorProps,
+    } = useQuery<SessionResponse[]>('/api/me/sessions', refresh),
+    {
+      data: tokens,
+      error: tokenError,
+      errorProps: tokenErrorProps,
+    } = useQuery<TokenResponse[]>('/api/tokens', refresh);
   const [feedback, setFeedback] = useState(''),
     [failed, setFailed] = useState(false),
     [busy, setBusy] = useState(false),
@@ -142,7 +147,9 @@ export function PersonalSecurity() {
             <h2>登录会话</h2>
             {sessions && <span className={sessionCountStyles}>{sessions.length} 个有效会话</span>}
           </div>
-          {sessionError && <ErrorState message={sessionError} retry={reload} />}
+          {sessionError && (
+            <ErrorState message={sessionError} {...sessionErrorProps} retry={reload} />
+          )}
           {!sessions && !sessionError && <ListSkeleton label="正在加载登录会话…" rows={3} />}
           {sessions && (
             <SessionList
@@ -167,7 +174,7 @@ export function PersonalSecurity() {
             创建访问令牌
           </button>
         </div>
-        {tokenError && <ErrorState message={tokenError} retry={reload} />}
+        {tokenError && <ErrorState message={tokenError} {...tokenErrorProps} retry={reload} />}
         {!tokens && !tokenError && (
           <TableSkeleton label="正在加载 Hub 访问令牌…" rows={3} columns={5} />
         )}

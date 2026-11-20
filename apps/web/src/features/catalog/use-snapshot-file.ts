@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
-import { fileText, PreviewUnavailable } from '../../shared/api/client.js';
+import {
+  apiErrorContext,
+  fileText,
+  PreviewUnavailable,
+  type ApiErrorContext,
+} from '../../shared/api/client.js';
 
 interface SnapshotFile {
   key: string;
@@ -11,6 +16,7 @@ interface SnapshotRequest {
   refresh: number;
   attempt: number;
   error?: string;
+  errorProps?: ApiErrorContext;
   unavailable?: boolean;
 }
 
@@ -37,6 +43,7 @@ export function snapshotFileView(
     loading: pending && !cached,
     refreshing: pending && !!cached,
     error: failure?.error ?? '',
+    errorProps: failure?.errorProps,
     unavailable: !!failure?.unavailable,
   };
 }
@@ -70,6 +77,7 @@ export function useSnapshotFile(version: string, path: string | null, refresh: n
           refresh,
           attempt,
           error: error instanceof Error ? error.message : '文件读取失败',
+          errorProps: apiErrorContext(error),
           unavailable: error instanceof PreviewUnavailable,
         });
       });

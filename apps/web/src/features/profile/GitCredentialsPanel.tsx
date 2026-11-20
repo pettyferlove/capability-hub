@@ -62,7 +62,10 @@ import { CredentialForm } from './CredentialForm.js';
  */
 export function GitCredentialsPanel() {
   const { refresh, reload } = useHub(),
-    { data, error, loading } = useQuery<GitCredentialResponse[]>('/api/git-credentials', refresh);
+    { data, error, errorProps, loading } = useQuery<GitCredentialResponse[]>(
+      '/api/git-credentials',
+      refresh,
+    );
   const [edit, setEdit] = useState<GitCredentialResponse | null>(),
     [revoke, setRevoke] = useState<GitCredentialResponse | null>(),
     [feedback, setFeedback] = useState(''),
@@ -98,7 +101,7 @@ export function GitCredentialsPanel() {
       </div>
       {feedback && <Message error>{feedback}</Message>}
       {error ? (
-        <ErrorState message={error} retry={reload} />
+        <ErrorState message={error} {...errorProps} retry={reload} />
       ) : loading && !data ? (
         <CardGridSkeleton label="正在加载 Git 凭据…" count={2} variant="source" />
       ) : !active.length ? (

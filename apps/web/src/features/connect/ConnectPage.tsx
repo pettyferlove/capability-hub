@@ -131,8 +131,8 @@ function HubConnection() {
   const [manualOpen, setManualOpen] = useState(initial.manual);
   const permission = contribute ? 'contribute' : 'read';
   const [method, setMethod] = useState<'oauth' | 'assistant'>(initial.method);
-  const { data: invitation, error } = useQuery<HubShareResponse>('/api/hub-share');
-  if (error) return <ErrorState message={error} />;
+  const { data: invitation, error, errorProps } = useQuery<HubShareResponse>('/api/hub-share');
+  if (error) return <ErrorState message={error} {...errorProps} />;
   if (!invitation) return <ListSkeleton rows={3} label="正在准备连接方案…" />;
   const config = hubMcpConnectionGuide(
     client,
