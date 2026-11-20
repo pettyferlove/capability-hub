@@ -70,7 +70,7 @@ export interface RecordStore {
   ): Promise<RecordMap[K] | undefined>;
   /** 主键已存在即抛错（HTTP 层映射为 409），不会静默覆盖。 */
   insert<K extends TableName>(table: K, record: RecordMap[K]): Promise<RecordMap[K]>;
-  /** 整条 upsert：调用方提交的字段即最终状态，未给出的字段不会被保留。 */
+  /** 按 `id` 整条覆盖已有记录，未给出的字段不保留；记录不存在即抛错，不做 upsert。 */
   put<K extends TableName>(table: K, record: RecordMap[K]): Promise<RecordMap[K]>;
   /** 删除不存在的记录视为成功，便于重试。 */
   remove(table: TableName, id: string): Promise<void>;
