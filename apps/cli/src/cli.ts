@@ -60,8 +60,8 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
   capability-hub login --url https://hub.example.com
   capability-hub search "code review"
 
-连接 Agent 用 connect；登录 CLI 后可 search、add、mcp-config 和 feedback。
-公开 Skill 的 add 无需登录，但须提供 --url。
+连接 Agent 用 connect；登录 CLI 后可 search、show、add、mcp-config 和 feedback。
+公开 Skill 的 show 和 add 无需登录，但须提供 --url；list 和 remove 只处理本地目录。
 交互终端省略命令可打开菜单；使用 help <命令> 查看详细示例。
 读取命令和平台反馈也可使用 CAPABILITY_HUB_TOKEN，但必须显式提供 --url。
 --version 指资源版本；查看 CLI 版本请用 -V / --cli-version。
@@ -85,6 +85,12 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     ]);
   }
 
+  function skillDirectoriesOption() {
+    return new Option('--to <DIR>', '技能父目录，可重复指定').argParser(
+      (directory: string, directories: string[] = []) => [...directories, directory],
+    );
+  }
+
   async function execute(command: Command, args: string[] = [], menuUi?: CliUi) {
     const path = commandPath(command);
     const flags = command.optsWithGlobals<CliOptions>();
@@ -105,8 +111,9 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
         !(error instanceof CliCancelled || error instanceof CommanderError)
       ) {
         const directory = flags.configDir ? resolve(flags.configDir) : defaultConfigDirectory();
-        const slug =
-          path === 'add' || path === 'mcp-config' ? assetSlugSchema.safeParse(args[0]) : undefined;
+        const slug = ['add', 'mcp-config', 'show', 'remove'].includes(path)
+          ? assetSlugSchema.safeParse(args[0])
+          : undefined;
         let origin: string | undefined;
         try {
           if (flags.url !== undefined) origin = hubUrl(flags.url);
@@ -167,6 +174,18 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     );
 
   command(
+    'show',
+    '阅读固定版本 Skill 的正文或附属文件',
+    '示例：\n  capability-hub show example-skill --url https://hub.example.com\n  capability-hub show example-skill --version 1.0.0 --file references/guide.md\n\n默认显示当前发布的 SKILL.md。版本与文件清单写到 stderr，正文写到 stdout。\n只读取、不写文件；终端控制字符会被替换，需要原始文件时用 add。',
+  )
+    .argument('[name]', 'Skill 资源名称')
+    .option('--version <VERSION>', '资源版本（默认当前发布）')
+    .option('--file <PATH>', '版本清单中的文件路径（默认 SKILL.md）')
+    .action(async (name: string | undefined, _options: CliOptions, command: Command) =>
+      execute(command, name === undefined ? [] : [name]),
+    );
+
+  command(
     'add',
     '下载、校验并安装 Skill',
     '示例：\n  capability-hub add example-skill --version 1.0.0 --url https://hub.example.com --to .agents/skills --dry-run\n  capability-hub add --ticket <URL> --to .agents/skills\n\n公开 Skill 无需登录，但须提供 --url。票据模式必须显式提供 --to，且不使用 NAME 或 --version。\n只写入明确指定的 PATH/NAME，不执行内容。已有目录须显式 --replace 并保留备份；请先用 --dry-run 核对本地差异。',
@@ -186,18 +205,37 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     '检查已安装的 Skill，不改动本地目录',
     '示例：\n  capability-hub outdated --url https://hub.example.com --to .agents/skills --to .claude/skills\n  capability-hub outdated --json --exit-code\n\n默认扫描当前项目已存在的预设技能目录；未登录时用 --url 匿名检查公开 Skill。',
   )
-    .option(
-      '--to <DIR>',
-      '技能父目录，可重复指定',
-      (directory: string, directories: string[] = []) => {
-        directories.push(directory);
-        return directories;
-      },
-    )
+    .addOption(skillDirectoriesOption())
     .option('--json', '输出 JSON 数组')
-    .option('--exit-code', '有可用更新或不可用安装时返回 2；unknown_source 仅报告，不影响退出码')
-    .option('--fail-on-modified', '存在 modified 状态时返回 3，优先于 --exit-code 的 2')
+    .option(
+      '--exit-code',
+      '有更新的发布（含本地已修改的安装）、已弃用或不可用时返回 2；unknown_source 和 other_hub 仅报告',
+    )
+    .option('--fail-on-modified', '任一安装有本地修改（含已弃用的）时返回 3，优先于 2')
     .action(async (options: { to?: string[] }, command: Command) => execute(command, options.to));
+
+  command(
+    'list',
+    '离线列出已安装的 Skill 及本地修改',
+    '示例：\n  capability-hub list\n  capability-hub list --to .claude/skills --json\n\n默认扫描当前项目已存在的预设技能目录；只读来源记录并比对本地文件，不连接 Hub。',
+  )
+    .addOption(skillDirectoriesOption())
+    .option('--json', '输出 JSON 数组')
+    .action(async (options: { to?: string[] }, command: Command) => execute(command, options.to));
+
+  command(
+    'remove',
+    '删除 CLI 安装的 Skill 或其替换备份',
+    '示例：\n  capability-hub remove example-skill --to .agents/skills --dry-run\n  capability-hub remove example-skill --to .agents/skills --backups\n\n只删除带有效来源记录的安装，本地有修改时须显式 --force。\n--backups 只删除 add --replace 留下的同名备份，不动当前安装。',
+  )
+    .argument('[name]', 'Skill 资源名称')
+    .option('--to <PATH>', '安装父目录，必须明确指定或输入')
+    .option('--dry-run', '预览将删除的目录，不改动文件')
+    .option('--force', '本地有修改时仍删除')
+    .option('--backups', '只删除 add --replace 留下的同名备份')
+    .action(async (name: string | undefined, _options: CliOptions, command: Command) =>
+      execute(command, name === undefined ? [] : [name]),
+    );
 
   command(
     'hub-config',
@@ -345,7 +383,8 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
       '你想做什么？',
       [
         { title: 'Agent 接入', commands: ['connect', 'status'] },
-        { title: 'CLI 资源', commands: ['login', 'search', 'add', 'outdated'] },
+        { title: 'CLI 资源', commands: ['login', 'search', 'show', 'add'] },
+        { title: '本地安装', commands: ['list', 'outdated', 'remove'] },
         { title: '配置生成', commands: ['hub-config', 'mcp-config'] },
         { title: '问题反馈', commands: ['feedback', 'feedback list'] },
       ].flatMap((group) => [

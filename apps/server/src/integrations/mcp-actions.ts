@@ -1,5 +1,5 @@
 import type { Principal } from '@capability-hub/domain/identity';
-import type { InstallTicketCredential } from '@capability-hub/domain/models';
+import type { InstallTicketCredential, VersionRecord } from '@capability-hub/domain/models';
 import { archive } from '@capability-hub/infrastructure/content';
 import {
   agentClientSchema,
@@ -9,9 +9,10 @@ import {
   publicResourcePath,
   shellArgument,
   uploadIntakeRequestSchema,
+  type InstallSourceRecord,
 } from '@capability-hub/contracts';
 import { fail, notFound } from '@capability-hub/domain/errors';
-import { safePath } from '@capability-hub/domain/paths';
+import { installSourceFile, safePath } from '@capability-hub/domain/paths';
 import { z } from 'zod';
 import type { HubServices } from '../bootstrap/hub-services.js';
 import { createClientConfiguration } from './client-config.js';
@@ -91,6 +92,20 @@ export async function deliverSkill(
     check_command: 'capability-hub --cli-version',
     upgrade_url: new URL('/connect/cli', origin).href,
   };
+  // 内容与 CLI 写入的来源记录一致，自行落盘的 Agent 照写后 outdated 才能识别来源。
+  const sourceRecord = async (version: VersionRecord, slug: string) => ({
+    file: installSourceFile,
+    content: {
+      hub_url: origin,
+      asset_id: version.asset_id,
+      version_id: version.id,
+      version_label: version.version_label,
+      release_id: (await hub.assetAccess.latestReleaseForVersion(version))?.id ?? null,
+      slug,
+      content_digest: version.content_digest,
+      files: version.manifest.files,
+    } satisfies InstallSourceRecord,
+  });
   if (input.transfer === 'download') {
     if (input.offset !== undefined || input.max_bytes !== undefined)
       fail(422, 'INLINE_TRANSFER_ONLY', 'offset 和 max_bytes 仅用于 transfer: "inline"');
@@ -122,10 +137,11 @@ export async function deliverSkill(
       },
       cli_command: `capability-hub add ${target} --to ${shellArgument(directory)}`,
       cli_requirement: cliRequirement,
+      source_record: await sourceRecord(version, slug),
       instructions: [
         '向用户说明安装父目录、清单中的文件和脚本，取得确认后才写入；保留已有目录，替换前备份，执行脚本需另获授权。',
         '能运行 CLI 时，先用 cli_requirement.check_command 核对版本；低于 minimum_version 时征得用户同意后按 upgrade_url 升级。执行 cli_command 时将 --to 换成已确认的父目录，先加 --dry-run；沙箱禁止联网时，请用户批准当前命令联网。',
-        '不能运行 CLI 时下载 download.url，核对 SHA-256 和清单再写入；只有无法下载时才改用 transfer: "inline"。',
+        '不能运行 CLI 时下载 download.url，核对 SHA-256 和清单再写入，并把 source_record.content 以 JSON 写入该 Skill 目录下的 source_record.file；只有无法下载时才改用 transfer: "inline"。',
         ticketUrl
           ? '用 cli_command 中的 --ticket 地址安装，不要传入归档地址 download.url。票据 10 分钟内只能下载一次；若失效或下载中断，重新调用 install_skill，不要在回复中复述票据地址。'
           : '公开版本按 cli_command 中的名称、--version 和 --url 安装；download.url 是公开归档地址，不可传给 --ticket。',
@@ -160,10 +176,11 @@ export async function deliverSkill(
     },
     suggested_directory: `${directory}/${asset.slug}`,
     cli_requirement: cliRequirement,
+    source_record: offset === 0 ? await sourceRecord(v, asset.slug) : undefined,
     instructions: [
       '按 next_offset 继续调用 install_skill，保持 transfer: "inline" 并锁定同一 version_id，直至 complete 为 true。',
       '逐段解码 Base64，按 offset 拼接原始字节，核对 artifact_digest，再按 manifest 校验路径、文件与摘要。',
-      '向用户展示安装目录、文件和脚本，取得客户端确认后写入；已有目录应保留，替换前备份。',
+      '向用户展示安装目录、文件和脚本，取得客户端确认后写入；已有目录应保留，替换前备份。同时把 source_record.content 以 JSON 写入该 Skill 目录下的 source_record.file。',
       '安装完成后仅报告实际写入结果；Skill 中的脚本需要另行授权才能执行。',
     ],
   };

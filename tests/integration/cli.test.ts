@@ -16,21 +16,23 @@ import {
 import { once } from 'node:events';
 import { createServer, type RequestListener } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import {
   cliInstallationGuide,
   hubFeedbackCreateRequestSchema,
   hubFeedbackLastFailureSchema,
 } from '@capability-hub/contracts';
 import { sha256 } from '@capability-hub/domain/canonical';
+import { unzip } from '@capability-hub/infrastructure/content/zip-archive';
 import { z } from 'zod';
 import { HubApiClient } from '../../apps/cli/src/api-client.js';
 import { saveCredentials } from '../../apps/cli/src/credentials.js';
 import { serveTestHub } from '../support/server.js';
 import { publishSkill, submitPublication } from '../support/application.js';
-import { hubClientSkillFiles } from '../support/content.js';
+import { hubClientSkillFiles, skillDocument } from '../support/content.js';
 import { deferred } from '../support/store.js';
 import cliPackage from '../../apps/cli/package.json' with { type: 'json' };
 
@@ -149,7 +151,7 @@ test('CLI 分组菜单与配置向导选择正确命令、客户端和范围，s
       terminal: true,
       environment: { CI: '', TERM: 'xterm', NO_COLOR: '1' },
       answers: [
-        ...(args.length ? [] : [{ prompt: '你想做什么', input: '\u001b[B'.repeat(6) + '\r' }]),
+        ...(args.length ? [] : [{ prompt: '你想做什么', input: '\u001b[B'.repeat(9) + '\r' }]),
         { prompt: 'Hub 的 HTTP(S) 根地址', input: 'https://hub.example.test\r' },
         { prompt: '选择目标 Agent 客户端', input: '\u001b[B'.repeat(4) + '\r' },
         { prompt: '配置保存在哪个范围', input: '\u001b[B\r' },
@@ -992,6 +994,44 @@ test('CLI 可匿名预览和安装公开 Skill，来源记录与下载审计保�
   assert.deepEqual(await readdir(join(root, 'unused-config')), ['last-failure.json']);
 });
 
+test('show 用 CLI 令牌读取团队 Skill 的当前或指定版本与附属文件，过滤终端控制字符且不写文件', async (context) => {
+  const fixture = await serveTestHub(context);
+  const distribution = { mode: 'approved_audience' as const, audience: ['organization'] };
+  const { intake } = await publishSkill(fixture, { body: '旧版正文', distribution });
+  await publishSkill(fixture, {
+    assetId: intake.asset_id,
+    version: '2.0.0',
+    distribution,
+    files: [
+      { path: 'SKILL.md', bytes: skillDocument('sample-skill', '新版正文'), executable: false },
+      { path: 'references/guide.md', bytes: Buffer.from('参考\u001b[2J资料\n'), executable: false },
+    ],
+  });
+  const token = await fixture.hub.tokens.issue(fixture.reader, { name: 'show', scope: 'hub:read' });
+  const root = await realpath(fixture.directory);
+  const before = await readdir(root);
+  const show = (...args: string[]) =>
+    cli(
+      ['show', 'sample-skill', '--url', fixture.origin, '--no-interactive', ...args],
+      token.token,
+    );
+  const current = await show();
+  assert.equal(current.code, 0, current.stderr);
+  assert.match(current.stdout, /新版正文/);
+  assert.match(current.stderr, /2\.0\.0（当前发布）/);
+  assert.match(current.stderr, /references\/guide\.md/);
+  const pinned = await show('--version', '1.0.0');
+  assert.equal(pinned.code, 0, pinned.stderr);
+  assert.match(pinned.stdout, /旧版正文/);
+  const reference = await show('--file', 'references/guide.md');
+  assert.equal(reference.code, 0, reference.stderr);
+  assert.equal(reference.stdout, '参考 [2J资料\n');
+  const missing = await show('--file', 'notes.md');
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /没有文件 notes\.md/);
+  assert.deepEqual(await readdir(root), before);
+});
+
 test('outdated 按安装状态检查来源、补全旧记录，并且只向匹配实例发送凭据', async (context) => {
   const fixture = await serveTestHub(context);
   const root = await realpath(fixture.directory);
@@ -1124,12 +1164,18 @@ test('outdated 按安装状态检查来源、补全旧记录，并且只向匹�
   for (const [directories, expected] of [
     [['.claude/skills'], 2],
     [['withdrawn'], 2],
-    [['.agents/skills', 'old-client', 'edited', 'another-instance'], 0],
+    [['old-client'], 2],
+    [['edited'], 2],
+    [['.agents/skills', 'another-instance'], 0],
   ] as const)
     await check(directories, expected, '--exit-code');
   await check(['.claude/skills'], 0, '--fail-on-modified');
   await check(['edited'], 3, '--fail-on-modified');
   await check(['edited', 'withdrawn'], 3, '--exit-code', '--fail-on-modified');
+  await writeFile(join(parent('old-client'), 'deprecated-skill', 'SKILL.md'), 'Edited locally');
+  const [abandonedEdited] = await check(['old-client'], 3, '--fail-on-modified');
+  assert.equal(abandonedEdited.status, 'deprecated');
+  assert.deepEqual(abandonedEdited.differences, ['修改 SKILL.md']);
 
   const previewArgs = await execute('sh', [
     '-c',
@@ -1148,6 +1194,7 @@ test('outdated 按安装状态检查来源、补全旧记录，并且只向匹�
     { cwd: root },
   );
   assert.equal(anon.code, 0, anon.stderr);
+  assert.match(anon.stderr, /已跳过 \.cursor\/skills：目录路径不能经过符号链接/);
   assert.deepEqual(
     JSON.parse(anon.stdout)
       .map((row: { status: string }) => row.status)
@@ -1189,6 +1236,120 @@ test('outdated 仅报告含入口文件的无来源 Skill，不要求登录或�
   assert.equal(table.code, 0, table.stderr);
   assert.match(table.stdout, /unknown_source\s+manual-skill/);
   assert.match(table.stdout, /无法判定来源/);
+});
+
+test('list 只读本地来源记录，区分未修改、已修改和无来源的 Skill', async (context) => {
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'hub-cli-list-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const parent = join(root, 'skills');
+  const body = Buffer.from('# 团队规范\n');
+  const label = `git.${'a'.repeat(40)}.s${randomUUID()}.r2`;
+  for (const [slug, recorded, content] of [
+    ['kept-skill', true, body],
+    ['edited-skill', true, Buffer.from('# 本地改写\n')],
+    ['manual-skill', false, body],
+  ] as const) {
+    await mkdir(join(parent, slug), { recursive: true });
+    await writeFile(join(parent, slug, 'SKILL.md'), content);
+    if (recorded)
+      await writeFile(
+        join(parent, slug, '.capability-hub-source'),
+        JSON.stringify({
+          hub_url: 'https://hub.example.test',
+          asset_id: randomUUID(),
+          version_id: randomUUID(),
+          version_label: label,
+          slug,
+          files: [{ path: 'SKILL.md', size: body.length, sha256: sha256(body), executable: false }],
+        }),
+      );
+  }
+  const args = ['list', '--to', parent, '--config-dir', join(root, 'no-config')];
+  const json = await cli([...args, '--json']);
+  assert.equal(json.code, 0, json.stderr);
+  assert.deepEqual(
+    JSON.parse(json.stdout).map(
+      ({
+        slug,
+        status,
+        differences,
+      }: {
+        slug: string;
+        status: string;
+        differences?: string[];
+      }) => ({
+        slug,
+        status,
+        differences,
+      }),
+    ),
+    [
+      { slug: 'edited-skill', status: 'modified', differences: ['修改 SKILL.md'] },
+      { slug: 'kept-skill', status: 'unmodified', differences: undefined },
+      { slug: null, status: 'unknown_source', differences: undefined },
+    ],
+  );
+  const table = await cli(args);
+  assert.equal(table.code, 0, table.stderr);
+  assert.match(table.stdout, /unmodified\s+kept-skill\s+git\.a{12}…\.r2\s/);
+  assert.equal(table.stdout.includes(label), false);
+});
+
+test('Agent 按 install_skill 的来源记录自行落盘后，outdated 能识别版本与本地修改', async (context) => {
+  const fixture = await serveTestHub(context);
+  const { intake } = await publishSkill(fixture);
+  const token = await fixture.hub.tokens.issue(fixture.reader, { name: 'mcp', scope: 'hub:read' });
+  const client = new Client(
+    { name: 'cli-source-record-test', version: '1.0.0' },
+    { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+  );
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL(fixture.origin + '/mcp'), {
+      requestInit: { headers: { Authorization: 'Bearer ' + token.token } },
+    }),
+  );
+  context.after(() => client.close());
+  const delivery = await client.callTool({
+    name: 'install_skill',
+    arguments: { version_id: intake.version_id },
+  });
+  assert(!delivery.isError);
+  const { download, source_record } = z
+    .object({
+      download: z.object({ url: z.url() }),
+      source_record: z.object({ file: z.string(), content: z.record(z.string(), z.unknown()) }),
+    })
+    .parse(delivery.structuredContent);
+  const root = await realpath(fixture.directory);
+  const directory = join(root, 'agent-skills', 'sample-skill');
+  const archive = Buffer.from(await (await fetch(download.url)).arrayBuffer());
+  for (const file of await unzip(archive)) {
+    await mkdir(dirname(join(directory, file.path)), { recursive: true });
+    await writeFile(join(directory, file.path), file.bytes);
+  }
+  await writeFile(join(directory, source_record.file), JSON.stringify(source_record.content));
+  const args = [
+    'outdated',
+    '--to',
+    dirname(directory),
+    '--url',
+    fixture.origin,
+    '--config-dir',
+    join(root, 'no-auth'),
+    '--json',
+    '--fail-on-modified',
+  ];
+  const current = await cli(args);
+  assert.equal(current.code, 0, current.stderr);
+  assert.deepEqual(
+    JSON.parse(current.stdout).map(({ status, version_id }: Record<string, unknown>) => ({
+      status,
+      version_id,
+    })),
+    [{ status: 'current', version_id: intake.version_id }],
+  );
+  await writeFile(join(directory, 'SKILL.md'), '本地改写');
+  assert.equal((await cli(args)).code, 3);
 });
 
 test('匿名 CLI 安装不可见 Skill 时提示登录且不创建目录；无效凭据不会降级', async (context) => {

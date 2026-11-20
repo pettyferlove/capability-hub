@@ -87,7 +87,7 @@ capability-hub hub-config --url https://hub.example.com --client pi --scope user
 
 ## 接入助手与高级入口
 
-实例的 `/connect/cli` 提供安装、CLI 授权及推荐和最低 CLI 版本；私有仓库认证与 Hub 授权独立。`login/search/add/outdated/feedback` 无需客户端标识。运行 Hub 返回的安装命令前先用 `capability-hub --cli-version` 核对最低版本。接入助手仅适用于表中客户端，在 Agent 运行环境执行：
+实例的 `/connect/cli` 提供安装、CLI 授权及推荐和最低 CLI 版本；私有仓库认证与 Hub 授权独立。`login/search/show/add/list/outdated/remove/feedback` 无需客户端标识。运行 Hub 返回的安装命令前先用 `capability-hub --cli-version` 核对最低版本。接入助手仅适用于表中客户端，在 Agent 运行环境执行：
 
 ```sh
 capability-hub connect --url https://hub.example.com --client cursor --scope project

@@ -14,7 +14,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { install, localDiff } from '../../apps/cli/src/install.js';
+import { install, localDiff, remove } from '../../apps/cli/src/install.js';
 import { archive, inspect } from '@capability-hub/infrastructure/content';
 import { digest, canonical } from '@capability-hub/domain/canonical';
 import { HubError } from '@capability-hub/domain/errors';
@@ -78,6 +78,59 @@ test('Windows 本地差异忽略脚本执行位缺失，仍识别同大小的字
   assert.deepEqual(await localDiff(directory, input.manifest.files), []);
   await writeFile(path, 'print(2)\n');
   assert.deepEqual(await localDiff(directory, input.manifest.files), [`修改 ${script}`]);
+});
+
+test('只差换行符的文件单独标注，仍计为本地修改', async (context) => {
+  const input = await installation(context);
+  await install(input);
+  const directory = join(input.to, input.slug);
+  const path = join(directory, 'SKILL.md');
+  const crlf = (await readFile(path, 'utf8')).replaceAll('\n', '\r\n');
+  await writeFile(path, crlf);
+  assert.deepEqual(await localDiff(directory), ['仅换行符不同 SKILL.md']);
+  await writeFile(path, crlf + '追加内容');
+  assert.deepEqual(await localDiff(directory), ['修改 SKILL.md']);
+});
+
+test('删除拒绝无来源记录或已修改的目录，force 删除时报告丢弃的差异', async (context) => {
+  const input = await installation(context);
+  await install(input);
+  const manual = join(input.to, 'manual-skill');
+  await mkdir(manual);
+  await writeFile(join(manual, 'SKILL.md'), '# 手写规范\n');
+  await assert.rejects(
+    () => remove({ slug: 'manual-skill', to: input.to, force: true }),
+    code('INSTALL_UNVERIFIED'),
+  );
+  await writeFile(join(input.to, input.slug, 'notes.md'), '本地笔记');
+  for (const dryRun of [true, false])
+    await assert.rejects(
+      () => remove({ slug: input.slug, to: input.to, dryRun }),
+      code('INSTALL_MODIFIED'),
+    );
+  const result = await remove({ slug: input.slug, to: input.to, force: true });
+  assert.deepEqual(result.differences, ['新增 notes.md']);
+  assert.deepEqual(await readdir(input.to), ['manual-skill']);
+});
+
+test('删除预览不改动文件，删除安装时保留替换备份，显式 backups 才清理', async (context) => {
+  const input = await installation(context);
+  await install(input);
+  await install({ ...input, replace: true });
+  const destination = join(input.to, input.slug);
+  const preview = await remove({ slug: input.slug, to: input.to, dryRun: true });
+  assert.deepEqual(preview.removed, [destination]);
+  assert.equal(preview.backups?.length, 1);
+  assert.deepEqual(await readFile(join(destination, 'SKILL.md')), skillDocument('sample-skill'));
+  const removed = await remove({ slug: input.slug, to: input.to });
+  await assert.rejects(() => readdir(destination), { code: 'ENOENT' });
+  assert.deepEqual(
+    (await readdir(input.to)).map((name) => join(input.to, name)),
+    removed.backups,
+  );
+  const backups = await remove({ slug: input.slug, to: input.to, backups: true });
+  assert.deepEqual(backups.removed, removed.backups);
+  assert.deepEqual(await readdir(input.to), []);
 });
 
 test('安装逐字节校验并写入私有目录，dry-run 不创建路径，默认拒绝覆盖', async (context) => {

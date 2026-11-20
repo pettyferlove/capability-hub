@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { assetSlugSchema } from './primitives.js';
 
 /** 清单文件项，出现在版本快照响应（{@link VersionSnapshotResponse}）与下载清单里。 */
 export interface ManifestFile {
@@ -55,6 +56,24 @@ export const manifestSchema = z
     files: z.array(manifestFileSchema).min(1).max(500),
   })
   .strict();
+
+/**
+ * 安装来源记录：CLI 安装时写入 Skill 根目录；MCP 交付给不经 CLI 落盘的 Agent 照写。
+ * 早期记录缺少 `slug` 与 `version_label`，读取方需向 Hub 补全；未列出的字段读取时忽略。
+ */
+export const installSourceRecordSchema = z.object({
+  hub_url: z.string(),
+  asset_id: z.uuid(),
+  version_id: z.uuid(),
+  version_label: z.string().min(1).optional(),
+  release_id: z.string().nullable().optional(),
+  slug: assetSlugSchema.optional(),
+  content_digest: z.string().optional(),
+  files: z.array(manifestFileSchema),
+});
+
+/** {@link installSourceRecordSchema} 的输出侧类型。 */
+export type InstallSourceRecord = z.infer<typeof installSourceRecordSchema>;
 
 /** 检索维度：来自 Skill frontmatter 或发布时填写，未归一化的空数组按未提供处理。 */
 export interface Applicability {

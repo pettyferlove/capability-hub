@@ -59,10 +59,13 @@ export function collisionKey(path: string) {
   return path.normalize('NFC').toLocaleLowerCase('en-US').replace(/ß/g, 'ss');
 }
 
+/** 安装来源记录的文件名，由安装器写在已安装 Skill 的根目录。 */
+export const installSourceFile = '.capability-hub-source';
+
 /** 安装来源凭据属于安装器，上传内容不能占用该根文件名或其子路径。 */
 export function artifactPath(path: string): string {
   safePath(path);
   const first = collisionKey(path.split('/')[0]);
-  if (first === '.capability-hub-source') fail(422, 'RESERVED_PATH', '内容路径占用了安装来源记录');
+  if (first === installSourceFile) fail(422, 'RESERVED_PATH', '内容路径占用了安装来源记录');
   return path;
 }

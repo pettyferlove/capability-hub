@@ -249,15 +249,16 @@ export class CliUi {
     else process.stderr.write(message + '\n');
   }
 
-  resource(name: string, kind: string, version: string, description: string) {
+  resource(name: string, kind: string, version: string, description: string, command: string) {
     name = terminalText(name);
     kind = terminalText(kind);
     version = terminalText(version);
     description = terminalText(description);
+    command = terminalText(command);
     process.stdout.write(
       this.interactive
-        ? `\n  ${styleText(['bold', 'cyan'], name)}  ${styleText('dim', `${kind} · ${version}`)}\n  ${description}\n`
-        : `${name}\t${kind}\t${version}\n  ${description}\n`,
+        ? `\n  ${styleText(['bold', 'cyan'], name)}  ${styleText('dim', `${kind} · ${version}`)}\n  ${description}\n  ${command}\n`
+        : `${name}\t${kind}\t${version}\n  ${description}\n  ${command}\n`,
     );
   }
 
@@ -305,5 +306,19 @@ export class CliUi {
     } finally {
       process.stdin.off('keypress', cancelOnKeypress);
     }
+  }
+}
+
+/** 人读表格写到 stdout：末列不补齐，说明逐行缩进写在所属行之后。 */
+export function printTable(header: string[], rows: { cells: string[]; notes?: string[] }[]) {
+  const widths = header.map((label, column) =>
+    rows.reduce((width, row) => Math.max(width, row.cells[column].length), label.length),
+  );
+  const line = (cells: string[]) =>
+    cells.map((cell, i) => (i === cells.length - 1 ? cell : cell.padEnd(widths[i]))).join('  ');
+  process.stdout.write(line(header) + '\n');
+  for (const row of rows) {
+    process.stdout.write(terminalText(line(row.cells)) + '\n');
+    for (const note of row.notes ?? []) process.stdout.write(`  ${terminalText(note)}\n`);
   }
 }

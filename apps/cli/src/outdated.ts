@@ -1,33 +1,13 @@
-import { lstat, readdir, readFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
-import { z } from 'zod';
-import {
-  agentClients,
-  assetSlugSchema,
-  manifestFileSchema,
-  shellArgument,
-} from '@capability-hub/contracts';
+import { basename, dirname } from 'node:path';
+import { shellArgument } from '@capability-hub/contracts';
 import { utf8Compare } from '@capability-hub/domain/canonical';
-import { HubError } from '@capability-hub/domain/errors';
-import { HubApiClient, HubApiError, terminalText } from './api-client.js';
-import { hubUrl } from './credentials.js';
-import { safeDirectory } from './filesystem.js';
-import { installSourceFile, localDiff } from './install.js';
+import { installSourceFile } from '@capability-hub/domain/paths';
+import { HubApiClient, HubApiError } from './api-client.js';
+import { printTable } from './cli-ui.js';
+import { localDiff } from './install.js';
+import { installedSkills, type Installation } from './installed-skills.js';
 import { assetSchema, versionIdentitySchema, versionsSchema } from './response-schemas.js';
-import { readSkillAsset } from './skill-versions.js';
-
-const receiptSchema = versionIdentitySchema.extend({
-  hub_url: z.string(),
-  slug: assetSlugSchema.optional(),
-  version_label: z.string().min(1).optional(),
-  files: z.array(manifestFileSchema),
-});
-
-type Receipt = z.infer<typeof receiptSchema>;
-interface Installation {
-  path: string;
-  receipt: Receipt;
-}
+import { displayVersionLabel, readSkillAsset } from './skill-versions.js';
 
 type Status =
   | 'current'
@@ -53,72 +33,6 @@ interface Entry {
   next_step?: string;
 }
 
-async function statIfPresent(path: string) {
-  try {
-    return await lstat(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
-  }
-}
-
-async function installedSkills(directories: readonly string[]) {
-  const defaults = directories.length === 0;
-  const parents = new Set<string>();
-  const installs: Installation[] = [];
-  const unknownSources: Entry[] = [];
-  for (const directory of defaults
-    ? new Set(Object.values(agentClients).map((c) => c.skillDirectory))
-    : directories) {
-    if (!directory.trim()) throw new Error('--to 必须指定技能父目录');
-    let parent: string;
-    try {
-      parent = await safeDirectory(directory, false);
-    } catch (error) {
-      // add 不会写入经过链接或非目录的路径，默认扫描跳过这些预设目录；显式 --to 仍报错。
-      if (defaults && error instanceof HubError && error.code === 'INSTALL_PATH') continue;
-      throw error;
-    }
-    if (parents.has(parent)) continue;
-    parents.add(parent);
-    const children = await readdir(parent, { withFileTypes: true }).catch(
-      (error: NodeJS.ErrnoException) => {
-        if (defaults && error.code === 'ENOENT') return [];
-        throw error;
-      },
-    );
-    for (const child of children) {
-      if (!child.isDirectory() || child.name.startsWith('.')) continue;
-      const path = join(parent, child.name);
-      const source = join(path, installSourceFile);
-      const stat = await statIfPresent(source);
-      if (!stat) {
-        if ((await statIfPresent(join(path, 'SKILL.md')))?.isFile())
-          unknownSources.push({
-            path,
-            hub_url: null,
-            asset_id: null,
-            version_id: null,
-            slug: null,
-            version_label: null,
-            status: 'unknown_source',
-            next_step: `无法判定来源：缺少 ${installSourceFile}`,
-          });
-        continue;
-      }
-      if (!stat.isFile()) throw new Error(`来源记录不是普通文件：${source}`);
-      try {
-        const receipt = receiptSchema.parse(JSON.parse(await readFile(source, 'utf8')));
-        receipt.hub_url = hubUrl(receipt.hub_url);
-        installs.push({ path, receipt });
-      } catch (error) {
-        throw new Error(`来源记录无效：${source}`, { cause: error });
-      }
-    }
-  }
-  return { installs, unknownSources };
-}
-
 async function ifReadable<T>(request: Promise<T>): Promise<T | null> {
   try {
     return await request;
@@ -128,12 +42,14 @@ async function ifReadable<T>(request: Promise<T>): Promise<T | null> {
   }
 }
 
+/** 本地差异不依赖 Hub，任何状态都会报告；`status` 只取优先级最高的一项。 */
 async function inspectInstallation(
   api: HubApiClient,
   { path, receipt }: Installation,
   configDir?: string,
 ): Promise<Entry> {
   const { hub_url, asset_id, version_id, files } = receipt;
+  const differences = await localDiff(path, files);
   const entry = {
     path,
     hub_url,
@@ -141,9 +57,16 @@ async function inspectInstallation(
     version_id,
     slug: receipt.slug ?? null,
     version_label: receipt.version_label ?? null,
+    ...(differences.length ? { differences } : {}),
   };
+  const nextStep = (...steps: string[]) =>
+    [...steps, ...(differences.length ? ['先核对本地修改'] : [])].filter(Boolean).join(' · ');
   if (hub_url !== api.url)
-    return { ...entry, status: 'other_hub', next_step: `请用 ${hub_url} 对应的 --url 或凭据重试` };
+    return {
+      ...entry,
+      status: 'other_hub',
+      next_step: nextStep(`请用 ${hub_url} 对应的 --url 或凭据重试`),
+    };
 
   const version = await ifReadable(
     api.json(`/api/versions/${version_id}/manifest`, versionIdentitySchema),
@@ -156,7 +79,11 @@ async function inspectInstallation(
   const asset = detail?.asset;
   entry.slug ??= asset?.slug ?? null;
   if (!version || !asset || !detail)
-    return { ...entry, status: 'unavailable', next_step: '复核版本和权限后删除或更换安装' };
+    return {
+      ...entry,
+      status: 'unavailable',
+      next_step: nextStep('复核版本和权限后删除或更换安装'),
+    };
 
   const latest = asset.current_release;
   if (!entry.version_label) {
@@ -181,16 +108,14 @@ async function inspectInstallation(
       latest_release: latestRelease,
       deprecation_reason: reason,
       replacement_asset_slug: replacement ?? null,
-      next_step: replacement ? `${reason} · 替代资源：${replacement}` : reason,
+      next_step: nextStep(reason, replacement ? `替代资源：${replacement}` : ''),
     };
   }
-  const differences = await localDiff(path, files);
   if (differences.length)
     return {
       ...entry,
       status: 'modified',
       latest_release: latestRelease,
-      differences,
       next_step: '先核对本地修改',
     };
   if (latest.version_id !== version_id) {
@@ -205,36 +130,26 @@ async function inspectInstallation(
   return { ...entry, status: 'current', latest_release: latestRelease };
 }
 
-function printTable(entries: Entry[]): void {
-  const header = ['STATUS', 'SKILL', 'INSTALLED', 'LATEST', 'PATH'];
-  const rows = entries.map((entry) => [
-    entry.status,
-    entry.slug ?? basename(entry.path),
-    entry.version_label ?? '—',
-    entry.latest_release?.version_label ?? '—',
-    entry.path,
-  ]);
-  const widths = header.map((label, column) =>
-    rows.reduce((width, row) => Math.max(width, row[column].length), label.length),
-  );
-  const line = (row: string[]) =>
-    row.map((cell, i) => (i === row.length - 1 ? cell : cell.padEnd(widths[i]))).join('  ');
-  process.stdout.write(line(header) + '\n');
-  for (const [i, entry] of entries.entries()) {
-    process.stdout.write(terminalText(line(rows[i])) + '\n');
-    if (entry.next_step) process.stdout.write(`  ${terminalText(entry.next_step)}\n`);
-    if (entry.status === 'update_available')
-      process.stdout.write('  确认后去掉 --dry-run 并加 --replace\n');
-  }
-}
-
-/** 同一安装的 HTTP 请求串行，异源条目不发请求。 */
+/**
+ * 同一安装的 HTTP 请求串行，异源条目不发请求。退出码按事实而非单一状态判定：本地有修改返回 3
+ * （`failOnModified`），有更新的发布、已弃用或不可用返回 2（`exitCode`），3 优先。
+ */
 export async function outdated(
   directories: readonly string[],
   options: { json?: boolean; exitCode?: boolean; failOnModified?: boolean; configDir?: string },
   credentials: () => Promise<{ url: string; token?: string }>,
 ): Promise<number | undefined> {
-  const { installs, unknownSources: entries } = await installedSkills(directories);
+  const { installs, unknownSources } = await installedSkills(directories);
+  const entries: Entry[] = unknownSources.map((path) => ({
+    path,
+    hub_url: null,
+    asset_id: null,
+    version_id: null,
+    slug: null,
+    version_label: null,
+    status: 'unknown_source',
+    next_step: `无法判定来源：缺少 ${installSourceFile}`,
+  }));
   if (installs.length) {
     const { url, token } = await credentials();
     const api = new HubApiClient(url, token);
@@ -252,11 +167,32 @@ export async function outdated(
       utf8Compare(a.path, b.path),
   );
   if (options.json) process.stdout.write(JSON.stringify(entries, null, 2) + '\n');
-  else printTable(entries);
-  if (options.failOnModified && entries.some(({ status }) => status === 'modified')) return 3;
+  else
+    printTable(
+      ['STATUS', 'SKILL', 'INSTALLED', 'LATEST', 'PATH'],
+      entries.map((entry) => ({
+        cells: [
+          entry.status,
+          entry.slug ?? basename(entry.path),
+          entry.version_label === null ? '—' : displayVersionLabel(entry.version_label),
+          entry.latest_release ? displayVersionLabel(entry.latest_release.version_label) : '—',
+          entry.path,
+        ],
+        notes: [
+          ...(entry.next_step ? [entry.next_step] : []),
+          ...(entry.status === 'update_available' ? ['确认后去掉 --dry-run 并加 --replace'] : []),
+        ],
+      })),
+    );
+  if (options.failOnModified && entries.some((entry) => entry.differences?.length)) return 3;
   if (
     options.exitCode &&
-    entries.some(({ status }) => status === 'update_available' || status === 'unavailable')
+    entries.some(
+      ({ status, version_id, latest_release }) =>
+        status === 'unavailable' ||
+        status === 'deprecated' ||
+        (latest_release !== undefined && latest_release.version_id !== version_id),
+    )
   )
     return 2;
 }

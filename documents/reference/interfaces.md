@@ -66,7 +66,7 @@ Skill 的上传与提交审核请求均可携带布尔字段 `requires_api_key`�
 | report_asset_feedback         | 上报固定版本的问题或建议，返回编号、状态与详情链接     |
 | rate_asset                    | 按 asset_id 推荐或取消推荐资源                         |
 
-`install_skill` 的 `download.mode` 区分 `public`（按名称、`--version`、`--url` 安装）和 `ticket`（使用 `cli_command` 中的 `--ticket` 地址）。`download.url` 是直接下载的归档地址，不是票据入参。
+`install_skill` 的 `download.mode` 区分 `public`（按名称、`--version`、`--url` 安装）和 `ticket`（使用 `cli_command` 中的 `--ticket` 地址）。`download.url` 是直接下载的归档地址，不是票据入参。`source_record` 是 CLI 会写入的来源记录文件名与内容（inline 只在首块返回），不经 CLI 落盘时一并写入 Skill 目录，`outdated` 据此识别来源。
 
 `cli_requirement` 提供 `minimum_version`、`recommended_version`、`check_command` 和 `upgrade_url`。版本提示含 `latest_release`（`version_id`、`version_label`、`published_at`，不可读时为 `null`）、`is_latest`、`lifecycle`、`deprecation_reason` 和可读替代的 `replacement_asset_slug`；不替换固定版本。
 
@@ -115,17 +115,20 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 | bridge           | --url、--client；供 Agent 调用的 stdio MCP 桥接                                     |
 | login            | --url；显示浏览器批准地址，保存 CLI 读取凭据                                        |
 | search           | 可选查询文本、--json；省略查询列出资源                                              |
+| show             | NAME，可选 --version（默认当前发布）、--file；正文写 stdout，不写文件               |
 | add              | NAME、--version 或 --ticket URL，均需 --to；--dry-run 预览、--replace 备份替换      |
+| list             | 离线列出已安装 Skill 与本地修改；可重复 `--to`，支持 `--json`                       |
 | outdated         | 检查已安装 Skill；可重复 `--to`，支持 `--json`；退出码见下文                        |
+| remove           | NAME、--to；只删带有效来源记录的安装，有本地修改须 --force；--backups 只删替换备份  |
 | hub-config       | --url、--client；离线生成配置，可选 --method、--scope、--contribute、--conversation |
 | mcp-config       | NAME、--version、--client；可选 --option、--scope                                   |
 | feedback         | new / list / show / reply / close；不带子命令时在交互终端开启向导                   |
 
 `-h` / `help <命令>` 查看帮助，`-V` / `--cli-version` 查看 CLI 版本。终端提供菜单和参数向导，等待时显示点阵动效、下载时显示字节进度；`--no-animation` 保留向导和静态状态。`--no-interactive`、CI、重定向、`--json` 和 `bridge` 禁用交互。JSON、配置和协议写 stdout，提示写 stderr；`CAPABILITY_HUB_NO_UPDATE_NOTICE=1` 关闭自动版本提示。
 
-`--config-dir` 隔离凭据，默认 `~/.config/capability-hub`。读取使用登录凭据或 `CAPABILITY_HUB_TOKEN` + 显式 `--url`；两者都没有时，`add` 和 `outdated` 可用 `--url` 匿名访问公开 Skill。`add --ticket` 和 `hub-config` 不读取 CLI 凭据；票据模式如提供 `--url`，其 origin 必须与票据一致。下载限制大小，不跟随重定向。
+`--config-dir` 隔离凭据，默认 `~/.config/capability-hub`。读取使用登录凭据或 `CAPABILITY_HUB_TOKEN` + 显式 `--url`；两者都没有时，`show`、`add` 和 `outdated` 可用 `--url` 匿名访问公开 Skill。`add --ticket`、`hub-config`、`list` 和 `remove` 不读取 CLI 凭据；票据模式如提供 `--url`，其 origin 必须与票据一致。下载限制大小，不跟随重定向。
 
-`outdated` 输出表格或 JSON 数组。含 `SKILL.md` 但缺少来源记录的 Skill 报告 `unknown_source`（来源和版本字段为 `null`），与 `other_hub` 一样不查询远端。Windows 不比较磁盘执行位，仍校验文件内容。`--exit-code` 在 `update_available` 或 `unavailable` 时退出 2；`--fail-on-modified` 在 `modified` 时退出 3，优先于 2。其余状态为 `current`、`deprecated`；未触发上述条件且检查成功时退出 0。
+`outdated` 输出表格或 JSON 数组；`list` 不联网，输出同样的来源字段，状态为 `unmodified`、`modified` 或 `unknown_source`。含 `SKILL.md` 但缺少来源记录的 Skill 报告 `unknown_source`（来源和版本字段为 `null`），与 `other_hub` 一样不查询远端。默认扫描跳过经过链接的预设目录并在 stderr 说明。Windows 不比较磁盘执行位，仍校验文件内容；只有换行符不同的文件标为「仅换行符不同」。`status` 只取优先级最高的一项，本地差异在任何状态下都写入 `differences`。`--exit-code` 在有更新的发布（含 `modified`）、`deprecated` 或 `unavailable` 时退出 2；`--fail-on-modified` 在存在本地差异时退出 3，优先于 2；未触发上述条件且检查成功时退出 0。
 
 `feedback new` 可传 `--title`、`--description` 或 `--description-file`、`--attach`、`--last-error`，也可用 `--no-diagnostics` 不带诊断。非交互写入须确认后带 `--yes`；`new --dry-run --json` 只预览，不发请求。成功返回反馈编号和详情地址。CLI 不把令牌或配置文件内容写入最近一次失败诊断；Hub 有请求编号时输出该编号。
 

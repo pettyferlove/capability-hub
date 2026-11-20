@@ -88,21 +88,21 @@ Run commands from the repository root. Setup: `nvm use && pnpm install --frozen-
 `cp .env.example .env`. Defaults run on SQLite (`CAPABILITY_HUB_DATA_DIR=.data`) with filesystem
 blob storage.
 
-| Command                        | Does                                                                                                      |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `pnpm dev`                     | server with `tsx` on `127.0.0.1:4100`                                                                     |
-| `pnpm dev:web`                 | Vite on `5173`, proxying to 4100                                                                          |
-| `pnpm build`                   | typecheck, build every package/app, compile ops scripts                                                   |
-| `pnpm start`                   | compiled `dist/main.js` (run `pnpm build` first)                                                          |
-| `pnpm typecheck`               | per-package `tsc --noEmit` + root config over `scripts/`, `tests/`                                        |
-| `pnpm lint` / `pnpm format`    | ESLint / Prettier (`format:check` in CI-equivalent gate)                                                  |
-| `pnpm test`                    | unit + integration + components                                                                           |
-| `pnpm test:external`           | Postgres/MinIO/SSH/OpenLDAP via local Docker                                                              |
-| `pnpm check`                   | architecture → doc links → `db:check` → lint → format → build → test                                      |
-| `pnpm check:architecture`      | layering/exports/cycles/filename/`any` rules                                                              |
-| `pnpm db:generate`             | regenerate SQLite **and** PostgreSQL migrations                                                           |
-| `pnpm db:check` / `db:migrate` | verify migration tree / apply pending migrations                                                          |
-| `pnpm cli search --help`       | run the CLI from source (`connect, bridge, status, login, search, add, outdated, mcp-config, hub-config`) |
+| Command                        | Does                                                                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                     | server with `tsx` on `127.0.0.1:4100`                                                                                                   |
+| `pnpm dev:web`                 | Vite on `5173`, proxying to 4100                                                                                                        |
+| `pnpm build`                   | typecheck, build every package/app, compile ops scripts                                                                                 |
+| `pnpm start`                   | compiled `dist/main.js` (run `pnpm build` first)                                                                                        |
+| `pnpm typecheck`               | per-package `tsc --noEmit` + root config over `scripts/`, `tests/`                                                                      |
+| `pnpm lint` / `pnpm format`    | ESLint / Prettier (`format:check` in CI-equivalent gate)                                                                                |
+| `pnpm test`                    | unit + integration + components                                                                                                         |
+| `pnpm test:external`           | Postgres/MinIO/SSH/OpenLDAP via local Docker                                                                                            |
+| `pnpm check`                   | architecture → doc links → `db:check` → lint → format → build → test                                                                    |
+| `pnpm check:architecture`      | layering/exports/cycles/filename/`any` rules                                                                                            |
+| `pnpm db:generate`             | regenerate SQLite **and** PostgreSQL migrations                                                                                         |
+| `pnpm db:check` / `db:migrate` | verify migration tree / apply pending migrations                                                                                        |
+| `pnpm cli search --help`       | run the CLI from source (`connect, bridge, status, login, search, show, add, list, outdated, remove, mcp-config, hub-config, feedback`) |
 
 Operations: `pnpm backup`, `restore:import`, `restore:check`, `maintenance`, `account:recover`.
 `maintenance --collect-blobs` and `account:recover` require stopped services / a TTY.

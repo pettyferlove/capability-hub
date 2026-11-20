@@ -12,6 +12,7 @@ import {
   hubMcpConnectionGuide,
   needsAssistantConfigFile,
   assetSlugSchema,
+  shellArgument,
 } from '@capability-hub/contracts';
 import {
   hubUrl,
@@ -23,9 +24,11 @@ import { HubApiClient, HubApiError, terminalText } from './api-client.js';
 import {
   install,
   preflightInstall,
+  remove,
   validateInstallManifest,
   type InstallResult,
 } from './install.js';
+import { listSkills } from './installed-skills.js';
 import {
   assetSchema,
   searchSchema,
@@ -40,7 +43,7 @@ import {
 import type { CliUi } from './cli-ui.js';
 import { runFeedback, type FeedbackOptions } from './feedback.js';
 import { outdated } from './outdated.js';
-import { readSkillAsset } from './skill-versions.js';
+import { displayVersionLabel, readSkillAsset } from './skill-versions.js';
 
 /** Commander 选项使用驼峰字段；version 只表示资源版本。 */
 export interface CliOptions extends FeedbackOptions {
@@ -64,6 +67,9 @@ export interface CliOptions extends FeedbackOptions {
   json?: boolean;
   exitCode?: boolean;
   failOnModified?: boolean;
+  file?: string;
+  force?: boolean;
+  backups?: boolean;
 }
 
 /**
@@ -157,6 +163,31 @@ export async function runCommand(
     await installTicket(flags.ticket, flags, ui);
     return;
   }
+  if (command === 'list') {
+    await listSkills(args, flags);
+    return;
+  }
+  if (command === 'remove') {
+    const result = await remove({
+      slug: await ui.input(args[0], 'NAME', 'Skill 资源名称', validateSlug),
+      to: await ui.input(flags.to, '--to', '安装父目录（删除该目录下的资源子目录）'),
+      dryRun: flags.dryRun,
+      force: flags.force,
+      backups: flags.backups,
+    });
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    if (result.backups?.length)
+      ui.message(`另有 ${result.backups.length} 个 --replace 备份；不再需要时加 --backups 删除。`);
+    if (ui.interactive)
+      ui.outro(
+        result.dry_run
+          ? '预览完成，未删除文件。去掉 --dry-run 可删除。'
+          : result.removed.length
+            ? '已删除；请在 Agent 中重新加载技能。'
+            : '没有可删除的备份。',
+      );
+    return;
+  }
   const credentialsFile = join(
     flags.configDir ? resolve(flags.configDir) : join(homedir(), '.config', 'capability-hub'),
     'auth.json',
@@ -201,22 +232,19 @@ export async function runCommand(
     resolveConsumerCredentials({
       url: flags.url,
       environmentToken: process.env.CAPABILITY_HUB_TOKEN,
-      allowAnonymous: command === 'add' || command === 'outdated',
+      allowAnonymous: ['add', 'outdated', 'show'].includes(command),
       load: () => loadCredentials(credentialsFile),
     });
   if (command === 'outdated') return await outdated(args, flags, getCredentials);
   let slug: string | undefined;
-  if (command === 'add' || command === 'mcp-config') {
+  if (command === 'add' || command === 'mcp-config' || command === 'show') {
     slug = await ui.input(
       args[0],
       'NAME',
-      command === 'add' ? 'Skill 资源名称' : 'MCP 资源名称',
-      (value) =>
-        assetSlugSchema.safeParse(value).success
-          ? undefined
-          : '资源名称须为小写字母、数字及连字符，最长 64 个字符',
+      command === 'mcp-config' ? 'MCP 资源名称' : 'Skill 资源名称',
+      validateSlug,
     );
-    if (flags.version !== undefined || !ui.interactive)
+    if (command !== 'show' && (flags.version !== undefined || !ui.interactive))
       flags.version = await ui.input(flags.version, '--version', '资源版本', validateVersion);
     if (command === 'add')
       flags.to = await ui.input(flags.to, '--to', '安装父目录（将创建该目录下的资源子目录）');
@@ -229,14 +257,25 @@ export async function runCommand(
     );
     if (flags.json) process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     else {
-      for (const asset of result.items)
-        ui.resource(asset.slug, asset.kind, asset.current_release.version_label, asset.description);
+      for (const asset of result.items) {
+        const { slug: name, kind, current_release: release } = asset;
+        const target = `${name} --version ${shellArgument(release.version_label)} --url ${shellArgument(api.url)}`;
+        ui.resource(
+          name,
+          kind,
+          displayVersionLabel(release.version_label),
+          asset.description,
+          kind === 'skill'
+            ? `capability-hub add ${target} --to <目录>`
+            : `capability-hub mcp-config ${target} --client <客户端>`,
+        );
+      }
       if (!result.items.length)
         ui.outro('没有匹配的可见资源。请尝试更短的关键词，或检查当前账号的访问权限。');
       else if (ui.interactive) {
         ui.note(
           '使用资源',
-          '安装 Skill\ncapability-hub add <名称> --version <版本> --to <目录>\n\n生成 MCP 配置\ncapability-hub mcp-config <名称> --version <版本> --client <客户端>',
+          '将 <目录> 换成安装父目录、<客户端> 换成目标 Agent 客户端后运行。\n安装前可用 capability-hub show <名称> 阅读 Skill 正文。',
         );
         ui.outro(`显示 ${result.items.length} / ${result.total} 个资源`);
       }
@@ -244,7 +283,7 @@ export async function runCommand(
     return;
   }
   if (!slug) throw new Error('未知命令：' + terminalText(command));
-  const anonymous = command === 'add' && credentials.token === undefined;
+  const anonymous = (command === 'add' || command === 'show') && credentials.token === undefined;
   if (anonymous) ui.message('未找到 CLI 登录，按匿名身份读取公开资源');
   async function readResource<T>(request: Promise<T>): Promise<T> {
     try {
@@ -258,7 +297,8 @@ export async function runCommand(
       throw error;
     }
   }
-  const installDetail = command === 'add' ? await readResource(readSkillAsset(api, slug)) : null;
+  const installDetail =
+    command === 'mcp-config' ? null : await readResource(readSkillAsset(api, slug));
   const asset =
     installDetail?.asset ?? (await readResource(api.json('/api/assets/' + slug, assetSchema)));
   if (asset.slug !== slug) throw new Error('Hub 返回的资源名称与请求不一致');
@@ -266,12 +306,15 @@ export async function runCommand(
     throw new Error('mcp-config 仅用于 MCP 资源');
   if (command === 'add' && asset.kind !== 'skill')
     throw new Error('add 只安装 Skill；MCP 请使用 mcp-config');
+  if (command === 'show' && asset.kind !== 'skill')
+    throw new Error('show 只显示 Skill；MCP 请使用 mcp-config');
   const versions = await readResource(
     api.json(
       installDetail?.historyPath ?? `/api/assets/${asset.asset_id}/versions`,
       versionsSchema,
     ),
   );
+  if (command === 'show') flags.version ??= asset.current_release.version_label;
   if (flags.version === undefined)
     flags.version = await ui.choose(
       '--version',
@@ -286,6 +329,48 @@ export async function runCommand(
   if (invalidVersion) throw new Error(invalidVersion);
   const version = versions.find((item) => item.version_label === flags.version);
   if (!version) throw new Error('指定版本不存在或无权访问');
+  if (command === 'show') {
+    const path = `/api/versions/${version.version_id}`;
+    const { manifest } = await readResource(api.json(path + '/manifest', manifestResponseSchema));
+    const file = flags.file ?? 'SKILL.md';
+    const entry = manifest.files.find((item) => item.path === file);
+    if (!entry)
+      throw new Error(
+        `该版本没有文件 ${terminalText(file)}；可选：${manifest.files.map((item) => terminalText(item.path)).join('、')}`,
+      );
+    const bytes = await readResource(api.archive(`${path}/files?path=${encodeURIComponent(file)}`));
+    if (sha256(bytes) !== entry.sha256) throw new Error('文件校验失败：' + terminalText(file));
+    let text: string;
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      throw new Error(`${terminalText(file)} 不是 UTF-8 文本，请用 add 安装后查看`);
+    }
+    const current = version.version_id === asset.current_release.version_id;
+    ui.note(
+      `${asset.slug} ${version.version_label}`,
+      [
+        asset.description,
+        `资源版本  ${version.version_label}${current ? '（当前发布）' : `（当前发布 ${asset.current_release.version_label}）`}`,
+        ...(asset.lifecycle === 'deprecated'
+          ? [
+              `已弃用  ${asset.deprecation_reason ?? ''}${asset.replacement_asset_slug ? ` · 替代资源：${asset.replacement_asset_slug}` : ''}`,
+            ]
+          : []),
+        `文件清单  ${manifest.files.length} 个`,
+        ...manifest.files.map(
+          (item) => `  ${item.path}  ${formatBytes(item.size)}${item.executable ? '  可执行' : ''}`,
+        ),
+        `正在显示  ${file}`,
+      ].join('\n'),
+    );
+    // 正文来自 Hub，逐行剔除控制字符后再写入终端；需要原始字节时用 add。
+    process.stdout.write(
+      text.split('\n').map(terminalText).join('\n') + (text.endsWith('\n') ? '' : '\n'),
+    );
+    if (ui.interactive) ui.outro('以上为固定版本内容，未写入文件。');
+    return;
+  }
   if (command === 'mcp-config') {
     if (!agentClientSchema.safeParse(flags.client).success)
       throw new Error(`需要 --client ${agentClientIds.join('|')}`);
@@ -513,4 +598,10 @@ function validateVersion(value: string): string | undefined {
   return !value.trim() || value.length > 256 || /[\p{Cc}]/u.test(value)
     ? '需要明确的资源版本，最长 256 个字符且不能含控制字符'
     : undefined;
+}
+
+function validateSlug(value: string): string | undefined {
+  return assetSlugSchema.safeParse(value).success
+    ? undefined
+    : '资源名称须为小写字母、数字及连字符，最长 64 个字符';
 }
