@@ -1,5 +1,4 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { useIsPresent } from 'motion/react';
 import {
   aiExecutionListResponseSchema,
   aiExecutionResponseSchema,
@@ -18,6 +17,7 @@ import { jsonObject, type Json } from '../ai/presentation.js';
 import { useAiCommand } from '../ai/use-ai-command.js';
 import { useAiExecution } from '../ai/use-ai-execution.js';
 import { ReviewAuditActivity } from './ReviewAuditActivity.js';
+import { ReviewEvidenceChecklist, type ReviewChecklistTarget } from './ReviewEvidenceChecklist.js';
 
 type AuditTarget = Pick<ReviewResponse, 'version_id' | 'content_digest'>;
 
@@ -76,10 +76,12 @@ async function latestAudit(versionId: string, owner: string, signal: AbortSignal
 /** 版本审计只提供内容依据。人工采纳完成后，审核意见草稿按本人的报告和固定内容摘要取值。 */
 export function ReviewAuditEvidence({
   request,
+  brief,
   onAdvice,
   onEvidence,
 }: {
-  request: AuditTarget;
+  request: ReviewChecklistTarget;
+  brief?: Json;
   onAdvice: (advice: ReviewAuditAdvice) => void;
   onEvidence: (path: string, start: number, end: number) => void;
 }) {
@@ -92,11 +94,13 @@ export function ReviewAuditEvidence({
   const [busy, setBusy] = useState(false);
   const [responded, setResponded] = useState('');
   const autoAttempted = useRef(false);
-  const present = useIsPresent();
   const command = useAiCommand();
   const models = useQuery<AiModelOptionsResponse>('/api/ai/model-options', refresh + hubRefresh);
   const latest =
-    record && record.owner_id === ownerId && jsonObject(record.input).version_id === versionId
+    record &&
+    record.owner_id === ownerId &&
+    record.operation_id === 'resource-audit' &&
+    jsonObject(record.input).version_id === versionId
       ? record
       : undefined;
   const execution = useAiExecution(latest?.id ?? '', refresh + hubRefresh);
@@ -169,7 +173,7 @@ export function ReviewAuditEvidence({
   const startFirstAudit = useEffectEvent(() => {
     void start();
   });
-  const canAutoStart = present && record === null && canStart && !models.loading && !models.error;
+  const canAutoStart = record === null && canStart && !models.loading && !models.error;
   useEffect(() => {
     if (!canAutoStart || autoAttempted.current) return;
     autoAttempted.current = true;
@@ -193,10 +197,10 @@ export function ReviewAuditEvidence({
       setBusy(false);
     }
   };
-  return (
+  const auditCard = (
     <section
       aria-label="版本资源审计"
-      className="mb-3 min-w-0 overflow-hidden rounded-2xl border border-line bg-paper"
+      className="min-w-0 overflow-hidden rounded-2xl border border-line bg-paper"
     >
       <ReviewAuditActivity
         status={task?.status}
@@ -296,5 +300,18 @@ export function ReviewAuditEvidence({
         </p>
       )}
     </section>
+  );
+  return (
+    <>
+      {auditCard}
+      <ReviewEvidenceChecklist
+        request={request}
+        brief={brief}
+        audit={
+          task?.status === 'waiting_input' || task?.status === 'succeeded' ? report : undefined
+        }
+        onEvidence={onEvidence}
+      />
+    </>
   );
 }

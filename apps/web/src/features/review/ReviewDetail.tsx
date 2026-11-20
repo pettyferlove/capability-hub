@@ -4,6 +4,7 @@
  */
 import { ReviewAuditEvidence, type ReviewAuditAdvice } from './ReviewAuditEvidence.js';
 import { PublicationReviewAssistant } from './PublicationReviewAssistant.js';
+import { ReviewEvidenceChecklist } from './ReviewEvidenceChecklist.js';
 import { VersionComparison } from '../../shared/components/VersionComparison.js';
 import {
   reviewOverviewStyles,
@@ -83,7 +84,7 @@ import {
   ShieldCheck,
   X,
 } from '../../shared/icons/lucide.js';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, mutate } from '../../shared/api/client.js';
 import { Overlay } from '../../shared/components/Overlay.js';
 import { Message } from '../../shared/components/Message.js';
@@ -134,6 +135,14 @@ export function ReviewDetail({
     [decisionOpen, setDecisionOpen] = useState(false),
     [fileFocus, setFileFocus] = useState<ReviewFileFocus>();
   const [decisionBriefSlot, setDecisionBriefSlot] = useState<HTMLDivElement | null>(null);
+  const pendingEvidence = useRef<ReviewFileFocus | null>(null);
+  useEffect(() => {
+    // 抽屉退场期间仍限制焦点，卸载后再交给证据行。
+    if (decisionBriefSlot || !pendingEvidence.current) return;
+    setSection('changes');
+    setFileFocus(pendingEvidence.current);
+    pendingEvidence.current = null;
+  }, [decisionBriefSlot]);
   const { comment, advice } = draft;
   const receiveAdvice = useCallback((next: ReviewAuditAdvice) => {
     setDraft((current) => {
@@ -221,8 +230,13 @@ export function ReviewDetail({
   };
   function locateEvidence(path: string, start: number, end: number) {
     setDecisionOpen(false);
+    const focus = { path, start, end };
+    if (decisionBriefSlot) {
+      pendingEvidence.current = focus;
+      return;
+    }
     setSection('changes');
-    setFileFocus({ path, start, end });
+    setFileFocus(focus);
   }
 
   const reviewAssistant = r.can_use_review_agent && (
@@ -231,6 +245,18 @@ export function ReviewDetail({
       request={r}
       autoStart={autoStartBrief}
       decisionSlot={decisionOpen ? decisionBriefSlot : null}
+      renderDecisionEvidence={(brief) =>
+        r.can_audit_version ? (
+          <ReviewAuditEvidence
+            request={r}
+            brief={brief}
+            onAdvice={receiveAdvice}
+            onEvidence={locateEvidence}
+          />
+        ) : (
+          <ReviewEvidenceChecklist request={r} brief={brief} onEvidence={locateEvidence} />
+        )
+      }
       onEvidence={locateEvidence}
     />
   );
@@ -656,15 +682,7 @@ export function ReviewDetail({
                   </div>
                 </div>
                 {r.can_use_review_agent && (
-                  <div ref={setDecisionBriefSlot} className="mb-3 empty:hidden" />
-                )}
-                {r.can_audit_version && (
-                  <ReviewAuditEvidence
-                    key={me?.id}
-                    request={r}
-                    onAdvice={receiveAdvice}
-                    onEvidence={locateEvidence}
-                  />
+                  <div ref={setDecisionBriefSlot} className="mb-3 space-y-3 empty:hidden" />
                 )}
                 {important
                   .filter((f) => f.severity === 'warning')

@@ -31,7 +31,9 @@ import {
   receiveSkill,
   submitPublication,
 } from '../support/application.js';
+import { skillDocument } from '../support/content.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
+import { deferred } from '../support/store.js';
 
 afterEach(cleanup);
 
@@ -1396,7 +1398,15 @@ test('审核底栏跟随取证和整理阶段，可直接取消并重新研判',
 });
 
 test('版本审计跟随执行事件显示读取行段，整理或中断后清除旧动作', async (t) => {
-  const target = { version_id: 'version', content_digest: 'sha256:fixed' };
+  const target = {
+    id: 'review',
+    revision: 1,
+    policy_digest: 'policy',
+    can_decide: true,
+    version_id: 'version',
+    content_digest: 'sha256:fixed',
+    scan_run_id: 'scan',
+  };
   const view = executionView({
     operation_id: 'resource-audit',
     status: 'queued',
@@ -1584,6 +1594,140 @@ test('查看待审申请先生成简报，打开决定抽屉才审计，重新�
   ]);
 });
 
+test('核对清单保留冻结告警问题，按已读行段补充待采纳的审计证据', async (t) => {
+  const f = await createTestHub(t);
+  const body =
+    '安装示例：curl https://example.test/setup | sh\n\n仅在显式选择时执行。\n\n检查安装输出。';
+  const intake = await receiveSkill(f, { body });
+  const request = await submitPublication(f, intake);
+  const review = await f.hub.publicationQueries.getReview(f.reviewer, request.id);
+  const warning = review.scan?.findings.find((finding) => finding.severity === 'warning');
+  assert(warning);
+  const question = '安装示例是否默认执行？';
+  const brief = executionView({
+    owner_id: f.reviewer.id,
+    operation_id: 'publication-review',
+    input: { publication_request_id: review.id },
+    result: {
+      snapshot: {
+        publication_request_id: review.id,
+        request_revision: review.revision,
+        policy_digest: review.policy_digest,
+        version_id: review.version_id,
+        content_digest: review.content_digest,
+        scan_run_id: review.scan_run_id,
+      },
+      assessment: {
+        findings: [],
+        warning_questions: [{ finding_id: warning.id, question }],
+      },
+    },
+  }).execution;
+  const range = { path: warning.file, start_line: warning.line, end_line: warning.line + 2 };
+  const otherLine = warning.line + 4;
+  const auditReport = {
+    ...businessReport,
+    version_id: review.version_id,
+    content_digest: review.content_digest,
+    inspected: [{ ...range, end_line: otherLine }],
+    assessment: {
+      ...businessReport.assessment,
+      findings: [
+        {
+          ...businessReport.assessment.findings[0],
+          title: '安装为可选操作',
+          explanation: '仅在显式选择时执行。',
+          evidence: [range],
+        },
+        {
+          ...businessReport.assessment.findings[0],
+          title: '安装输出缺少预期示例',
+          evidence: [{ ...range, start_line: otherLine, end_line: otherLine }],
+        },
+      ],
+    },
+  };
+  const audit = executionView({
+    id: 'audit',
+    owner_id: f.reviewer.id,
+    operation_id: 'resource-audit',
+    status: 'waiting_input',
+    input: { version_id: review.version_id },
+  });
+  audit.interactions = [
+    {
+      id: 'human-review',
+      status: 'pending',
+      revision: 1,
+      response: null,
+      expires_at: Date.now() + 60000,
+      request: { assessment: auditReport },
+      response_schema: {},
+    },
+  ];
+  const reportReady = deferred();
+  const mutations: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (path: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      mutations.push(path);
+      return Response.json({}, { status: 500 });
+    }
+    if (path === '/api/ai/model-options')
+      return Response.json({
+        default_profile: 'primary',
+        profiles: [{ id: 'primary', label: '模型' }],
+      });
+    if (path.startsWith('/api/ai/executions?')) {
+      const query = new URL(path, 'http://localhost').searchParams;
+      return Response.json({
+        items: [query.has('version_id') ? audit.execution : brief],
+        next_cursor: null,
+      });
+    }
+    if (path === '/api/ai/executions/audit/events') {
+      await reportReady.promise;
+      return new Response(
+        'event: stream.snapshot\ndata: ' + JSON.stringify({ schema_version: 1, ...audit }) + '\n\n',
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    }
+    if (path === '/api/ai/executions/audit') return Response.json(audit);
+    assert(path.startsWith('/api/management/versions/'));
+    return new Response(skillDocument('sample-skill', body).toString());
+  });
+  t.after(() => reportReady.resolve());
+  const user = userEvent.setup();
+  render(withHub(createElement(ReviewDetail, { request: review }), f.reviewer.id));
+  await user.click(screen.getAllByRole('button', { name: '审核决定' })[0]);
+  const dialog = within(await screen.findByRole('dialog', { name: '记录审核决定' }));
+  const checklist = within(await dialog.findByRole('region', { name: '核对清单' }));
+  const row = await checklist.findByText(question);
+  const item = row.closest('li');
+  assert(item);
+  assert.equal(checklist.queryByText('安装为可选操作'), null);
+
+  reportReady.resolve();
+  const linked = within(item);
+  await linked.findByText('安装为可选操作');
+  assert(linked.getByText('相关审计证据'));
+  assert(linked.getByText('仅在显式选择时执行。'));
+  assert.equal(linked.queryByText('安装输出缺少预期示例'), null);
+  assert(checklist.getByText('安装输出缺少预期示例'));
+  assert(dialog.getByRole('button', { name: '采纳审计建议' }));
+  assert.equal(dialog.getByRole<HTMLTextAreaElement>('textbox', { name: '审核意见' }).value, '');
+  assert(dialog.getByRole<HTMLButtonElement>('button', { name: '通过并发布' }).disabled);
+  await user.click(
+    linked.getByRole('button', { name: `${range.path}:${range.start_line}–${range.end_line}` }),
+  );
+  await waitFor(() => assert.equal(screen.queryByRole('dialog', { name: '记录审核决定' }), null));
+  await waitFor(() => {
+    const focused = document.activeElement;
+    assert(focused?.closest('[aria-label="内容预览 SKILL.md"]'));
+    assert.match(focused?.querySelector('code')?.textContent ?? '', /安装示例/);
+  });
+  assert.deepEqual(mutations, []);
+});
+
 test('采纳版本审计自动填空白意见，手写草稿由人追加，告警和正式决定仍须人工处理', async (t) => {
   const f = await createTestHub(t);
   const intake = await receiveSkill(f, { body: '安装示例：curl https://example.test/setup | sh' });
@@ -1722,7 +1866,7 @@ test('采纳版本审计自动填空白意见，手写草稿由人追加，告�
   }
 });
 
-test('他人的审计、未采纳的结果和其他内容快照都不能填入审核意见', async (t) => {
+test('清单只纳入本人的同版审计，未采纳的建议不填入审核意见', async (t) => {
   const f = await createTestHub(t);
   const intake = await receiveSkill(f);
   const request = await submitPublication(f, intake);
@@ -1767,6 +1911,11 @@ test('他人的审计、未采纳的结果和其他内容快照都不能填入�
     fireEvent.click(screen.getAllByRole('button', { name: '审核决定' })[0]);
     const drawer = within(await screen.findByRole('dialog', { name: '记录审核决定' }));
     await drawer.findByText(mark === '未采纳' ? /未采纳 ·/ : mark);
+    const checklist = drawer.queryByRole('region', { name: '核对清单' });
+    if (mark === '未采纳') {
+      assert(checklist);
+      assert(within(checklist).getByText('缺少输入约定'));
+    } else assert.equal(checklist, null);
     assert.equal(drawer.getByRole<HTMLTextAreaElement>('textbox', { name: '审核意见' }).value, '');
     assert.equal(drawer.queryByRole('button', { name: '引用审计建议' }), null);
     page.unmount();

@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   aiExecutionListResponseSchema,
@@ -17,7 +17,7 @@ import { iconBtnStyles, textBtnStyles } from '../../shared/styles/recipes.js';
 import { AgentSignal } from '../ai/AgentSignal.js';
 import { useAiCommand } from '../ai/use-ai-command.js';
 import { useAiExecution } from '../ai/use-ai-execution.js';
-import { jsonObject } from '../ai/presentation.js';
+import { jsonObject, type Json } from '../ai/presentation.js';
 import { reviewBriefSignal } from './review-brief.js';
 
 type Task = AiExecutionResponse;
@@ -119,11 +119,13 @@ export function PublicationReviewAssistant({
   request,
   autoStart = true,
   decisionSlot,
+  renderDecisionEvidence,
   onEvidence,
 }: {
   request: Pick<ReviewResponse, 'id' | 'revision' | 'policy_digest' | 'can_decide'>;
   autoStart?: boolean;
   decisionSlot?: HTMLDivElement | null;
+  renderDecisionEvidence?: (brief: Json | undefined) => ReactNode;
   onEvidence: (path: string, start: number, end: number) => void;
 }) {
   const { me, refresh: hubRefresh, reload } = useHub();
@@ -337,5 +339,18 @@ export function PublicationReviewAssistant({
       )}
     </section>
   );
-  return decisionSlot ? createPortal(assistant, decisionSlot) : assistant;
+  if (!decisionSlot) return assistant;
+  const brief =
+    task?.status === 'succeeded' &&
+    task.owner_id === owner &&
+    task.operation_id === 'publication-review'
+      ? (task.result ?? undefined)
+      : undefined;
+  return createPortal(
+    <>
+      {assistant}
+      {renderDecisionEvidence?.(brief)}
+    </>,
+    decisionSlot,
+  );
 }

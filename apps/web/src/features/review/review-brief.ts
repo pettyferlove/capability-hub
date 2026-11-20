@@ -26,7 +26,8 @@ function firstPoint(value: Json | undefined) {
   return point.length > 72 ? point.slice(0, 71) + '…' : point;
 }
 
-function fileRange(path: Json | undefined, start: Json | undefined, end: Json | undefined) {
+/** 只接受固定文件的正整数闭区间，避免缺失行号时跳到错误依据。 */
+export function fileRange(path: Json | undefined, start: Json | undefined, end: Json | undefined) {
   if (
     typeof path === 'string' &&
     path &&
@@ -38,6 +39,15 @@ function fileRange(path: Json | undefined, start: Json | undefined, end: Json | 
     end >= start
   )
     return { path, start, end };
+}
+
+/** 申请修订或分发策略变化后，旧简报不再作为当前依据。 */
+export function matchesReviewBrief(request: ReviewTarget, snapshot: Record<string, Json>) {
+  return (
+    snapshot.publication_request_id === request.id &&
+    snapshot.request_revision === request.revision &&
+    snapshot.policy_digest === request.policy_digest
+  );
 }
 
 /** 底栏只选一个核对事项，跳转行号必须与这条发现或告警来自同一份依据。 */
@@ -120,11 +130,7 @@ export function reviewBriefSignal(
     }
     case 'succeeded': {
       const snapshot = jsonObject(report.snapshot);
-      if (
-        snapshot.publication_request_id !== request.id ||
-        snapshot.request_revision !== request.revision ||
-        snapshot.policy_digest !== request.policy_digest
-      )
+      if (!matchesReviewBrief(request, snapshot))
         return { label: '基线已变', text: '请按当前申请重新研判。', tone: 'warning' };
       return {
         label: riskLabel,
