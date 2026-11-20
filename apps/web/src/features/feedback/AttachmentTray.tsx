@@ -12,6 +12,7 @@ import {
 } from './attachment-images.js';
 import type { HubFeedbackLocalFile } from './hub-feedback-api.js';
 import { ScreenshotEditor } from './ScreenshotEditor.js';
+import { captureFeedbackScreen } from './screen-capture.js';
 
 const accept = 'image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp,.txt,.log,.md,.json';
 const imageTypes = ['image/png', 'image/jpeg', 'image/webp'];
@@ -19,11 +20,9 @@ const decoder = new TextDecoder('utf-8', { fatal: true });
 
 type QueueEntry = {
   id: number;
-  file: File;
   name: string;
-  image: boolean;
   replace?: HubFeedbackLocalFile;
-};
+} & ({ kind: 'image' | 'text'; file: File } | { kind: 'screenshot'; image: HTMLCanvasElement });
 
 function classify(file: File): 'image' | 'text' | undefined {
   if (imageTypes.includes(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name)) return 'image';
@@ -31,7 +30,7 @@ function classify(file: File): 'image' | 'text' | undefined {
   return undefined;
 }
 
-async function checkText({ file, name }: QueueEntry): Promise<HubFeedbackLocalFile> {
+async function checkText(file: File, name: string): Promise<HubFeedbackLocalFile> {
   let content: string;
   try {
     content = decoder.decode(await file.arrayBuffer());
@@ -89,25 +88,34 @@ export function AttachmentTray({
   onChange,
   enabled = true,
   disabled = false,
+  screenCapture = false,
   onProcessingChange,
 }: {
   files: HubFeedbackLocalFile[];
   onChange: (files: HubFeedbackLocalFile[]) => void;
   enabled?: boolean;
   disabled?: boolean;
+  screenCapture?: boolean;
   onProcessingChange?: (processing: boolean) => void;
 }) {
   const labelId = useId();
   const root = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const sequence = useRef(0);
+  const captureRequest = useRef<AbortController | null>(null);
+  const [capturing, setCapturing] = useState(false);
   const [queue, setQueue] = useState<QueueEntry[]>([]);
   const [decoded, setDecoded] = useState<{ id: number; image: HTMLCanvasElement }>();
   const [over, setOver] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const current = queue[0];
   const active = enabled && !disabled;
-  const processing = active && Boolean(current);
+  const processing = active && (capturing || Boolean(current));
+  const canAdd = active && !capturing;
+  const canCapture =
+    screenCapture &&
+    typeof navigator !== 'undefined' &&
+    typeof navigator.mediaDevices?.getDisplayMedia === 'function';
   const live = useRef({ files, onChange, active, current });
 
   useLayoutEffect(() => {
@@ -116,6 +124,14 @@ export function AttachmentTray({
       live.current.active = false;
     };
   }, [files, onChange, active, current]);
+
+  useLayoutEffect(
+    () => () => {
+      captureRequest.current?.abort();
+      captureRequest.current = null;
+    },
+    [active],
+  );
 
   useLayoutEffect(() => {
     onProcessingChange?.(processing);
@@ -151,17 +167,23 @@ export function AttachmentTray({
   const finishText = useEffectEvent(attach);
   useEffect(() => {
     if (!active) {
+      setCapturing(false);
       setQueue((pending) => (pending.length ? [] : pending));
       setDecoded(undefined);
       return;
     }
     if (!current) return;
+    if (current.kind === 'screenshot') {
+      return () => {
+        current.image.width = 0;
+      };
+    }
     let canceled = false;
     let source: HTMLCanvasElement | undefined;
     void (async () => {
       try {
-        if (!current.image) {
-          const attachment = await checkText(current);
+        if (current.kind === 'text') {
+          const attachment = await checkText(current.file, current.name);
           if (!canceled) finishText(current, attachment);
           return;
         }
@@ -187,7 +209,7 @@ export function AttachmentTray({
   }, [active, current]);
 
   function enqueue(selected: readonly File[]) {
-    if (!active || !selected.length) return false;
+    if (!canAdd || captureRequest.current || !selected.length) return false;
     const pending: QueueEntry[] = [];
     const rejected: string[] = [];
     const available =
@@ -211,11 +233,60 @@ export function AttachmentTray({
         rejected.push(`${name}：${limit}`);
         continue;
       }
-      pending.push({ id: ++sequence.current, file, name, image: type === 'image' });
+      pending.push({ id: ++sequence.current, file, name, kind: type });
     }
     setErrors(rejected);
     if (pending.length) setQueue((previous) => [...previous, ...pending]);
     return Boolean(pending.length);
+  }
+
+  function startCapture() {
+    const latest = live.current;
+    if (
+      !canCapture ||
+      !latest.active ||
+      latest.current ||
+      captureRequest.current ||
+      latest.files.length >= hubFeedbackLimits.uploadFiles
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    captureRequest.current = controller;
+    const result = captureFeedbackScreen(controller.signal);
+    onProcessingChange?.(true);
+    setCapturing(true);
+    setErrors([]);
+    void (async () => {
+      try {
+        const image = await result;
+        if (controller.signal.aborted) {
+          image.width = 0;
+          return;
+        }
+        const entry: QueueEntry = {
+          id: ++sequence.current,
+          kind: 'screenshot',
+          image,
+          name: '页面截图',
+        };
+        setQueue((pending) => [...pending, entry]);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        const name = error instanceof Error || error instanceof DOMException ? error.name : 'Error';
+        setErrors([
+          name === 'NotAllowedError' || name === 'AbortError'
+            ? '未获得屏幕共享许可。你可以使用系统截图后粘贴，或添加图片。'
+            : `无法截取页面（${name}）。请改用系统截图后粘贴，或添加图片。`,
+        ]);
+        onProcessingChange?.(false);
+      } finally {
+        if (captureRequest.current === controller) {
+          captureRequest.current = null;
+          setCapturing(false);
+        }
+      }
+    })();
   }
 
   const pasteImages = useEffectEvent((event: ClipboardEvent) => {
@@ -244,7 +315,14 @@ export function AttachmentTray({
     latest.onChange(next);
   }
 
-  const editor = active && current && decoded?.id === current.id ? decoded.image : undefined;
+  const editor =
+    active && current
+      ? current.kind === 'screenshot'
+        ? current.image
+        : decoded?.id === current.id
+          ? decoded.image
+          : undefined
+      : undefined;
   return (
     <section ref={root} aria-labelledby={labelId} className="grid min-w-0 gap-2">
       <h3 id={labelId} className="text-body font-semibold">
@@ -253,13 +331,13 @@ export function AttachmentTray({
       <div
         className={cn(
           'grid justify-items-start gap-2 rounded-lg border border-dashed border-line p-3',
-          over && active && 'border-brand bg-brand-soft',
+          over && canAdd && 'border-brand bg-brand-soft',
         )}
         onDragOver={(event) => {
           if (!Array.from(event.dataTransfer.types).includes('Files')) return;
           event.preventDefault();
-          event.dataTransfer.dropEffect = active ? 'copy' : 'none';
-          if (active) setOver(true);
+          event.dataTransfer.dropEffect = canAdd ? 'copy' : 'none';
+          if (canAdd) setOver(true);
         }}
         onDragLeave={(event) => {
           if (
@@ -282,22 +360,33 @@ export function AttachmentTray({
           multiple
           accept={accept}
           aria-label="选择图片或附件"
-          disabled={!active}
+          disabled={!canAdd}
           onChange={(event) => {
             enqueue(Array.from(event.currentTarget.files ?? []));
             event.currentTarget.value = '';
           }}
         />
-        <Button className={btnStyles} isDisabled={!active} onPress={() => input.current?.click()}>
-          添加图片或文件
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {canCapture && (
+            <Button
+              className={btnStyles}
+              isDisabled={!active || processing || files.length >= hubFeedbackLimits.uploadFiles}
+              onPress={startCapture}
+            >
+              截取当前页面
+            </Button>
+          )}
+          <Button className={btnStyles} isDisabled={!canAdd} onPress={() => input.current?.click()}>
+            添加图片或文件
+          </Button>
+        </div>
         <p className={subtleStyles}>
           可粘贴截图或拖入文件。最多 5 个、共 12 MiB；单张图片 5 MiB、文本 1 MiB。
         </p>
       </div>
       {processing && !editor && (
         <p role="status" className={subtleStyles}>
-          正在读取附件…
+          {capturing ? '正在截取页面…' : '正在读取附件…'}
         </p>
       )}
       {errors.length > 0 && (
@@ -327,11 +416,11 @@ export function AttachmentTray({
                     className={textBtnStyles}
                     isDisabled={!active || processing}
                     onPress={() => {
-                      const entry = {
+                      const entry: QueueEntry = {
                         id: ++sequence.current,
                         file: file.file,
                         name: file.name,
-                        image: true,
+                        kind: 'image',
                         replace: file,
                       };
                       setQueue((pending) => [...pending, entry]);
@@ -343,7 +432,7 @@ export function AttachmentTray({
                 <Button
                   aria-label={`移除 ${file.name}`}
                   className={textBtnStyles}
-                  isDisabled={!active}
+                  isDisabled={!canAdd}
                   onPress={() => remove(file)}
                 >
                   移除
@@ -360,7 +449,12 @@ export function AttachmentTray({
           name={current.name}
           onCancel={() => advance(current)}
           onConfirm={(file) =>
-            attach(current, { file, name: file.name, kind: current.replace?.kind ?? 'image' })
+            attach(current, {
+              file,
+              name: file.name,
+              kind:
+                current.kind === 'screenshot' ? 'screenshot' : (current.replace?.kind ?? 'image'),
+            })
           }
         />
       )}

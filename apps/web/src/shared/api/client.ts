@@ -4,6 +4,7 @@ import {
   hubVersionHeaders,
   type HubFeedbackFailedRequest,
 } from '@capability-hub/contracts';
+import { notifyHubFeedbackFailure } from '../hub-feedback-events.js';
 import { clearBrowserDiagnostics, reportError } from '../logging.js';
 import { readPreviewText } from './preview.js';
 import { observeWebBuild } from './web-build.js';
@@ -58,6 +59,32 @@ function rememberFailure(
   if (failedRequests.length === 20) failedRequests.shift();
   failedRequests.push(parsed.data);
   return parsed.data;
+}
+
+function notifyRequestFailure(status: number, code: string, request?: HubFeedbackFailedRequest) {
+  notifyHubFeedbackFailure({
+    status,
+    code: request?.code ?? code,
+    seed: request ? { request } : {},
+  });
+}
+
+function networkFailure(error: unknown, path: string, options: RequestInit) {
+  if (
+    options.signal?.aborted ||
+    (error !== null && typeof error === 'object' && 'name' in error && error.name === 'AbortError')
+  )
+    throw error;
+  const failure = rememberFailure(options.method ?? 'GET', path, 0, 'NETWORK_ERROR');
+  notifyRequestFailure(0, 'NETWORK_ERROR', failure);
+  return failure;
+}
+
+function fetchRequest(path: string, options: RequestInit) {
+  return fetch(path, options).catch((error: unknown) => {
+    networkFailure(error, path, options);
+    throw error;
+  });
 }
 
 /** 注入 CSRF 令牌来源：由 `use-session` 在登录/刷新会话成功后写入，退出或失败时清空。 */
@@ -125,6 +152,8 @@ async function responseError(response: Response, path: string, method = 'GET'): 
     code,
     requestId: requestId || undefined,
   });
+  if (response.status >= 500 && response.status <= 599)
+    notifyRequestFailure(response.status, 'REQUEST_FAILED', failure);
   if (response.status === 401 && !path.startsWith('/auth/') && path !== '/api/me')
     window.dispatchEvent(new Event('hub:unauthenticated'));
   return new ApiError(response.status, code, message, requestId, failure);
@@ -152,16 +181,15 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
     headers,
     credentials: 'same-origin',
     redirect: 'error',
-  }).catch((error) => {
-    if (options.signal?.aborted || (error instanceof Error && error.name === 'AbortError'))
-      throw error;
+  }).catch((error: unknown) => {
+    const failure = networkFailure(error, path, options);
     reportError('http.failed', { error });
     throw new ApiError(
       0,
       'NETWORK_ERROR',
       error instanceof Error ? error.message : '暂时无法连接服务，请稍后重试',
       '',
-      rememberFailure(options.method ?? 'GET', path, 0, 'NETWORK_ERROR'),
+      failure,
     );
   });
   observeResponse(response);
@@ -172,13 +200,15 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
 
 /** 返回标签页或懒加载失败时探测，绕开缓存且不依赖会话。 */
 export async function checkWebBuild(): Promise<string | null> {
-  const response = await fetch('/health/live', {
+  const response = await fetchRequest('/health/live', {
     method: 'HEAD',
     cache: 'no-store',
     credentials: 'same-origin',
     redirect: 'error',
     signal: AbortSignal.timeout(3000),
   });
+  if (response.status >= 500 && response.status <= 599)
+    notifyRequestFailure(response.status, 'REQUEST_FAILED');
   return response.ok ? observeResponse(response) : null;
 }
 
@@ -214,7 +244,11 @@ export async function fileText(
   signal?: AbortSignal,
 ): Promise<string> {
   const url = `/api/${management ? 'management/' : ''}versions/${version}/files?path=${encodeURIComponent(path)}`;
-  const response = await fetch(url, { credentials: 'same-origin', redirect: 'error', signal });
+  const response = await fetchRequest(url, {
+    credentials: 'same-origin',
+    redirect: 'error',
+    signal,
+  });
   observeResponse(response);
   if (!response.ok) throw await responseError(response, url);
   return readPreviewText(response);
@@ -225,7 +259,11 @@ export async function hubFeedbackAttachmentText(
   path: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const response = await fetch(path, { credentials: 'same-origin', redirect: 'error', signal });
+  const response = await fetchRequest(path, {
+    credentials: 'same-origin',
+    redirect: 'error',
+    signal,
+  });
   observeResponse(response);
   if (!response.ok) throw await responseError(response, path);
   return (await response.text())
@@ -254,7 +292,7 @@ export async function streamEvents(
   signal: AbortSignal,
   lastEventId?: string,
 ): Promise<void> {
-  const response = await fetch(path, {
+  const response = await fetchRequest(path, {
     credentials: 'same-origin',
     redirect: 'error',
     signal,

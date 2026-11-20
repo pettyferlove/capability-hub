@@ -136,6 +136,45 @@
   td strong {
     @apply text-label;
   }
+  html[data-feedback-capture] {
+    [data-feedback-chrome] {
+      display: none !important;
+    }
+    :is(input[type='password'], input[data-sensitive], textarea[data-sensitive]):not(span > *) {
+      forced-color-adjust: none;
+      appearance: none !important;
+      background: var(--ink) !important;
+      border-color: var(--ink) !important;
+      box-shadow: inset 0 0 0 100vmax var(--ink) !important;
+      color: transparent !important;
+      -webkit-text-fill-color: transparent !important;
+      caret-color: transparent !important;
+      text-shadow: none !important;
+      outline: none !important;
+      transition: none !important;
+      overflow: hidden !important;
+      resize: none !important;
+      &::placeholder,
+      &::selection {
+        color: transparent !important;
+        background: transparent !important;
+      }
+    }
+    /* 隐藏控件和原文的绘制，用等尺寸的容器背景遮挡，不移动页面布局。 */
+    :is(
+      [data-sensitive]:not(input, textarea),
+      span:has(> :is(input[type='password'], input[data-sensitive], textarea[data-sensitive]))
+    ) {
+      forced-color-adjust: none;
+      background: var(--ink) !important;
+      color: transparent !important;
+      outline: none !important;
+      transition: none !important;
+      & * {
+        visibility: hidden !important;
+      }
+    }
+  }
   /* 快照过渡期间暂停组件自己的颜色动画，整页保持同一节奏。 */
   html[data-theme-transition] *,
   html[data-theme-transition] *::before,
@@ -162,4 +201,8 @@
       animation: none !important;
     }
   }
+}
+
+body:has([data-feedback-hint]:not([hidden])) [data-feedback-draft] {
+  display: none;
 }

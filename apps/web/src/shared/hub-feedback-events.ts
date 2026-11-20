@@ -8,11 +8,18 @@ export interface HubFeedbackSeed {
   pageError?: NonNullable<WebDiagnostics['page_errors']>[number];
 }
 
+export interface HubFeedbackFailure {
+  code: string;
+  status?: number;
+  seed: HubFeedbackSeed;
+}
+
 type HubFeedbackChange = { kind: 'submitted' | 'commented' } | { kind: 'read'; id: string };
 
 declare global {
   interface WindowEventMap {
     'hub:feedback': CustomEvent<HubFeedbackSeed>;
+    'hub:feedback-failure': CustomEvent<HubFeedbackFailure>;
     'hub:feedback-changed': CustomEvent<HubFeedbackChange>;
   }
 }
@@ -20,6 +27,11 @@ declare global {
 /** 共享错误组件与应用外壳之间不依赖页面上下文。 */
 export function openHubFeedback(seed?: HubFeedbackSeed): void {
   window.dispatchEvent(new CustomEvent('hub:feedback', { detail: seed }));
+}
+
+export function notifyHubFeedbackFailure(failure: HubFeedbackFailure): void {
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(new CustomEvent('hub:feedback-failure', { detail: failure }));
 }
 
 /** 提交者更新后通知外壳更新未读数，不启用轮询。 */

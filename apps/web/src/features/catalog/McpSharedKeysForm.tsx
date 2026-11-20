@@ -109,6 +109,7 @@ export function McpSharedKeysForm({
           <InputField
             icon="key"
             type="password"
+            data-sensitive=""
             autoComplete="new-password"
             maxLength={4096}
             placeholder={

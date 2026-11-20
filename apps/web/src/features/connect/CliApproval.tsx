@@ -158,6 +158,7 @@ export function CliApproval({ initialCode }: { initialCode: string }) {
               </label>
               <output
                 id="cli-approval-code"
+                data-sensitive=""
                 className="block py-3 text-center"
                 aria-describedby="cli-code-help"
                 onCopy={(event) => {

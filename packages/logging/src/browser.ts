@@ -16,6 +16,7 @@ export interface BrowserLoggingOptions {
   /** 缺省时生成 UUID，仅用于服务端合并同页会话。 */
   sessionId?: string;
   send?: (batch: BrowserLogBatch) => Promise<void>;
+  onReport?: (entry: BrowserLogEntry) => void;
 }
 
 /** HTTP 页面也可用 getRandomValues 生成 UUID v4。 */
@@ -137,6 +138,7 @@ export function installBrowserLogging(options: BrowserLoggingOptions = {}) {
     if (recentEntries.length === 20) recentEntries.shift();
     recentEntries.push(entry);
     logger[entry.level](entry);
+    options.onReport?.(entry);
     return entry;
   };
   const error = (event: ErrorEvent) => report('runtime.error', { error: event.error });

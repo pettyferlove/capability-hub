@@ -228,6 +228,7 @@ export function HubFeedbackComposer({
             onProcessingChange={onProcessingChange}
             enabled={enabled}
             disabled={busy}
+            screenCapture
           />
           <div className="border-t border-line pt-4">
             <DiagnosticsPreview

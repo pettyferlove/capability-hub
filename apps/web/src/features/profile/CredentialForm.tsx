@@ -157,6 +157,7 @@ export function CredentialForm({
                 icon="key"
                 name="secret"
                 type="password"
+                data-sensitive=""
                 autoComplete="new-password"
                 required
                 minLength={8}
@@ -169,15 +170,18 @@ export function CredentialForm({
           <>
             <label>
               {existing ? '新的 SSH 私钥' : 'SSH 私钥'}
-              <textarea
-                name="secret"
-                autoComplete="off"
-                spellCheck={false}
-                className={monoStyles}
-                required
-                maxLength={32768}
-                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-              />
+              <span className="grid">
+                <textarea
+                  name="secret"
+                  data-sensitive=""
+                  autoComplete="off"
+                  spellCheck={false}
+                  className={monoStyles}
+                  required
+                  maxLength={32768}
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                />
+              </span>
             </label>
             <label>
               私钥口令 <small>仅加密私钥必填</small>
@@ -185,6 +189,7 @@ export function CredentialForm({
                 icon="lock"
                 name="passphrase"
                 type="password"
+                data-sensitive=""
                 autoComplete="new-password"
                 maxLength={1024}
                 placeholder="输入私钥的解密口令"

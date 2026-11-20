@@ -70,7 +70,9 @@ export function AccessTokenForm({
     return (
       <div className={installationContentStyles}>
         <Message>令牌已创建，只展示这一次。请先复制并安全保存，关闭后无法再次查看。</Message>
-        <CodeBlock title="个人 Hub 访问令牌" code={token} />
+        <div data-sensitive="" className="min-w-0">
+          <CodeBlock title="个人 Hub 访问令牌" code={token} />
+        </div>
         <div>
           <button
             type="button"

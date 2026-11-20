@@ -33,6 +33,7 @@ import { NotFoundPage } from './NotFoundPage.js';
 import { WebUpdateNotice } from './WebUpdateNotice.js';
 import { lazyView } from '../shared/navigation/lazy-view.js';
 import type { HubFeedbackSeed } from '../shared/hub-feedback-events.js';
+import { HubFeedbackHints } from '../features/feedback/HubFeedbackHints.js';
 
 const AssetSheet = lazyView(() => import('../features/catalog/AssetSheet.js'));
 const Publish = lazyView(() => import('../features/publishing/PublishPage.js'));
@@ -154,26 +155,21 @@ export default function App() {
     view.page === 'operations' || view.page === 'not-found'
       ? undefined
       : pagePlaceholders[view.page];
-  if (loading)
-    return (
-      <LoadingScope scopeKey={pageScrollKey}>
-        <Loading variant="page" label="正在连接能力共享中心…" />
-      </LoadingScope>
+  let content;
+  if (loading) {
+    content = <Loading variant="page" label="正在连接能力共享中心…" />;
+  } else if (error) {
+    content = (
+      <div className={bootErrorStyles}>
+        <ErrorState message={error} retry={load} />
+      </div>
     );
-  if (error)
-    return (
-      <LoadingScope scopeKey={pageScrollKey}>
-        <div className={bootErrorStyles}>
-          <ErrorState message={error} retry={load} />
-        </div>
-      </LoadingScope>
-    );
-  if (
+  } else if (
     !me &&
     (view.page === 'login' || ['publish', 'review', 'account', 'operations'].includes(view.page))
-  )
-    return (
-      <LoadingScope scopeKey={pageScrollKey}>
+  ) {
+    content = (
+      <>
         <WebUpdateNotice />
         <Login
           initialized={initialized}
@@ -181,14 +177,11 @@ export default function App() {
           ldapEnabled={ldapEnabled}
           onLogin={load}
         />
-      </LoadingScope>
+      </>
     );
-  return (
-    <LoadingScope scopeKey={pageScrollKey}>
-      <HubCtx.Provider
-        key={me?.id ?? 'anonymous'}
-        value={{ me, reviewCount, refresh, reload, openPalette: () => setPalette(true), logout }}
-      >
+  } else {
+    content = (
+      <>
         <a
           className={skipLinkStyles}
           href="#main-content"
@@ -265,6 +258,20 @@ export default function App() {
           </div>
         </Overlay>
         <CommandPalette open={palette} onClose={() => setPalette(false)} />
+      </>
+    );
+  }
+  return (
+    <LoadingScope scopeKey={pageScrollKey}>
+      <HubFeedbackHints
+        key={userId ?? 'anonymous'}
+        hidden={!!(panel?.open || palette || view.asset)}
+      />
+      <HubCtx.Provider
+        key={userId ?? 'anonymous'}
+        value={{ me, reviewCount, refresh, reload, openPalette: () => setPalette(true), logout }}
+      >
+        {content}
         {panel && (
           <Suspense fallback={null}>
             <HubFeedbackAssistant

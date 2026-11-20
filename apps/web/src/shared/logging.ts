@@ -1,10 +1,28 @@
 import { installBrowserLogging } from '@capability-hub/logging/browser';
+import { notifyHubFeedbackFailure } from './hub-feedback-events.js';
 
 let logging: ReturnType<typeof installBrowserLogging> | undefined;
 
 /** 首次调用安装全局错误钩子；重复调用是幂等的，因此在入口调用一次即可，不必担心热更新重复安装。 */
 export function startLogging(): void {
-  logging ??= installBrowserLogging();
+  logging ??= installBrowserLogging({
+    onReport(entry) {
+      if (entry.event === 'http.failed') return;
+      const type = entry.error?.type;
+      if (type === 'AbortError' || (entry.event === 'runtime.rejection' && type === 'ApiError'))
+        return;
+      notifyHubFeedbackFailure({
+        code: entry.event,
+        seed: {
+          pageError: {
+            event: entry.event,
+            type: type && /^[\w.-]{1,80}$/.test(type) ? type : 'Error',
+            stack: entry.error?.stack?.slice(0, 2000),
+          },
+        },
+      });
+    },
+  });
 }
 
 /** 面板仅预览内存里的已脱敏记录，不直接读取控制台或上报队列。 */

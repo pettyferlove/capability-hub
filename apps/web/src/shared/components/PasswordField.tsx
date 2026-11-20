@@ -28,6 +28,7 @@ export function PasswordField({
         icon="lock"
         name={name}
         type={show ? 'text' : 'password'}
+        data-sensitive=""
         required
         minLength={minimum}
         maxLength={256}

@@ -4,7 +4,8 @@ import type {
   HubFeedbackListResponse,
 } from '@capability-hub/contracts/http';
 import { browserUuid } from '@capability-hub/logging/browser';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { Button, Tab, TabList, TabPanel, Tabs } from 'react-aria-components';
 import { api } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
@@ -257,6 +258,11 @@ function AccountAssistant({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const processingRef = useRef(false);
+  const updateProcessing = useCallback((value: boolean) => {
+    processingRef.current = value;
+    setProcessing(value);
+  }, []);
   const previous = useRef<{ open: boolean; seed?: HubFeedbackSeed }>({ open: false });
   const pending = useRef<AbortController | null>(null);
   const retry = useRef<RetrySubmission | null>(null);
@@ -326,7 +332,7 @@ function AccountAssistant({
   }
 
   function minimize() {
-    if (pending.current || locked) return;
+    if (pending.current || busy || processingRef.current) return;
     setConfirm(false);
     setReceipt(undefined);
     setMinimized(meaningful);
@@ -347,13 +353,13 @@ function AccountAssistant({
   }
 
   function close() {
-    if (pending.current || locked) return;
+    if (pending.current || busy || processingRef.current) return;
     if (meaningful) setConfirm(true);
     else discard();
   }
 
   async function submit() {
-    if (pending.current || locked || !context) return;
+    if (pending.current || busy || processingRef.current || !context) return;
     const result = hubFeedbackCreateRequestSchema.safeParse({
       kind: draft.kind,
       surface: draft.surface ?? defaultSurface(context.origin),
@@ -410,7 +416,7 @@ function AccountAssistant({
 
   return (
     <>
-      <Overlay open={open} onClose={minimize} label="反馈问题" variant="sheet">
+      <Overlay open={open} onClose={minimize} label="反馈问题" variant="sheet" feedbackChrome>
         <AssistantHeader onMinimize={minimize} onClose={close} disabled={locked} />
         <Tabs
           selectedKey={tab}
@@ -483,7 +489,7 @@ function AccountAssistant({
                     setFiles(next);
                     updateDraft({ hadFiles: next.length > 0 || filesLost });
                   }}
-                  onProcessingChange={setProcessing}
+                  onProcessingChange={updateProcessing}
                   onResourceLink={minimize}
                   onSubmit={() => {
                     void submit();
@@ -498,7 +504,13 @@ function AccountAssistant({
         </Tabs>
       </Overlay>
       {open && confirm && (
-        <Overlay open label="放弃这份草稿？" variant="palette" onClose={() => setConfirm(false)}>
+        <Overlay
+          open
+          label="放弃这份草稿？"
+          variant="palette"
+          onClose={() => setConfirm(false)}
+          feedbackChrome
+        >
           <div className="grid gap-3 p-5">
             <h2 className="text-section font-semibold">放弃这份草稿？</h2>
             <p className={subtleStyles}>
@@ -516,7 +528,12 @@ function AccountAssistant({
         </Overlay>
       )}
       {!open && minimized && meaningful && (
-        <Button className={feedbackCapsuleStyles} onPress={() => openHubFeedback()}>
+        <Button
+          data-feedback-chrome=""
+          data-feedback-draft=""
+          className={feedbackCapsuleStyles}
+          onPress={() => openHubFeedback()}
+        >
           <Pencil size={15} aria-hidden="true" /> 草稿 · 继续反馈
         </Button>
       )}
@@ -530,7 +547,13 @@ export default function HubFeedbackAssistant(props: AssistantProps) {
     return <AccountAssistant key={me.id} userId={me.id} refresh={refresh} {...props} />;
   }
   return (
-    <Overlay open={props.open} onClose={props.onClose} label="反馈问题" variant="sheet">
+    <Overlay
+      open={props.open}
+      onClose={props.onClose}
+      label="反馈问题"
+      variant="sheet"
+      feedbackChrome
+    >
       {props.open && (
         <GuestFeedback route={props.route} seed={props.seed} onClose={props.onClose} />
       )}

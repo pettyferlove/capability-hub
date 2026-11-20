@@ -2,10 +2,12 @@ import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test, type TestContext } from 'node:test';
 import { createElement, useEffect, useState } from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { userEvent, type UserEvent } from '@testing-library/user-event';
 import type { HubFeedbackCreateRequest } from '@capability-hub/contracts';
 import HubFeedbackAssistant from '../../apps/web/src/features/feedback/HubFeedbackAssistant.js';
+import { HubFeedbackHints } from '../../apps/web/src/features/feedback/HubFeedbackHints.js';
+import { api } from '../../apps/web/src/shared/api/client.js';
 import { HubCtx, type HubState } from '../../apps/web/src/shared/context/HubContext.js';
 import type { HubFeedbackSeed } from '../../apps/web/src/shared/hub-feedback-events.js';
 
@@ -49,6 +51,7 @@ const seed: HubFeedbackSeed = {
 afterEach(() => {
   cleanup();
   window.sessionStorage.clear();
+  window.localStorage.removeItem('capability-hub:feedback-hints');
 });
 
 function mountAssistant({
@@ -164,4 +167,50 @@ test('未登录时提示登录且无法提交反馈', async (context) => {
   assert.equal(screen.queryByRole('textbox', { name: '标题' }), null);
   assert.equal(screen.queryByRole('button', { name: '提交反馈' }), null);
   assert.equal(fetch.mock.callCount(), 0);
+});
+
+const triggerLabel = { name: '反馈此问题' };
+
+function failFeedbackRequests(context: TestContext, status: number) {
+  context.mock.method(globalThis, 'fetch', (path: string) =>
+    Promise.resolve(Response.json({ error: { code: path.split('/').at(-1) } }, { status })),
+  );
+  return async (code: string) => {
+    await act(async () => assert.rejects(api('/api/assets/' + code)));
+  };
+}
+
+test('关闭这次提示后，同一页面不再提示相同错误码', async (context) => {
+  const fail = failFeedbackRequests(context, 503);
+  render(createElement(HubFeedbackHints));
+
+  await fail('CATALOG_UNAVAILABLE');
+  fireEvent.click(screen.getByRole('button', triggerLabel));
+  assert.equal(screen.queryByRole('button', triggerLabel), null);
+  await fail('CATALOG_UNAVAILABLE');
+  assert.equal(screen.queryByRole('button', triggerLabel), null);
+  await fail('STORAGE_UNAVAILABLE');
+  assert(screen.getByRole('button', triggerLabel));
+});
+
+test('客户端请求失败不打扰用户', async (context) => {
+  const fail = failFeedbackRequests(context, 403);
+  render(createElement(HubFeedbackHints));
+
+  await fail('FORBIDDEN');
+  assert.equal(screen.queryByRole('button', triggerLabel), null);
+});
+
+test('选择不再提示后，下次挂载也不显示其他服务端错误的提示', async (context) => {
+  const fail = failFeedbackRequests(context, 503);
+  const view = render(createElement(HubFeedbackHints));
+
+  await fail('MODEL_BUSY');
+  fireEvent.click(screen.getByRole('button', { name: '不再提示' }));
+  assert.equal(screen.queryByRole('button', triggerLabel), null);
+  assert.equal(window.localStorage.getItem('capability-hub:feedback-hints'), 'off');
+  view.unmount();
+  render(createElement(HubFeedbackHints));
+  await fail('SOURCE_UNAVAILABLE');
+  assert.equal(screen.queryByRole('button', triggerLabel), null);
 });

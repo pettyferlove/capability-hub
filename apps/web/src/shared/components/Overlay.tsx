@@ -28,6 +28,7 @@ export function Overlay({
   variant,
   size = 'default',
   loadingKey,
+  feedbackChrome,
 }: {
   open: boolean;
   /** 由外部持有开关状态；调用方负责同步路由或按钮状态。 */
@@ -41,6 +42,7 @@ export function Overlay({
   size?: 'default' | 'wide' | 'workspace';
   /** 内容切换时用它重置加载计时（如详情 slug），缺省回落到 `label`。 */
   loadingKey?: string;
+  feedbackChrome?: boolean;
 }) {
   const dialog = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
@@ -61,7 +63,11 @@ export function Overlay({
   return createPortal(
     <AnimatePresence>
       {open ? (
-        <div {...overlayProps} className="fixed inset-0 z-[70]">
+        <div
+          {...overlayProps}
+          data-feedback-chrome={feedbackChrome ? '' : undefined}
+          className="fixed inset-0 z-[70]"
+        >
           <motion.div
             className={
               variant === 'showcase'
