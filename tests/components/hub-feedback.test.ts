@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { userEvent, type UserEvent } from '@testing-library/user-event';
 import type { HubFeedbackCreateRequest } from '@capability-hub/contracts';
 import HubFeedbackAssistant from '../../apps/web/src/features/feedback/HubFeedbackAssistant.js';
+import { HubFeedbackFiles } from '../../apps/web/src/features/feedback/HubFeedbackFiles.js';
 import { HubFeedbackHints } from '../../apps/web/src/features/feedback/HubFeedbackHints.js';
 import { api } from '../../apps/web/src/shared/api/client.js';
 import { HubCtx, type HubState } from '../../apps/web/src/shared/context/HubContext.js';
@@ -213,4 +214,39 @@ test('选择不再提示后，下次挂载也不显示其他服务端错误的�
   render(createElement(HubFeedbackHints));
   await fail('SOURCE_UNAVAILABLE');
   assert.equal(screen.queryByRole('button', triggerLabel), null);
+});
+
+test('文本附件预览只在超过 200 行时提示截断，末尾换行不算一行', async (context) => {
+  let body = '';
+  context.mock.method(globalThis, 'fetch', () => Promise.resolve(new Response(body)));
+  for (const [text, summary] of [
+    ['记录\n'.repeat(200), /· 200 行$/],
+    ['记录\n'.repeat(201), /· 201 行，仅预览前 200 行$/],
+  ] as const) {
+    body = text;
+    render(
+      createElement(HubFeedbackFiles, {
+        files: [
+          {
+            id: 'report',
+            event_id: null,
+            kind: 'text',
+            media_type: 'text/plain',
+            name: 'report.md',
+            size: Buffer.byteLength(text),
+            width: null,
+            height: null,
+            removed_at: null,
+            can_remove: false,
+          },
+        ],
+        path: '/api/hub-feedback/1',
+        disabled: false,
+        onRemove: () => {},
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '查看文本' }));
+    assert.match((await screen.findByText(/\d+ 行/)).textContent ?? '', summary);
+    cleanup();
+  }
 });

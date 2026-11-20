@@ -1,6 +1,10 @@
 import type { HubFeedbackAttachmentResponse } from '@capability-hub/contracts/http';
 import { useEffect, useState } from 'react';
-import { apiErrorContext, hubFeedbackAttachmentText } from '../../shared/api/client.js';
+import {
+  apiErrorContext,
+  hubFeedbackAttachmentText,
+  hubFeedbackPreviewLines,
+} from '../../shared/api/client.js';
 import { DialogTitle } from '../../shared/components/DialogTitle.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Overlay } from '../../shared/components/Overlay.js';
@@ -9,14 +13,14 @@ import { Download } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import { monoStyles, subtleStyles, textBtnStyles } from '../../shared/styles/recipes.js';
 
-function TextPreview({ path }: { path: string }) {
-  const [result, setResult] = useState<{ text: string } | { error: unknown }>();
+function TextPreview({ path, name, size }: { path: string; name: string; size: number }) {
+  const [result, setResult] = useState<{ text: string; lines: number } | { error: unknown }>();
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     void hubFeedbackAttachmentText(path, controller.signal).then(
-      (text) => {
-        if (!controller.signal.aborted) setResult({ text });
+      (preview) => {
+        if (!controller.signal.aborted) setResult(preview);
       },
       (error: unknown) => {
         if (!controller.signal.aborted) setResult({ error });
@@ -26,29 +30,52 @@ function TextPreview({ path }: { path: string }) {
   }, [path, retry]);
   if (!result)
     return (
-      <p role="status" className={subtleStyles}>
+      <p role="status" className={cn(subtleStyles, 'p-4 sm:p-6')}>
         正在读取附件…
       </p>
     );
   if ('error' in result) {
     const error = result.error;
     return (
-      <ErrorState
-        message={error instanceof Error ? error.message : '无法读取附件'}
-        {...apiErrorContext(error)}
-        retry={() => {
-          setResult(undefined);
-          setRetry((current) => current + 1);
-        }}
-      />
+      <div className="p-4 sm:p-6">
+        <ErrorState
+          message={error instanceof Error ? error.message : '无法读取附件'}
+          {...apiErrorContext(error)}
+          retry={() => {
+            setResult(undefined);
+            setRetry((current) => current + 1);
+          }}
+        />
+      </div>
     );
   }
   return (
     <>
-      <p className={subtleStyles}>为便于查看，预览最多显示前 200 行。</p>
-      <pre className={cn(monoStyles, 'max-h-[60dvh] overflow-auto whitespace-pre-wrap text-label')}>
-        {result.text || '附件为空'}
-      </pre>
+      <div
+        role="region"
+        aria-label="附件内容"
+        tabIndex={0}
+        className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-width:thin]"
+      >
+        <pre
+          className={cn(
+            monoStyles,
+            'px-4 py-4 text-label leading-[1.8] whitespace-pre-wrap sm:px-6 sm:py-5',
+          )}
+        >
+          {result.text || '附件为空'}
+        </pre>
+      </div>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-line px-4 py-2.5 sm:px-6">
+        <p className={subtleStyles}>
+          {bytesLabel(size)} · {result.lines} 行
+          {result.lines > hubFeedbackPreviewLines && `，仅预览前 ${hubFeedbackPreviewLines} 行`}
+        </p>
+        <a download className={textBtnStyles} href={path} aria-label={'下载：' + name}>
+          <Download size={14} aria-hidden="true" />
+          下载
+        </a>
+      </div>
     </>
   );
 }
@@ -125,10 +152,12 @@ function FeedbackFile({
         open={preview && available}
         label={'附件预览：' + file.name}
         variant="showcase"
-        size={image ? 'workspace' : undefined}
+        size={image ? 'workspace' : 'wide'}
         onClose={() => setPreview(false)}
       >
-        <div className={image ? 'flex h-full flex-col [&_h2]:min-w-0 [&_h2]:truncate' : undefined}>
+        <div
+          className={cn('flex min-h-0 flex-col [&_h2]:min-w-0 [&_h2]:truncate', image && 'h-full')}
+        >
           <DialogTitle title={file.name} onClose={() => setPreview(false)} />
           {image ? (
             <div className="flex min-h-0 flex-1 items-center justify-center bg-page p-2 sm:p-4">
@@ -144,9 +173,7 @@ function FeedbackFile({
               )}
             </div>
           ) : preview && available ? (
-            <div className="space-y-3 p-4 sm:p-6">
-              <TextPreview path={path} />
-            </div>
+            <TextPreview path={path} name={file.name} size={file.size} />
           ) : null}
         </div>
       </Overlay>

@@ -254,11 +254,14 @@ export async function fileText(
   return readPreviewText(response);
 }
 
-/** 文本附件保留原始下载，只在处理详情里展示前 200 行。 */
+/** 文本附件预览保留的行数；完整内容仍通过下载获取。 */
+export const hubFeedbackPreviewLines = 200;
+
+/** 文本附件保留原始下载，只在处理详情里展示前若干行；`lines` 是附件总行数。 */
 export async function hubFeedbackAttachmentText(
   path: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<{ text: string; lines: number }> {
   const response = await fetchRequest(path, {
     credentials: 'same-origin',
     redirect: 'error',
@@ -266,10 +269,10 @@ export async function hubFeedbackAttachmentText(
   });
   observeResponse(response);
   if (!response.ok) throw await responseError(response, path);
-  return (await response.text())
-    .split(/\r\n?|\n/, 201)
-    .slice(0, 200)
-    .join('\n');
+  const lines = (await response.text()).split(/\r\n?|\n/);
+  // 末尾换行不构成新的一行，否则恰好满额的附件会被误报为截断。
+  if (lines.at(-1) === '') lines.pop();
+  return { text: lines.slice(0, hubFeedbackPreviewLines).join('\n'), lines: lines.length };
 }
 
 /** SSE 帧被解析后的形状；`data` 已按 JSON 解析，解析失败会中断整条流而不是跳过该帧。 */
