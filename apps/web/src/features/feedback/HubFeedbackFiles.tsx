@@ -181,6 +181,7 @@ function FeedbackFile({
   );
 }
 
+/** 预览与下载沿用调用方的反馈详情路径，避免混用提交者与处理队列的附件接口。 */
 export function HubFeedbackFiles({
   files,
   path,
