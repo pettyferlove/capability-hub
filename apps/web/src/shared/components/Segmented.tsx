@@ -25,12 +25,19 @@ export function Segmented<T extends string>({
   onChange,
   label,
   id,
+  className,
+  indicatorClassName,
+  itemClassName,
 }: {
   options: { id: T; label: ReactNode }[];
   value: T;
   onChange: (v: T) => void;
   label: string;
   id: string;
+  /** 容器、选中块与选项的外观覆盖，由调用方用 `cn` 合并。 */
+  className?: string;
+  indicatorClassName?: string;
+  itemClassName?: string;
 }) {
   const reduceMotion = useReducedMotion();
   const group = useRef<HTMLDivElement>(null);
@@ -79,6 +86,7 @@ export function Segmented<T extends string>({
       className={cn(
         segmentedStyles,
         'relative inline-flex max-w-full flex-wrap gap-1 rounded-full p-1',
+        className,
       )}
     >
       {highlight && (
@@ -94,6 +102,7 @@ export function Segmented<T extends string>({
           className={cn(
             segmentedIndicatorStyles,
             'pointer-events-none absolute left-0 top-0 rounded-full',
+            indicatorClassName,
           )}
           transition={highlight.animate && !reduceMotion ? contentTransition : { duration: 0 }}
         />
@@ -127,6 +136,7 @@ export function Segmented<T extends string>({
             className={cn(
               kfocusStyles,
               'relative inline-flex min-h-8 cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-[12px] leading-5 transition-colors',
+              itemClassName,
               on ? 'text-ink' : 'text-muted-ink hover:text-ink',
             )}
           >

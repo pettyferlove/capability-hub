@@ -18,6 +18,7 @@ export function executionResponse(row: ExecutionRecord) {
     created_at: row.created_at,
     updated_at: row.updated_at,
     operation_id: payload.operation_id,
+    ...(payload.execution_mode && { execution_mode: payload.execution_mode }),
     model_profile: payload.model_profile,
     revision: payload.revision,
     attempt: payload.attempt,

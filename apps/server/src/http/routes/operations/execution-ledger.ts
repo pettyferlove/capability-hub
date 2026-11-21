@@ -5,6 +5,7 @@ import type { Principal } from '@capability-hub/domain/identity';
 import type { HttpContext } from '../../context.js';
 import { canInspect, encodeCursor, type ExecutionCursor } from '../ai-execution-page.js';
 import { executionResponse } from '../ai-views.js';
+import { executionOwnerName } from '../../../operations/execution-owner.js';
 
 /** 跨用户筛选先复核每个任务的资源权限，再按可读记录分页。 */
 export async function executionLedgerPage(
@@ -32,9 +33,7 @@ export async function executionLedgerPage(
       if (query.operation_id && row.payload.operation_id !== query.operation_id) continue;
       if (!(await canInspect(hub, principal, row))) continue;
       const ownerName =
-        owners.get(row.owner_id) ??
-        (await hub.store.get('users', row.owner_id))?.display_name ??
-        row.owner_id;
+        owners.get(row.owner_id) ?? (await executionOwnerName(hub.store, row.owner_id));
       owners.set(row.owner_id, ownerName);
       const input = row.payload.input;
       const title =

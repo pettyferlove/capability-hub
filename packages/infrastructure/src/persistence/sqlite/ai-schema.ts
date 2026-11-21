@@ -11,6 +11,13 @@ import {
   type SQLiteTableExtraConfigValue,
 } from 'drizzle-orm/sqlite-core';
 
+/** 到期筛选与部分索引使用相同表达式，队列运行及终态执行不占用回收索引。 */
+export const executionExpiry = {
+  deadline: sql`(data ->> '$.payload.deadline')`,
+  waiting_input: sql`status = 'waiting_input'`,
+  inline: sql`status = 'running' AND (data ->> '$.payload.execution_mode') = 'inline'`,
+};
+
 function defineAiTable(name: AiTable) {
   return sqliteTable(
     name,
@@ -62,7 +69,15 @@ function defineAiTable(name: AiTable) {
           ]
         : []),
       ...(name === 'ai_executions'
-        ? []
+        ? [
+            // 状态前缀使没有 ANALYZE 统计的新库也按期限范围查找，而非扫描旧状态索引再排序。
+            index('ai_executions_waiting_due_idx')
+              .on(t.status, executionExpiry.deadline, t.id)
+              .where(executionExpiry.waiting_input),
+            index('ai_executions_inline_due_idx')
+              .on(t.status, executionExpiry.deadline, t.id)
+              .where(executionExpiry.inline),
+          ]
         : [foreignKey({ columns: [t.execution_id], foreignColumns: [ai_executions.id] })]),
     ],
   );

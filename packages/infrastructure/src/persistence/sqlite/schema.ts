@@ -842,6 +842,21 @@ export const hub_feedback_attachments = sqliteTable(
   ],
 );
 
+/** 后台开场提示的单例状态；不安装版本触发器，刷新它不让缓存失效。 */
+export const catalog_prompts = sqliteTable(
+  'catalog_prompts',
+  {
+    id: text('id').primaryKey().notNull(),
+    data: text('data', { mode: 'json' }).$type<RecordMap['catalog_prompts']>().notNull(),
+    next_refresh_at: feedbackInteger('next_refresh_at').notNull(),
+    active_job_id: feedbackText('active_job_id'),
+  },
+  (): SQLiteTableExtraConfigValue[] => [
+    check('catalog_prompts_data_check', feedbackDataCheck),
+    check('catalog_prompts_singleton', sql`id = 'catalog-prompts'`),
+  ],
+);
+
 export {
   ai_executions,
   ai_events,

@@ -9,6 +9,7 @@ import {
   AuditService,
   AuthenticationService,
   CatalogService,
+  CatalogDiscoveryService,
   CliLoginService,
   InstallTicketService,
   GitCredentialService,
@@ -33,6 +34,7 @@ import {
 import type { LogContext } from '@capability-hub/logging/server';
 import type { BlobStorage } from '@capability-hub/application/ports';
 import type { RecordStore } from '@capability-hub/application/ports';
+import { archive } from '@capability-hub/infrastructure/content/zip-archive';
 import { GitRepositoryAdapter } from '@capability-hub/infrastructure/git';
 import { scanIsolated } from '@capability-hub/infrastructure/scanning';
 import { secretFindings } from '@capability-hub/infrastructure/content/secret-detection';
@@ -45,6 +47,8 @@ import {
 } from '@capability-hub/infrastructure/security';
 import type { ServerConfig } from '../config/server-config.js';
 import { HubAiServices } from './ai-services.js';
+import { CatalogPromptService } from '../discovery/catalog-prompt-service.js';
+import { DiscoveryService } from '../discovery/discovery-service.js';
 
 /** HTTP、MCP 与 Worker 复用同一组应用用例。 */
 export class HubServices {
@@ -53,6 +57,8 @@ export class HubServices {
   readonly assetAccess: AssetAccessService;
   readonly assetManagement: AssetManagementQueryService;
   readonly catalog: CatalogService;
+  readonly prompts: CatalogPromptService;
+  readonly discovery: DiscoveryService;
   readonly content: AssetContentService;
   readonly feedback: AssetFeedbackService;
   readonly hubFeedback: HubFeedbackService;
@@ -138,7 +144,7 @@ export class HubServices {
       this.community,
       new SignedCatalogCursorCodec(config.secret),
     );
-    this.content = new AssetContentService(context, this.assetAccess);
+    this.content = new AssetContentService(context, this.assetAccess, archive);
     this.installTickets = new InstallTicketService(context, this.assetAccess, this.identity);
     this.mcpKeys = new McpSharedKeyService(
       context,
@@ -147,6 +153,35 @@ export class HubServices {
       new AesCredentialCipher(config.secret, 'mcp-header-v1'),
     );
     this.jobs = new JobQueue(store, config.workerConcurrency);
+    this.ai = new HubAiServices(
+      this.identity,
+      store,
+      this.jobs,
+      this.assetAccess,
+      this.content,
+      config,
+      new AgentEvidenceService(context, this.assetAccess, this.feedback),
+      this.publicationQueries,
+    );
+    const catalogDiscovery = new CatalogDiscoveryService(context, this.assetAccess, this.catalog);
+    this.prompts = new CatalogPromptService(
+      store,
+      catalogDiscovery,
+      this.jobs,
+      config,
+      logs,
+      this.ai.runtime,
+    );
+    this.discovery = new DiscoveryService(
+      store,
+      this.catalog,
+      catalogDiscovery,
+      this.prompts,
+      this.assetAccess,
+      config,
+      logs,
+      this.ai.runtime,
+    );
     this.intakeQueries = new IntakeQueryService(context, this.assetAccess);
     this.intakeProcessor = new IntakeProcessor(
       context,
@@ -194,16 +229,6 @@ export class HubServices {
       this.jobs,
       this.git,
       this.credentials,
-    );
-    this.ai = new HubAiServices(
-      this.identity,
-      store,
-      this.jobs,
-      this.assetAccess,
-      this.content,
-      config,
-      new AgentEvidenceService(context, this.assetAccess, this.feedback),
-      this.publicationQueries,
     );
   }
 }

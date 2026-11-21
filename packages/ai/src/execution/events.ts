@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { AiEvent, AiEventType, ExecutionRecord, Json } from '../core/records.js';
-import type { AiStore } from '../core/ports.js';
+import type { AiEvent, AiEventType, AiRecordMap, ExecutionRecord, Json } from '../core/records.js';
+import type { AiStore, AiTelemetry } from '../core/ports.js';
 import { type ExecutionScope } from './scope.js';
 import { AiError } from '../core/errors.js';
 
@@ -18,6 +18,7 @@ export class AiEventService {
     readonly store: AiStore,
     readonly scope: ExecutionScope,
     readonly maxBytes: number,
+    private readonly telemetry?: AiTelemetry,
   ) {}
   async append(
     execution: ExecutionRecord,
@@ -77,6 +78,37 @@ export class AiEventService {
     execution.updated_at = now;
     await this.store.put('ai_executions', execution);
     return event;
+  }
+  /** 步骤的完成事件和耗时 trace 随调用方事务一起提交。 */
+  async completeStep(execution: ExecutionRecord, name: string, started: number) {
+    const ended = Date.now();
+    const now = new Date(ended).toISOString();
+    const duration = ended - started;
+    await this.append(execution, 'step.completed', { step_id: name, duration_ms: duration });
+    return this.store.insert('ai_traces', {
+      id: randomUUID(),
+      owner_id: execution.owner_id,
+      execution_id: execution.id,
+      lookup_key: name,
+      status: 'completed',
+      position: started,
+      created_at: now,
+      updated_at: now,
+      payload: {
+        name,
+        parent_id: null,
+        duration_ms: duration,
+        attributes: { status: 'succeeded' },
+      },
+    });
+  }
+  notifyTrace({ execution_id, payload }: AiRecordMap['ai_traces']) {
+    const { name, duration_ms, attributes } = payload;
+    try {
+      this.telemetry?.record({ execution_id, name, duration_ms, attributes });
+    } catch {
+      // 外部遥测失败不改变已经提交的执行结果。
+    }
   }
   async emit(type: AiEventType, data: Record<string, Json>): Promise<void> {
     await this.scope.write(async (execution) => {

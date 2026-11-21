@@ -7,7 +7,7 @@
  * 其余必填字段直接展示，可选字段收进「参考资源与工具」折叠区；没有主输入的操作把全部字段放进输入框。
  * 示例提示词按 `operation_id` 提供，仅当存在主输入时可用。
  */
-import { useId, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { aiExecutionResponseSchema, type AiCatalogResponse } from '@capability-hub/contracts';
 import { useAiCommand } from '../../ai/use-ai-command.js';
 import { SelectField } from '../../../shared/components/SelectField.js';
@@ -83,17 +83,19 @@ export function NewExecution({
   /** 创建成功后回传执行 id，页面据此导航到 `?execution=`。 */
   onCreated: (id: string) => void;
 }) {
-  const [operation, setOperation] = useState(catalog.operations[0]?.id ?? '');
-  const [profile, setProfile] = useState(catalog.default_profile);
-  const [input, setInput] = useState(() =>
-    initialValues(catalog.operations[0]?.input_schema ?? {}),
+  const operations = useMemo(
+    () => catalog.operations.filter((item) => item.execution_mode !== 'inline'),
+    [catalog.operations],
   );
+  const [operation, setOperation] = useState(operations[0]?.id ?? '');
+  const [profile, setProfile] = useState(catalog.default_profile);
+  const [input, setInput] = useState(() => initialValues(operations[0]?.input_schema ?? {}));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const form = useRef<HTMLFormElement>(null);
   const command = useAiCommand();
   const modelLabelId = useId();
-  const definition = catalog.operations.find((item) => item.id === operation);
+  const definition = operations.find((item) => item.id === operation);
   const fields = Object.keys(jsonObject(jsonObject(definition?.input_schema).properties));
   const primary = fields.includes('prompt')
     ? 'prompt'
@@ -153,7 +155,7 @@ export function NewExecution({
             选择一位 Agent 并描述目标，过程中的思考、工具调用与需要你决定的节点都会实时呈现。
           </p>
           <div className="mt-6 grid gap-2.5 sm:grid-cols-2" role="group" aria-label="选择任务类型">
-            {catalog.operations.map((item) => {
+            {operations.map((item) => {
               const meta = operationMeta[item.id];
               const Icon = meta?.Icon ?? Bot;
               const pressed = operation === item.id;

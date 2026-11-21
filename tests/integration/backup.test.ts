@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { readFile, unlink, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { sha256 } from '@capability-hub/domain/canonical';
 import type {
   HubFeedbackAttachmentRecord,
   HubFeedbackEventRecord,
@@ -24,6 +25,7 @@ import {
   type TestHub,
 } from '../support/application.js';
 import { createSqliteStore } from '../support/store.js';
+import { catalogPromptState } from '../support/migrations.js';
 import { assertFrozenEvidence } from '../support/evidence.js';
 
 const execute = promisify(execFile);
@@ -178,6 +180,41 @@ test('备份完整发布图后可恢复到空数据库，审计与固定内容�
   for (const reference of references) assert(await fixture.blobs.exists(reference));
   await assert.rejects(() => restoreStore(restored, snapshot), /必须为空/);
   assert.deepEqual(await snapshotStore(restored), snapshot);
+});
+
+test('提示单例随快照恢复', async (context) => {
+  const { store: source } = await createSqliteStore(context);
+  const state = await source.insert('catalog_prompts', catalogPromptState(1_000));
+  const snapshot = parseSnapshot(JSON.parse(JSON.stringify(await snapshotStore(source))));
+  const { store: restored } = await createSqliteStore(context);
+  await restoreStore(restored, snapshot);
+  assert.deepEqual(await restored.get('catalog_prompts', state.id), state);
+});
+
+test('仅旧版清单可导入没有提示表的完整发布快照，归档对象仍可复查', async (context) => {
+  const fixture = await createTestHub(context);
+  const { intake } = await publishSkill(fixture);
+  const path = join(fixture.directory, 'previous-backup');
+  await runOperation('backup', fixture.directory, path);
+  const recordsPath = join(path, 'records.json');
+  const manifestPath = join(path, 'backup.json');
+  const tables = JSON.parse(await readFile(recordsPath, 'utf8')) as Record<string, unknown>;
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>;
+  delete tables.catalog_prompts;
+  const records = JSON.stringify(tables);
+  await writeFile(recordsPath, records);
+  const checked = { ...manifest, records_sha256: sha256(records) };
+  const { store, directory } = await createSqliteStore(context);
+  await writeFile(manifestPath, JSON.stringify(checked));
+  await assert.rejects(runOperation('restore-import', directory, path), /备份记录格式无效/);
+  await writeFile(manifestPath, JSON.stringify({ ...checked, schema: 1 }));
+  await runOperation('restore-import', directory, path);
+  assert.deepEqual(
+    await store.get('versions', intake.version_id),
+    await fixture.store.get('versions', intake.version_id),
+  );
+  assert.deepEqual(await store.all('catalog_prompts'), []);
+  await runOperation('restore-check', directory);
 });
 
 test('反馈附件随备份复制和恢复，恢复检查拒绝损坏或缺失的对象', async (context) => {

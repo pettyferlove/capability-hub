@@ -8,5 +8,7 @@ export type * from './job.js';
 export type * from './audit.js';
 export type * from './hub-feedback.js';
 export type * from './idempotency.js';
+export type * from './catalog-prompt.js';
+export { catalogPromptStateId, isCatalogPromptText } from './catalog-prompt.js';
 export type * from './record-map.js';
 export { parseRecord } from './validation.js';

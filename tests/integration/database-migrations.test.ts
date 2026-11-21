@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import {
+  assertCatalogPromptMigration,
+  assertExecutionExpiryMigration,
   assertRecommendationMigration,
   assertUnpublishedDeletionMigration,
   migrationRuntime,
@@ -92,6 +94,52 @@ test('SQLite 升级按用户和资源合并历史推荐，保留首次推荐', a
       db.close();
     }
   });
+});
+
+test('SQLite 从 0006 历史升级后提供提示表，单例约束拒绝第二行', async (context) => {
+  const runtime = await migrationRuntime(context, 'sqlite');
+  const path = join(runtime.directory, 'hub.sqlite');
+  await assertCatalogPromptMigration(runtime, { driver: 'sqlite', path }, async (id, data) => {
+    const db = new DatabaseSync(path);
+    try {
+      db.prepare('INSERT INTO catalog_prompts (id, data) VALUES (?, ?)').run(id, data);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+test('SQLite 从 0007 升级后按期限及 ID 回收已有执行，只包含已到期的等待与内联执行', async (context) => {
+  const runtime = await migrationRuntime(context, 'sqlite');
+  const path = join(runtime.directory, 'hub.sqlite');
+  const prepared = context.mock.method(DatabaseSync.prototype, 'prepare');
+  await assertExecutionExpiryMigration(context, runtime, {
+    driver: 'sqlite',
+    path,
+  });
+  const statements = new Set(prepared.mock.calls.map(({ arguments: [statement] }) => statement));
+  prepared.mock.restore();
+  const db = new DatabaseSync(path);
+  try {
+    const plans = [...statements]
+      .filter((statement) => /^select\b/i.test(statement) && /deadline/.test(statement))
+      .flatMap((statement) =>
+        db
+          .prepare(`EXPLAIN QUERY PLAN ${statement}`)
+          .all(1, 100)
+          .map((row) => String(row.detail)),
+      );
+    for (const kind of ['waiting', 'inline'])
+      assert(
+        plans.some((detail) =>
+          detail.includes(`ai_executions_${kind}_due_idx (status=? AND <expr><?)`),
+        ),
+        plans.join('\n'),
+      );
+    assert(!plans.some((detail) => detail.includes('TEMP B-TREE')), plans.join('\n'));
+  } finally {
+    db.close();
+  }
 });
 
 test('SQLite 迁移首次并发打开只执行一次，后续迁移保留已有记录，重复打开不重放', async (context) => {

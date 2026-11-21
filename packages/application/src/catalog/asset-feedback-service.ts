@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { canonical, digest } from '@capability-hub/domain/canonical';
 import { fail, notFound } from '@capability-hub/domain/errors';
 import type { Principal } from '@capability-hub/domain/identity';
-import type { AssetFeedbackRecord, VersionRecord } from '@capability-hub/domain/models';
+import type {
+  AssetFeedbackRecord,
+  AssetRecord,
+  VersionRecord,
+} from '@capability-hub/domain/models';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
 import type { AssetFeedbackCommand, AssetFeedbackUpdateCommand } from './commands.js';
@@ -16,22 +20,33 @@ export class AssetFeedbackService {
     private readonly onReported?: (version: VersionRecord, feedbackId: string) => Promise<void>,
   ) {}
 
-  private async present(record: AssetFeedbackRecord, principal: Principal) {
+  private async present(
+    record: AssetFeedbackRecord,
+    principal: Principal,
+    asset: AssetRecord,
+    currentReadable?: boolean,
+  ) {
     const { request_key: _key, request_hash: _hash, ...feedback } = record;
-    const asset = await this.access.getAsset(record.asset_id);
     const version = await this.context.store.get('versions', record.version_id);
     const fixed = await this.context.store.get('versions', record.fixed_version_id);
     const canManage = this.access.canMaintain(principal, asset);
     // 修复版本可能仍是私有候选，普通提交者只能看到有权读取的版本。
     const visibleFixed =
       fixed && (canManage || (await this.access.canRead(principal, asset, fixed)));
+    const pinVersion =
+      !(currentReadable ?? (await this.access.canViewCatalog(principal, asset))) &&
+      version &&
+      (!canManage || (await this.access.canRead(principal, asset, version)));
+    const query = new URLSearchParams();
+    if (pinVersion) query.set('version_id', record.version_id);
+    query.set('feedback', record.id);
     return {
       ...feedback,
       fixed_version_id: visibleFixed ? fixed.id : null,
       version_label: version!.version_label,
       fixed_version_label: visibleFixed ? fixed.version_label : null,
       can_manage: canManage,
-      detail_url: `/asset/${encodeURIComponent(asset.slug)}?feedback=${record.id}`,
+      detail_url: `/asset/${encodeURIComponent(asset.slug)}?${query}`,
     };
   }
 
@@ -51,12 +66,13 @@ export class AssetFeedbackService {
       if (!idempotency_key || idempotency_key.length > 200)
         fail(400, 'IDEMPOTENCY_REQUIRED', '需要有效幂等键');
       const hash = digest(canonical(content));
+      const asset = await this.access.getAsset(version.asset_id);
       const previous = await this.context.store.where('asset_feedback', 'submitted_by', current.id);
       const existing = previous.find((item) => item.request_key === idempotency_key);
       if (existing) {
         if (existing.request_hash !== hash)
           fail(409, 'IDEMPOTENCY_CONFLICT', '幂等键已用于不同反馈');
-        return this.present(existing, current);
+        return this.present(existing, current, asset);
       }
       if (
         previous.filter((item) => Date.parse(item.created_at) > Date.now() - 3600000).length >= 20
@@ -80,7 +96,7 @@ export class AssetFeedbackService {
       });
       await this.context.store.audit(current.id, 'asset.feedback_submitted', version.id);
       await this.onReported?.(version, record.id);
-      return this.present(record, current);
+      return this.present(record, current, asset);
     });
   }
 
@@ -97,19 +113,21 @@ export class AssetFeedbackService {
       if (record.submitted_by !== current.id) notFound();
       await this.access.requireReadableVersion(current, record.version_id);
     }
-    return this.present(record, current);
+    return this.present(record, current, asset);
   }
 
   /**
-   * 维护者可看该资产全部反馈；其他人先要求资产已发布且可读（404），再看得到本人
-   * 且对应版本仍可读的条目。分页为 `page`/`limit`，按创建时间与 id 倒序，
+   * 维护者可看该资产全部反馈；其他人须至少有一个可读发布，只列出本人且对应版本
+   * 仍可读的条目。分页为 `page`/`limit`，按创建时间与 id 倒序，
    * `total` 是过滤后的总数而非本页条数；`status` 过滤在可见性收敛前生效。
    */
   async list(principal: Principal, assetId: string, query: AssetFeedbackQuery) {
     const current = await this.context.identity.principal(principal.id);
     const asset = await this.access.getAsset(assetId);
     const canManage = this.access.canMaintain(current, asset);
-    if (!canManage) await this.access.requirePublishedAsset(current, asset.id);
+    const latest = await this.access.latestReadablePublication(current, asset);
+    if (!canManage && !latest) notFound();
+    const currentReadable = latest !== null && latest.release.id === asset.current_release_id;
     const records = await this.context.store.where('asset_feedback', 'asset_id', asset.id);
     const visible: AssetFeedbackRecord[] = [];
     for (const record of records) {
@@ -126,7 +144,7 @@ export class AssetFeedbackService {
       items: await Promise.all(
         visible
           .slice((query.page - 1) * query.limit, query.page * query.limit)
-          .map((item) => this.present(item, current)),
+          .map((item) => this.present(item, current, asset, currentReadable)),
       ),
       total: visible.length,
       page: query.page,
@@ -171,7 +189,7 @@ export class AssetFeedbackService {
         undefined,
         { status: input.status },
       );
-      return this.present(updated, current);
+      return this.present(updated, current, asset);
     });
   }
 }

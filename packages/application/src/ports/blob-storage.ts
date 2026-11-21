@@ -7,7 +7,7 @@ export interface BlobStorage {
    */
   put(bytes: Buffer): Promise<string>;
   /** 摘要缺失或内容损坏必须抛错（503 `BLOB_MISSING`/`BLOB_CORRUPT`），不能返回空内容。 */
-  read(hash: string): Promise<Buffer>;
+  read(hash: string, signal?: AbortSignal): Promise<Buffer>;
   /** 只判断是否存在，不做完整性校验，不能替代 `read`。 */
   exists(hash: string): Promise<boolean>;
   health(): Promise<void>;

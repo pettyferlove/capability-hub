@@ -5,8 +5,11 @@ import {
   catalogSearchQuerySchema,
   keywordSuggestionsQuerySchema,
   assetRecommendationRequestSchema,
+  skillBundleQuerySchema,
 } from '@capability-hub/contracts';
+import { fail, HubError } from '@capability-hub/domain/errors';
 import type { Express } from 'express';
+import { finished } from 'node:stream/promises';
 import { z } from 'zod';
 import { createClientConfiguration } from '../../integrations/client-config.js';
 import type { HttpContext } from '../context.js';
@@ -15,6 +18,47 @@ import { withRevision as etag, jsonRoute as send } from '../response.js';
 /** 读取入口解析可选身份，应用服务核对发布受众。 */
 export function registerCatalogRoutes(app: Express, { hub, security }: HttpContext): void {
   const read = security.optionalAuthenticate;
+  const bundlePath = '/api/catalog/skill-bundle';
+  let activeBundles = 0;
+  app.head(bundlePath, (_req, res) => {
+    res.set('Allow', 'GET').status(405).end();
+  });
+  app.get(bundlePath, read, async (req, res) => {
+    const { signal } = req;
+    if (signal.aborted || res.destroyed) return;
+    const { version_id } = skillBundleQuerySchema.parse(req.query);
+    // 取消不会提前归还名额：已开始的读取、压缩或响应写出须先收尾。
+    if (activeBundles >= 2)
+      throw new HubError(429, 'SKILL_BUNDLE_BUSY', '同时下载的合包过多，请稍后再试', {}, true);
+    activeBundles++;
+    try {
+      const bytes = await hub.content.getSkillBundle(
+        res.locals.viewer ?? null,
+        version_id,
+        async () => {
+          if (!res.locals.session) return null;
+          const session = await security.session(req);
+          signal.throwIfAborted();
+          if (!session || session.id !== res.locals.session.id)
+            fail(401, 'UNAUTHENTICATED', '会话已失效，请重新登录');
+          return await hub.identity.principal(session.user_id);
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      res.set({
+        'Content-Type': 'application/zip',
+        'Content-Disposition': 'attachment; filename="capability-hub-skills.zip"',
+        'Content-Length': String(bytes.length),
+      });
+      res.end(bytes);
+      await finished(res, { cleanup: true });
+    } catch (error) {
+      if (!signal.aborted && !res.destroyed) throw error;
+    } finally {
+      activeBundles--;
+    }
+  });
   app.get(
     '/api/assets/keywords',
     read,
@@ -66,6 +110,20 @@ export function registerCatalogRoutes(app: Express, { hub, security }: HttpConte
           String(req.params.id),
           req.query.latest_readable === '1',
         ),
+    ),
+  );
+  app.get(
+    '/api/assets/:id/versions/:versionId',
+    read,
+    send(async (req, res) =>
+      etag(
+        res,
+        await hub.catalog.getVersionById(
+          res.locals.viewer ?? null,
+          String(req.params.id),
+          String(req.params.versionId),
+        ),
+      ),
     ),
   );
   app.get(

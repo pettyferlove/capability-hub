@@ -1,6 +1,6 @@
 /**
  * 资产详情的主体内容：概览、文件清单、使用与安装、版本历史、问题与建议五个互斥视图。
- * 依赖 `GET /api/assets/{slug}/versions` 与 {@link useSnapshotFile} 读取当前版本文件；
+ * 依赖 `GET /api/assets/{slug}/versions` 与 {@link useSnapshotFile} 读取视图展示的发布文件；
  * 历史位置由 {@link detailNavigation} 维护，滚动位置与焦点在切换时按 key 恢复。
  */
 import { VersionLabel } from '../../shared/components/VersionLabel.js';
@@ -26,7 +26,9 @@ import {
   tagTealStyles,
 } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
-import type { AssetResponse, VersionHistoryResponse } from '@capability-hub/contracts/http';
+import type { VersionHistoryResponse } from '@capability-hub/contracts/http';
+import type { AssetDrawerTab } from '../../shared/navigation/history-route.js';
+import type { AssetView } from './asset-view.js';
 import {
   ArrowLeft,
   ArrowRight,
@@ -70,11 +72,15 @@ function scrollDetail(start: HTMLDivElement | null, position?: number) {
     scroller.scrollTop + start.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
 }
 
-/** 详情内容区：标签切换与文件跳转共用一条历史栈，后退/前进在同一面板内完成。 */
-export function AssetContent({ asset }: { asset: AssetResponse }) {
+/**
+ * 详情内容区：标签切换与文件跳转共用一条历史栈，后退/前进在同一面板内完成。
+ * 文件、下载、反馈与安装都锁定 `view.release`；初始页签只取抽屉参数 `tab`。
+ */
+export function AssetContent({ view: assetView, tab }: { view: AssetView; tab?: AssetDrawerTab }) {
   const { refresh, reload } = useHub();
+  const { asset, release } = assetView;
   const entry = asset.kind === 'skill' ? 'SKILL.md' : 'server.json';
-  const versionId = asset.current_release.version_id;
+  const versionId = release.version_id;
   const hasReadme = asset.kind === 'skill' && asset.files.some((file) => file.path === 'README.md');
   const readme = useSnapshotFile(versionId, hasReadme ? 'README.md' : null, refresh);
   const readmeBody = readme.text === undefined ? undefined : markdownBody(readme.text);
@@ -86,17 +92,11 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
   const overview = showReadme ? readme : entryFile;
   const overviewPath = showReadme ? 'README.md' : entry;
   const history = useQuery<VersionHistoryResponse[]>(
-    '/api/assets/' + encodeURIComponent(asset.slug) + '/versions',
+    `/api/assets/${encodeURIComponent(asset.slug)}/versions${assetView.current ? '' : '?latest_readable=1'}`,
     refresh,
   );
-  const params = new URLSearchParams(window.location.search);
   const [navigation, dispatch] = useReducer(detailNavigation, {
-    entries: [
-      {
-        tab: params.has('feedback') || params.get('tab') === 'feedback' ? 'feedback' : 'overview',
-        path: entry,
-      },
-    ],
+    entries: [{ tab: tab ?? 'overview', path: entry }],
     index: 0,
   });
   const view = navigation.entries[navigation.index];
@@ -168,7 +168,7 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
           <Terminal size={16} />
           使用与安装
         </button>
-        <a className={btnStyles} href={`/api/versions/${asset.current_release.version_id}/archive`}>
+        <a className={btnStyles} href={`/api/versions/${versionId}/archive`}>
           <Download size={16} />
           下载固定版本
         </a>
@@ -185,7 +185,12 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
           {bytesLabel(asset.files.reduce((size, file) => size + file.size, 0))}
         </span>
       </div>
-      <AssetCommunity key={asset.current_release.release_id} asset={asset} />
+      {assetView.current && (
+        <AssetCommunity
+          key={assetView.current.current_release.release_id}
+          asset={assetView.current}
+        />
+      )}
       <div ref={contentStart} aria-hidden="true" />
       <div className={detailContentNavigationStyles}>
         <PageTabs
@@ -288,7 +293,7 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
         </div>
         <div hidden={view.tab !== 'files'}>
           <SnapshotFileBrowser
-            asset={asset}
+            view={assetView}
             active={view.tab === 'files'}
             path={view.tab === 'files' ? view.path : lastFile}
             anchor={view.tab === 'files' ? view.anchor : undefined}
@@ -298,14 +303,14 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
           />
         </div>
         <div hidden={view.tab !== 'installation'}>
-          {asset.current_release.has_scripts && (
+          {release.has_scripts && (
             <Message>此版本含可执行脚本，建议安装前在「文件清单」中审阅。</Message>
           )}
-          <ResourceInstallation asset={asset} origin={location.origin} />
+          <ResourceInstallation view={assetView} origin={location.origin} />
         </div>
         <div hidden={view.tab !== 'feedback'}>
           {navigation.entries.some((location) => location.tab === 'feedback') && (
-            <AssetFeedback assetId={asset.asset_id} versionId={asset.current_release.version_id} />
+            <AssetFeedback assetId={asset.asset_id} versionId={versionId} />
           )}
         </div>
         <div hidden={view.tab !== 'versions'}>
@@ -329,8 +334,12 @@ export function AssetContent({ asset }: { asset: AssetResponse }) {
                       {version.availability ? ` · ${stateLabel(version.availability)}` : ''}
                     </small>
                   </div>
-                  {version.version_id === asset.current_release.version_id && (
-                    <span className={cn(tagStyles, tagTealStyles)}>当前版本</span>
+                  {version.version_id === assetView.latestVersionId ? (
+                    <span className={cn(tagStyles, tagTealStyles)}>
+                      {assetView.current ? '当前版本' : '最新可读版本'}
+                    </span>
+                  ) : (
+                    version.version_id === versionId && <span className={tagStyles}>正在查看</span>
                   )}
                   <a
                     aria-label={'下载版本 ' + shortVersion(version.version_label, true)}

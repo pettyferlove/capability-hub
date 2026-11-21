@@ -162,10 +162,12 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
                   report.execution.operation_id + ' / ' + report.workflow.definition_version,
                 ],
                 ['运行 ID', report.workflow.run_id],
-                [
-                  '调度 / 人工继续',
-                  report.execution.attempt + ' / ' + report.execution.continuation,
-                ],
+                report.execution.execution_mode === 'inline'
+                  ? ['执行方式', '业务流程自动触发 · 仅记录运行信息']
+                  : [
+                      '调度 / 人工继续',
+                      report.execution.attempt + ' / ' + report.execution.continuation,
+                    ],
                 ['快照', new Date(report.captured_at).toLocaleString() + ' · #' + report.watermark],
               ].map(([label, value]) => (
                 <div key={label}>

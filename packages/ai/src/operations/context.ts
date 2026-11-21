@@ -118,11 +118,10 @@ export class OperationContext {
         work,
       );
       await this.authorize('execute');
-      await this.events.emit('step.completed', {
-        step_id: name,
-        duration_ms: Date.now() - started,
-      });
-      await this.trace(name, started, { status: 'succeeded' });
+      const trace = await this.scope.write((execution) =>
+        this.events.completeStep(execution, name, started),
+      );
+      this.events.notifyTrace(trace);
       return output;
     } catch (error) {
       const failure = aiFailure(error);
@@ -448,32 +447,5 @@ export class OperationContext {
     }
     await this.artifact(`evaluation:${name}`, scores);
     return scores;
-  }
-  private async trace(name: string, started: number, attributes: Record<string, Json>) {
-    const duration = Date.now() - started;
-    await this.scope.write(async () => {
-      const now = new Date().toISOString();
-      await this.scope.store.insert('ai_traces', {
-        id: randomUUID(),
-        owner_id: this.ownerId,
-        execution_id: this.executionId,
-        lookup_key: name,
-        status: 'completed',
-        position: started,
-        created_at: now,
-        updated_at: now,
-        payload: { name, parent_id: null, duration_ms: duration, attributes },
-      });
-    });
-    try {
-      this.dependencies.telemetry?.record({
-        execution_id: this.executionId,
-        name,
-        duration_ms: duration,
-        attributes,
-      });
-    } catch {
-      // 外部遥测故障不改变已经持久化的执行结果；本地 trace 仍可用于排查。
-    }
   }
 }

@@ -39,6 +39,12 @@ export interface TokenUsageBucket {
 export interface AiQueries {
   get<K extends AiTable>(table: K, id: string): Promise<AiRecordMap[K] | undefined>;
   list<K extends AiTable>(table: K, query: AiRecordQuery): Promise<AiRecordMap[K][]>;
+  /** 只取对应状态中 deadline ≤ through 的执行 ID，按 (deadline, id) 升序截取。 */
+  listDueExecutionIds(
+    kind: 'waiting_input' | 'inline',
+    through: number,
+    limit: number,
+  ): Promise<string[]>;
   summarizeExecutions(): Promise<
     {
       operation_id: string;

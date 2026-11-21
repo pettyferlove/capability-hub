@@ -12,14 +12,27 @@ import {
   type AiRecordMap,
   type Json,
 } from '../core/records.js';
-import { aiConfigurationSchema, digest, profileFor, type AiConfiguration } from '../core/config.js';
+import {
+  aiConfigurationSchema,
+  digest,
+  profileFor,
+  type AiConfiguration,
+  type ModelProfile,
+} from '../core/config.js';
 import { AiError, aiFailure } from '../core/errors.js';
 import { ExecutionScope } from './scope.js';
 import { AiEventService } from './events.js';
+import { abandonModelCalls } from './model-calls.js';
+import { finishInlineExecution, runInlineExecution, type InlineExecution } from './inline.js';
 import { OperationContext, type RuntimeDependencies } from '../operations/context.js';
 import { type OperationRegistry, type OperationDefinition } from '../operations/registry.js';
 import { ScopedWorkflowsStorage } from '../storage/workflows.js';
 import { ScopedMemoryStorage } from '../storage/memory.js';
+
+function assertQueuedAccess(execution: ExecutionRecord) {
+  if (execution.payload.execution_mode === 'inline')
+    throw new AiError('AI_FORBIDDEN', '内联操作只能由宿主控制');
+}
 
 /**
  * AI 执行的核心编排：提交在一个事务里完成授权、输入校验、预算检查与记录落库，
@@ -27,7 +40,6 @@ import { ScopedMemoryStorage } from '../storage/memory.js';
  * 本轮使用的定义摘要与模型摘要写进记录，恢复时摘要不符即判为 `AI_RECOVERY_UNCERTAIN`。
  */
 export class AiRuntime {
-  private expirationCursor: { id: string; position: number } | undefined;
   readonly scope: ExecutionScope;
   readonly events: AiEventService;
   readonly config: AiConfiguration;
@@ -40,7 +52,12 @@ export class AiRuntime {
   ) {
     this.config = aiConfigurationSchema.parse(config);
     this.scope = new ExecutionScope(store, queue);
-    this.events = new AiEventService(store, this.scope, this.config.max_event_bytes);
+    this.events = new AiEventService(
+      store,
+      this.scope,
+      this.config.max_event_bytes,
+      dependencies.telemetry,
+    );
   }
   catalog() {
     return {
@@ -54,52 +71,94 @@ export class AiRuntime {
       })),
     };
   }
+  private createExecution(
+    id: string,
+    ownerId: string,
+    definition: OperationDefinition,
+    profile: ModelProfile,
+    input: Json,
+    deadline: number,
+  ): ExecutionRecord {
+    const position = Date.now();
+    const now = new Date(position).toISOString();
+    const inline = definition.execution_mode === 'inline';
+    return {
+      id,
+      owner_id: ownerId,
+      execution_id: id,
+      lookup_key: definition.id,
+      status: inline ? 'running' : 'queued',
+      position,
+      created_at: now,
+      updated_at: now,
+      payload: {
+        operation_id: definition.id,
+        ...(inline && { execution_mode: 'inline' }),
+        definition_version: definition.version,
+        definition_digest: this.registry.describe(definition).digest,
+        model_profile: profile.id,
+        model_digest: digest(profile),
+        input,
+        result: null,
+        revision: 1,
+        attempt: inline ? 1 : 0,
+        continuation: 0,
+        dispatch_id: null,
+        native_run_id: inline ? id : randomUUID(),
+        native_workflow_id: definition.id,
+        deadline,
+        last_seq: 0,
+        event_bytes: 0,
+        message_text: '',
+        message_blocks: [],
+        error: null,
+        usage: { requests: 0, tools: 0, input_tokens: 0, output_tokens: 0, unknown_requests: 0 },
+      },
+    };
+  }
+  async runInline<T>(
+    options: { operationId: string; ownerId: string; profileId: string; signal: AbortSignal },
+    work: (run: InlineExecution) => Promise<T>,
+    onSuccess?: (result: T) => Promise<void>,
+  ): Promise<T> {
+    const { operationId, ownerId, profileId, signal } = options;
+    const definition = this.registry.get(operationId);
+    if (definition.execution_mode !== 'inline')
+      throw new AiError('AI_CONFIGURATION', '该操作不能由宿主内联执行');
+    const profile = profileFor(this.config, profileId);
+    return runInlineExecution(
+      this.events,
+      this.config,
+      profile,
+      this.dependencies.credentials,
+      operationId,
+      signal,
+      (id, deadline) => this.createExecution(id, ownerId, definition, profile, {}, deadline),
+      work,
+      onSuccess,
+    );
+  }
   async submit(ownerId: string, operationId: string, input: unknown, profileId?: string) {
     return this.store.tx(async () => {
       await this.dependencies.authorization.authorize(ownerId, 'submit');
       const definition = this.registry.get(operationId);
-      const manifest = this.registry.describe(definition);
+      if (definition.execution_mode === 'inline')
+        throw new AiError('AI_FORBIDDEN', '内联操作只能由宿主发起');
       const profile = profileFor(this.config, profileId ?? this.config.default_profile);
       const parsed = asJson(definition.input.parse(input));
       if (Buffer.byteLength(JSON.stringify(parsed)) > 65536)
         throw new AiError('AI_BUDGET_EXCEEDED', '操作输入超过限制');
-      const id = randomUUID();
-      const now = new Date().toISOString();
-      const execution: ExecutionRecord = {
-        id,
-        owner_id: ownerId,
-        execution_id: id,
-        lookup_key: operationId,
-        status: 'queued',
-        position: Date.now(),
-        created_at: now,
-        updated_at: now,
-        payload: {
-          operation_id: operationId,
-          definition_version: definition.version,
-          definition_digest: manifest.digest,
-          model_profile: profile.id,
-          model_digest: digest(profile),
-          input: parsed,
-          result: null,
-          revision: 1,
-          attempt: 0,
-          continuation: 0,
-          dispatch_id: null,
-          native_run_id: randomUUID(),
-          native_workflow_id: operationId,
-          deadline: Date.now() + this.config.execution_timeout_ms,
-          last_seq: 0,
-          event_bytes: 0,
-          message_text: '',
-          message_blocks: [],
-          error: null,
-          usage: { requests: 0, tools: 0, input_tokens: 0, output_tokens: 0, unknown_requests: 0 },
-        },
-      };
+      const execution = this.createExecution(
+        randomUUID(),
+        ownerId,
+        definition,
+        profile,
+        parsed,
+        Date.now() + this.config.execution_timeout_ms,
+      );
       await this.dependencies.authorization.authorize(ownerId, 'submit', execution);
       await this.store.insert('ai_executions', execution);
-      execution.payload.dispatch_id = await this.queue.enqueue(id);
+      execution.payload.dispatch_id = await this.queue.enqueue(execution.id);
       await this.events.append(execution, 'execution.queued', { operation_id: operationId });
       return execution;
     });
@@ -150,6 +209,7 @@ export class AiRuntime {
     return this.store.tx(async () => {
       const execution = await this.get(id);
       await this.dependencies.authorization.authorize(actor, 'cancel', execution);
+      assertQueuedAccess(execution);
       this.revision(execution.payload.revision, revision);
       if (terminalStatuses.has(execution.status)) throw new AiError('AI_CONFLICT', '执行已经结束');
       if (execution.payload.dispatch_id) await this.queue.cancel(execution.payload.dispatch_id);
@@ -170,6 +230,7 @@ export class AiRuntime {
     return this.store.tx(async () => {
       const execution = await this.get(id);
       await this.dependencies.authorization.authorize(actor, 'respond', execution, { response });
+      assertQueuedAccess(execution);
       const interaction = await this.store.get('ai_interactions', interactionId);
       if (!interaction || interaction.execution_id !== id)
         throw new AiError('AI_NOT_FOUND', '交互不存在');
@@ -221,6 +282,7 @@ export class AiRuntime {
   }
   async process(lease: ExecutionLease, signal: AbortSignal): Promise<void> {
     const execution = await this.get(lease.execution_id);
+    assertQueuedAccess(execution);
     const controller = new AbortController();
     const forward = () =>
       controller.abort(
@@ -256,22 +318,15 @@ export class AiRuntime {
               current.status = 'running';
               current.payload.attempt++;
               current.payload.revision++;
-              // 崩溃前已预留但未结算的网络请求不能被假定为未发生。
-              for (const call of await this.store.list('ai_calls', {
-                execution_id: current.id,
-                status: 'pending',
-                limit: 100,
-              })) {
-                call.status = 'unknown';
-                current.payload.usage.unknown_requests++;
-                await this.store.put('ai_calls', call);
-              }
+              await abandonModelCalls(this.store, current);
               await this.events.append(current, 'execution.started', {});
             });
             controller.signal.throwIfAborted();
             const current = await this.get(execution.id);
             const definition = this.registry.get(current.payload.operation_id);
             this.assertDefinition(current, definition);
+            if (definition.execution_mode === 'inline')
+              throw new AiError('AI_RECOVERY_UNCERTAIN', '原工作流定义不可用');
             await this.dependencies.authorization.authorize(current.owner_id, 'execute', current);
             const storage = new MastraCompositeStore({
               id: `execution-${current.id}`,
@@ -483,40 +538,40 @@ export class AiRuntime {
       await this.queue.finish(this.scope.current().lease, 'succeeded');
     });
   }
-  async expireWaiting(): Promise<void> {
-    const rows = await this.store.list('ai_executions', {
-      status: 'waiting_input',
-      after: this.expirationCursor,
-      limit: 100,
-    });
-    for (const row of rows)
-      if (row.payload.deadline <= Date.now())
-        await this.store.tx(async () => {
-          const current = await this.get(row.id);
-          if (current.status !== 'waiting_input' || current.payload.deadline > Date.now()) return;
-          current.status = 'timed_out';
-          current.payload.revision++;
-          current.payload.error = {
-            code: 'AI_DEADLINE_EXCEEDED',
-            message: '等待回答已超过执行期限',
-            retryable: false,
-          };
-          for (const interaction of await this.store.list('ai_interactions', {
-            execution_id: row.id,
-            status: 'pending',
-            limit: 100,
-          })) {
-            interaction.status = 'cancelled';
-            interaction.payload.revision++;
-            await this.store.put('ai_interactions', interaction);
-          }
-          await this.events.append(current, 'execution.timed_out', {
-            error: current.payload.error,
-          });
+  async expireDueExecutions(): Promise<void> {
+    const now = Date.now();
+    for (const id of await this.store.listDueExecutionIds('waiting_input', now, 100))
+      await this.store.tx(async () => {
+        const current = await this.store.get('ai_executions', id);
+        if (!current || current.status !== 'waiting_input' || current.payload.deadline > Date.now())
+          return;
+        current.status = 'timed_out';
+        current.payload.revision++;
+        current.payload.error = {
+          code: 'AI_DEADLINE_EXCEEDED',
+          message: '等待回答已超过执行期限',
+          retryable: false,
+        };
+        for (const interaction of await this.store.list('ai_interactions', {
+          execution_id: id,
+          status: 'pending',
+          limit: 100,
+        })) {
+          interaction.status = 'cancelled';
+          interaction.payload.revision++;
+          await this.store.put('ai_interactions', interaction);
+        }
+        await this.events.append(current, 'execution.timed_out', {
+          error: current.payload.error,
         });
-    const last = rows.at(-1);
-    this.expirationCursor =
-      rows.length === 100 && last ? { id: last.id, position: last.position } : undefined;
+      });
+    for (const id of await this.store.listDueExecutionIds('inline', now, 100)) {
+      await this.store.tx(async () => {
+        const current = await this.store.get('ai_executions', id);
+        if (current && current.payload.deadline <= Date.now())
+          await finishInlineExecution(this.events, current, 'AI_DEADLINE_EXCEEDED');
+      });
+    }
   }
   private async failed(lease: ExecutionLease, error: AiError) {
     try {
@@ -557,17 +612,7 @@ export class AiRuntime {
   }
   private async closeUnsettled(execution: ExecutionRecord) {
     const now = new Date().toISOString();
-    for (const call of await this.store.list('ai_calls', {
-      execution_id: execution.id,
-      status: 'pending',
-      limit: 100,
-    })) {
-      call.status = 'unknown';
-      call.updated_at = now;
-      call.payload.duration_ms = Date.now() - Date.parse(call.created_at);
-      execution.payload.usage.unknown_requests++;
-      await this.store.put('ai_calls', call);
-    }
+    await abandonModelCalls(this.store, execution, now);
     for (const interaction of await this.store.list('ai_interactions', {
       execution_id: execution.id,
       limit: 100,

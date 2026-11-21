@@ -2,9 +2,15 @@
 
 ## 使用资源
 
-网页和 MCP 只检索可见发布的名称、标签和描述。中文需求按有效词匹配，连续单字按相邻双字检索。含中文的多词查询至少命中两词且覆盖半数，完整的资源 slug 可直接命中。`Node.js` 等技术名保留完整，单独输入一个汉字时可按该字查询。
+首页可以从一句模糊的问题开始，不必先说清资源名或类型。顶栏关键词、命令面板与资源目录仍只检索可见发布的名称、标签和描述；中文按有效词匹配、连续单字按相邻双字检索，完整 slug 直接命中。
 
-公开资源可匿名阅读、下载或复制安装指令；团队资源按入口授权。Skill 详情的「内容说明」优先展示发布包根目录的 `README.md`，缺少、无正文或不支持预览时展示 `SKILL.md`。
+配置默认模型后，问题连同提问者可见的发布卡片交给模型；超出预算时先按字面相关度选候选。等待时显示已读资源数、回答起草和核对进度，可以停止。服务端复核可见性后才显示回答和固定版本；「AI 判断」是推荐理由，「发布信息写明」是核对过的原文。未配置模型时只做关键词匹配；模型超时、限流或输出无效会提示，不静默降级。
+
+顶部「查找」开始新检索；结果下的「继续追问」沿用本轮条件，「第二个」指上轮展示的第二项。点快捷问题只填入，不发送。选方向、改条件不调用模型。每次提问最多一次出站，记录执行状态和用量，不保存问题、回答或聊天历史。身份变化清除原对话，模式变化须确认后再发送。
+
+本轮展示多个 Skill 时，点「批量获取 Skill」可全选或只保留想要的项：下载一个 ZIP，或选好客户端，一次复制安装命令或交给 Agent 的指令。MCP 仍逐项配置。每项锁定结果里的版本，上新不换版；清单只包含本轮展示的 Skill，不是所有命中项。
+
+单项点「查看接入方式」打开固定版本；撤回或无权读取时不回落最新版。打开安装页不会预发票据、解密共享密钥或生成含密钥的配置。Skill 内容优先展示根目录 `README.md`，无法预览时展示 `SKILL.md`。
 
 公开 Skill 可匿名安装；未连接 MCP 时，安装团队 Skill 前先运行 `capability-hub login --url https://hub.example.com`：
 
@@ -12,11 +18,11 @@
 capability-hub add NAME --version VERSION --url https://hub.example.com --to .agents/skills --dry-run
 ```
 
-核对预览后去掉 `--dry-run`，已有目录须显式 `--replace` 并保留备份。连接 MCP 时可用 `install_skill` 返回的命令，无需 CLI 登录。固定版本不会被替换，CLI 不执行脚本。
+核对预览后去掉 `--dry-run`；替换已有目录须显式 `--replace` 并保留备份，CLI 不执行脚本。「交给 Agent」用 `名称@完整版本号` 指定 Skill。已授权的 Agent 在同一 Hub 用 `get_asset_version` 解析版本，再按 `install_skill` 返回的命令预览，无需手填 UUID 或另外登录 CLI。
 
 定期运行 `capability-hub outdated` 检查当前项目的预设技能目录，或重复传入 `--to`。有更新时先执行建议的 `--dry-run`，确认后再替换；不可用、弃用或本地已修改时先复核。检查不改写安装或旧来源记录。
 
-MCP 用 `mcp-config NAME --version VERSION --client CLIENT --option OPTION_ID` 输出配置。支持的客户端、Skill 目录与官方依据见 [Agent 客户端接入](../reference/agent-clients.md)。设置本机所需变量，保留客户端原配置，并在目标客户端自行完成连接核验。Skill 的 `--to` 应选用目标客户端支持的目录。
+MCP 可用 `mcp-config NAME --version VERSION --client CLIENT --option OPTION_ID` 输出配置。若当前发布不可读但历史 MCP 仍可读，在固定版页面预览配置或通过 Hub MCP 生成。保留已有配置，在目标客户端设置变量并验证连接；Skill 的 `--to` 目录见 [Agent 客户端接入](../reference/agent-clients.md)。
 
 Hub 自身也可通过对话接入：在“连接你的 Agent”页选择客户端与范围，复制 Hub 接入指令交给 Agent。这一步不依赖已连接的 Hub MCP，凭据由客户端或接入助手保存，用户仅在浏览器确认授权；说明链接与 CLI 用法见 [首次接入说明](../reference/agent-clients.md#通过对话接入-hub-自身)。
 

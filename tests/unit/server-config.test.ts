@@ -29,6 +29,17 @@ test('配置错误在创建数据目录之前报错，校验不会产生半初�
   await assert.rejects(() => lstat(invalid), { code: 'ENOENT' });
 });
 
+test('空模型目录可以启动，但不能把不存在的默认模型当成未配置', async (context) => {
+  const root = await directory(context);
+  const aiConfig = join(root, 'ai.json');
+  const environment = { CAPABILITY_HUB_AI_CONFIG: aiConfig };
+  const overrides = { dataDir: join(root, 'hub') };
+  await writeFile(aiConfig, JSON.stringify({ profiles: [], default_profile: 'missing' }));
+  assert.throws(() => loadServerConfig(overrides, environment), /默认模型配置不存在/);
+  await writeFile(aiConfig, JSON.stringify({ profiles: [] }));
+  assert.equal(loadServerConfig(overrides, environment).ai.default_profile, '');
+});
+
 test('CLI 仓库保留路径且允许不配置，带凭据或非下载地址在初始化前被拒绝', async (context) => {
   const dataDir = await directory(context);
   for (const value of [undefined, ''])

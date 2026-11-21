@@ -8,3 +8,4 @@ export type * from './http/operations/snapshot.js';
 export type * from './http/audit.js';
 export type * from './http/feedback.js';
 export type * from './http/hub-feedback.js';
+export type * from './http/discovery.js';

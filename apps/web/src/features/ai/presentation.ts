@@ -28,6 +28,8 @@ export const operationLabels: Record<string, string> = {
   'feedback-triage': '反馈研判',
   'publication-review': '发布审核助手',
   'agent-lab': '多 Agent 协作',
+  'catalog-discovery': '首页对话检索',
+  'catalog-prompts': '开场提示生成',
 };
 
 /** 工作台里操作类型的图标与一句话说明；未登记的操作由调用方回退到通用图标与目录描述。 */
@@ -122,6 +124,9 @@ export const stepLabels: Record<string, string> = {
   clarity: '表达审查',
   risk: '风险审查',
   'save-result': '保存成果',
+  turn: '检索可见资源',
+  generate: '生成开场提示',
+  preflight: '复核开场提示',
 };
 
 /** 工具调用文案；未登记的工具 id 由调用方回退显示原始 id。 */

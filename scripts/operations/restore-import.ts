@@ -2,7 +2,7 @@ import { blobReferences, parseSnapshot, restoreStore } from '@capability-hub/inf
 import { sha256 } from '@capability-hub/domain/canonical';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { openOperations } from './runtime.js';
+import { backupFormatVersion, openOperations } from './runtime.js';
 
 const source = resolve(process.argv[2] ?? '');
 if (!process.argv[2]) throw new Error('请指定备份目录');
@@ -12,7 +12,7 @@ if (
   !manifest ||
   typeof manifest !== 'object' ||
   !('schema' in manifest) ||
-  manifest.schema !== 1 ||
+  (manifest.schema !== 1 && manifest.schema !== backupFormatVersion) ||
   !('records_sha256' in manifest)
 )
   throw new Error('备份清单无效');
@@ -20,7 +20,13 @@ if (
 const records = await readFile(join(source, 'records.json'));
 if (sha256(records) !== manifest.records_sha256) throw new Error('备份记录摘要不匹配');
 
-const snapshot = parseSnapshot(JSON.parse(records.toString()));
+const data: unknown = JSON.parse(records.toString());
+// 只有旧清单允许缺少当时不存在的提示表，其他表和对象仍需完整通过校验。
+const snapshot = parseSnapshot(
+  manifest.schema === 1 && data !== null && typeof data === 'object' && !Array.isArray(data)
+    ? { catalog_prompts: [], ...data }
+    : data,
+);
 const runtime = await openOperations();
 try {
   // 先校验所有引用对象再导入记录；失败时已写入对象仍不被业务记录引用。

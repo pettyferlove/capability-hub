@@ -1,6 +1,7 @@
 import type { TokenUsageBucket } from '@capability-hub/ai/ports';
 import type { TokenUsagePeriod, TokenUsageResponse } from '@capability-hub/contracts';
 import type { HubServices } from '../bootstrap/hub-services.js';
+import { reservedExecutionOwnerName } from './execution-owner.js';
 
 type Metrics = TokenUsageResponse['totals'];
 const dayMs = 86_400_000;
@@ -95,7 +96,8 @@ export async function tokenUsage(
     addGroup(agents, row.operation_id, row);
     addGroup(profiles, row.profile, row);
     addGroup(users, row.owner_id, row);
-    if (row.owner_label) ownerNames.set(row.owner_id, row.owner_label);
+    const ownerName = reservedExecutionOwnerName(row.owner_id) ?? row.owner_label;
+    if (ownerName) ownerNames.set(row.owner_id, ownerName);
   }
   const catalog = runtime.catalog();
   return {

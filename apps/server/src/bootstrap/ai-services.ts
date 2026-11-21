@@ -68,6 +68,11 @@ export class HubAiServices {
   ) {
     const aiStore = createAiStore(store);
     this.recheckResources = async (principal, execution, mode = 'execute') => {
+      if (execution.payload.execution_mode === 'inline') {
+        requireAiConsole(principal);
+        if (mode !== 'inspect') throw new AiError('AI_FORBIDDEN', '自动执行记录只可查看');
+        return;
+      }
       if (execution.payload.operation_id === 'publication-review') {
         const input = execution.payload.input;
         if (
@@ -224,15 +229,21 @@ export class HubAiServices {
   async submissionPrincipal(principal: Principal, operationId: string) {
     const fresh = await this.principal(principal);
     if (!businessOperations.has(operationId)) requireAiConsole(fresh, true);
+    if (this.runtime.registry.get(operationId).execution_mode === 'inline')
+      throw new AiError('AI_FORBIDDEN', '此 Agent 仅由业务流程触发');
     return fresh;
   }
 
-  async catalog(principal: Principal) {
+  async catalog(principal: Principal, includeInline: boolean) {
     const fresh = await this.consolePrincipal(principal);
     const catalog = this.runtime.catalog();
-    if (!hasInAnyScope(fresh, 'ai:execute')) catalog.operations = [];
-    else if (!has(fresh, 'ai:execute'))
-      catalog.operations = catalog.operations.filter((item) => businessOperations.has(item.id));
+    const platform = has(fresh, 'ai:execute');
+    const scoped = hasInAnyScope(fresh, 'ai:execute');
+    catalog.operations = catalog.operations.filter((item) =>
+      item.execution_mode === 'inline'
+        ? includeInline
+        : platform || (scoped && businessOperations.has(item.id)),
+    );
     return catalog;
   }
 

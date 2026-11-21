@@ -59,7 +59,7 @@ pnpm db:generate:postgresql --custom --name=update_guard
 - SQLite 调度索引使用 `state`、`run_after` 生成列，避免当前 Kit 对带逗号表达式索引的错误生成。
 - 当前执行入口将迁移放在事务中；不能直接使用要求事务外执行的操作，例如 PostgreSQL `CREATE INDEX CONCURRENTLY`。
 
-已应用的迁移不可编辑、重排、重新格式化或删除，修复通过新迁移完成。Prettier 排除迁移目录，避免改变 SQL 摘要。两后端各从 `0000_init` 初始化，随后按序添加 AI、身份来源、去重推荐、未发布内容清理、一次性安装票据及 `0006_hub_feedback` 平台反馈。
+已应用的迁移不可编辑、重排、重新格式化或删除，修复通过新迁移完成。Prettier 排除迁移目录，避免改变 SQL 摘要。两后端从 `0000_init` 初始化；`0006_hub_feedback` 增加平台反馈，`0007_catalog_prompts` 增加首页提示单例，`0008_ai_execution_expiry` 为 AI 到期回收增加索引。
 
 ## 执行与失败语义
 

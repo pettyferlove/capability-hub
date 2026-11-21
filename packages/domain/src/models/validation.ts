@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isCatalogPromptText } from './catalog-prompt.js';
 import type { RecordMap, TableName } from './record-map.js';
 
 const id = z.string().min(1);
@@ -190,6 +191,66 @@ function boundedHubFeedbackValue(value: unknown, depth: number): boolean {
 }
 
 const hubFeedbackJson = jsonObject.refine((value) => boundedHubFeedbackValue(value, 0));
+
+const promptId = id.refine(isCatalogPromptText);
+const promptSource = z.strictObject({
+  asset_id: promptId,
+  version_id: promptId,
+  release_id: promptId,
+  resolved_release_id: promptId,
+});
+const promptItem = z
+  .strictObject({
+    suggestion_ref: promptId,
+    label: text.min(1).max(28),
+    text: text.min(1).max(200),
+    basis: z.strictObject({
+      asset_id: promptId,
+      version_id: promptId,
+      release_id: promptId,
+      fields: z
+        .array(z.enum(['tag', 'scenario', 'description']))
+        .min(1)
+        .max(3),
+      direction: text.min(1).max(28).nullable().optional(),
+    }),
+  })
+  .transform(({ basis: { direction, ...basis }, ...item }, ctx) => {
+    if (isCatalogPromptText(item.label) && isCatalogPromptText(item.text))
+      return { ...item, basis };
+    // 旧 SQLite 行可能含不能恢复到 JSONB 的提示；舍弃该项，不丢弃同批其他提示。
+    if (direction !== undefined) return null;
+    ctx.addIssue({ code: 'custom', message: '提示含不可存储的字符' });
+    return z.NEVER;
+  });
+const promptBatch = z
+  .strictObject({
+    id: promptId,
+    audience: z.enum(['public', 'restricted']),
+    audience_signature: hash,
+    input_digest: hash,
+    policy_digest: hash,
+    sources: z.array(promptSource).min(1).max(12),
+    generated_at: date,
+    prompts: z
+      .array(promptItem)
+      .max(4)
+      .transform((items) => items.filter((item) => item !== null)),
+  })
+  .refine(
+    (batch) =>
+      new Set(batch.sources.map((source) => source.version_id)).size === batch.sources.length &&
+      new Set(batch.prompts.map((prompt) => prompt.text)).size === batch.prompts.length &&
+      batch.prompts.every((prompt) =>
+        batch.sources.some(
+          (source) =>
+            source.asset_id === prompt.basis.asset_id &&
+            source.version_id === prompt.basis.version_id &&
+            source.resolved_release_id === prompt.basis.release_id,
+        ),
+      ),
+    '提示依据必须属于本批来源且不重复',
+  );
 
 /** 外部快照和数据库 JSON 在进入类型化记录之前必须满足当前结构。 */
 const schemas = {
@@ -504,6 +565,11 @@ const schemas = {
         scheduled: z.boolean().optional(),
       }),
     }),
+    z.strictObject({
+      ...jobBase,
+      kind: z.literal('catalog_prompt_refresh'),
+      input: z.strictObject({ window_start: integer, profile_digest: hash }),
+    }),
   ]),
   audit: z.strictObject({
     ...base,
@@ -669,6 +735,33 @@ const schemas = {
       '附件引用与移除信息不一致',
     ),
   recommendations: z.strictObject({ ...base, user_id: id, asset_id: id, created_at: date }),
+  catalog_prompts: z
+    .strictObject({
+      id: z.literal('catalog-prompts'),
+      next_refresh_at: integer,
+      active_job_id: promptId.nullable(),
+      window: z
+        .strictObject({
+          start: integer,
+          job_id: promptId,
+          reserved: integer.max(20),
+          deadline: integer.nullable(),
+        })
+        .nullable(),
+      cursor: hash.nullable(),
+      batches: z.array(promptBatch).max(200),
+      updated_at: date,
+    })
+    .refine(
+      (state) =>
+        (state.active_job_id === null) === (state.window === null) &&
+        (state.window === null || state.window.job_id === state.active_job_id) &&
+        new Set(state.batches.map((batch) => batch.audience_signature)).size ===
+          state.batches.length &&
+        new Set(state.batches.flatMap((batch) => batch.prompts.map((p) => p.suggestion_ref)))
+          .size === state.batches.reduce((total, batch) => total + batch.prompts.length, 0),
+      '提示调度状态或批次不一致',
+    ),
 } satisfies { [K in TableName]: z.ZodType<RecordMap[K]> };
 
 /**

@@ -1,7 +1,13 @@
 import type { Principal } from '@capability-hub/domain/identity';
 import type { CatalogSearchQuery, KeywordSuggestionsQuery } from './queries.js';
-import type { AssetRecord, ReleaseRecord, VersionRecord } from '@capability-hub/domain/models';
+import type {
+  AssetRecord,
+  ReleaseRecord,
+  ScenarioRecord,
+  VersionRecord,
+} from '@capability-hub/domain/models';
 import { filterAsync } from '@capability-hub/domain/async';
+import { z } from 'zod';
 import { canonical, digest, sha256 } from '@capability-hub/domain/canonical';
 import { fail, notFound } from '@capability-hub/domain/errors';
 import { has } from '@capability-hub/domain/rbac';
@@ -10,37 +16,7 @@ import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
 import { sharedKeysForOption } from '../credentials/mcp-shared-key-service.js';
 import type { AssetCommunityService } from './asset-community-service.js';
-
-const chineseWords = new Intl.Segmenter('zh', { granularity: 'word' });
-const han = /\p{Script=Han}/u;
-const singleHan = /^\p{Script=Han}$/u;
-const queryFillers = new Set(
-  '我 我想 想 想要 请 帮 帮我 找 查找 寻找 搜索 需要 适合 使用 可以 一个 相关 有关 的 了 与 和 或 及 是 在 用 给'.split(
-    ' ',
-  ),
-);
-
-function searchTerms(query: string) {
-  if (!han.test(query)) return query.split(/\s+/).filter(Boolean);
-  const words = new Set<string>();
-  for (const part of query.split(/(\p{Script=Han}+)/u)) {
-    if (han.test(part)) {
-      const terms = Array.from(chineseWords.segment(part), ({ segment }) => segment);
-      for (const [index, term] of terms.entries()) {
-        if (queryFillers.has(term)) continue;
-        if (!singleHan.test(term)) words.add(term);
-        else {
-          // 分词器未识别的复合词按相邻双字匹配，避免“风控”退化为“风险”或“控制”。
-          const next = terms[index + 1];
-          if (next && singleHan.test(next) && !queryFillers.has(next)) words.add(term + next);
-        }
-      }
-    } else {
-      for (const term of part.match(/[\p{L}\p{M}\p{N}.#+@/_-]+/gu) ?? []) words.add(term);
-    }
-  }
-  return words.size ? [...words] : [query.trim()];
-}
+import { hasHan, searchTerms } from './search-terms.js';
 
 /**
  * 只检索当前可分发的发布；缓存不保存用户身份或授权结果。
@@ -160,21 +136,18 @@ export class CatalogService {
         continue;
       const hints = r.applies_to;
       const tags = Object.values(hints).flat().map(String);
-      // 合并链只扩展目录筛选，发布快照和审核授权始终引用原 ID。
-      const scenarioIds = new Set(r.scenario_ids);
-      for (const id of scenarioIds) {
-        const target = scenarios.get(id)?.merged_into;
-        if (target) scenarioIds.add(target);
-      }
-      const labels = [...scenarioIds].map((id) => scenarios.get(id)?.name ?? '');
+      const releaseScenarios = scenariosOf(r, scenarios);
       rows.push({
         asset: a,
         version: v,
         release: r,
         resolved,
-        scenarioIds,
+        scenarioIds: new Set(releaseScenarios.map((scenario) => scenario.id)),
+        scenarios: releaseScenarios,
         tags,
-        normalizedTags: [...tags, ...labels].map((t) => t.normalize('NFKC').toLowerCase()),
+        normalizedTags: [...tags, ...releaseScenarios.map((scenario) => scenario.name)].map((t) =>
+          t.normalize('NFKC').toLowerCase(),
+        ),
         description: v.metadata.description.normalize('NFKC').toLowerCase(),
       });
     }
@@ -201,6 +174,21 @@ export class CatalogService {
         (await this.access.matchesAudience(p, row.release)) &&
         (await this.access.matchesAudience(p, row.resolved)),
     );
+  }
+  /**
+   * 当前主体可见的目录快照，供首页发现归纳用途和核对证据；必须在调用方的 `store.tx` 内使用，
+   * 与随后的场景、版本读取共享同一快照。
+   */
+  visibleEntries(p: Principal | null) {
+    return this.visibleCatalog(p);
+  }
+  /** 不区分受众的可分发发布，只供后台按受众分批；必须在调用方的 `store.tx` 内使用。 */
+  distributableEntries() {
+    return this.getCatalog();
+  }
+  /** 与 {@link CatalogService.listScenarios} 同一可见规则；必须在调用方的 `store.tx` 内使用。 */
+  visibleScenarios(p: Principal | null) {
+    return this.listScenariosSnapshot(p);
   }
   /**
    * 列出启用中的场景，唯一入口是这里的 `store.tx` 包裹。
@@ -326,7 +314,7 @@ export class CatalogService {
     const words = searchTerms(query);
     const minimumMatches = Math.min(
       words.length,
-      han.test(query) ? Math.max(2, Math.ceil(words.length / 2)) : 1,
+      hasHan(query) ? Math.max(2, Math.ceil(words.length / 2)) : 1,
     );
     let results: CatalogMatch[] = [];
     for (const row of await this.visibleCatalog(p)) {
@@ -447,17 +435,48 @@ export class CatalogService {
         (version) => version.version_label === label,
       );
       if (!candidate) notFound();
-      const version = await this.access.requireReadableVersion(p, candidate.id);
-      const release = await this.access.latestReleaseForVersion(version);
-      const { current_release, ...detail } = await this.describeAsset(asset, version, release, p);
-      const latest = await this.access.latestReadableRelease(p, asset);
+      return (await this.describeVersion(p, asset, candidate.id)).detail;
+    });
+  }
+
+  /**
+   * 按 UUID 读取固定版本，版本必须属于该资产；撤回、不可读、不存在或不匹配一律 404，
+   * 不回退到当前发布。`public_readable` 按双重受众判断匿名是否可读。
+   */
+  async getVersionById(p: Principal | null, id: string, versionId: string) {
+    return this.context.store.tx(async () => {
+      const asset = await this.access.getAsset(id);
+      const candidate = z.uuid().safeParse(versionId).success
+        ? await this.context.store.get('versions', versionId)
+        : undefined;
+      if (!candidate || candidate.asset_id !== asset.id) notFound();
+      const { detail, currentReadable } = await this.describeVersion(p, asset, candidate.id);
       return {
         ...detail,
-        release: current_release,
-        latest_release: latest,
-        is_latest: latest?.version_id === version.id,
+        current_readable: currentReadable,
+        public_readable: await this.access.canRead(null, asset, candidate),
       };
     });
+  }
+
+  private async describeVersion(p: Principal | null, asset: AssetRecord, versionId: string) {
+    const version = await this.access.requireReadableVersion(p, versionId);
+    const release = await this.access.latestReleaseForVersion(version);
+    const { current_release, ...detail } = await this.describeAsset(asset, version, release, p);
+    const latest = await this.access.latestReadablePublication(p, asset);
+    return {
+      currentReadable: latest !== null && latest.release.id === asset.current_release_id,
+      detail: {
+        ...detail,
+        release: current_release,
+        latest_release: latest && {
+          version_id: latest.version.id,
+          version_label: latest.version.version_label,
+          published_at: latest.release.published_at,
+        },
+        is_latest: latest?.version.id === version.id,
+      },
+    };
   }
 
   /**
@@ -487,12 +506,24 @@ export class CatalogService {
   }
 }
 
-interface CatalogEntry {
+/** 发布引用的场景及其合并目标；合并链只扩展目录筛选，发布快照和审核授权始终引用原 ID。 */
+export function scenariosOf(release: ReleaseRecord, scenarios: Map<string, ScenarioRecord>) {
+  const ids = new Set(release.scenario_ids);
+  for (const id of ids) {
+    const target = scenarios.get(id)?.merged_into;
+    if (target) ids.add(target);
+  }
+  return [...ids].map((id) => ({ id, name: scenarios.get(id)?.name ?? '' }));
+}
+
+/** 目录候选：当前发布与该版本最近发布都已通过可分发校验，受众按主体另行过滤。 */
+export interface CatalogEntry {
   asset: AssetRecord;
   version: VersionRecord;
   release: ReleaseRecord;
   resolved: ReleaseRecord;
   scenarioIds: Set<string>;
+  scenarios: { id: string; name: string }[];
   tags: string[];
   normalizedTags: string[];
   description: string;

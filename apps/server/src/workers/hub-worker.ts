@@ -82,35 +82,69 @@ export class HubWorker {
   }
   private async dispatchReady() {
     await this.cancelRequestedJobs();
-    await this.hub.ai.runtime.expireWaiting();
+    await this.hub.ai.runtime.expireDueExecutions();
     for (const { job, controller } of this.active.values()) {
-      if (!controller || controller.signal.aborted) continue;
+      if (job.kind !== 'ai_execution' || !controller || controller.signal.aborted) continue;
       const execution = await this.hub.ai.runtime.get(job.aggregate_id);
       if (execution.status !== 'running' && execution.status !== 'queued')
         controller.abort(new AiError('AI_CANCELLED', '执行已结束'));
     }
     await this.pollSources();
+    try {
+      await this.hub.prompts.schedule();
+    } catch (err) {
+      this.hub.logs.logger.error({ event: 'catalog_prompts.schedule_failed', err });
+    }
     if (this.stopped) return;
     const jobs = await this.hub.jobs.claimBatch(this.id, { activeIds: [...this.active.keys()] });
     for (const job of jobs) {
-      const controller = job.kind === 'ai_execution' ? new AbortController() : undefined;
+      // AI 与首页提示作业可被中止，各自写终态；内容作业沿用通用成功与退避重试。
+      const controller =
+        job.kind === 'ai_execution' || job.kind === 'catalog_prompt_refresh'
+          ? new AbortController()
+          : undefined;
       if (this.stopped) controller?.abort(new AiError('AI_INTERRUPTED', '服务正在关闭'));
-      const promise = (controller ? this.runAi(job, controller) : this.runContent(job)).finally(
-        () => {
-          this.active.delete(job.id);
-        },
-      );
+      const promise = (
+        job.kind === 'ai_execution'
+          ? this.leased(job, controller!, (signal) =>
+              this.hub.ai.runtime.process(
+                {
+                  execution_id: job.aggregate_id,
+                  dispatch_id: job.id,
+                  owner: this.id,
+                  epoch: job.lease_epoch,
+                  attempt: job.attempt,
+                },
+                signal,
+              ),
+            )
+          : job.kind === 'catalog_prompt_refresh'
+            ? this.leased(job, controller!, (signal) => this.hub.prompts.process(job, signal))
+            : this.runContent(job)
+      ).finally(() => {
+        this.active.delete(job.id);
+      });
       this.active.set(job.id, { job, controller, promise });
       void promise.catch((err) =>
         this.hub.logs.logger.error({
-          event: controller ? 'ai.dispatch_failed' : 'job.failed',
+          event:
+            job.kind === 'ai_execution'
+              ? 'ai.dispatch_failed'
+              : job.kind === 'catalog_prompt_refresh'
+                ? 'catalog_prompts.failed'
+                : 'job.failed',
           job_id: job.id,
           err,
         }),
       );
     }
   }
-  private async runAi(job: JobRecord, controller: AbortController) {
+  /** 可中止作业每 20 秒续租；续租失败即中止在途工作，旧执行者不能再写回结果。 */
+  private async leased(
+    job: JobRecord,
+    controller: AbortController,
+    work: (signal: AbortSignal) => Promise<void>,
+  ) {
     let heartbeat: ReturnType<typeof setTimeout> | undefined;
     let renewal = Promise.resolve();
     let finishing = false;
@@ -133,16 +167,7 @@ export class HubWorker {
     };
     schedule();
     try {
-      await this.hub.ai.runtime.process(
-        {
-          execution_id: job.aggregate_id,
-          dispatch_id: job.id,
-          owner: this.id,
-          epoch: job.lease_epoch,
-          attempt: job.attempt,
-        },
-        controller.signal,
-      );
+      await work(controller.signal);
     } finally {
       finishing = true;
       if (heartbeat) clearTimeout(heartbeat);
@@ -154,8 +179,10 @@ export class HubWorker {
     if (this.stopped) return Promise.resolve();
     this.running = this.schedule()
       .then(async () => {
-        const content = [...this.active.values()].filter((task) => !task.controller);
-        await Promise.all(content.map((task) => task.promise));
+        const settled = [...this.active.values()].filter(
+          (task) => task.job.kind !== 'ai_execution',
+        );
+        await Promise.all(settled.map((task) => task.promise));
       })
       .finally(() => {
         this.running = undefined;
@@ -164,6 +191,7 @@ export class HubWorker {
   }
   private async cancelRequestedJobs() {
     await this.hub.jobs.cancelRequested(async (job) => {
+      // AI 执行由运行时的中止路径收敛；其余作业在这里进入取消终态并让出活动指针。
       if (job.kind === 'ai_execution') return;
       const intakes =
         job.kind === 'source_sync'

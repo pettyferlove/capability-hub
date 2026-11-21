@@ -12,6 +12,13 @@ import {
   type PgTableExtraConfigValue,
 } from 'drizzle-orm/pg-core';
 
+/** 到期筛选与部分索引使用相同表达式，队列运行及终态执行不占用回收索引。 */
+export const executionExpiry = {
+  deadline: sql`((data -> 'payload' ->> 'deadline')::bigint)`,
+  waiting_input: sql`status = 'waiting_input'`,
+  inline: sql`status = 'running' AND (data -> 'payload' ->> 'execution_mode') = 'inline'`,
+};
+
 function defineAiTable(name: AiTable) {
   return pgTable(
     name,
@@ -63,7 +70,14 @@ function defineAiTable(name: AiTable) {
           ]
         : []),
       ...(name === 'ai_executions'
-        ? []
+        ? [
+            index('ai_executions_waiting_due_idx')
+              .on(executionExpiry.deadline, t.id)
+              .where(executionExpiry.waiting_input),
+            index('ai_executions_inline_due_idx')
+              .on(executionExpiry.deadline, t.id)
+              .where(executionExpiry.inline),
+          ]
         : [foreignKey({ columns: [t.execution_id], foreignColumns: [ai_executions.id] })]),
     ],
   );

@@ -12,7 +12,12 @@ import {
   buildMcpDocument,
   emptyMcpEntry,
 } from '../../apps/web/src/features/publishing/mcp-entry.js';
-import { createTestHub, submitPublication, type TestHub } from '../support/application.js';
+import {
+  createTestHub,
+  publishSkill,
+  submitPublication,
+  type TestHub,
+} from '../support/application.js';
 import { httpClient, signIn } from '../support/http.js';
 
 async function shareKey(
@@ -81,6 +86,21 @@ async function shareKey(
   );
   return { owner, secret, url, assetId: intake.asset_id, versionId: intake.version_id };
 }
+
+test('Skill 合包混入 MCP 时整批拒绝，不透露未授权服务的类型', async (context) => {
+  const f = await createTestHub(context);
+  const { owner, versionId } = await shareKey(f, false);
+  const { intake } = await publishSkill(f);
+  const path = `/api/catalog/skill-bundle?version_id=${intake.version_id}&version_id=${versionId}`;
+  const version = await f.store.get('versions', intake.version_id);
+  assert(version);
+  await f.blobs.remove(version.files[0].blob_ref);
+  const hidden = await httpClient(f).get(path).expect(404);
+  assert.equal(hidden.body.error.code, 'NOT_FOUND');
+  const mixed = await owner.get(path).expect(422);
+  assert.equal(mixed.body.error.code, 'NOT_SKILL');
+  assert.deepEqual(await f.store.where('audit', 'action', 'content.download'), []);
+});
 
 test('首次录入共享凭据必须显式确认领取范围', async (context) => {
   const f = await createTestHub(context);

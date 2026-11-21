@@ -5,6 +5,8 @@ import { executableText } from '@capability-hub/domain/files';
 import { collisionKey, safePath } from '@capability-hub/domain/paths';
 import yauzl from 'yauzl';
 import yazl from 'yazl';
+import { once } from 'node:events';
+import { finished } from 'node:stream/promises';
 import { crc32 } from 'node:zlib';
 
 const MiB = 1024 * 1024;
@@ -172,19 +174,28 @@ export function normalizeSkill(files: ContentFile[]) {
  * 权限位只区分 0644/0755，因此同一份内容重复打包得到相同的 `sha256`（下游据此判等与去重）。
  * 只写入文件条目，不产生目录条目，也不保留除可执行位以外的文件系统元数据。
  */
-export async function archive(files: ContentFile[]) {
+export async function archive(files: ContentFile[], signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const zip = new yazl.ZipFile();
-  for (const f of [...files].sort((a, b) => utf8Compare(a.path, b.path)))
-    zip.addBuffer(f.bytes, f.path, {
-      mtime: new Date('2000-01-01T00:00:00Z'),
-      mode: f.executable ? 0o100755 : 0o100644,
-    });
   const chunks: Buffer[] = [];
-  const result = new Promise<Buffer>((resolve, reject) => {
-    zip.outputStream.on('data', (c: Buffer) => chunks.push(c));
-    zip.outputStream.on('end', () => resolve(Buffer.concat(chunks)));
-    zip.outputStream.on('error', reject);
+  zip.outputStream.on('data', (chunk: Buffer) => {
+    if (!signal?.aborted) chunks.push(chunk);
   });
-  zip.end();
-  return result;
+  try {
+    for (const f of [...files].sort((a, b) => utf8Compare(a.path, b.path))) {
+      signal?.throwIfAborted();
+      // addBuffer 压完该文件才写条目头；可取消的合包一次只提交一个无法中断的 deflate。
+      const writing = signal && once(zip.outputStream, 'data');
+      zip.addBuffer(f.bytes, f.path, {
+        mtime: new Date('2000-01-01T00:00:00Z'),
+        mode: f.executable ? 0o100755 : 0o100644,
+      });
+      if (writing) await writing;
+    }
+  } finally {
+    zip.end();
+    await finished(zip.outputStream, { cleanup: true });
+  }
+  signal?.throwIfAborted();
+  return Buffer.concat(chunks);
 }

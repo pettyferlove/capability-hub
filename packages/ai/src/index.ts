@@ -1,4 +1,5 @@
 export { AiRuntime } from './execution/runtime.js';
+export type { InlineExecution } from './execution/inline.js';
 export { OperationRegistry, type OperationDefinition } from './operations/registry.js';
 export {
   OperationContext,
@@ -7,6 +8,12 @@ export {
   type ToolDefinition,
 } from './operations/context.js';
 export { AiError, type AiErrorCode, aiFailure } from './core/errors.js';
+export {
+  shortModelLimits,
+  ShortModelError,
+  type ShortModelLimits,
+  type ShortModelResult,
+} from './integrations/short-model.js';
 export {
   aiConfigurationSchema,
   modelProfileSchema,

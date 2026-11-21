@@ -14,6 +14,7 @@ export type RecordQueries = Pick<
   | 'listReadyJobs'
   | 'listCancellationRequestedJobs'
   | 'listDueSources'
+  | 'catalogPromptSchedule'
   | 'countScenarioReferences'
   | 'findHubFeedback'
   | 'listHubFeedback'

@@ -2,7 +2,7 @@ import { snapshotStore, blobReferences } from '@capability-hub/infrastructure/st
 import { sha256 } from '@capability-hub/domain/canonical';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { openOperations } from './runtime.js';
+import { backupFormatVersion, openOperations } from './runtime.js';
 
 const dest = resolve(
   process.argv[2] ?? `output/backups/${new Date().toISOString().replace(/[:.]/g, '-')}`,
@@ -25,7 +25,12 @@ try {
   await writeFile(
     join(dest, 'backup.json'),
     JSON.stringify(
-      { schema: 1, created_at: new Date().toISOString(), records_sha256: sha256(records), blobs },
+      {
+        schema: backupFormatVersion,
+        created_at: new Date().toISOString(),
+        records_sha256: sha256(records),
+        blobs,
+      },
       null,
       2,
     ),

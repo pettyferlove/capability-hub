@@ -1,6 +1,6 @@
 # 业务 Agent
 
-`packages/hub-agents` 提供资源审计、反馈研判和发布审核助手。运行与 SSE 复用 [AI 框架](ai-framework.md)，证据由 Application 提供。
+本文说明资源审计、反馈研判和发布审核助手的取证与人工决定。所有注册操作及其执行记录见 [AI 框架](ai-framework.md#当前操作与权限)。
 
 ## 发起与权限
 

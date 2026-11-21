@@ -5,13 +5,13 @@ const glyphs = '#%&*+=<>/0123456789ABCDEF';
 const frames = 10;
 
 /**
- * 首次渲染直接显示文字；`text` 变化时从左到右逐字解码到新文字，乱码由帧序号确定性生成，
- * 渲染保持纯函数。减少动态效果时直接替换。
+ * 首次渲染直接显示文字，`reveal` 时挂载即从乱码解码一次；`text` 变化时从左到右逐字解码到新文字，
+ * 乱码由帧序号确定性生成，渲染保持纯函数。减少动态效果时直接替换。
  */
-export function DecryptedText({ text }: { text: string }) {
+export function DecryptedText({ text, reveal = false }: { text: string; reveal?: boolean }) {
   const reduceMotion = useReducedMotion();
   const [previous, setPrevious] = useState(text);
-  const [frame, setFrame] = useState(frames);
+  const [frame, setFrame] = useState(reveal && !reduceMotion ? 0 : frames);
   if (previous !== text) {
     setPrevious(text);
     setFrame(reduceMotion ? frames : 0);

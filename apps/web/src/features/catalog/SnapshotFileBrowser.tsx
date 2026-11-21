@@ -15,7 +15,7 @@ import {
 } from './styles.js';
 import { iconBtnStyles, activeStyles, subtleStyles } from '../../shared/styles/recipes.js';
 import { cn } from '../../shared/styles/cn.js';
-import type { AssetResponse } from '@capability-hub/contracts/http';
+import type { AssetView } from './asset-view.js';
 import { Download, FileText, Search, X } from '../../shared/icons/lucide.js';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CopyButton } from '../../shared/components/CopyButton.js';
@@ -29,12 +29,12 @@ import { SnapshotMarkdown } from './SnapshotMarkdown.js';
 import { useSnapshotFile } from './use-snapshot-file.js';
 
 /**
- * 固定版本的文件浏览器：左侧按 `asset.files` 过滤，右侧预览单个文件。
+ * 固定版本的文件浏览器：左侧按视图的文件清单过滤，右侧预览单个文件，读取与下载都锁定视图展示的发布。
  * 只有 `active` 时才会请求正文，非 Markdown 或 `source` 模式直接给原文；
  * 搜索词与预览滚动位置按 `path`（滚动还带 `mode`）分别记忆，切回同一文件时恢复。
  */
 export function SnapshotFileBrowser({
-  asset,
+  view,
   path,
   anchor,
   active,
@@ -42,7 +42,7 @@ export function SnapshotFileBrowser({
   onModeChange,
   onOpen,
 }: {
-  asset: AssetResponse;
+  view: AssetView;
   path: string;
   anchor?: string;
   active: boolean;
@@ -51,7 +51,8 @@ export function SnapshotFileBrowser({
   onOpen: (path: string, anchor?: string) => void;
 }) {
   const { refresh } = useHub();
-  const preview = useSnapshotFile(asset.current_release.version_id, active ? path : null, refresh);
+  const { asset, release } = view;
+  const preview = useSnapshotFile(release.version_id, active ? path : null, refresh);
   const [search, setSearch] = useState('');
   const list = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -62,7 +63,7 @@ export function SnapshotFileBrowser({
   const files = asset.files.filter((file) =>
     file.path.toLowerCase().includes(search.trim().toLowerCase()),
   );
-  const download = `/api/versions/${asset.current_release.version_id}/files?path=${encodeURIComponent(path)}`;
+  const download = `/api/versions/${release.version_id}/files?path=${encodeURIComponent(path)}`;
   useEffect(() => {
     setSearch((value) => (path.toLowerCase().includes(value.trim().toLowerCase()) ? value : ''));
   }, [path]);
@@ -199,7 +200,7 @@ export function SnapshotFileBrowser({
         <div className={detailFileProofStyles}>
           <span>{bytesLabel(asset.files.find((file) => file.path === path)?.size ?? 0)}</span>
           <span>
-            固定版本 <VersionLabel value={asset.current_release.version_label} />
+            固定版本 <VersionLabel value={release.version_label} />
           </span>
         </div>
       </div>

@@ -2,6 +2,7 @@ import { sha256 } from '@capability-hub/domain/canonical';
 import { fail, HubError } from '@capability-hub/domain/errors';
 import type { BlobStorage } from '@capability-hub/application/ports';
 import { Client, type ClientOptions } from 'minio';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import * as http from 'node:http';
 import * as https from 'node:https';
 
@@ -44,6 +45,7 @@ export class MinioBlobStore implements BlobStorage {
   readonly kind = 'minio';
   private readonly client: Client;
   private readonly agent: http.Agent;
+  private readonly readSignal = new AsyncLocalStorage<AbortSignal | undefined>();
   private closed = false;
   constructor(
     options: ClientOptions,
@@ -70,7 +72,12 @@ export class MinioBlobStore implements BlobStorage {
           requestOptions: http.RequestOptions,
           callback?: (response: http.IncomingMessage) => void,
         ) => {
-          const request = transport.request(requestOptions, callback);
+          // SDK 不接受单次 GET 的 signal；传给本次读取实际使用的请求，不影响共享连接池的其他下载。
+          const signal = this.readSignal.getStore();
+          const request = transport.request(
+            signal ? { ...requestOptions, signal } : requestOptions,
+            callback,
+          );
           request.setTimeout(15000, () =>
             request.destroy(
               Object.assign(new Error('Object storage request timed out'), { code: 'ETIMEDOUT' }),
@@ -111,12 +118,14 @@ export class MinioBlobStore implements BlobStorage {
     await this.read(hash);
     return hash;
   }
-  async read(hash: string): Promise<Buffer> {
+  async read(hash: string, signal?: AbortSignal): Promise<Buffer> {
+    signal?.throwIfAborted();
     const key = this.key(hash);
     let stream;
     try {
-      stream = await this.client.getObject(this.bucket, key);
+      stream = await this.readSignal.run(signal, () => this.client.getObject(this.bucket, key));
     } catch (error) {
+      signal?.throwIfAborted();
       if (missing(error)) fail(503, 'BLOB_MISSING', '内容暂不可用，请联系管理员');
       throw storageError(error);
     }
@@ -124,6 +133,7 @@ export class MinioBlobStore implements BlobStorage {
     let size = 0;
     try {
       for await (const chunk of stream) {
+        signal?.throwIfAborted();
         const value: unknown = chunk;
         if (!(value instanceof Uint8Array)) fail(503, 'BLOB_CORRUPT', '对象存储返回了无效内容');
         const bytes = Buffer.from(value);
@@ -135,10 +145,12 @@ export class MinioBlobStore implements BlobStorage {
         chunks.push(bytes);
       }
     } catch (error) {
+      signal?.throwIfAborted();
       throw storageError(error);
     } finally {
       stream.destroy();
     }
+    signal?.throwIfAborted();
     const bytes = Buffer.concat(chunks);
     if (sha256(bytes) !== hash) fail(503, 'BLOB_CORRUPT', '内容完整性校验失败');
     return bytes;

@@ -23,6 +23,9 @@ const id = aiExecutionResponseSchema.shape.id;
 const json = z.json();
 const modelOption = aiModelOptionsResponseSchema.shape.profiles.element;
 
+/** 默认列出可手动提交的操作；注册目录还包括可检查的自动操作。 */
+export const agentCatalogQuerySchema = z.strictObject({ view: z.literal('registered').optional() });
+
 /** 运营列表只筛选可读执行；业务资源 ID 仅用于业务列表。 */
 export const agentExecutionLedgerQuerySchema = aiExecutionPageQuerySchema.extend({
   operation_id: id.optional(),
@@ -42,6 +45,7 @@ export const aiCatalogResponseSchema = aiModelOptionsResponseSchema.extend({
     z
       .object({
         id,
+        execution_mode: z.literal('inline').optional(),
         version: z.string(),
         title: z.string(),
         description: z.string(),

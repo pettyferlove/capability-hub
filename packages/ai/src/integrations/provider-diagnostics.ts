@@ -1,4 +1,5 @@
 import type { ModelProfile } from '../core/config.js';
+import { AiError } from '../core/errors.js';
 import { upstreamIdentifierSchema, type ModelCallDiagnostics } from '../core/records.js';
 
 type Transport = NonNullable<ModelCallDiagnostics['transport']>;
@@ -110,7 +111,7 @@ function hasText(value: unknown) {
 }
 
 /** 心跳、角色与用量帧不代表模型已开始输出。推理与工具增量只计时间，正文只计字符数。 */
-export function observeModelFrame(
+function observeModelFrame(
   transport: Transport,
   format: ModelProfile['format'],
   frame: Record<string, unknown>,
@@ -147,4 +148,108 @@ export function observeModelFrame(
   }
   if (typeof stop === 'string' && stop)
     transport.finish_reason = finishReasons.get(stop) ?? 'other';
+}
+
+function tokenCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+/** 只接受端点明确报告的累计用量；SDK 补齐的零值不能用于结算。 */
+export class ModelWireUsage {
+  readonly transport: Transport = {
+    received_bytes: 0,
+    text_chars: 0,
+    terminal_received: false,
+    request_timed_out: false,
+    input_tokens_reported: false,
+    output_tokens_reported: false,
+  };
+  inputTokens: number | null = null;
+  outputTokens: number | null = null;
+  private baseInput: number | null = null;
+  private cacheCreation: number | null = 0;
+  private cacheRead: number | null = 0;
+  constructor(private readonly format: ModelProfile['format']) {}
+  private report(raw: unknown, initial = false) {
+    const usage = object(raw);
+    if (!usage) return;
+    const openai = this.format === 'openai';
+    if (openai) {
+      const input = tokenCount(usage.prompt_tokens);
+      if (input !== null) this.inputTokens = input;
+    } else {
+      // Messages 的 delta 只更新出现的累计字段；未报告基础输入不能推断为零。
+      if (usage.input_tokens != null) this.baseInput = tokenCount(usage.input_tokens);
+      if (usage.cache_creation_input_tokens != null)
+        this.cacheCreation = tokenCount(usage.cache_creation_input_tokens);
+      if (usage.cache_read_input_tokens != null)
+        this.cacheRead = tokenCount(usage.cache_read_input_tokens);
+      this.inputTokens =
+        this.baseInput !== null && this.cacheCreation !== null && this.cacheRead !== null
+          ? tokenCount(this.baseInput + this.cacheCreation + this.cacheRead)
+          : null;
+    }
+    this.transport.input_tokens_reported = this.inputTokens !== null;
+    // Messages 起始帧的输出计数只是初始值，最终用量来自 message_delta。
+    const output = initial
+      ? null
+      : tokenCount(openai ? usage.completion_tokens : usage.output_tokens);
+    if (output !== null) {
+      this.outputTokens = output;
+      this.transport.output_tokens_reported = true;
+    }
+  }
+  inspectSseFrame(frame: string, elapsed: number) {
+    const data = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n');
+    if (!data || this.transport.terminal_received) return;
+    if (this.format === 'openai' && data.trim() === '[DONE]') {
+      this.transport.terminal_received = true;
+      return;
+    }
+    const item = object(JSON.parse(data));
+    if (!item) return;
+    if (item.type === 'error' || item.error)
+      throw new AiError('AI_PROVIDER_FAILED', '端点返回错误事件');
+    observeModelFrame(this.transport, this.format, item, elapsed);
+    if (this.format === 'openai') this.report(item.usage);
+    else if (item.type === 'message_start') this.report(object(item.message)?.usage, true);
+    else if (item.type === 'message_delta') this.report(item.usage);
+    else if (item.type === 'message_stop') this.transport.terminal_received = true;
+  }
+  observeJson(body: unknown, elapsed: number) {
+    const item = object(body);
+    if (!item) return;
+    if (this.format === 'openai') {
+      const choice = object(Array.isArray(item.choices) ? item.choices[0] : undefined);
+      if (!choice || !object(choice.message)) return;
+      observeModelFrame(
+        this.transport,
+        this.format,
+        { choices: [{ delta: choice.message, finish_reason: choice.finish_reason }] },
+        elapsed,
+      );
+    } else {
+      if (item.type !== 'message' || !Array.isArray(item.content)) return;
+      for (const block of item.content) {
+        observeModelFrame(
+          this.transport,
+          this.format,
+          { type: 'content_block_start', content_block: block },
+          elapsed,
+        );
+      }
+      observeModelFrame(
+        this.transport,
+        this.format,
+        { type: 'message_delta', delta: { stop_reason: item.stop_reason } },
+        elapsed,
+      );
+    }
+    this.report(item.usage);
+    this.transport.terminal_received = true;
+  }
 }

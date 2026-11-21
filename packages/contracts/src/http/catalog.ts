@@ -66,6 +66,19 @@ export interface AssetResponse {
   replacement_asset_slug: string | null;
 }
 
+/**
+ * 按资产与版本 UUID 读取的固定版本详情。`release` 是该版本最近一次发布，与资产当前发布分开；
+ * `public_readable` 按当前发布与该版本发布的双重受众计算，匿名可读才走公开安装入口。
+ */
+export type AssetVersionResponse = Omit<AssetResponse, 'current_release' | 'match_reasons'> & {
+  release: AssetResponse['current_release'];
+  latest_release: { version_id: string; version_label: string; published_at: string } | null;
+  is_latest: boolean;
+  /** 当前发布本身是否可读；最新可读发布可能是一个历史版本。 */
+  current_readable: boolean;
+  public_readable: boolean;
+};
+
 /** 仅管理侧返回原始上传或同步的发起人，重扫不改变版本归属。 */
 export interface IntakeContributorResponse {
   source_kind: 'upload' | 'git';

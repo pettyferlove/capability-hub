@@ -6,6 +6,12 @@ export { AssetLifecycleService } from './catalog/asset-lifecycle-service.js';
 export { AuditService } from './audit/audit-service.js';
 export { AuthenticationService } from './identity/authentication-service.js';
 export { CatalogService } from './catalog/catalog-service.js';
+export {
+  CatalogDiscoveryService,
+  type DiscoveryBasis,
+  type PromptSourceCandidate,
+} from './catalog/catalog-discovery-service.js';
+export * from './catalog/discovery-evidence.js';
 export { CliLoginService } from './identity/cli-login-service.js';
 export { InstallTicketService } from './catalog/install-ticket-service.js';
 export { GitCredentialService } from './credentials/git-credential-service.js';

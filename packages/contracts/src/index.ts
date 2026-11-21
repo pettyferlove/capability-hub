@@ -1,5 +1,6 @@
 /** 跨进程请求校验和可安全传输的共享类型。 */
 export * from './catalog.js';
+export * from './discovery.js';
 export * from './content.js';
 export * from './identity.js';
 export * from './intake.js';

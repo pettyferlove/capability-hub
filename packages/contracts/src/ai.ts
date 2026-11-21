@@ -98,6 +98,7 @@ export const aiExecutionResponseSchema = z
     id,
     owner_id: id,
     operation_id: id,
+    execution_mode: z.literal('inline').optional(),
     model_profile: id,
     status: aiExecutionStatusSchema,
     revision: z.number().int().positive(),

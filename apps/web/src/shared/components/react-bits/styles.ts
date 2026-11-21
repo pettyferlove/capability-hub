@@ -42,3 +42,18 @@ export const starBorderBottomStyles = cn(
   '[background:linear-gradient(90deg,transparent_30%,var(--brand)_50%,transparent_70%)]',
   'motion-safe:[animation:react-bits-star-bottom_2.2s_ease-in-out_0.15s_both] forced-colors:hidden',
 );
+
+export const blurTextStyles = 'inline-block';
+
+export const blurTextPieceStyles = 'inline-block max-w-full [overflow-wrap:anywhere]';
+
+export const logoLoopStyles = 'relative min-w-0 overflow-x-clip';
+
+export const logoLoopFadeStyles =
+  '[mask-image:linear-gradient(90deg,transparent,var(--mask-solid)_7%,var(--mask-solid)_93%,transparent)] has-[:focus-visible]:[mask-image:none]';
+
+export const logoLoopListStyles = 'm-0 flex shrink-0 list-none items-center p-0';
+
+export const logoLoopWrapStyles = 'min-w-0 shrink flex-wrap gap-y-2';
+
+export const logoLoopItemStyles = 'flex shrink-0 items-center';

@@ -46,6 +46,20 @@ export const catalogSearchQuerySchema = z
   })
   .strict();
 
+/** 一项也使用数组交付；版本 UUID 只定位内容，不能代替每项的分发授权。 */
+export const skillBundleQuerySchema = z
+  .object({
+    version_id: z.preprocess(
+      (value) => (typeof value === 'string' ? [value] : value),
+      z
+        .array(z.uuid().toLowerCase())
+        .min(1)
+        .max(8)
+        .refine((ids) => new Set(ids).size === ids.length, '同一版本不能重复选择'),
+    ),
+  })
+  .strict();
+
 /**
  * 关键词建议查询：`limit` 1–20 默认 8，按类型、分类或场景收窄后再取热门与发现类关键词。
  * 严格模式拒绝未知参数，避免拼错的维度被静默忽略。

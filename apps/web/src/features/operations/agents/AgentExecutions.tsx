@@ -47,7 +47,7 @@ export function AgentExecutions({
     if (!canExecute || listing) return;
     const controller = new AbortController();
     setCatalogError('');
-    void api(operationsAgentApi.catalog, { signal: controller.signal })
+    void api(operationsAgentApi.catalog + '?view=registered', { signal: controller.signal })
       .then((data) => {
         if (!controller.signal.aborted) setCatalog(aiCatalogResponseSchema.parse(data));
       })

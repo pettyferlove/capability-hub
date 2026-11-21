@@ -1,13 +1,52 @@
 import { hubPageFor, type HubPage } from '@capability-hub/contracts/web-pages';
 
+/** 详情抽屉可由链接直接打开的页签；其余页签只在抽屉内切换，不进入地址。 */
+export type AssetDrawerTab = 'installation' | 'feedback';
+
+/**
+ * 详情抽屉参数，只取自当前地址；背景页的查询串不参与，避免把背景的 `tab` 等误认为抽屉参数。
+ * `invalid` 表示参数存在但不合法：抽屉应报错，不得退回当前发布。
+ */
+export interface AssetDrawer {
+  slug: string;
+  /** 固定版本 UUID；缺省表示查看资产当前发布。 */
+  versionId?: string;
+  tab?: AssetDrawerTab;
+  /** 资源反馈深链接，抽屉据此直接打开「问题与建议」。 */
+  feedbackId?: string;
+  invalid?: 'version' | 'tab';
+}
+
 /** 一次导航解析出的路由形状，是 `<App>` 渲染分支的唯一判据。 */
 export interface HubRoute {
   /** `not-found` 表示地址不属于任何页面；服务端对这类导航返回 404 状态的同一入口。 */
   page: HubPage | 'not-found';
   /** 解码后的资源 slug；有值表示详情抽屉叠加在 {@link HubRoute.page} 之上而不是独立页面。 */
   asset?: string;
+  /** 与 {@link HubRoute.asset} 同时出现，取自当前地址的抽屉参数。 */
+  drawer?: AssetDrawer;
   /** 原始查询串，已去掉前导 `?` 且不做解码；空串表示没有参数，避免到处判空 `undefined`。 */
   query: string;
+}
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 重复出现的参数视为非法，避免不同解析方取到不同的值。 */
+function assetDrawer(slug: string, query: string): AssetDrawer {
+  const values = new URLSearchParams(query);
+  const drawer: AssetDrawer = { slug };
+  const versions = values.getAll('version_id');
+  const tabs = values.getAll('tab');
+  const feedback = values.getAll('feedback');
+  if (versions.length > 1 || (versions.length && !uuidPattern.test(versions[0])))
+    drawer.invalid = 'version';
+  else if (versions.length) drawer.versionId = versions[0];
+  if (feedback.length === 1 && feedback[0]) drawer.feedbackId = feedback[0];
+  if (tabs.length > 1 || (tabs.length && tabs[0] !== 'installation' && tabs[0] !== 'feedback'))
+    drawer.invalid ??= 'tab';
+  else if (tabs.length) drawer.tab = tabs[0] as AssetDrawerTab;
+  else if (drawer.feedbackId) drawer.tab = 'feedback';
+  return drawer;
 }
 
 /** 资源标识只解码一次，非法资源路径回到可用的目录页面，未知页面交给 404 页。 */
@@ -19,7 +58,9 @@ export function parseHistoryRoute(pathname: string, search = ''): HubRoute {
   if (assetMatch) {
     try {
       const asset = decodeURIComponent(assetMatch[1]);
-      return asset ? { page: 'discover', asset, query } : { page: 'discover', query: '' };
+      return asset
+        ? { page: 'discover', asset, drawer: assetDrawer(asset, query), query }
+        : { page: 'discover', query: '' };
     } catch {
       return { page: 'discover', query: '' };
     }
@@ -37,9 +78,18 @@ export function pageHref(page: HubPage, values: Record<string, string | undefine
   return '/' + page + (query.size ? '?' + query.toString() : '');
 }
 
-/** slug 会做一次百分号编码；消费端 {@link parseHistoryRoute} 只解码一次，双向必须配对。 */
-export function assetHref(slug: string): string {
-  return '/asset/' + encodeURIComponent(slug);
+/**
+ * slug 会做一次百分号编码；消费端 {@link parseHistoryRoute} 只解码一次，双向必须配对。
+ * 参数按 `version_id`、`tab` 的固定顺序写入，同一抽屉总得到同一个地址。
+ */
+export function assetHref(
+  slug: string,
+  options: { versionId?: string; tab?: AssetDrawerTab } = {},
+): string {
+  const query = new URLSearchParams();
+  if (options.versionId) query.set('version_id', options.versionId);
+  if (options.tab) query.set('tab', options.tab);
+  return '/asset/' + encodeURIComponent(slug) + (query.size ? '?' + query.toString() : '');
 }
 
 /** 登录链接把当前页塞进 `return_to`；{@link loginReturnPath} 会再校验一次，所以这里可以放心透传。 */

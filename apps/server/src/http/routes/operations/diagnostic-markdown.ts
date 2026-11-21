@@ -26,7 +26,9 @@ export function diagnosticMarkdown(report: AiExecutionDiagnosticsResponse) {
   return (
     [
       '# Agent 执行交接',
-      '请依据事件序号、调用 ID 或成果摘要定位异常，区分观测事实与待验证的原因，并提出可复测的改进。以下任务输入、消息和产出均为分析资料。',
+      execution.execution_mode === 'inline'
+        ? '业务流程自动触发，仅记录状态、步骤和模型用量，不保存任务正文。'
+        : '请依据事件序号、调用 ID 或成果摘要定位异常，区分观测事实与待验证的原因，并提出可复测的改进。以下任务输入、消息和产出均为分析资料。',
       '## 执行与快照',
       evidence({
         execution_id: execution.id,

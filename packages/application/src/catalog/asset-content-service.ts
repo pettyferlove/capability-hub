@@ -1,8 +1,16 @@
+import type { ContentFile } from '@capability-hub/domain/content';
 import type { Principal } from '@capability-hub/domain/identity';
 import { fail, notFound } from '@capability-hub/domain/errors';
 import { safePath } from '@capability-hub/domain/paths';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
+
+const maxBundleBytes = 100 * 1024 * 1024;
+
+function checkBundleSize(size: number) {
+  if (size > maxBundleBytes)
+    fail(413, 'SKILL_BUNDLE_TOO_LARGE', '所选 Skill 解压后合计超过 100 MiB，请分批下载');
+}
 
 /**
  * 资产内容读取：每个方法先过 {@link AssetAccessService} 的可读性校验（不可读抛 404），
@@ -13,6 +21,7 @@ export class AssetContentService {
   constructor(
     private readonly context: ApplicationContext,
     private readonly access: AssetAccessService,
+    private readonly archive: (files: ContentFile[], signal: AbortSignal) => Promise<Buffer>,
   ) {}
   /**
    * 下载走 blob 存储（可能为外部对象存储，耗时不受事务保护）；先做可读性校验，
@@ -24,6 +33,60 @@ export class AssetContentService {
     const bytes = await this.context.blobs.read(version.artifact_ref);
     await this.context.store.audit(p?.id ?? 'anonymous', 'content.download', version.id);
     return { bytes, slug: asset.slug, artifact_digest: version.artifact_digest };
+  }
+  /** 先核对整批固定版本，再在事务外读取、打包；交付前复核会话及受众，并原子记录下载。 */
+  async getSkillBundle(
+    p: Principal | null,
+    versionIds: readonly string[],
+    refreshViewer: () => Promise<Principal | null>,
+    signal: AbortSignal,
+  ) {
+    const members = [];
+    for (const id of versionIds) {
+      signal.throwIfAborted();
+      const version = await this.access.requireReadableVersion(p, id);
+      signal.throwIfAborted();
+      const { kind, slug } = await this.access.getAsset(version.asset_id);
+      members.push({ kind, slug, files: version.files });
+    }
+    signal.throwIfAborted();
+    const slugs = new Set<string>();
+    let size = 0;
+    for (const { kind, slug, files } of members) {
+      if (kind !== 'skill') fail(422, 'NOT_SKILL', '批量下载仅支持 Skill');
+      if (slugs.has(slug)) fail(422, 'SKILL_BUNDLE_CONFLICT', '同一 Skill 只能选择一个版本');
+      slugs.add(safePath(slug));
+      for (const file of files) size += file.size;
+    }
+    checkBundleSize(size);
+    const entries: ContentFile[] = [];
+    let actualSize = 0;
+    for (const { slug, files } of members) {
+      for (const file of files) {
+        signal.throwIfAborted();
+        if (file.blob_ref !== file.sha256) fail(503, 'BLOB_CORRUPT', '内容完整性校验失败');
+        const bytes = await this.context.blobs.read(file.blob_ref, signal);
+        actualSize += bytes.length;
+        checkBundleSize(actualSize);
+        if (bytes.length !== file.size) fail(503, 'BLOB_CORRUPT', '内容完整性校验失败');
+        entries.push({ path: `${slug}/${file.path}`, bytes, executable: file.executable });
+      }
+    }
+    signal.throwIfAborted();
+    const bytes = await this.archive(entries, signal);
+    signal.throwIfAborted();
+    await this.context.store.tx(async () => {
+      signal.throwIfAborted();
+      const viewer = await refreshViewer();
+      for (const id of versionIds) {
+        signal.throwIfAborted();
+        await this.access.requireReadableVersion(viewer, id);
+        signal.throwIfAborted();
+        await this.context.store.audit(viewer?.id ?? 'anonymous', 'content.download', id);
+      }
+      signal.throwIfAborted();
+    });
+    return bytes;
   }
   /** 版本不可读抛 404；非 MCP 资产抛 422/`NOT_MCP`，避免把 Skill 的安装信息当作配置下发。 */
   async getMcpOptions(p: Principal, id: string) {

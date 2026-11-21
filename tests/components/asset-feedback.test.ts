@@ -43,7 +43,7 @@ test('反馈表单要求授权，失败保留内容和幂等键，修改内容�
   const requests: Record<string, unknown>[] = [];
   let submitted = 0;
   context.mock.method(globalThis, 'fetch', (path: string, options: RequestInit) => {
-    if (path.endsWith('/versions'))
+    if (path === '/api/assets/asset-1/versions?latest_readable=1')
       return Promise.resolve(Response.json([{ version_id: 'version-1', version_label: '1.0.0' }]));
     assert.equal(path, '/api/feedback');
     requests.push(JSON.parse(String(options.body)));
@@ -209,7 +209,7 @@ function feedbackPage(canAi = false) {
 test('反馈列表与详情切换，表单返回保留草稿，成功后打开新记录', async (context) => {
   context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
     if (path.includes('/feedback?page=')) return Response.json({ items: [feedback], total: 1 });
-    if (path.endsWith('/versions'))
+    if (path === '/api/assets/asset-1/versions?latest_readable=1')
       return Response.json([{ version_id: 'version-1', version_label: '1.0.0' }]);
     if (path === '/api/feedback/feedback-1') return Response.json(feedback);
     if (path === '/api/feedback' && options.method === 'POST') return Response.json(feedback);

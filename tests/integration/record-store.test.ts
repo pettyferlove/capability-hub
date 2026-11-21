@@ -4,6 +4,7 @@ import { setImmediate } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 import { openRecordStore } from '@capability-hub/infrastructure/store';
 import { createSqliteStore, deferred } from '../support/store.js';
+import { catalogPromptState } from '../support/migrations.js';
 
 const group = (name: string) => ({ id: randomUUID(), name, active: true, revision: 1 });
 
@@ -136,6 +137,35 @@ test('审计追加后不能修改或删除，目录修订随实际业务变更�
   await store.put('groups', { ...value, name: '更名后', revision: 2 });
   assert.notEqual(await store.revision(), afterInsert);
   assert.equal((await store.get('audit', event.id))?.subject?.name, '审计团队');
+});
+
+test('提示调度只读生成列，插入前为空，插入和替换后反映正文', async (context) => {
+  const { store } = await createSqliteStore(context);
+  assert.equal(await store.catalogPromptSchedule(), undefined);
+  const state = await store.insert('catalog_prompts', catalogPromptState(1_000));
+  assert.deepEqual(await store.catalogPromptSchedule(), {
+    next_refresh_at: 1_000,
+    active_job_id: null,
+  });
+  const jobId = randomUUID();
+  await store.put('catalog_prompts', {
+    ...state,
+    next_refresh_at: 2_000,
+    active_job_id: jobId,
+    window: { start: 2_000, job_id: jobId, reserved: 0, deadline: null },
+  });
+  assert.deepEqual(await store.catalogPromptSchedule(), {
+    next_refresh_at: 2_000,
+    active_job_id: jobId,
+  });
+});
+
+test('写入提示单例不改变目录修订', async (context) => {
+  const { store } = await createSqliteStore(context);
+  const before = await store.revision();
+  const state = await store.insert('catalog_prompts', catalogPromptState(1_000));
+  await store.put('catalog_prompts', { ...state, next_refresh_at: 2_000 });
+  assert.equal(await store.revision(), before);
 });
 
 test('写入前拒绝不符合当前结构的记录，捕获校验异常也不能提交其他写入', async (context) => {

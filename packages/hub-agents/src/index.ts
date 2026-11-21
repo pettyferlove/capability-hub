@@ -1,12 +1,18 @@
 import { OperationRegistry } from '@capability-hub/ai';
 import type { AgentEvidenceService, PublicationQueryService } from '@capability-hub/application';
+import {
+  catalogDiscoveryOperation,
+  catalogPromptsOperation,
+} from './business/catalog-discovery.js';
 import { registerBusinessOperations } from './business/operations.js';
 import { registerPublicationReview } from './business/publication-review.js';
 import { registerAgentLab } from './examples/agent-lab.js';
 import { registerAssistant } from './examples/assistant.js';
 
+export * from './business/catalog-discovery.js';
+
 /**
- * 基础助手与协作演示始终注册。业务操作要求版本证据服务，审核助手还须有申请查询服务。
+ * 首页操作无需证据服务；面向具体资源和发布申请的操作由宿主在依赖就绪后注册。
  */
 export function createHubAgentRegistry(
   evidence?: AgentEvidenceService,
@@ -15,6 +21,8 @@ export function createHubAgentRegistry(
   const registry = new OperationRegistry();
   registerAssistant(registry);
   registerAgentLab(registry);
+  registry.register(catalogDiscoveryOperation);
+  registry.register(catalogPromptsOperation);
   if (evidence) registerBusinessOperations(registry, evidence);
   if (evidence && publications) registerPublicationReview(registry, evidence, publications);
   return registry;

@@ -610,6 +610,18 @@ function renderTaskForm(context: TestContext, inputSchema: AiExecutionResponse['
   return inputs;
 }
 
+test('新建任务不列出由首页或后台触发的 Agent', () => {
+  render(
+    createElement(NewExecution, {
+      catalog: { default_profile: '', profiles: [], operations: createHubAgentRegistry().list() },
+      onCreated: () => {},
+    }),
+  );
+  const types = within(screen.getByRole('group', { name: '选择任务类型' }));
+  assert(types.getByRole('button', { name: /基础助手/ }));
+  assert.equal(types.queryByRole('button', { name: /首页对话检索|开场提示生成/ }), null);
+});
+
 test('必填参考项在可选折叠区外，填写后才能开始任务', async (context) => {
   const inputs = renderTaskForm(context, {
     type: 'object',
@@ -832,6 +844,25 @@ test('成果视图保留与最终结果不同的草案和未知成果', () => {
   fireEvent.click(summary);
   assert.match(details.textContent ?? '', /先前草案/);
   assert.ok(screen.getByText('附加建议'));
+});
+
+test('运行中的首页执行只显示可读信息，成果页说明不保存正文', async () => {
+  render(
+    createElement(ExecutionPanel, {
+      view: executionView({
+        operation_id: 'catalog-discovery',
+        execution_mode: 'inline',
+        status: 'running',
+        input: {},
+      }),
+      canManage: true,
+      connection: '已连接',
+      onRefresh: () => {},
+    }),
+  );
+  assert.equal(screen.queryByRole('button', { name: '取消任务' }), null);
+  await userEvent.setup().click(screen.getByRole('tab', { name: /成果/ }));
+  assert(within(screen.getByRole('tabpanel', { name: /成果/ })).getByText(/不保存问题/));
 });
 
 test('人工确认需要明确选择，切换视图保留决定与意见，标签支持键盘操作', () => {

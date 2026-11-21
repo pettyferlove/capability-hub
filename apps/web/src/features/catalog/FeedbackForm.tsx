@@ -53,7 +53,10 @@ export function FeedbackForm({
     data: versions,
     error: versionsError,
     errorProps,
-  } = useQuery<VersionHistoryResponse[]>(`/api/assets/${assetId}/versions`, versionsRefresh);
+  } = useQuery<VersionHistoryResponse[]>(
+    `/api/assets/${assetId}/versions?latest_readable=1`,
+    versionsRefresh,
+  );
   async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending.current) return;
@@ -114,7 +117,7 @@ export function FeedbackForm({
                   </option>
                 ))
               ) : (
-                <option value={versionId}>当前版本</option>
+                <option value={versionId}>正在查看的版本</option>
               )}
             </SelectField>
           </label>

@@ -5,6 +5,7 @@ import type {
 } from '@capability-hub/application/ports';
 import {
   parseRecord,
+  catalogPromptStateId,
   type GitSourceRecord,
   type RecordMap,
   type TableName,
@@ -32,6 +33,7 @@ import { sqliteRevision, type sqliteSchema, sqliteTableFor } from './record-sche
 import {
   audit,
   bindings,
+  catalog_prompts,
   hub_feedback,
   hub_feedback_attachments,
   hub_feedback_events,
@@ -119,6 +121,16 @@ export class SqliteQueries implements RecordQueries {
       )
       .orderBy(jobs.id);
     return rows.map((row) => parseRecord('jobs', row.data));
+  }
+  async catalogPromptSchedule() {
+    const [row] = await this.db
+      .select({
+        next_refresh_at: catalog_prompts.next_refresh_at,
+        active_job_id: catalog_prompts.active_job_id,
+      })
+      .from(catalog_prompts)
+      .where(eq(catalog_prompts.id, catalogPromptStateId));
+    return row;
   }
   async listDueSources(now: number): Promise<GitSourceRecord[]> {
     const rows = await this.db

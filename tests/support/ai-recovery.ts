@@ -63,6 +63,7 @@ export function recoveryRuntime(
   const ai: AiStore = {
     get: base.get.bind(base),
     list: base.list.bind(base),
+    listDueExecutionIds: base.listDueExecutionIds.bind(base),
     summarizeExecutions: base.summarizeExecutions.bind(base),
     summarizeExecutionDays: base.summarizeExecutionDays.bind(base),
     summarizeTokenUsage: base.summarizeTokenUsage.bind(base),

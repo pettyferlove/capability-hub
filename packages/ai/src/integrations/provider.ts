@@ -1,16 +1,18 @@
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { createAnthropic } from '@ai-sdk/anthropic';
+import {
+  createEndpointModel,
+  endpointProviderOptions,
+  reasoningEffortFor,
+  type EndpointModel,
+} from './endpoint-model.js';
 import type { AgentExecutionOptions } from '@mastra/core/agent';
-import { randomUUID } from 'node:crypto';
 import type { AiAuthorization, CredentialResolver } from '../core/ports.js';
 import type { AiConfiguration, ModelProfile } from '../core/config.js';
-import type { AiRecordMap, ModelCallDiagnostics } from '../core/records.js';
+import type { ModelCallDiagnostics } from '../core/records.js';
 import { AiError } from '../core/errors.js';
 import { type ExecutionScope } from '../execution/scope.js';
 import { type AiEventService } from '../execution/events.js';
-import { observeModelFrame, observeModelHttpError } from './provider-diagnostics.js';
-
-type EndpointModel = ReturnType<ReturnType<typeof createOpenAICompatible>>;
+import { reserveModelCall, settleModelCall, withdrawModelCall } from '../execution/model-calls.js';
+import { ModelWireUsage, observeModelHttpError } from './provider-diagnostics.js';
 
 /**
  * 单次执行内的模型客户端：调用前在事务里预留 `ai_calls` 并扣减请求预算，用量在请求结束后
@@ -29,24 +31,10 @@ export class ManagedProvider {
     private readonly agentId: string,
     operationId: string,
   ) {
-    if (profile.thinking_control === 'effort_only') {
-      this.reasoningEffort =
-        profile.reasoning_effort_overrides?.[`${operationId}/${agentId}`] ??
-        profile.reasoning_effort;
-    } else if (profile.thinking_control !== 'omit') {
-      this.reasoningEffort = 'none';
-    }
+    this.reasoningEffort = reasoningEffortFor(profile, `${operationId}/${agentId}`);
   }
   get providerOptions(): AgentExecutionOptions['providerOptions'] {
-    const effort = this.reasoningEffort;
-    if (!effort) return undefined;
-    if (this.profile.format === 'anthropic')
-      return { anthropic: effort === 'none' ? { thinking: { type: 'disabled' } } : { effort } };
-    if (this.profile.thinking_control === 'thinking_type')
-      return { hubOpenai: { thinking: { type: 'disabled' } } };
-    if (this.profile.thinking_control === 'enable_thinking')
-      return { hubOpenai: { enable_thinking: false } };
-    return { openaiCompatible: { reasoningEffort: effort } };
+    return endpointProviderOptions(this.profile, this.reasoningEffort);
   }
   assertSuccess() {
     if (this.failure) throw this.failure;
@@ -60,81 +48,7 @@ export class ManagedProvider {
   async model(): Promise<EndpointModel> {
     const apiKey = await this.credentials.resolve(this.profile.credential_ref);
     if (!apiKey.trim()) throw new AiError('AI_CONFIGURATION', '模型凭据不可用');
-    const options = {
-      baseURL: this.profile.base_url.replace(/\/$/, ''),
-      apiKey,
-      fetch: this.fetch,
-    };
-    if (this.profile.format === 'anthropic') return createAnthropic(options)(this.profile.model);
-    return createOpenAICompatible({
-      ...options,
-      name: 'hub-openai',
-      includeUsage: true,
-      transformRequestBody:
-        this.profile.chat_max_tokens_field === 'max_completion_tokens'
-          ? (body) => {
-              body.max_completion_tokens = body.max_tokens;
-              delete body.max_tokens;
-              return body;
-            }
-          : undefined,
-    })(this.profile.model);
-  }
-  private async reserve(diagnostics: ModelCallDiagnostics): Promise<AiRecordMap['ai_calls']> {
-    const owner = this.scope.current().owner_id;
-    return this.scope.write(async (execution) => {
-      await this.authorization.authorize(owner, 'execute', execution);
-      if (execution.payload.usage.requests >= this.config.max_requests)
-        throw new AiError('AI_BUDGET_EXCEEDED', '模型请求次数已达到上限');
-      const now = new Date().toISOString();
-      const call: AiRecordMap['ai_calls'] = {
-        id: randomUUID(),
-        owner_id: owner,
-        execution_id: execution.id,
-        lookup_key: execution.id,
-        status: 'pending',
-        position: execution.payload.usage.requests + 1,
-        created_at: now,
-        updated_at: now,
-        payload: {
-          attempt: execution.payload.attempt,
-          profile: this.profile.id,
-          diagnostics,
-          input_tokens: 0,
-          output_tokens: 0,
-          error_code: null,
-          duration_ms: 0,
-        },
-      };
-      execution.payload.usage.requests++;
-      await this.scope.store.put('ai_executions', execution);
-      await this.scope.store.insert('ai_calls', call);
-      return call;
-    });
-  }
-  private async settle(
-    call: AiRecordMap['ai_calls'],
-    usage: { input: number; output: number; known: boolean },
-    error?: AiError,
-  ) {
-    await this.scope.write(async (execution) => {
-      const prior = await this.scope.store.get('ai_calls', call.id);
-      if (!prior || prior.status !== 'pending') return;
-      call.status = error ? 'failed' : usage.known ? 'succeeded' : 'unknown';
-      call.updated_at = new Date().toISOString();
-      call.payload = {
-        ...call.payload,
-        input_tokens: usage.input,
-        output_tokens: usage.output,
-        duration_ms: Date.now() - Date.parse(call.created_at),
-        error_code: error?.code ?? null,
-      };
-      execution.payload.usage.input_tokens += usage.input;
-      execution.payload.usage.output_tokens += usage.output;
-      if (!usage.known) execution.payload.usage.unknown_requests++;
-      await this.scope.store.put('ai_calls', call);
-      await this.events.append(execution, 'usage.updated', { ...execution.payload.usage });
-    });
+    return createEndpointModel(this.profile, apiKey, this.fetch);
   }
   // Mastra 会在部分错误下自行重试。首个传输失败中止本轮作用域，重试只由宿主队列决定。
   private readonly fetch: typeof fetch = async (input, init) => {
@@ -149,23 +63,26 @@ export class ManagedProvider {
       max_output_tokens: this.profile.max_output_tokens,
       ...(this.reasoningEffort && { reasoning_effort: this.reasoningEffort }),
     };
-    let call: AiRecordMap['ai_calls'];
+    let callId: string;
     try {
-      call = await this.reserve(diagnostics);
+      callId = await this.scope.write(async (execution) => {
+        await this.authorization.authorize(execution.owner_id, 'execute', execution);
+        const id = await reserveModelCall(
+          this.scope.store,
+          execution,
+          diagnostics,
+          this.config.max_requests,
+        );
+        controller.signal.throwIfAborted();
+        return id;
+      });
     } catch (error) {
       return this.fail(
         error instanceof AiError ? error : new AiError('AI_INTERNAL', '模型请求预留失败'),
       );
     }
-    const usage = { input: 0, output: 0, known: false };
-    const transport: NonNullable<ModelCallDiagnostics['transport']> = {
-      received_bytes: 0,
-      text_chars: 0,
-      terminal_received: false,
-      request_timed_out: false,
-      input_tokens_reported: false,
-      output_tokens_reported: false,
-    };
+    const wire = new ModelWireUsage(this.profile.format);
+    const { transport } = wire;
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
     const timeout = AbortSignal.timeout(this.profile.request_timeout_ms);
@@ -175,9 +92,16 @@ export class ManagedProvider {
       ...(init?.signal ? [init.signal] : []),
     ]);
     const settle = async (error?: AiError) => {
-      call.payload.diagnostics = { ...diagnostics, transport };
       try {
-        await this.settle(call, { ...usage, known: usage.known && !error }, error);
+        await this.scope.write((execution) =>
+          settleModelCall(this.events, execution, callId, {
+            transport,
+            inputTokens: wire.inputTokens,
+            outputTokens: wire.outputTokens,
+            complete: !error && transport.terminal_received,
+            errorCode: error?.code ?? null,
+          }),
+        );
       } catch (cause) {
         if (!controller.signal.aborted) throw cause;
         // 已失去租约时由新执行者将 pending 请求收敛为 unknown，旧执行者不能补写。
@@ -191,6 +115,7 @@ export class ManagedProvider {
         true,
       );
     };
+    let fetchStarted = false;
     try {
       let headers = init?.headers;
       if (this.profile.request_headers) {
@@ -204,6 +129,8 @@ export class ManagedProvider {
           );
         headers = merged;
       }
+      signal.throwIfAborted();
+      fetchStarted = true;
       const response = await fetch(input, { ...init, headers, redirect: 'error', signal });
       transport.headers_ms = elapsed();
       transport.http_status = response.status;
@@ -222,69 +149,13 @@ export class ManagedProvider {
       const decoder = new TextDecoder();
       let buffer = '';
       const reader = response.body.getReader();
-      const inspect = (frame: string) => {
-        const data = frame
-          .split(/\r?\n/)
-          .filter((line) => line.startsWith('data:'))
-          .map((line) => line.slice(5).trimStart())
-          .join('\n');
-        if (this.profile.format === 'openai' && data.trim() === '[DONE]') {
-          transport.terminal_received = true;
-          return;
-        }
-        if (!data) return;
-        const parsed: unknown = JSON.parse(data);
-        if (!parsed || typeof parsed !== 'object') return;
-        const item = parsed as Record<string, unknown>;
-        observeModelFrame(transport, this.profile.format, item, elapsed());
-        if (this.profile.format === 'anthropic' && item.type === 'message_stop')
-          transport.terminal_received = true;
-        const message =
-          item.message && typeof item.message === 'object'
-            ? (item.message as Record<string, unknown>)
-            : undefined;
-        const openai = this.profile.format === 'openai';
-        const raw = openai
-          ? item.usage
-          : item.type === 'message_start'
-            ? message?.usage
-            : item.type === 'message_delta'
-              ? item.usage
-              : undefined;
-        if (!raw || typeof raw !== 'object') return;
-        const record = raw as Record<string, unknown>;
-        const inputTokens = openai ? record.prompt_tokens : record.input_tokens;
-        // Messages 起始帧的 output_tokens 只是初始值，完整输出用量来自 message_delta。
-        const outputTokens = openai
-          ? record.completion_tokens
-          : item.type === 'message_delta'
-            ? record.output_tokens
-            : undefined;
-        if (
-          typeof inputTokens === 'number' &&
-          Number.isSafeInteger(inputTokens) &&
-          inputTokens >= 0
-        ) {
-          usage.input = inputTokens;
-          transport.input_tokens_reported = true;
-        }
-        if (
-          typeof outputTokens === 'number' &&
-          Number.isSafeInteger(outputTokens) &&
-          outputTokens >= 0
-        ) {
-          usage.output = outputTokens;
-          transport.output_tokens_reported = true;
-        }
-        usage.known = transport.input_tokens_reported && transport.output_tokens_reported;
-      };
       const body = new ReadableStream<Uint8Array>({
         pull: async (sink) => {
           try {
             const chunk = await reader.read();
             if (chunk.done) {
               buffer += decoder.decode();
-              if (buffer.trim()) inspect(buffer);
+              if (buffer.trim()) wire.inspectSseFrame(buffer, elapsed());
               if (!transport.terminal_received)
                 throw new AiError('AI_STREAM_INCOMPLETE', '模型流在终止帧之前结束', true);
               await settle();
@@ -298,7 +169,7 @@ export class ManagedProvider {
               throw new AiError('AI_STREAM_INCOMPLETE', '模型事件帧超过限制');
             const frames = buffer.split(/\r?\n\r?\n/);
             buffer = frames.pop() ?? '';
-            for (const frame of frames) inspect(frame);
+            for (const frame of frames) wire.inspectSseFrame(frame, elapsed());
             sink.enqueue(chunk.value);
           } catch (error) {
             const failure = error instanceof AiError ? error : connectionFailure('模型连接中断');
@@ -321,7 +192,16 @@ export class ManagedProvider {
       });
     } catch (error) {
       const failure = error instanceof AiError ? error : connectionFailure('模型端点连接失败');
-      await settle(failure);
+      if (fetchStarted) await settle(failure);
+      else {
+        // 中断会阻止正常步骤写入；仅持有原租约时可以撤回尚未出站的预留。
+        await this.scope.store.tx(async () => {
+          await this.scope.queue.assert(lease);
+          const execution = await this.scope.read();
+          if (execution.status === 'running' && execution.payload.dispatch_id === lease.dispatch_id)
+            await withdrawModelCall(this.scope.store, execution, callId);
+        });
+      }
       return this.fail(failure);
     }
   };

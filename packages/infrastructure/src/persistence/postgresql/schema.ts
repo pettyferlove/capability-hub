@@ -777,6 +777,23 @@ export const hub_feedback_attachments = pgTable(
   ],
 );
 
+/** 后台开场提示的单例状态；不安装版本触发器，刷新它不让缓存失效。 */
+export const catalog_prompts = pgTable(
+  'catalog_prompts',
+  {
+    id: text('id').primaryKey().notNull(),
+    data: jsonb('data').$type<RecordMap['catalog_prompts']>().notNull(),
+    next_refresh_at: bigint('next_refresh_at', { mode: 'number' })
+      .generatedAlwaysAs(sql`((data ->> 'next_refresh_at')::bigint)`)
+      .notNull(),
+    active_job_id: feedbackText('active_job_id'),
+  },
+  (): PgTableExtraConfigValue[] => [
+    check('catalog_prompts_data_check', feedbackDataCheck),
+    check('catalog_prompts_singleton', sql`id = 'catalog-prompts'`),
+  ],
+);
+
 export {
   ai_executions,
   ai_events,

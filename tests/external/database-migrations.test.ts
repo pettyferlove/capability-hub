@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { Pool } from 'pg';
 import { externalDatabase } from '../support/external.js';
 import {
+  assertCatalogPromptMigration,
+  assertExecutionExpiryMigration,
   assertRecommendationMigration,
   assertUnpublishedDeletionMigration,
   migrationRuntime,
@@ -13,6 +15,45 @@ test('PostgreSQL 升级允许清理未发布内容，保留待审与正式发布
   const database = await externalDatabase();
   try {
     await assertUnpublishedDeletionMigration(context, runtime, {
+      driver: 'postgresql',
+      url: database.url,
+      onPoolError: (error) => {
+        throw error;
+      },
+    });
+  } finally {
+    await database.close();
+  }
+});
+
+test('PostgreSQL 从 0006 历史升级后提供提示表，单例约束拒绝第二行', async (context) => {
+  const runtime = await migrationRuntime(context, 'postgresql');
+  const database = await externalDatabase();
+  const pool = new Pool({ connectionString: database.url });
+  try {
+    await assertCatalogPromptMigration(
+      runtime,
+      {
+        driver: 'postgresql',
+        url: database.url,
+        onPoolError: (error) => {
+          throw error;
+        },
+      },
+      (id, data) =>
+        pool.query('INSERT INTO catalog_prompts (id, data) VALUES ($1, $2)', [id, data]),
+    );
+  } finally {
+    await pool.end();
+    await database.close();
+  }
+});
+
+test('PostgreSQL 从 0007 升级后按期限及 ID 回收已有执行，只包含已到期的等待与内联执行', async (context) => {
+  const runtime = await migrationRuntime(context, 'postgresql');
+  const database = await externalDatabase();
+  try {
+    await assertExecutionExpiryMigration(context, runtime, {
       driver: 'postgresql',
       url: database.url,
       onPoolError: (error) => {

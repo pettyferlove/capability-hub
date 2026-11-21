@@ -6,7 +6,7 @@ import {
   installationRouteStyles,
 } from '../../shared/styles/recipes.js';
 import { AgentClientSelect } from '../../shared/components/AgentClientSelect.js';
-import type { AssetResponse, ClientConfigurationResponse } from '@capability-hub/contracts/http';
+import type { ClientConfigurationResponse } from '@capability-hub/contracts/http';
 import { publicResourcePath } from '@capability-hub/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../shared/api/client.js';
@@ -17,7 +17,9 @@ import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { SelectField } from '../../shared/components/SelectField.js';
 import { installationPrompt } from './installation-prompt.js';
+import type { AssetView } from './asset-view.js';
 import {
+  agentSkillInstallPrompt,
   cliResourceCommand,
   hubMcpConfigurationPrompt,
   installationMethods,
@@ -27,21 +29,23 @@ import {
 /**
  * 「使用与安装」标签的内容，按 {@link installationMethods} 的结果三选一：
  * 公开资源给对话安装指令，Skill 给 CLI 命令，MCP 交给受限配置表单。
- * 各分支都使用当前发布版本，因此安装结果与页面展示的版本一致。
+ * 各分支都锁定视图展示的发布，因此安装结果与页面展示的版本一致。
+ * 渲染与切换页签不请求配置或票据，只有用户点「生成配置预览」才取配置。
  */
-export function ResourceInstallation({ asset, origin }: { asset: AssetResponse; origin: string }) {
+export function ResourceInstallation({ view, origin }: { view: AssetView; origin: string }) {
   const { me } = useHub();
-  const methods = installationMethods(asset);
+  const { asset, release } = view;
+  const methods = installationMethods(view);
   const [client, setClient] = useState<InstallationClient>('codex');
   if (methods.conversation)
     return (
       <section className={conversationInstallStyles} aria-label="公开资源对话安装">
         <h3>对话安装</h3>
         <p className={subtleStyles}>复制指令到 Agent 对话中安装此资源。</p>
-        <CodeBlock title="安装指令" code={installationPrompt(asset, origin)} />
+        <CodeBlock title="安装指令" code={installationPrompt(view, origin)} />
         <a
           className={textBtnStyles}
-          href={publicResourcePath(asset.kind, asset.slug, asset.current_release.version_label)}
+          href={publicResourcePath(asset.kind, asset.slug, release.version_label)}
           download={`${asset.slug}-install.md`}
         >
           下载安装说明
@@ -57,21 +61,25 @@ export function ResourceInstallation({ asset, origin }: { asset: AssetResponse; 
         <CliLogin />
         <CodeBlock
           title="安装到当前项目 · 可修改目标目录"
-          code={cliResourceCommand(asset, origin, undefined, client)}
+          code={cliResourceCommand(view, origin, undefined, client)}
         />
         <p className={subtleStyles}>
           已接入 Hub 的 Agent 可使用一次性下载票据安装，无需另外登录 CLI。
         </p>
         <CodeBlock
           title="交给 Agent 安装"
-          code={`请调用 install_skill（version_id ${asset.current_release.version_id}，client ${client}）取得下载票据。按返回的 cli_command 先加 --dry-run 核对目录和差异，经我确认后安装。无法运行 CLI 时，按返回说明下载并校验摘要。保留已有目录，不要在回复中复述票据地址。`}
+          code={agentSkillInstallPrompt(
+            [{ slug: asset.slug, version_label: release.version_label }],
+            origin,
+            client,
+          )}
         />
       </section>
     );
   return (
     <RestrictedMcpInstallation
-      key={asset.current_release.release_id + ':' + (me?.id ?? '')}
-      asset={asset}
+      key={release.release_id + ':' + (me?.id ?? '')}
+      view={view}
       origin={origin}
     />
   );
@@ -86,8 +94,8 @@ function CliLogin() {
   );
 }
 
-function RestrictedMcpInstallation({ asset, origin }: { asset: AssetResponse; origin: string }) {
-  const options = installationMethods(asset).options;
+function RestrictedMcpInstallation({ view, origin }: { view: AssetView; origin: string }) {
+  const { options, cli } = installationMethods(view);
   const [client, setClient] = useState<InstallationClient>('codex');
   const [optionId, setOptionId] = useState(options[0]?.option_id ?? '');
   const shared = options.find((option) => option.option_id === optionId)?.has_shared_key;
@@ -112,7 +120,7 @@ function RestrictedMcpInstallation({ asset, origin }: { asset: AssetResponse; or
     setError('');
     try {
       const result = await api<ClientConfigurationResponse>(
-        `/api/versions/${asset.current_release.version_id}/mcp-config?` +
+        `/api/versions/${view.release.version_id}/mcp-config?` +
           new URLSearchParams({
             installation_option_id: optionId,
             client,
@@ -141,7 +149,7 @@ function RestrictedMcpInstallation({ asset, origin }: { asset: AssetResponse; or
     <section className={conversationInstallStyles} aria-label="受限 MCP 配置方式">
       <h3>配置 MCP</h3>
       <p className={subtleStyles}>
-        选择客户端和安装项，通过已授权的 CLI 或 Hub MCP 获取此版本的配置。
+        选择客户端和安装项，可预览此版本的配置或交给已接入 Hub MCP 的 Agent 生成。
       </p>
       <div className={formRowStyles}>
         <AgentClientSelect value={client} onChange={setClient} />
@@ -159,28 +167,28 @@ function RestrictedMcpInstallation({ asset, origin }: { asset: AssetResponse; or
       {shared && (
         <Message>登录后生成的配置包含共享密钥。请保存到客户端的用户配置，轮换后重新获取。</Message>
       )}
-      <details className={installationRouteStyles} open>
-        <summary>通过 CLI 生成配置</summary>
-        <CliLogin />
-        <CodeBlock
-          title={shared ? '生成用户配置 · 含共享密钥' : '生成项目配置 · 保留现有客户端设置'}
-          code={cliResourceCommand(asset, origin, optionId, client)}
-        />
-      </details>
-      <details className={installationRouteStyles}>
+      {cli && (
+        <details className={installationRouteStyles} open>
+          <summary>通过 CLI 生成配置</summary>
+          <CliLogin />
+          <CodeBlock
+            title={shared ? '生成用户配置 · 含共享密钥' : '生成项目配置 · 保留现有客户端设置'}
+            code={cliResourceCommand(view, origin, optionId, client)}
+          />
+        </details>
+      )}
+      <details className={installationRouteStyles} open={!cli}>
         <summary>通过 Hub MCP 生成配置</summary>
         <p className={subtleStyles}>先在 Agent 中接入 Hub MCP，再复制以下请求。</p>
         <CodeBlock
           title="Hub MCP 配置请求"
-          code={hubMcpConfigurationPrompt(asset, optionId, client)}
+          code={hubMcpConfigurationPrompt(view, optionId, client)}
         />
         <a className={textBtnStyles} href="/connect">
           Hub MCP 接入说明
         </a>
       </details>
-      <p className={subtleStyles}>
-        CLI 与 Hub MCP 输出配置；配置写入、变量设置和连接验证在目标客户端完成。
-      </p>
+      <p className={subtleStyles}>配置写入、变量设置和连接验证在目标客户端完成。</p>
       <details className={installationRouteStyles}>
         <summary>预览客户端配置</summary>
         <Submit type="button" busy={busy} onClick={previewConfiguration}>

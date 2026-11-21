@@ -35,7 +35,8 @@ export class BlobStore implements BlobStorage {
     await this.read(hash);
     return hash;
   }
-  async read(hash: string): Promise<Buffer> {
+  async read(hash: string, signal?: AbortSignal): Promise<Buffer> {
+    signal?.throwIfAborted();
     let bytes: Buffer;
     try {
       const file = await open(
@@ -43,8 +44,9 @@ export class BlobStore implements BlobStorage {
         constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
       );
       try {
+        signal?.throwIfAborted();
         if (!(await file.stat()).isFile()) fail(503, 'BLOB_CORRUPT', '内容对象必须是普通文件');
-        bytes = await file.readFile();
+        bytes = await file.readFile({ signal });
       } finally {
         await file.close();
       }
@@ -55,6 +57,7 @@ export class BlobStore implements BlobStorage {
         fail(503, 'BLOB_MISSING', '内容暂不可用，请联系管理员');
       throw error;
     }
+    signal?.throwIfAborted();
     if (sha256(bytes) !== hash) fail(503, 'BLOB_CORRUPT', '内容完整性校验失败');
     return bytes;
   }

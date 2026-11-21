@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import { test } from 'node:test';
 import { sha256 } from '@capability-hub/domain/canonical';
+import type { TableName } from '@capability-hub/domain/models';
+import { archive } from '@capability-hub/infrastructure/content/zip-archive';
 import type { Agent } from 'supertest';
 import { createTestHub, publishSkill, testPassword } from '../support/application.js';
 import { httpClient, signIn } from '../support/http.js';
+import { skillDocument } from '../support/content.js';
+import { serveTestHub } from '../support/server.js';
+import { deferred } from '../support/store.js';
 
 function assertFailure(
   response: { status: number; body: { error?: unknown } },
@@ -17,6 +23,10 @@ function assertFailure(
   assert.equal(response.body.error.code, code);
   assert('request_id' in response.body.error);
   assert.match(String(response.body.error.request_id), /^[a-f0-9-]{36}$/);
+}
+
+function bundlePath(...ids: string[]) {
+  return '/api/catalog/skill-bundle?' + new URLSearchParams(ids.map((id) => ['version_id', id]));
 }
 
 test('生产 HTTP 支持内网地址的登录会话，匿名目录、来源和 CSRF 校验按权限生效', async (context) => {
@@ -380,4 +390,225 @@ test('归档下载读取成功后才追加审计，读取失败和撤权请求�
   await fixture.hub.lifecycle.revokeVersion(fixture.admin, intake.version_id, '撤回版本');
   assertFailure(await guest.get(route), 404, 'NOT_FOUND');
   assert.equal((await downloads()).length, 1);
+});
+
+test('Skill 合包按固定版本交付完整目录、文件字节和执行位，逐版本记下载审计', async (context) => {
+  const fixture = await serveTestHub(context);
+  const firstFiles = [
+    { path: 'SKILL.md', bytes: skillDocument('first-skill', '第一版'), executable: false },
+    { path: 'scripts/show.sh', bytes: Buffer.from('#!/bin/sh\npwd\n'), executable: true },
+  ];
+  const first = await publishSkill(fixture, {
+    slug: 'first-skill',
+    files: firstFiles.map((file) => ({ ...file, path: `upstream/${file.path}` })),
+  });
+  await publishSkill(fixture, {
+    slug: 'first-skill',
+    assetId: first.intake.asset_id,
+    version: '2.0.0',
+    body: '第二版',
+  });
+  const second = await publishSkill(fixture, { slug: 'second-skill' });
+  const selected = [second.intake.version_id, first.intake.version_id];
+  const response = await fetch(fixture.origin + bundlePath(...selected));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/zip');
+  assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  assert.equal(
+    response.headers.get('content-disposition'),
+    'attachment; filename="capability-hub-skills.zip"',
+  );
+  const expected = await archive([
+    ...firstFiles.map((file) => ({ ...file, path: `first-skill/${file.path}` })),
+    { path: 'second-skill/SKILL.md', bytes: skillDocument('second-skill'), executable: false },
+  ]);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), expected);
+  const events = await fixture.store.where('audit', 'action', 'content.download');
+  assert.deepEqual(events.map((event) => event.entity_id).sort(), selected.sort());
+  assert(events.every((event) => event.actor_id === 'anonymous'));
+});
+
+test('Skill 合包不越过当前及历史受众，不接受重复资源或借用个人令牌', async (context) => {
+  const fixture = await createTestHub(context);
+  const organization = { mode: 'approved_audience' as const, audience: ['organization'] };
+  const first = await publishSkill(fixture);
+  const org = await publishSkill(fixture, {
+    assetId: first.intake.asset_id,
+    version: '2.0.0',
+    body: '组织发布',
+    distribution: organization,
+  });
+  const second = await publishSkill(fixture, { slug: 'second-skill', distribution: organization });
+  const open = await publishSkill(fixture, {
+    slug: 'second-skill',
+    assetId: second.intake.asset_id,
+    version: '2.0.0',
+    body: '公开发布',
+  });
+  const route = bundlePath(open.intake.version_id, first.intake.version_id);
+  const guest = httpClient(fixture);
+  assertFailure(await guest.get(route), 404, 'NOT_FOUND');
+  assertFailure(await guest.get(bundlePath(second.intake.version_id)), 404, 'NOT_FOUND');
+  const reader = await signIn(fixture, 'reader');
+  await reader.get(bundlePath(open.intake.version_id, open.intake.version_id)).expect(422);
+  assertFailure(
+    await reader.get(bundlePath(first.intake.version_id, org.intake.version_id)),
+    422,
+    'SKILL_BUNDLE_CONFLICT',
+  );
+  const token = await fixture.hub.tokens.issue(fixture.reader, { name: '只读工具' });
+  assertFailure(
+    await guest.get(route).set('Authorization', 'Bearer ' + token.token),
+    403,
+    'TOKEN_SCOPE',
+  );
+  await reader.head(route).expect('Allow', 'GET').expect(405);
+  assert.deepEqual(await fixture.store.where('audit', 'action', 'content.download'), []);
+  await reader.get(route).expect('Content-Type', 'application/zip').expect(200);
+  const events = await fixture.store.where('audit', 'action', 'content.download');
+  assert.deepEqual(
+    events.map((event) => event.actor_id),
+    [fixture.reader.id, fixture.reader.id],
+  );
+});
+
+test('Skill 合包准备期间撤销会话或任一版本，不交付归档也不保留部分审计', async (context) => {
+  const fixture = await createTestHub(context);
+  const first = await publishSkill(fixture);
+  const second = await publishSkill(fixture, { slug: 'second-skill' });
+  const route = bundlePath(first.intake.version_id, second.intake.version_id);
+  const reader = await signIn(fixture, 'reader');
+  const read = fixture.blobs.read.bind(fixture.blobs);
+  for (const change of ['session', 'release'] as const) {
+    context.mock.method(
+      fixture.blobs,
+      'read',
+      async (hash: string) => {
+        const bytes = await read(hash);
+        if (change === 'session') await fixture.hub.sessions.revokeAll(fixture.reader.id);
+        else
+          await fixture.hub.lifecycle.revokeVersion(
+            fixture.admin,
+            second.intake.version_id,
+            '撤销版本',
+          );
+        return bytes;
+      },
+      { times: 1 },
+    );
+    const result = await reader.get(route);
+    if (change === 'session') assertFailure(result, 401, 'UNAUTHENTICATED');
+    else assertFailure(result, 404, 'NOT_FOUND');
+    assert.deepEqual(await fixture.store.where('audit', 'action', 'content.download'), []);
+  }
+});
+
+test('Skill 合包先按整批解压字节数拒绝超限请求，提示分批且不读取内容', async (context) => {
+  const fixture = await createTestHub(context);
+  const first = await publishSkill(fixture);
+  const second = await publishSkill(fixture, { slug: 'second-skill' });
+  const get = fixture.store.get.bind(fixture.store);
+  context.mock.method(fixture.store, 'get', async (table: TableName, id: string) => {
+    if (table !== 'versions') return await get(table, id);
+    const version = await get('versions', id);
+    assert(version);
+    // 每包五个 10 MiB 的对象只提供存储索引；若提前读取不存在的对象便会返回 503。
+    const files = Array.from({ length: 5 }, (_, i) => ({
+      ...version.files[0],
+      path: `assets/${i}.bin`,
+      size: 10 * 1024 * 1024,
+      blob_ref: '0'.repeat(64),
+      sha256: '0'.repeat(64),
+    }));
+    return { ...version, files: [...version.files, ...files] };
+  });
+  const path = bundlePath(first.intake.version_id, second.intake.version_id);
+  const result = await httpClient(fixture).get(path);
+  assertFailure(result, 413, 'SKILL_BUNDLE_TOO_LARGE');
+  assert.match(result.body.error.message, /分批/);
+  assert.deepEqual(await fixture.store.where('audit', 'action', 'content.download'), []);
+});
+
+test('Skill 合包只同时处理两份，额外请求不排队，存储失败后释放名额', async (context) => {
+  const fixture = await createTestHub(context);
+  const { intake } = await publishSkill(fixture);
+  const path = bundlePath(intake.version_id);
+  const full = deferred();
+  const release = deferred();
+  let readers = 0;
+  const blocked = context.mock.method(fixture.blobs, 'read', async () => {
+    if (++readers === 2) full.resolve();
+    await release.promise;
+    throw new Error('fixture storage unavailable');
+  });
+  const pending = Promise.all(
+    Array.from({ length: 2 }, () => httpClient(fixture).get(path).timeout(10000).expect(500)),
+  );
+  try {
+    await Promise.race([full.promise, pending]);
+    const busy = await httpClient(fixture).get(path).timeout(3000);
+    assertFailure(busy, 429, 'SKILL_BUNDLE_BUSY');
+    assert.equal(busy.body.error.retryable, true);
+  } finally {
+    release.resolve();
+    await pending;
+    blocked.mock.restore();
+  }
+  assert.deepEqual(await fixture.store.where('audit', 'action', 'content.download'), []);
+  await httpClient(fixture).get(path).expect(200);
+});
+
+test('取消合包会中止存储读取，收尾前仍占名额，收尾后不再读取下一项或记下载', async (context) => {
+  const fixture = await serveTestHub(context);
+  const first = await publishSkill(fixture);
+  const second = await publishSkill(fixture, { slug: 'second-skill' });
+  const url = fixture.origin + bundlePath(first.intake.version_id, second.intake.version_id);
+  const started = deferred<AbortSignal | undefined>();
+  const occupied = deferred();
+  const release = deferred();
+  const reads: (AbortSignal | undefined)[] = [];
+  const read = fixture.blobs.read.bind(fixture.blobs);
+  context.mock.method(fixture.blobs, 'read', async (hash: string, signal?: AbortSignal) => {
+    reads.push(signal);
+    if (reads.length === 1) started.resolve(signal);
+    if (reads.length === 2) occupied.resolve();
+    // 模拟已经开始、只能等待结束的 I/O；返回有效字节也不能让被取消的合包继续。
+    await release.promise;
+    return await read(hash);
+  });
+  const client = new AbortController();
+  const cancelled = fetch(url, { signal: client.signal });
+  let live: Promise<Response> | undefined;
+  try {
+    const signal = await Promise.race([
+      started.promise,
+      cancelled.then(() => assert.fail('合包未读取内容')),
+    ]);
+    assert(signal);
+    live = fetch(url);
+    await Promise.race([occupied.promise, live.then(() => assert.fail('第二份合包未开始读取'))]);
+    const disconnected = once(signal, 'abort', { signal: AbortSignal.timeout(5000) });
+    client.abort();
+    await assert.rejects(cancelled, { name: 'AbortError' });
+    await disconnected;
+    assertFailure(
+      await httpClient(fixture).get(bundlePath(first.intake.version_id)).timeout(3000),
+      429,
+      'SKILL_BUNDLE_BUSY',
+    );
+    release.resolve();
+    const response = await live;
+    assert.equal(response.status, 200);
+    await response.arrayBuffer();
+    assert.equal(reads.filter((reader) => reader === signal).length, 1);
+    const audit = await fixture.store.where('audit', 'action', 'content.download');
+    assert.deepEqual(
+      audit.map((event) => event.entity_id).sort(),
+      [first.intake.version_id, second.intake.version_id].sort(),
+    );
+  } finally {
+    client.abort();
+    release.resolve();
+    await Promise.allSettled([cancelled, live]);
+  }
 });

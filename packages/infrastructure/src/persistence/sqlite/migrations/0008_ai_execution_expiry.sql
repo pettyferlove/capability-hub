@@ -1,0 +1,2 @@
+CREATE INDEX `ai_executions_waiting_due_idx` ON `ai_executions` (`status`,(data ->> '$.payload.deadline'),`id`) WHERE status = 'waiting_input';--> statement-breakpoint
+CREATE INDEX `ai_executions_inline_due_idx` ON `ai_executions` (`status`,(data ->> '$.payload.deadline'),`id`) WHERE status = 'running' AND (data ->> '$.payload.execution_mode') = 'inline';

@@ -77,13 +77,24 @@ export const mainShellStyles = cn(
   'has-[[data-connection-consent]]:py-8 max-[600px]:has-[[data-connection-consent]]:py-6',
 );
 
-export const appFooterStyles = cn(
-  'max-w-296 mt-0 mr-auto mb-0 ml-auto pt-5.5 pr-0 pb-5.5 pl-0 border-t [border-top-style:solid] border-t-[color:var(--line)]',
-  'flex items-center justify-between flex-wrap gap-4 text-muted-ink text-[length:12px] [&_nav]:flex',
-  '[&_nav]:flex-wrap [&_nav]:gap-5 [&_a:hover]:text-brand max-[850px]:mt-0 max-[850px]:mr-5.5',
-  'max-[850px]:mb-0 max-[850px]:ml-5.5 max-[600px]:mt-0 max-[600px]:mr-4 max-[600px]:mb-0',
-  'max-[600px]:ml-4',
+export const appFooterStyles =
+  'mt-6 w-full border-t border-solid border-t-[color:var(--stroke-card)] bg-[color:var(--surface-footer)]';
+
+export const appFooterInnerStyles = cn(
+  'mx-auto flex w-full max-w-310 flex-wrap items-center justify-between gap-x-4 gap-y-3',
+  'px-7 pt-[26px] pb-[26px] text-[length:11.5px] text-muted-ink max-[850px]:px-5.5 max-[600px]:px-4',
+  '[&_nav]:flex [&_nav]:flex-wrap [&_nav]:gap-[18px] [&_a:hover]:text-brand',
 );
+
+export const appFooterBrandStyles =
+  'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[length:12px] font-semibold text-muted-ink';
+
+export const appFooterMarkStyles = cn(
+  'grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[7px] bg-paper text-brand',
+  'outline outline-1 -outline-offset-[0.5px] outline-[color:var(--brand-line)]',
+);
+
+export const appFooterSubStyles = 'text-[length:11px] font-normal text-quieter';
 
 export const appHeaderStyles = cn(
   'group/app-header sticky top-0 z-[50]',

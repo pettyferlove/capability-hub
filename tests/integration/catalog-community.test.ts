@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import {
+  CatalogDiscoveryService,
+  catalogUses,
+  emptyCriteria,
+  locateQuote,
+  matchCandidates,
+} from '@capability-hub/application';
 import { HubError } from '@capability-hub/domain/errors';
-import { createTestHub, publishSkill } from '../support/application.js';
+import { createTestHub, publishSkill, receiveSkill } from '../support/application.js';
 
 const code = (expected: string) => (error: unknown) =>
   error instanceof HubError && error.code === expected;
@@ -40,6 +47,114 @@ test('中文多词检索按有效词筛选并排序，风控不会拆成风险�
   assert.deepEqual(await search('退款风控规则'), ['refund-policy', 'refund-controls']);
   assert.deepEqual((await search('风控')).sort(), ['refund-controls', 'refund-policy']);
   assert((await search('风')).includes('other-controls'));
+});
+
+test('发现结果只显示可定位的原文，不以否定列举、技术词后缀或版本片段证实条件', async (context) => {
+  const f = await createTestHub(context);
+  const description = [
+    '不用于 UI、浏览器测试。Only supports Node 3.4.5.',
+    'Not for: Staging, production. Supports offline review.',
+    `${'备用说明'.repeat(32)}：使用 Ｄｏｃｋｅｒ 和 Compose。`,
+    'Configure ＡＰＩ\tKey with the GUI.',
+    `Enable${' '.repeat(120)}Sync.`,
+    'Use oﬃce services.',
+  ].join(' ');
+  await publishSkill(f, {
+    slug: 'release-proof',
+    files: [
+      {
+        path: 'SKILL.md',
+        bytes: Buffer.from(
+          `---\nname: release-proof\ndescription: ${JSON.stringify(description)}\n---\n\n# 使用\n`,
+        ),
+        executable: false,
+      },
+    ],
+  });
+  const discovery = new CatalogDiscoveryService(f.hub, f.hub.assetAccess, f.hub.catalog);
+  const [candidate] = await f.store.tx(() => discovery.candidates(null));
+  assert.deepEqual(locateQuote(candidate, 'api key'), {
+    field: 'description',
+    text: 'ＡＰＩ\tKey',
+  });
+  assert.deepEqual(locateQuote(candidate, 'office'), { field: 'description', text: 'oﬃce' });
+  for (const quote of ['Enable Sync', 'fic', 'API … GUI'])
+    assert.equal(locateQuote(candidate, quote), null);
+  for (const requirement of ['浏览器测试', 'production', 'Node 3', 'Node 4', 'Node 5', 'ocker'])
+    assert.deepEqual(
+      matchCandidates([candidate], { ...emptyCriteria, requirements: [requirement] }).verified,
+      [],
+    );
+  for (const requirement of ['Node 3.4.5', 'offline review', 'Docker Compose']) {
+    const { verified } = matchCandidates([candidate], {
+      ...emptyCriteria,
+      requirements: [requirement],
+    });
+    const proof = verified[0]?.reasons[0];
+    assert(proof && description.includes(proof.text) && proof.text.length <= 120);
+    for (const term of requirement.split(' '))
+      assert(proof.text.normalize('NFKC').includes(term), proof.text);
+  }
+  const recall = (keyword: string) =>
+    matchCandidates([candidate], { ...emptyCriteria, keywords: [keyword] }).verified;
+  assert.deepEqual(recall('浏览器测试'), []);
+  const text = recall('Docker')[0]?.reasons[0]?.text;
+  assert(text && description.includes(text) && text.includes('Ｄｏｃｋｅｒ'));
+});
+
+test('目录方向用当前可选场景，多个场景时不覆盖用户已选项', async (context) => {
+  const f = await createTestHub(context);
+  const scenes = f.hub.administration;
+  const old = await scenes.createScenario(f.admin, { name: '旧场景' });
+  const target = await scenes.createScenario(f.admin, { name: '合并目标' });
+  const other = await scenes.createScenario(f.admin, { name: '另一用途' });
+  const intake = await receiveSkill(f);
+  const request = await f.hub.publications.submit(
+    f.admin,
+    {
+      source_intake_id: intake.id,
+      version_id: intake.version_id,
+      base_release_id: null,
+      category: 'scenario',
+      scenario_ids: [old.id, other.id],
+      distribution: { mode: 'approved_audience', audience: ['public'] },
+      applies_to: {},
+      purpose: '场景使用说明',
+    },
+    randomUUID(),
+  );
+  await f.hub.publications.decide(
+    f.reviewer,
+    request.id,
+    {
+      decision: 'approve',
+      policy_digest: request.policy_digest,
+      comment: '',
+      accepted_warnings: [],
+    },
+    `"${request.revision}"`,
+    randomUUID(),
+  );
+  await scenes.updateScenario(
+    f.admin,
+    old.id,
+    { action: 'merge', target_id: target.id },
+    '"1"',
+    randomUUID(),
+  );
+  const discovery = new CatalogDiscoveryService(f.hub, f.hub.assetAccess, f.hub.catalog);
+  const { candidates, active } = await f.store.tx(async () => ({
+    candidates: await discovery.candidates(null),
+    active: new Set((await discovery.scenarios(null)).map(({ id }) => id)),
+  }));
+  for (const [selectedId, expected] of [
+    [null, other],
+    [target.id, target],
+  ] as const) {
+    const [direction] = catalogUses(candidates, '', active, selectedId);
+    assert.equal(direction.label, expected.name);
+    assert.deepEqual(direction.patch, { scenario_id: expected.id });
+  }
 });
 
 test('目录游标绑定查询、身份和目录版本，权限收窄后旧游标与推荐均不能继续使用', async (context) => {

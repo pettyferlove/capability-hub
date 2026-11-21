@@ -48,6 +48,7 @@ export const terminalStatuses = new Set(['succeeded', 'failed', 'cancelled', 'ti
 export const executionPayloadSchema = z
   .object({
     operation_id: id,
+    execution_mode: z.literal('inline').optional(),
     definition_version: id,
     definition_digest: id,
     model_profile: id,
@@ -239,6 +240,8 @@ export const memoryRecordSchema = z
 export const reasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 
 const elapsedMs = z.number().int().nonnegative();
+
+/** 仅允许有界的协议标识进入传输诊断，不保存自由文本或完整响应头。 */
 export const upstreamIdentifierSchema = z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/u);
 const callDiagnosticsSchema = z.strictObject({
   agent_id: id,

@@ -32,6 +32,7 @@ import type {
   HubFeedbackEventRecord,
   HubFeedbackAttachmentRecord,
 } from './hub-feedback.js';
+import type { CatalogPromptStateRecord } from './catalog-prompt.js';
 
 /**
  * 表名到记录类型的唯一映射，也是持久化层的类型契约：键即数据库表名（snake_case），
@@ -70,6 +71,7 @@ export interface RecordMap {
   hub_feedback: HubFeedbackRecord;
   hub_feedback_events: HubFeedbackEventRecord;
   hub_feedback_attachments: HubFeedbackAttachmentRecord;
+  catalog_prompts: CatalogPromptStateRecord;
 }
 
 /**

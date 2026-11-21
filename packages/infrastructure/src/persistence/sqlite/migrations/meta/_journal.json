@@ -50,6 +50,20 @@
       "when": 1795137861687,
       "tag": "0006_hub_feedback",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1795182349699,
+      "tag": "0007_catalog_prompts",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1795269262607,
+      "tag": "0008_ai_execution_expiry",
+      "breakpoints": true
     }
   ]
 }

@@ -1,13 +1,21 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import { z } from 'zod';
-import { AiError, modelProfileSchema } from '@capability-hub/ai';
+import {
+  AiError,
+  ShortModelError,
+  modelProfileSchema,
+  type CredentialResolver,
+  type AiStore,
+} from '@capability-hub/ai';
+import { aiExecutionDiagnosticsResponseSchema } from '@capability-hub/contracts';
 import { executionView } from '../../apps/server/src/http/routes/ai-views.js';
 import { ScopedMemoryStorage, ScopedWorkflowsStorage } from '@capability-hub/ai/storage';
 import { purgeAiHistory } from '@capability-hub/infrastructure/ai';
 import { fixture } from '../support/ai-provider.js';
 import { frameworkFixture, frameworkConfig } from '../support/ai-framework.js';
 import { recoveryRuntime } from '../support/ai-recovery.js';
+import { signIn } from '../support/http.js';
 
 for (const control of ['thinking_type', 'enable_thinking', 'omit'] as const)
   test(`OpenAI 兼容端点按 ${control} 接收思考参数，强度覆盖不能意外开启推理`, async (t) => {
@@ -524,7 +532,7 @@ test('AI 人工交互超时与历史保留清理不会删除活跃执行', async
   const waiting = await runtime.get(old.id);
   waiting.payload.deadline = Date.now() - 1;
   await ai.put('ai_executions', waiting);
-  await runtime.expireWaiting();
+  await runtime.expireDueExecutions();
   const result = await runtime.view(old.id);
   assert.equal(result.execution.status, 'timed_out');
   assert.equal(result.interactions[0]?.status, 'cancelled');
@@ -600,4 +608,301 @@ test('AI 原生快照 CAS 拒绝不存在或状态不匹配的更新', async (t)
   await hub.run();
   assert.deepEqual(hub.failures, []);
   assert.equal((await hub.runtime.get(execution.id)).status, 'succeeded');
+});
+
+async function inlineFixture(t: TestContext, url: string, credentials?: CredentialResolver) {
+  const config = frameworkConfig(url);
+  config.profiles[0].request_headers = { 'X-Execution': { from: 'execution_id' } };
+  const hub = await frameworkFixture(t, config, async () => null, credentials);
+  const operationId = 'inline-test';
+  hub.runtime.registry.register({
+    id: operationId,
+    version: '1',
+    title: '内联测试',
+    description: '内联测试',
+    execution_mode: 'inline',
+    input: z.strictObject({}),
+    output: z.strictObject({}),
+    interactions: {},
+  });
+  const options = {
+    operationId,
+    ownerId: hub.admin.id,
+    profileId: config.default_profile,
+    signal: new AbortController().signal,
+  };
+  const input = {
+    operation: 'inline-test/check',
+    input: 'private-input-marker',
+    instructions: 'private-instructions-marker',
+    schema: z.strictObject({ verdict: z.string(), count: z.number() }),
+  };
+  return { ...hub, options, input };
+}
+
+test('内联操作只在允许出站后建账，空操作和预留拒绝不产生执行或模型调用', async (t) => {
+  const provider = await fixture('openai', 'json');
+  t.after(provider.close);
+  const { runtime, store, options, input } = await inlineFixture(t, provider.url);
+  assert.equal(
+    await runtime.runInline(
+      options,
+      async () => 'nothing',
+      (result) => store.audit(options.ownerId, 'test.inline-empty', result),
+    ),
+    'nothing',
+  );
+  assert(
+    (await store.all('audit')).some(
+      (row) => row.action === 'test.inline-empty' && row.entity_id === 'nothing',
+    ),
+  );
+  await assert.rejects(runtime.submit(options.ownerId, options.operationId, {}), {
+    code: 'AI_FORBIDDEN',
+  });
+  const refusal = new Error('private-refusal-marker');
+  await assert.rejects(
+    runtime.runInline(options, (run) =>
+      run.call('check', {
+        ...input,
+        reserve: () => {
+          throw refusal;
+        },
+      }),
+    ),
+    (error) => error === refusal,
+  );
+  assert.equal(provider.requests.length, 0);
+  assert.deepEqual(await runtime.store.list('ai_executions', { limit: 10 }), []);
+  assert.deepEqual(await runtime.store.list('ai_calls', { limit: 10 }), []);
+});
+
+function abortAfterReservation(t: TestContext, store: AiStore, controller: AbortController) {
+  const tx = store.tx.bind(store);
+  t.mock.method(store, 'tx', async (work: () => unknown) => {
+    const result: unknown = await tx(work);
+    if (typeof result === 'string' && (await store.get('ai_calls', result))?.status === 'pending')
+      controller.abort(new AiError('AI_INTERRUPTED', '测试中断'));
+    return result;
+  });
+}
+
+for (const mode of ['inline', 'queued'] as const)
+  test(`${mode} 预留提交后出站前中止：端点未收到请求，预算和账本均为零`, async (t) => {
+    const provider = await fixture('openai', 'json');
+    t.after(provider.close);
+    const controller = new AbortController();
+    let store: AiStore;
+    if (mode === 'inline') {
+      const { runtime, options, input } = await inlineFixture(t, provider.url);
+      store = runtime.store;
+      abortAfterReservation(t, store, controller);
+      await assert.rejects(
+        runtime.runInline({ ...options, signal: controller.signal }, (run) =>
+          run.call('check', input),
+        ),
+        ShortModelError,
+      );
+    } else {
+      const f = await frameworkFixture(t, frameworkConfig(provider.url), (context) =>
+        context.agent({ id: 'writer', instructions: 'Answer briefly.', prompt: 'hello' }),
+      );
+      store = f.runtime.store;
+      abortAfterReservation(t, store, controller);
+      await f.runtime.submit(f.admin.id, 'framework-test', {});
+      await f.run(controller.signal);
+    }
+    const [row] = await store.list('ai_executions', { limit: 1 });
+    assert.equal(row.status, mode === 'inline' ? 'cancelled' : 'queued');
+    assert.equal(row.payload.usage.requests, 0);
+    assert.equal(row.payload.usage.unknown_requests, 0);
+    assert.deepEqual(await store.list('ai_calls', { execution_id: row.id, limit: 1 }), []);
+    assert.equal(provider.requests.length, 0);
+  });
+
+test('内联成功结算跨过期限时回滚宿主写入和成功事件，但保留已结算的模型用量', async (t) => {
+  const provider = await fixture('openai', 'json');
+  t.after(provider.close);
+  const f = await inlineFixture(t, provider.url);
+  await assert.rejects(
+    f.runtime.runInline(
+      f.options,
+      (run) => run.call('check', f.input),
+      async () => {
+        const [row] = await f.runtime.store.list('ai_executions', { limit: 1 });
+        await f.store.audit(f.admin.id, 'test.inline-success', row.id);
+        t.mock.method(Date, 'now', () => row.payload.deadline);
+      },
+    ),
+    (error) => error instanceof ShortModelError && error.reason === 'timeout',
+  );
+  const [row] = await f.runtime.store.list('ai_executions', { limit: 1 });
+  assert.equal(row.status, 'timed_out');
+  assert.equal(row.payload.usage.requests, 1);
+  assert.equal(row.payload.usage.unknown_requests, 0);
+  const events = await f.runtime.store.list('ai_events', { execution_id: row.id, limit: 20 });
+  assert.deepEqual(
+    events.map((event) => event.payload.type).filter((type) => /^execution\./.test(type)),
+    ['execution.started', 'execution.timed_out'],
+  );
+  assert(!(await f.store.all('audit')).some((entry) => entry.action === 'test.inline-success'));
+});
+
+test('已配置的内联操作缺少凭据时可诊断为失败，但不把凭据错误计为模型请求', async (t) => {
+  const provider = await fixture('openai', 'json');
+  t.after(provider.close);
+  const { runtime, options, input } = await inlineFixture(t, provider.url, {
+    resolve: async () => {
+      throw new Error('private-credential-marker');
+    },
+  });
+  await assert.rejects(
+    runtime.runInline(options, (run) => run.call('check', input)),
+    (error) => error instanceof ShortModelError && error.reason === 'configuration',
+  );
+  const [row] = await runtime.store.list('ai_executions', { limit: 10 });
+  assert.equal(row.status, 'failed');
+  assert.equal(row.payload.error?.code, 'AI_CONFIGURATION');
+  assert.equal(row.payload.usage.requests, 0);
+  const query = { execution_id: row.id, limit: 20 };
+  assert.deepEqual(await runtime.store.list('ai_calls', query), []);
+  const events = await runtime.store.list('ai_events', query);
+  assert.doesNotMatch(JSON.stringify([row, events]), /private-/);
+  assert.equal(provider.requests.length, 0);
+});
+
+test('内联模型已结算后宿主拒绝结果：保留真实用量，不落库异常原文或业务内容', async (t) => {
+  const provider = await fixture('openai', 'json');
+  t.after(provider.close);
+  const { runtime, options, input } = await inlineFixture(t, provider.url);
+  const refusal = new AiError('AI_FORBIDDEN', 'private-authorization-marker');
+  await assert.rejects(
+    runtime.runInline(options, async (run) => {
+      const result = await run.call('check', input);
+      assert.equal(result.value.verdict, 'ok');
+      throw refusal;
+    }),
+    (error) => error === refusal,
+  );
+  const [row] = await runtime.store.list('ai_executions', { limit: 10 });
+  assert.equal(row.status, 'failed');
+  assert.equal(row.payload.error?.code, 'AI_FORBIDDEN');
+  assert.equal(row.payload.dispatch_id, null);
+  assert.equal(row.payload.result, null);
+  assert.deepEqual(row.payload.input, {});
+  const query = { execution_id: row.id, limit: 20 };
+  assert.deepEqual(await runtime.store.list('ai_snapshots', query), []);
+  const [call] = await runtime.store.list('ai_calls', query);
+  const events = await runtime.store.list('ai_events', query);
+  const start = events.find((event) => event.payload.type === 'step.started');
+  assert(start);
+  assert.deepEqual(call.payload.diagnostics.step, { id: 'check', start_seq: start.payload.seq });
+  assert.equal(call.payload.diagnostics.agent_id, options.operationId);
+  assert.equal(call.status, 'succeeded');
+  assert.equal(row.payload.usage.requests, 1);
+  assert.equal(row.payload.usage.unknown_requests, 0);
+  assert.equal(row.payload.usage.input_tokens, 10);
+  assert.equal(row.payload.usage.output_tokens, 8);
+  assert.equal(provider.requests[0].headers['x-execution'], row.id);
+  assert.doesNotMatch(JSON.stringify([row, call, events]), /private-|verdict|ai-fixture-key/);
+});
+
+for (const deadline of [true, false])
+  test(`内联单次调用的${deadline ? '时限' : '主动取消'}保留正确步骤与执行终态`, async (t) => {
+    const provider = await fixture('openai', 'json', true);
+    t.after(provider.close);
+    const f = await inlineFixture(t, provider.url);
+    const { runtime, options, input } = f;
+    const controller = new AbortController();
+    const running = runtime.runInline(options, (run) =>
+      run.call('check', { ...input, signal: controller.signal, onPartial: () => undefined }),
+    );
+    try {
+      await Promise.race([provider.firstDelta.promise, running]);
+      controller.abort(
+        new DOMException('private-abort-marker', deadline ? 'TimeoutError' : 'AbortError'),
+      );
+      await assert.rejects(running, ShortModelError);
+      const [row] = await runtime.store.list('ai_executions', { limit: 10 });
+      const code = deadline ? 'AI_DEADLINE_EXCEEDED' : 'AI_CANCELLED';
+      assert.equal(row.status, deadline ? 'timed_out' : 'cancelled');
+      assert.equal(row.payload.error?.code, code);
+      const events = await runtime.store.list('ai_events', { execution_id: row.id, limit: 20 });
+      assert.equal(
+        events.find((event) => event.payload.type === 'step.failed')?.payload.data.code,
+        code,
+      );
+      assert.doesNotMatch(JSON.stringify([row, events]), /private-/);
+      if (!deadline) {
+        const client = await signIn(f);
+        const path = `/api/ai/executions/${row.id}`;
+        await client.get(path).expect(200);
+        const replay = await client
+          .get(`${path}/events`)
+          .query({ cursor: `${row.id}:operator:0` })
+          .expect(200);
+        assert.match(replay.text, /event: execution\.cancelled/);
+        assert.doesNotMatch(replay.text, /event: stream\.error/);
+        const diagnostics = `/api/admin/operations/agents/executions/${row.id}/diagnostics`;
+        for (const url of [diagnostics, `${diagnostics}?download=json`]) {
+          const report = aiExecutionDiagnosticsResponseSchema.parse(
+            (await client.get(url).expect(200)).body,
+          );
+          assert.deepEqual(
+            report.events
+              .filter((event) =>
+                /^execution\.(cancelled|completed|timed_out|failed)$/.test(event.type),
+              )
+              .map((event) => [event.type, event.data]),
+            [['execution.cancelled', {}]],
+          );
+        }
+        const markdown = await client.get(`${diagnostics}?download=markdown`).expect(200);
+        assert.match(markdown.text, /execution\.cancelled/);
+      }
+    } finally {
+      provider.release.resolve();
+    }
+  });
+
+test('内联执行逾期不重发，晚到的结算不能改写未知用量或重复写终态', async (t) => {
+  const provider = await fixture('openai', 'json', true);
+  t.after(provider.close);
+  const { runtime, store, options, input } = await inlineFixture(t, provider.url);
+  const running = runtime.runInline(options, (run) =>
+    run.call('check', { ...input, onPartial: () => undefined }),
+  );
+  try {
+    await Promise.race([provider.firstDelta.promise, running]);
+    const [row] = await runtime.store.list('ai_executions', { status: 'running', limit: 10 });
+    assert(row);
+    const query = { execution_id: row.id, limit: 20 };
+    const other = recoveryRuntime(store).runtime;
+    await other.expireDueExecutions();
+    assert.equal((await runtime.get(row.id)).status, 'running');
+    assert.equal((await runtime.store.list('ai_calls', query))[0].status, 'pending');
+    await assert.rejects(runtime.cancel(row.id, row.owner_id, row.payload.revision), {
+      code: 'AI_FORBIDDEN',
+    });
+    await assert.rejects(runtime.respond(row.id, 'absent', row.owner_id, 1, {}), {
+      code: 'AI_FORBIDDEN',
+    });
+    row.payload.deadline = Date.now() - 1;
+    await runtime.store.put('ai_executions', row);
+    await other.expireDueExecutions();
+    await other.expireDueExecutions();
+    const expired = await other.get(row.id);
+    assert.equal(expired.status, 'timed_out');
+    assert.equal(expired.payload.usage.unknown_requests, 1);
+    provider.release.resolve();
+    await assert.rejects(
+      running,
+      (error) => error instanceof ShortModelError && error.reason === 'timeout',
+    );
+    assert.deepEqual(await runtime.get(row.id), expired);
+    assert.equal((await runtime.store.list('ai_calls', query))[0].status, 'unknown');
+    assert.equal(provider.requests.length, 1);
+  } finally {
+    provider.release.resolve();
+  }
 });

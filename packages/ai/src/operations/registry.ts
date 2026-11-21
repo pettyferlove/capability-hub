@@ -12,7 +12,7 @@ import { asJson } from '../core/records.js';
  * `interactions` 以原生工作流暂停路径（`stepA/stepB`）为键：未声明的暂停点会让执行失败，
  * 一次执行也只允许一个明确的暂停点。
  */
-export interface OperationDefinition {
+interface OperationMetadata {
   id: string;
   version: string;
   title: string;
@@ -20,8 +20,14 @@ export interface OperationDefinition {
   input: z.ZodType;
   output: z.ZodType;
   interactions: Record<string, z.ZodType>;
-  create(context: OperationContext): AnyWorkflow;
 }
+
+/** 工作流由队列驱动；内联操作只允许宿主在既有请求或作业内调用。 */
+export type OperationDefinition = OperationMetadata &
+  (
+    | { execution_mode?: never; create(context: OperationContext): AnyWorkflow }
+    | { execution_mode: 'inline' }
+  );
 
 /**
  * 操作定义表：注册时校验 ID 形状与唯一性并先算一次摘要，校验失败不会留下半成品；
@@ -52,6 +58,7 @@ export class OperationRegistry {
       version: definition.version,
       title: definition.title,
       description: definition.description,
+      ...(definition.execution_mode && { execution_mode: definition.execution_mode }),
       input_schema: asJson(z.toJSONSchema(definition.input)),
       output_schema: asJson(z.toJSONSchema(definition.output)),
       interactions: Object.fromEntries(

@@ -128,7 +128,22 @@ export function apiErrorContext(error: unknown): ApiErrorContext | undefined {
 }
 
 async function responseError(response: Response, path: string, method = 'GET'): Promise<ApiError> {
-  const body: unknown = await response.json().catch(() => null);
+  return httpFailure(
+    await response.json().catch(() => null),
+    response.status,
+    path,
+    method,
+    response.headers.get('X-Request-Id'),
+  );
+}
+
+function httpFailure(
+  body: unknown,
+  status: number,
+  path: string,
+  method: string,
+  headerId: string | null,
+): ApiError {
   const detail =
     body &&
     typeof body === 'object' &&
@@ -144,19 +159,18 @@ async function responseError(response: Response, path: string, method = 'GET'): 
       : '请求失败，请稍后重试';
   const requestId =
     ('request_id' in detail && typeof detail.request_id === 'string' && detail.request_id) ||
-    response.headers.get('X-Request-Id') ||
+    headerId ||
     '';
-  const failure = rememberFailure(method, path, response.status, code, requestId);
+  const failure = rememberFailure(method, path, status, code, requestId);
   reportError('http.failed', {
-    status: response.status,
+    status,
     code,
     requestId: requestId || undefined,
   });
-  if (response.status >= 500 && response.status <= 599)
-    notifyRequestFailure(response.status, 'REQUEST_FAILED', failure);
-  if (response.status === 401 && !path.startsWith('/auth/') && path !== '/api/me')
+  if (status >= 500 && status <= 599) notifyRequestFailure(status, 'REQUEST_FAILED', failure);
+  if (status === 401 && !path.startsWith('/auth/') && path !== '/api/me')
     window.dispatchEvent(new Event('hub:unauthenticated'));
-  return new ApiError(response.status, code, message, requestId, failure);
+  return new ApiError(status, code, message, requestId, failure);
 }
 
 /**
@@ -169,6 +183,12 @@ async function responseError(response: Response, path: string, method = 'GET'): 
  * `hub:unauthenticated`，让全局退回登录态。204 返回 `undefined`，调用方不要解构结果。
  */
 export async function api<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+  const response = await apiResponse(path, options);
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
+}
+
+async function apiResponse(path: string, options: RequestInit): Promise<Response> {
   const headers = new Headers(options.headers);
   if (options.body && !(options.body instanceof FormData))
     headers.set('Content-Type', 'application/json');
@@ -194,8 +214,7 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
   });
   observeResponse(response);
   if (!response.ok) throw await responseError(response, path, options.method);
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  return response;
 }
 
 /** 返回标签页或懒加载失败时探测，绕开缓存且不依赖会话。 */
@@ -254,6 +273,23 @@ export async function fileText(
   return readPreviewText(response);
 }
 
+/** 只下载明确选中的固定版本；按当前浏览器身份读取，不创建安装票据。 */
+export async function downloadSkillBundle(
+  versionIds: readonly string[],
+  signal: AbortSignal,
+): Promise<Blob> {
+  const query = new URLSearchParams();
+  for (const id of versionIds) query.append('version_id', id);
+  const response = await apiResponse(`/api/catalog/skill-bundle?${query}`, {
+    signal,
+    cache: 'no-store',
+    headers: { Accept: 'application/zip' },
+  });
+  if (response.headers.get('Content-Type')?.split(';')[0] !== 'application/zip')
+    throw new Error('服务未返回 Skill 压缩包');
+  return response.blob();
+}
+
 /** 文本附件预览保留的行数；完整内容仍通过下载获取。 */
 export const hubFeedbackPreviewLines = 200;
 
@@ -308,7 +344,14 @@ export async function streamEvents(
   if (!response.ok) throw await responseError(response, path);
   if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream'))
     throw new ApiError(502, 'STREAM_INVALID', '事件连接不可用');
-  const reader = response.body.getReader();
+  await readEvents(response.body, onEvent);
+}
+
+async function readEvents(
+  body: ReadableStream<Uint8Array>,
+  onEvent: (event: ServerEvent) => void,
+): Promise<void> {
+  const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   try {
@@ -336,4 +379,42 @@ export async function streamEvents(
     await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
+}
+
+/**
+ * 以 POST 发起 SSE 请求：与 {@link api} 一样带 CSRF 令牌和幂等键，只接受成功的事件流。
+ * 非 2xx 抛 {@link ApiError}；开始推送后的失败以 `error` 帧送达，同样记录并抛出。
+ */
+export async function postEvents(
+  path: string,
+  body: unknown,
+  onEvent: (event: ServerEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await apiResponse(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { Accept: 'text/event-stream' },
+    signal,
+  });
+  const type = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
+  if (!response.body || type !== 'text/event-stream') {
+    await response.body?.cancel().catch(() => undefined);
+    throw new ApiError(502, 'STREAM_INVALID', '事件连接不可用');
+  }
+  await readEvents(response.body, (event) => {
+    if (event.event !== 'error') return onEvent(event);
+    const detail = event.data;
+    if (
+      !detail ||
+      typeof detail !== 'object' ||
+      !('status' in detail) ||
+      typeof detail.status !== 'number' ||
+      !Number.isInteger(detail.status) ||
+      detail.status < 400 ||
+      detail.status > 599
+    )
+      throw new ApiError(502, 'STREAM_INVALID', '事件连接不可用');
+    throw httpFailure(detail, detail.status, path, 'POST', response.headers.get('X-Request-Id'));
+  });
 }

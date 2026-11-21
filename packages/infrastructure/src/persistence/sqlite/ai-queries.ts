@@ -7,7 +7,7 @@ import {
   type AiRecordMap,
 } from '@capability-hub/ai/records';
 import { and, or, eq, gt, lt, asc, desc, count, inArray, sql } from 'drizzle-orm';
-import { aiSchema } from './ai-schema.js';
+import { aiSchema, ai_executions, executionExpiry } from './ai-schema.js';
 import { users } from './schema.js';
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy';
 import type { sqliteSchema } from './record-schema.js';
@@ -61,6 +61,15 @@ export class SqliteAiQueries implements AiQueries {
       .orderBy(order(t.position), order(t.id))
       .limit(query.limit);
     return rows.map((row) => parseAiRecord(table, row.data));
+  }
+  async listDueExecutionIds(kind: 'waiting_input' | 'inline', through: number, limit: number) {
+    const rows = await this.db
+      .select({ id: ai_executions.id })
+      .from(ai_executions)
+      .where(and(executionExpiry[kind], sql`${executionExpiry.deadline} <= ${through}`))
+      .orderBy(executionExpiry.deadline, ai_executions.id)
+      .limit(limit);
+    return rows.map((row) => row.id);
   }
   async summarizeExecutions() {
     const t = aiSchema.ai_executions;

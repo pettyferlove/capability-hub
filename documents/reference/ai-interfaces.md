@@ -4,7 +4,7 @@
 
 | 方法与路径                                                        | 输入/结果                                                                                  |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| GET `/api/admin/operations/agents/catalog`                        | Agent 操作目录。返回操作 Schema 和模型 ID、标签、协议、model                               |
+| GET `/api/admin/operations/agents/catalog`                        | 可手动提交的操作及模型档案；`view=registered` 还返回业务自动触发的操作                     |
 | GET `/api/admin/operations/agents/executions?limit=30&cursor=…`   | 按 `status`、`operation_id`、`q` 跨用户检索可读执行，倒序分页；`view=summary` 返回概要     |
 | GET `/api/admin/operations/agents/executions/:id/diagnostics`     | 单次执行的诊断快照。可用 `download=json` 或 `download=markdown` 下载                       |
 | GET `/api/ai/model-options`                                       | 业务面板的模型选项，需 `ai:execute`。仅返回默认模型档案 ID 及各档案的 ID、标签             |
@@ -15,7 +15,7 @@
 | POST `/api/ai/executions/:id/interactions/:interactionId/respond` | `{response}`、`If-Match: "<交互 revision>"` → 更新后的执行                                 |
 | GET `/api/ai/executions/:id/events`                               | SSE，可用 `Last-Event-ID` 或 `cursor` 查询参数续传，header 优先                            |
 
-执行 DTO 包含状态、用量、消息块、输入/结果、错误、期限与 revision。人工回答的 If-Match 使用交互修订。缺失为 428，陈旧为 412，状态冲突为 409，字段错误为 422。请求内容和修订相同时，客户端重试沿用幂等键，服务端返回同一结果。修改内容或确认成功后使用新键。
+执行 DTO 包含状态、用量、消息块、输入/结果、错误、期限与 revision。目录和执行中的 `execution_mode: inline` 标记由业务入口触发的只读记录；不能通过通用接口新建、取消或应答。人工回答的 If-Match 使用交互修订。缺失为 428，陈旧为 412，状态冲突为 409，字段错误为 422；同键同内容重试复用原结果。
 
 运营列表的 `q` 匹配标题、执行 ID、Agent、负责人或错误码。诊断快照汇集版本、截至 `watermark` 的 operator 事件、调用、耗时、决定、回执和成果，`event_gaps` 标出缺失的闭区间。`diagnostics` 记录模型、协议和限额。`reasoning_effort` 记录请求的档位，`none` 表示请求关闭思考，缺省表示未记录思考参数。`step.start_seq` 指向步骤开始事件。结算时附 `transport`，记录响应头、首末输出耗时、停止原因及用量上报。HTTP 失败可附经校验的 `upstream_error_code` 和 `upstream_request_id`，不保存错误正文。Markdown 合并文本增量并保留事件号，`view=handoff` 返回 `{markdown, watermark}`。读取时重新授权。
 

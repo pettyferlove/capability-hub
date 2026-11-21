@@ -2,13 +2,15 @@
 
 ## HTTP
 
-HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，请求 Schema 由同包公开导出。请求体/查询在入口校验，错误返回 code、message、details、retryable 和 request_id；意外内部错误不暴露原文。响应已经开始时终止连接，错误仍只进入脱敏日志。响应头 `X-Capability-Hub-Version` 为实例版本，`X-Capability-Hub-CLI` 为 `recommended=版本, minimum=版本`；交付网页时另带 `X-Capability-Hub-Web-Build`。
+HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，请求 Schema 由同包公开导出。请求体/查询在入口校验，错误返回 code、message、details、retryable 和 request_id；意外内部错误不暴露原文。响应开始后失败则终止连接或推送约定的错误帧。响应头 `X-Capability-Hub-Version` 为实例版本，`X-Capability-Hub-CLI` 为 `recommended=版本, minimum=版本`；交付网页时另带 `X-Capability-Hub-Web-Build`。
 
 | 入口组                                                   | 用途                                   |
 | -------------------------------------------------------- | -------------------------------------- |
 | /api/auth/status、/auth/setup、/auth/login、/auth/logout | 初始化和浏览器认证                     |
 | /auth/cli/request、/auth/cli/poll、/api/cli/approve      | 浏览器批准 CLI                         |
-| /api/assets、/api/scenarios                              | 按当前受众发现与读取                   |
+| /api/assets、/api/assets/:id/versions/:versionId         | 按受众发现与读取固定版本               |
+| /api/scenarios                                           | 当前可选的目录场景                     |
+| /api/catalog/discovery、/api/catalog/discovery/turn      | 首页对话式发现；匿名或浏览器会话       |
 | /api/ratings、/api/nominations                           | 按 asset_id 推荐、按 release_id 提名   |
 | /api/versions/:id/manifest、archive、files               | 已发布固定内容                         |
 | /api/install-tickets/:ticket、/archive                   | 清单与一次性归档；HEAD 归档返回 405    |
@@ -27,7 +29,11 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 
 需要修订的修改携带 If-Match，幂等用例携带 Idempotency-Key。Cookie 写入还需 CSRF。
 
-资产详情与版本历史接受 `latest_readable=1`：当前发布被撤销时仍可查询按当前及历史受众可读的发布，不改写发布指针。固定版本安装说明可提示最新可读版本。
+资产详情与版本历史接受 `latest_readable=1`，当前发布撤回时仍可读符合当前及历史受众的发布，不改写指针。`GET /api/assets/:id/versions/:versionId` 按 UUID 读固定版，返回 `release`、`latest_release`、`is_latest`、`public_readable`；`current_readable` 单独表示当前指针是否可读。目标版本撤回、不可读或不属于该资产均返回 404，不回落到其他版本。
+
+`GET /api/catalog/skill-bundle` 以重复的 `version_id` 指定 1–8 个不同的版本 UUID，按匿名或浏览器会话权限交付 ZIP（`<slug>/原路径`）。每个 Skill 只能选一个可读版本，任一项不可交付则整批失败。未压缩内容合计超过 100 MiB 需分批（413）；每实例同时最多 2 个合包请求，超出返回 429，`HEAD` 返回 405。
+
+`GET /api/catalog/discovery` 返回模式、`viewer_key` 和可见提示。`POST /api/catalog/discovery/turn` 接受同源 JSON，允许匿名或带 CSRF 的浏览器会话，拒绝 Bearer。`message` 提问，`filter` 改条件，`direction` 选方向；续轮须原样回传签名 `context`（最多 16 KiB），关键词模式不接受上下文。来源失效、签名无效或上下文过大须重新提问；访客或模式变化返回 409。默认返回 JSON；对话提问用 `Accept: text/event-stream` 接收 `stage`（`catalog`、可选 `writing`、`verify`）和最终 `result`。开流后 HTTP 为 200，失败看 `error` 帧的 `status`、`error.code`，不推草稿或自动重试。按 `request_id` 查 `discovery.turn_failed` 的 `reason`，有结构化诊断时再查 `output.issue`；不记录原文。
 安装步骤的 `cli` 给出 `recommended`、`minimum` 和 `minimum_reason`。
 
 「团队与权限」的账号详情区分直接与继承授权，团队详情区分授给团队的角色和仅以该团队为范围的授权。`GET /api/admin/role-scope-options` 仅向持有平台级 `identity:manage` 的账号返回来源和资产的 ID、名称及所属团队，不返回内容或凭据。
@@ -84,7 +90,7 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 
 网页与 MCP 复用同一用例。网页使用 POST `/api/feedback`（请求体携带上述幂等键）、GET `/api/feedback/:id`、GET `/api/assets/:id/feedback?page=1&limit=10&status=pending` 和 PATCH `/api/feedback/:id`。列表由服务端筛选与分页，limit 最大 50。HTTP 写入资源反馈要求浏览器会话与 CSRF；个人令牌只能通过贡献 MCP 工具上报资源反馈。
 
-维护者可切换 pending、in_progress、resolved、declined；PATCH 请求体包含 `revision`、`status`、`resolution`、`fixed_version_id`（可空），旧修订返回 409。已解决和不采纳必须填写说明；只有已解决可关联同资产修复版本。未对提交者开放的修复候选不会暴露编号或版本名。详情链接为 `/asset/:slug?feedback=:id`，固定反馈版本与当前目录版本分别展示。审计只保存操作、目标版本和处理状态，不复制反馈正文。
+维护者可切换 pending、in_progress、resolved、declined；PATCH 携带 `revision`、`status`、`resolution`、可空的 `fixed_version_id`，旧修订返回 409。已解决和不采纳须填写说明，只有已解决可关联同资产修复版本；未对提交者开放的修复候选不暴露编号或版本名。回执链接为 `/asset/:slug?feedback=:id`；当前发布不可读而反馈版本可读时附 `version_id`。审计只存操作、目标版本和处理状态，不复制正文。
 
 ## 平台反馈
 

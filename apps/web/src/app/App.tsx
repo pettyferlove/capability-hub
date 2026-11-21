@@ -1,10 +1,20 @@
 import { Overlay } from '../shared/components/Overlay.js';
+import { Glyph } from '../shared/components/Glyph.js';
 import { DialogTitle } from '../shared/components/DialogTitle.js';
 import { DetailSkeleton } from '../shared/components/Skeleton.js';
 import { sheetScrollStyles } from '../shared/styles/recipes.js';
 import { assetDetailScrollStyles } from '../features/catalog/styles.js';
 import { cn } from '../shared/styles/cn.js';
-import { bootErrorStyles, skipLinkStyles, mainShellStyles, appFooterStyles } from './styles.js';
+import {
+  appFooterBrandStyles,
+  appFooterInnerStyles,
+  appFooterMarkStyles,
+  appFooterStyles,
+  appFooterSubStyles,
+  bootErrorStyles,
+  skipLinkStyles,
+  mainShellStyles,
+} from './styles.js';
 import { pageContentStyles } from '../shared/styles/recipes.js';
 import type {
   HubFeedbackQueueSummaryResponse,
@@ -236,11 +246,19 @@ export default function App() {
           </PageBoundary>
         </main>
         <footer className={appFooterStyles}>
-          <span>Capability Hub</span>
-          <nav aria-label="页脚导航">
-            <a href="/discover">资源目录</a>
-            <a href="/connect">安装与接入</a>
-          </nav>
+          <div className={appFooterInnerStyles}>
+            <span className={appFooterBrandStyles}>
+              <span className={appFooterMarkStyles} aria-hidden="true">
+                <Glyph seed="capability-hub-footer" kind="skill" size={13} />
+              </span>
+              Capability Hub
+              <span className={appFooterSubStyles}>能力共享中心 · 内部能力层</span>
+            </span>
+            <nav aria-label="页脚导航">
+              <a href="/discover">资源目录</a>
+              <a href="/connect">安装与接入</a>
+            </nav>
+          </div>
         </footer>
         <Overlay
           open={!!view.asset}
@@ -253,7 +271,21 @@ export default function App() {
           <DialogTitle title="资源详情" onClose={closeAsset} />
           <div data-asset-detail-scroll className={cn(sheetScrollStyles, assetDetailScrollStyles)}>
             <Suspense fallback={<DetailSkeleton />}>
-              {view.asset && <AssetSheet key={view.asset + location.search} slug={view.asset} />}
+              {view.drawer && (
+                <AssetSheet
+                  key={[
+                    view.drawer.slug,
+                    view.drawer.versionId,
+                    view.drawer.tab,
+                    view.drawer.feedbackId,
+                    view.drawer.invalid,
+                  ].join('\n')}
+                  slug={view.drawer.slug}
+                  versionId={view.drawer.versionId}
+                  tab={view.drawer.tab}
+                  invalid={view.drawer.invalid}
+                />
+              )}
             </Suspense>
           </div>
         </Overlay>

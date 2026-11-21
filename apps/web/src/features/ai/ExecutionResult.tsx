@@ -31,6 +31,12 @@ import {
  * 列出，后者只以「是否包含审查意见」的提示出现，不声称事实准确性。
  */
 export function ExecutionResult({ view }: { view: AiExecutionViewResponse }) {
+  if (view.execution.execution_mode === 'inline')
+    return (
+      <p className="p-6 text-muted-ink">
+        本次自动执行只记录运行状态、步骤和模型用量，不保存问题、资源内容或模型回复。
+      </p>
+    );
   if (view.execution.operation_id === 'publication-review')
     return view.execution.result ? (
       <PublicationReviewReport value={view.execution.result} />

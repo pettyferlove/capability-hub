@@ -369,6 +369,66 @@
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
+  /*
+   * 首页发现的表面、描边与提示文字角色：同一套公式随配色源色变化，
+   * 深浅两种模式各取能落在源色明度梯级上的一组比例。
+   */
+  :root,
+  .light,
+  [data-theme='light']:not(.dark) {
+    --surface-card: var(--paper);
+    --surface-sunken: color-mix(in srgb, var(--paper) 55%, var(--line));
+    --surface-seg: color-mix(in srgb, var(--line) 65%, var(--paper));
+    --surface-chip: color-mix(in srgb, var(--line) 55%, var(--paper));
+    --surface-chip-soft: color-mix(in srgb, var(--page) 40%, var(--paper));
+    --surface-bubble: color-mix(in srgb, var(--page) 60%, var(--paper));
+    --surface-panel-start: var(--paper);
+    --surface-panel-end: color-mix(in srgb, var(--page) 55%, var(--paper));
+    --surface-footer: color-mix(in srgb, var(--page) 85%, var(--line));
+    --stroke-card: color-mix(in srgb, var(--line) 80%, var(--paper));
+    --stroke-panel: color-mix(in srgb, var(--line) 70%, var(--paper));
+    --stroke-tile: color-mix(in srgb, var(--line) 95%, var(--ink));
+    --text-quiet: color-mix(in srgb, var(--muted-ink) 87%, var(--paper));
+    --text-quieter: color-mix(in srgb, var(--muted-ink) 76%, var(--paper));
+    --brand-tint: color-mix(in srgb, var(--brand) 9%, transparent);
+    --brand-line: color-mix(in srgb, var(--brand) 24%, transparent);
+    --brand-line-strong: color-mix(in srgb, var(--brand) 32%, transparent);
+    --brand-veil: color-mix(in srgb, var(--brand) 14%, transparent);
+    --headline-from: color-mix(in srgb, var(--ink) 80%, var(--brand));
+    --headline-to: color-mix(in srgb, var(--brand) 80%, var(--highlight));
+    --shadow-card: 0 1px 2px color-mix(in srgb, var(--shadow-ink) 5%, transparent);
+    --shadow-panel:
+      0 18px 40px color-mix(in srgb, var(--shadow-ink) 9%, transparent),
+      0 1px 2px color-mix(in srgb, var(--shadow-ink) 5%, transparent);
+  }
+  .dark,
+  [data-theme='dark'] {
+    --surface-card: color-mix(in srgb, var(--paper) 78%, var(--page));
+    --surface-sunken: color-mix(in srgb, var(--paper) 70%, var(--page));
+    --surface-seg: color-mix(in srgb, var(--paper) 88%, var(--ink));
+    --surface-chip: color-mix(in srgb, var(--ink) 3%, var(--paper));
+    --surface-chip-soft: color-mix(in srgb, var(--ink) 2%, var(--page));
+    --surface-bubble: color-mix(in srgb, var(--paper) 92%, var(--ink));
+    --surface-panel-start: color-mix(in srgb, var(--paper) 92%, var(--ink));
+    --surface-panel-end: var(--page);
+    --surface-footer: color-mix(in srgb, var(--page) 85%, var(--shadow-ink));
+    --stroke-card: color-mix(in srgb, var(--line) 70%, var(--page));
+    --stroke-panel: color-mix(in srgb, var(--line) 85%, var(--page));
+    --stroke-tile: color-mix(in srgb, var(--line) 80%, var(--ink));
+    --text-quiet: color-mix(in srgb, var(--muted-ink) 52%, var(--page));
+    --text-quieter: color-mix(in srgb, var(--muted-ink) 46%, var(--page));
+    --brand-tint: color-mix(in srgb, var(--brand) 14%, transparent);
+    --brand-line: color-mix(in srgb, var(--brand) 25%, transparent);
+    --brand-line-strong: color-mix(in srgb, var(--brand) 36%, transparent);
+    --brand-veil: color-mix(in srgb, var(--brand) 18%, transparent);
+    --headline-from: color-mix(in srgb, var(--ink) 70%, var(--highlight));
+    --headline-to: color-mix(in srgb, var(--brand) 55%, var(--brand-hover));
+    --shadow-card: 0 1px 2px color-mix(in srgb, var(--shadow-ink) 24%, transparent);
+    --shadow-panel:
+      0 18px 44px color-mix(in srgb, var(--shadow-ink) 40%, transparent),
+      0 1px 2px color-mix(in srgb, var(--shadow-ink) 24%, transparent);
+  }
+
   /* 派生色只引用语义源色，Portal 弹层同样继承。 */
   :root {
     --glyph-skill: var(--brand);
@@ -436,6 +496,17 @@
   --color-mask-solid: var(--mask-solid);
   --color-code-control: var(--code-control);
   --color-code-control-hover: var(--code-control-hover);
+  --color-surface-card: var(--surface-card);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-seg: var(--surface-seg);
+  --color-surface-chip: var(--surface-chip);
+  --color-surface-chip-soft: var(--surface-chip-soft);
+  --color-surface-bubble: var(--surface-bubble);
+  --color-quiet: var(--text-quiet);
+  --color-quieter: var(--text-quieter);
+  --color-brand-tint: var(--brand-tint);
+  --color-brand-line-strong: var(--brand-line-strong);
+  --color-brand-veil: var(--brand-veil);
 }
 @theme {
   --spacing: 4px;

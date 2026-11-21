@@ -8,7 +8,10 @@ import { createTestHub, publishSkill } from '../support/application.js';
 import { fixture as providerFixture } from '../support/ai-provider.js';
 import { signIn } from '../support/http.js';
 import { deferred } from '../support/store.js';
+import { serveModelStub } from '../support/model-provider-stub.js';
 import {
+  aiCatalogResponseSchema,
+  aiExecutionLedgerResponseSchema,
   aiExecutionDiagnosticsResponseSchema,
   aiExecutionViewResponseSchema,
 } from '@capability-hub/contracts';
@@ -453,7 +456,11 @@ test('AI 权限在读取和执行时重新校验，队列中的执行撤权后�
   await reader.get('/api/admin/operations/agents/catalog').expect(403);
   await reader.get('/api/ai/model-options').expect(403);
   assert.equal((await owner.get('/api/me').expect(200)).body.capabilities.can_ai_console, true);
-  await owner.get('/api/admin/operations/agents/catalog').expect(200);
+  const manual = aiCatalogResponseSchema.parse(
+    (await owner.get('/api/admin/operations/agents/catalog').expect(200)).body,
+  );
+  assert(manual.operations.some((operation) => operation.id === 'assistant'));
+  assert(manual.operations.every((operation) => !('execution_mode' in operation)));
   const submit = () =>
     owner
       .post('/api/ai/executions')
@@ -529,11 +536,88 @@ test('平台维护者不能发起平台级 Agent 任务，平台检查授权只�
   const { can_ai, can_ai_console } = (await capabilities()).body.capabilities;
   assert.equal(can_ai, false);
   assert.equal(can_ai_console, true);
-  await client.get('/api/admin/operations/agents/catalog').expect(200);
+  const catalogPath = '/api/admin/operations/agents/catalog';
+  assert.deepEqual((await client.get(catalogPath).expect(200)).body.operations, []);
+  const catalog = aiCatalogResponseSchema.parse(
+    (await client.get(catalogPath).query({ view: 'registered' }).expect(200)).body,
+  );
+  assert(catalog.operations.every((item) => item.execution_mode === 'inline'));
+  for (const id of ['catalog-discovery', 'catalog-prompts'])
+    assert(catalog.operations.some((item) => item.id === id));
   await client.get('/api/admin/operations/agents/executions').expect(200);
   const row = await hub.hub.ai.runtime.submit(admin.id, 'assistant', { prompt: 'test' });
   await client.get(`/api/ai/executions/${row.id}`).expect(200);
   await submit('assistant', { prompt: 'test' }).expect(403);
+});
+
+test('自动 Agent 不能手动提交，本人也只能凭平台检查权查看、不能取消或应答', async (t) => {
+  const stub = await serveModelStub(t);
+  const profile = stub.profile('openai');
+  const f = await createTestHub(t, {
+    ai: aiConfigurationSchema.parse({ profiles: [profile], default_profile: profile.id }),
+  });
+  const admin = await signIn(f);
+  const reviewer = await signIn(f, f.reviewer.username);
+  const ledger = '/api/admin/operations/agents/executions';
+  for (const operation_id of ['catalog-discovery', 'catalog-prompts'])
+    await admin
+      .post('/api/ai/executions')
+      .set('Idempotency-Key', operation_id)
+      .send({ operation_id, input: {} })
+      .expect(403);
+  assert.deepEqual((await admin.get(ledger).expect(200)).body.items, []);
+
+  await f.hub.ai.runtime.runInline(
+    {
+      operationId: 'catalog-discovery',
+      ownerId: f.reviewer.id,
+      profileId: profile.id,
+      signal: new AbortController().signal,
+    },
+    (run) =>
+      run.call('turn', {
+        operation: 'catalog-discovery/turn',
+        instructions: '返回空对象',
+        input: '{}',
+        schema: z.strictObject({}),
+      }),
+  );
+  const { items } = aiExecutionLedgerResponseSchema.parse(
+    (await admin.get(ledger).query({ view: 'summary', q: '首页对话检索' }).expect(200)).body,
+  );
+  assert.equal(items.length, 1);
+  const [item] = items;
+  assert.equal(item.owner_display_name, f.reviewer.display_name);
+  const path = '/api/ai/executions/' + item.id;
+  await reviewer.get(path).expect(403);
+  await reviewer.get(path + '/events').expect(403);
+  await reviewer.get(`${ledger}/${item.id}/diagnostics`).expect(403);
+
+  const inspect = await f.hub.administration.createRole(f.admin, {
+    name: '平台运行检查',
+    permissions: ['ai:inspect'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reviewer.id,
+    role_id: inspect.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  const { execution } = aiExecutionViewResponseSchema.parse(
+    (await reviewer.get(path).expect(200)).body,
+  );
+  assert.equal(execution.execution_mode, 'inline');
+  for (const [action, body] of [
+    ['cancel', {}],
+    ['interactions/approval/respond', { response: {} }],
+  ] as const)
+    await reviewer
+      .post(`${path}/${action}`)
+      .set('If-Match', `"${execution.revision}"`)
+      .set('Idempotency-Key', 'inline-write')
+      .send(body)
+      .expect(403);
+  assert.equal((await reviewer.get(path).expect(200)).body.execution.revision, execution.revision);
 });
 
 test('平台审计权可读运营汇总，不能用来读取 Agent 目录、跨用户检索或诊断', async (t) => {
@@ -638,7 +722,7 @@ test('AI 调度检查失败时停机仍中断活跃模型并等待收敛', { tim
   const checking = deferred();
   const release = deferred();
   t.after(() => release.resolve());
-  t.mock.method(runtime, 'expireWaiting', async () => {
+  t.mock.method(runtime, 'expireDueExecutions', async () => {
     checking.resolve();
     await release.promise;
     throw new Error('Scheduler unavailable');

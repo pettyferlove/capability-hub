@@ -42,7 +42,7 @@ type Tab = 'activity' | 'result' | 'details' | 'diagnostics';
  */
 export function ExecutionPanel({
   view,
-  canManage,
+  canManage: mayManage,
   connection,
   onRefresh,
   compact = false,
@@ -63,6 +63,7 @@ export function ExecutionPanel({
   diagnostics?: ReactNode;
 }) {
   const { execution } = view;
+  const canManage = mayManage && execution.execution_mode !== 'inline';
   const pending = view.interactions.find(
     (item) => item.status === 'pending' && execution.status === 'waiting_input',
   );
@@ -70,7 +71,9 @@ export function ExecutionPanel({
     execution.operation_id !== 'assistant' ||
     view.artifacts.length > 0 ||
     (execution.result !== null && typeof jsonObject(execution.result).text !== 'string');
-  const resultReady = execution.result !== null || view.artifacts.length > 0;
+  const resultReady =
+    execution.execution_mode !== 'inline' &&
+    (execution.result !== null || view.artifacts.length > 0);
   const [tab, setChoice] = useState<Tab>(diagnostics ? 'diagnostics' : 'activity');
   const [focusRequest, setFocusRequest] = useState(0);
   const entered = useRef(false);
@@ -334,7 +337,9 @@ export function ExecutionPanel({
             <ArrowRight size={13} />
           </button>
         ) : (
-          <span>任务记录自动保存</span>
+          <span>
+            {execution.execution_mode === 'inline' ? '仅保存运行信息' : '任务记录自动保存'}
+          </span>
         )}
       </footer>
     </div>

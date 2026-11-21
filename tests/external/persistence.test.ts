@@ -738,3 +738,50 @@ test('平台反馈附件存入受限 MinIO 存储桶并经反馈接口读回原�
     await resource.close();
   }
 });
+
+test('PostgreSQL 提示单例只读调度列、写入不改目录修订，重复写入串行到同一行', async (context) => {
+  const database = await externalDatabase();
+  try {
+    const fixture = await createTestHub(context, {
+      database: { driver: 'postgresql', url: database.url, poolSize: 4 },
+    });
+    try {
+      const { store } = fixture;
+      assert.equal(await store.catalogPromptSchedule(), undefined);
+      const revision = await store.revision();
+      const state = {
+        id: 'catalog-prompts' as const,
+        next_refresh_at: Date.now() + 60_000,
+        active_job_id: null,
+        window: null,
+        cursor: null,
+        batches: [],
+        updated_at: new Date().toISOString(),
+      };
+      await store.insert('catalog_prompts', state);
+      assert.deepEqual(await store.catalogPromptSchedule(), {
+        next_refresh_at: state.next_refresh_at,
+        active_job_id: null,
+      });
+      assert.equal(await store.revision(), revision);
+      await Promise.all(
+        Array.from({ length: 8 }, () =>
+          store.tx(async () => {
+            const current = await store.get('catalog_prompts', 'catalog-prompts');
+            assert(current);
+            await store.put('catalog_prompts', {
+              ...current,
+              next_refresh_at: current.next_refresh_at + 1,
+            });
+          }),
+        ),
+      );
+      const [row] = await store.all('catalog_prompts');
+      assert.equal(row.next_refresh_at, state.next_refresh_at + 8);
+    } finally {
+      await fixture.close();
+    }
+  } finally {
+    await database.close();
+  }
+});

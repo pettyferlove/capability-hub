@@ -166,6 +166,23 @@ test('归档对文件顺序确定化并保留实际字节，解压会重新推�
   await assert.rejects(() => unzip(Buffer.from('not a ZIP')));
 });
 
+test('合包压缩期间取消不再消费下一条目的字节，也不交付部分归档', async () => {
+  const controller = new AbortController();
+  const consumed = new Set<string>();
+  const payload = Buffer.from('fixture');
+  const inputs = ['first.txt', 'next.txt'].map((path) => ({
+    path,
+    executable: false,
+    get bytes() {
+      consumed.add(path);
+      if (path === 'first.txt') queueMicrotask(() => controller.abort());
+      return payload;
+    },
+  }));
+  await assert.rejects(archive(inputs, controller.signal), { name: 'AbortError' });
+  assert.deepEqual([...consumed], ['first.txt']);
+});
+
 test('检查内容时返回独立文件属性，不改变调用方的执行标志', () => {
   const files = [file('SKILL.md', skillDocument()), file('scripts/run.sh', '#!/bin/sh\nexit 0\n')];
   const result = inspect('skill', files, 'sample-skill');

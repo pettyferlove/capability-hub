@@ -9,6 +9,7 @@ import { archive } from '@capability-hub/infrastructure/content';
 import { createApp } from '@capability-hub/server';
 import { loadServerConfig, type ServerConfig } from '@capability-hub/server/config';
 import type { Applicability, Policy } from '@capability-hub/contracts';
+import type { Logger } from '@capability-hub/logging/server';
 
 /**
  * 测试统一口令。必须满足生产口令策略（长度与字符种类），否则初始化会直接被拒；
@@ -24,6 +25,7 @@ export const testPassword = 'A-test-password-2026!';
 export async function createTestApplication(
   context: TestContext,
   overrides: Partial<ServerConfig> = {},
+  logger?: Logger,
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'capability-hub-test-'));
   const config = loadServerConfig({
@@ -42,7 +44,7 @@ export async function createTestApplication(
     objectStorage: { driver: 'filesystem' },
     ...overrides,
   });
-  const runtime = await createApp(config);
+  const runtime = await createApp(config, logger);
   context.after(async () => {
     try {
       await runtime.close();
@@ -58,8 +60,12 @@ export async function createTestApplication(
  * `reviewer`（平台级审核角色）、`reader`（无任何组的外部成员），并返回他们的组 id。
  * 仍保留 `hub`/`store` 等原始句柄，用例可以直接调用服务层绕过 HTTP。
  */
-export async function createTestHub(context: TestContext, overrides: Partial<ServerConfig> = {}) {
-  const runtime = await createTestApplication(context, overrides);
+export async function createTestHub(
+  context: TestContext,
+  overrides: Partial<ServerConfig> = {},
+  logger?: Logger,
+) {
+  const runtime = await createTestApplication(context, overrides, logger);
   const { hub, store } = runtime;
   const owner = await hub.authentication.setup({
     username: 'owner',

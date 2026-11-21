@@ -11,9 +11,9 @@ import { IntakeDetail } from '../../apps/web/src/features/publishing/IntakeDetai
 import { IntakeHistoryRow } from '../../apps/web/src/features/publishing/IntakeHistoryRow.js';
 import { AssetCommunity } from '../../apps/web/src/features/catalog/AssetCommunity.js';
 import { AssetContent } from '../../apps/web/src/features/catalog/AssetContent.js';
+import { currentAssetView } from '../../apps/web/src/features/catalog/asset-view.js';
 import DiscoverPage from '../../apps/web/src/features/catalog/DiscoverPage.js';
 import ManagementPanel from '../../apps/web/src/features/catalog/ManagementPanel.js';
-import { assetCardPixelRevealStyles } from '../../apps/web/src/features/catalog/styles.js';
 import { cells, Glyph } from '../../apps/web/src/shared/components/Glyph.js';
 import { VersionComparison } from '../../apps/web/src/shared/components/VersionComparison.js';
 import { UploadPanel } from '../../apps/web/src/features/publishing/UploadPanel.js';
@@ -92,7 +92,7 @@ test('技能 README 读取失败不回退，重试后仍可查看该版本的 SK
     assert.fail('Unexpected fetch: ' + path);
   });
   const user = userEvent.setup();
-  render(page(createElement(AssetContent, { asset })));
+  render(page(createElement(AssetContent, { view: currentAssetView(asset) })));
 
   assert.match((await screen.findByRole('alert')).textContent ?? '', /版本不可读/);
   assert.equal(screen.queryByText('先核对技术术语。'), null);
@@ -852,14 +852,17 @@ test('目录只将维护组受众简写为团队可见，同名个人保留实�
   }
   const memberPrincipal = await fixture.hub.identity.principal(member.id);
   context.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === '/api/catalog/discovery')
+      return Response.json({ mode: 'keywords', viewer_key: 'anonymous', suggestions: [] });
     if (path === '/api/scenarios') return Response.json([]);
     if (path.startsWith('/api/assets/keywords?')) return Response.json({ items: [] });
     assert(path.startsWith('/api/assets?'));
     return Response.json(await fixture.hub.catalog.search(memberPrincipal, {}));
   });
   render(page(createElement(DiscoverPage)));
-  const teamCard = await screen.findByRole('link', { name: /team-skill/ });
-  const memberCard = screen.getByRole('link', { name: /member-skill/ });
+  const directory = await screen.findByRole('region', { name: '资源目录' });
+  const teamCard = await within(directory).findByRole('link', { name: /team-skill/ });
+  const memberCard = within(directory).getByRole('link', { name: /member-skill/ });
   assert(within(teamCard).getByText('团队可见'));
   assert(
     within(memberCard)
@@ -913,10 +916,14 @@ test('通用提名按输入状态显示一条提示，扣除首尾空白后满�
   ]);
 });
 
-test('卡片点阵按阅读顺序错开点亮格的显现，切回静态时清除延迟', () => {
+test('资源图标按阅读顺序错开点亮格的显现，切回静态时清除延迟', () => {
   const seed = 'sha256:' + 'a'.repeat(64);
   const view = render(
-    createElement(Glyph, { kind: 'skill', seed, pixelRevealClassName: assetCardPixelRevealStyles }),
+    createElement(Glyph, {
+      kind: 'skill',
+      seed,
+      pixelRevealClassName: 'motion-safe:animate-[agent-dot-in_220ms_ease-out_backwards]',
+    }),
   );
   const pixels = screen.getByRole('img').querySelectorAll('rect');
   let previousDelay = -1;

@@ -157,7 +157,7 @@ export type McpEndpoint = z.infer<typeof mcpEndpointSchema>;
  * `timed_out` 终态事件）、`execution_timeout_ms` 默认 24 小时
  * （`payload.deadline` 的基准，跨进程恢复后仍有效）、`active_timeout_ms` 默认 10 分钟
  * （单轮执行的实际运行时限，每轮重新计）、`max_continuations` 1–20（默认 8，人工交互轮数）。
- * ID 必须唯一；配置了 profiles 时 `default_profile` 必须指向其中之一。
+ * ID 必须唯一；`profiles` 与 `default_profile` 要么都为空，要么默认 ID 指向其中的模型。
  */
 export const aiConfigurationSchema = z
   .object({
@@ -180,7 +180,10 @@ export const aiConfigurationSchema = z
       ctx.addIssue({ code: 'custom', message: 'MCP 配置 ID 不能重复' });
     if (new Set(config.profiles.map((p) => p.id)).size !== config.profiles.length)
       ctx.addIssue({ code: 'custom', message: '模型配置 ID 不能重复' });
-    if (config.profiles.length && !config.profiles.some((p) => p.id === config.default_profile))
+    if (
+      (config.profiles.length > 0 || config.default_profile !== '') &&
+      !config.profiles.some((p) => p.id === config.default_profile)
+    )
       ctx.addIssue({ code: 'custom', message: '默认模型配置不存在' });
   });
 

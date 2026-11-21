@@ -1,4 +1,5 @@
 import {
+  agentCatalogQuerySchema,
   agentExecutionLedgerQuerySchema,
   auditLogQuerySchema,
   operationsAgentApi,
@@ -23,9 +24,10 @@ export function registerOperationsRoutes(
   const { identity } = hub;
   app.get(
     operationsAgentApi.catalog,
-    send((_req, res) => {
+    send((req, res) => {
+      const { view } = agentCatalogQuerySchema.parse(req.query);
       res.set('Cache-Control', 'private, no-store');
-      return hub.ai.catalog(res.locals.principal);
+      return hub.ai.catalog(res.locals.principal, view === 'registered');
     }),
   );
   app.get(

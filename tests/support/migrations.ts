@@ -5,11 +5,27 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { TestContext } from 'node:test';
 import type { RecordStore } from '@capability-hub/application/ports';
-import type { openRecordStore, RecordStoreOptions } from '@capability-hub/infrastructure/store';
+import { catalogPromptStateId, type CatalogPromptStateRecord } from '@capability-hub/domain/models';
+import type { createAiStore } from '@capability-hub/infrastructure/ai';
+import { openRecordStore, type RecordStoreOptions } from '@capability-hub/infrastructure/store';
 import { createTestHub, publishSkill, receiveSkill, submitPublication } from './application.js';
+import { recoveryRuntime } from './ai-recovery.js';
+import { createSqliteStore } from './store.js';
+
+interface MigrationRuntime {
+  directory: string;
+  initialCount: number;
+  open: typeof openRecordStore;
+  ai: typeof createAiStore;
+  openBefore(options: RecordStoreOptions, index: number): Promise<RecordStore>;
+  append(sql: string): Promise<void>;
+}
 
 /** 在隔离的部署副本里追加迁移，验证真实执行器，不改工作区或当前数据库。 */
-export async function migrationRuntime(context: TestContext, dialect: 'sqlite' | 'postgresql') {
+export async function migrationRuntime(
+  context: TestContext,
+  dialect: 'sqlite' | 'postgresql',
+): Promise<MigrationRuntime> {
   const directory = await mkdtemp(join(tmpdir(), 'hub-migration-'));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const entry = fileURLToPath(import.meta.resolve('@capability-hub/infrastructure/store'));
@@ -24,6 +40,10 @@ export async function migrationRuntime(context: TestContext, dialect: 'sqlite' |
   const runtime = (await import(pathToFileURL(join(directory, 'src/store.ts')).href)) as {
     openRecordStore: typeof openRecordStore;
   };
+  // AI 端口须由同一临时副本绑定，否则读不到副本内会话的 WeakMap。
+  const ai = (await import(pathToFileURL(join(directory, 'src/ai.ts')).href)) as {
+    createAiStore: typeof createAiStore;
+  };
   const folder = join(directory, 'src/persistence', dialect, 'migrations');
   const journalPath = join(folder, 'meta/_journal.json');
   const complete = await readFile(journalPath, 'utf8');
@@ -34,6 +54,7 @@ export async function migrationRuntime(context: TestContext, dialect: 'sqlite' |
     directory,
     initialCount: initialJournal.entries.length,
     open: runtime.openRecordStore,
+    ai: ai.createAiStore,
     async openBefore(options: RecordStoreOptions, index: number) {
       const entries = initialJournal.entries.slice(0, index);
       await writeFile(journalPath, JSON.stringify({ ...initialJournal, entries }));
@@ -91,7 +112,7 @@ async function seedPublicationHistory(target: RecordStore, source: RecordStore) 
 /** 历史推荐按旧表结构直接写入，迁移结果通过当前 RecordStore 读取并校验。 */
 export async function assertRecommendationMigration(
   context: TestContext,
-  runtime: Awaited<ReturnType<typeof migrationRuntime>>,
+  runtime: MigrationRuntime,
   options: RecordStoreOptions,
   insertVotes: (
     votes: { id: string; user_id: string; version_id: string; created_at: string }[],
@@ -160,7 +181,7 @@ export async function assertRecommendationMigration(
 /** 从禁止全部删除的旧库升级，只放行已结束审核且从未发布的内容清理。 */
 export async function assertUnpublishedDeletionMigration(
   context: TestContext,
-  runtime: Awaited<ReturnType<typeof migrationRuntime>>,
+  runtime: MigrationRuntime,
   options: RecordStoreOptions,
 ) {
   const fixture = await createTestHub(context);
@@ -200,6 +221,110 @@ export async function assertUnpublishedDeletionMigration(
       new Set(await upgraded.all('audit')),
       new Set(await fixture.store.all('audit')),
     );
+  } finally {
+    await upgraded.close();
+  }
+}
+
+/** 有效的提示调度单例；仅含调度字段，批次为空。 */
+export function catalogPromptState(nextRefreshAt: number): CatalogPromptStateRecord {
+  return {
+    id: catalogPromptStateId,
+    next_refresh_at: nextRefreshAt,
+    active_job_id: null,
+    window: null,
+    cursor: null,
+    batches: [],
+    updated_at: '2026-11-20T00:00:00.000Z',
+  };
+}
+
+/** 从 0006 历史升级后提示表可用；单例约束由数据库执行，所以第二行经原始 SQL 写入。 */
+export async function assertCatalogPromptMigration(
+  runtime: MigrationRuntime,
+  options: RecordStoreOptions,
+  insertRaw: (id: string, data: string) => Promise<unknown>,
+) {
+  const old = await runtime.openBefore(options, 7);
+  await old.close();
+  const store = await runtime.open(options);
+  try {
+    assert.equal(await store.catalogPromptSchedule(), undefined);
+    await store.insert('catalog_prompts', catalogPromptState(1_800_000_000_000));
+    assert.deepEqual(await store.catalogPromptSchedule(), {
+      next_refresh_at: 1_800_000_000_000,
+      active_job_id: null,
+    });
+  } finally {
+    await store.close();
+  }
+  const second = { ...catalogPromptState(1), id: 'other-prompts' };
+  await assert.rejects(
+    () => insertRaw(second.id, JSON.stringify(second)),
+    options.driver === 'postgresql'
+      ? { code: '23514', constraint: 'catalog_prompts_singleton' }
+      : { message: /^CHECK constraint failed: catalog_prompts_singleton$/ },
+  );
+}
+
+/** 回收索引应用于已有执行；等于截点即到期，同一时刻按 ID 截批，不误收队列运行项。 */
+export async function assertExecutionExpiryMigration(
+  context: TestContext,
+  runtime: MigrationRuntime,
+  options: RecordStoreOptions,
+) {
+  const template = recoveryRuntime((await createSqliteStore(context)).store).runtime;
+  const base = await template.submit('expiry-owner', 'recoverable', { value: 1 });
+  const through = base.payload.deadline;
+  const old = await runtime.openBefore(options, 8);
+  try {
+    const ai = runtime.ai(old);
+    await ai.tx(async () => {
+      for (const kind of ['waiting_input', 'inline'] as const) {
+        for (const [suffix, offset] of [
+          ['b', 0],
+          ['a', 0],
+          ['z', -1],
+          ['future', 1],
+        ] as const) {
+          const id = `${kind}-${suffix}`;
+          await ai.insert('ai_executions', {
+            ...base,
+            id,
+            execution_id: id,
+            status: kind === 'inline' ? 'running' : 'waiting_input',
+            payload: {
+              ...base.payload,
+              ...(kind === 'inline' && { execution_mode: 'inline' }),
+              deadline: through + offset,
+            },
+          });
+        }
+      }
+      await ai.insert('ai_executions', { ...base, status: 'running' });
+    });
+  } finally {
+    await old.close();
+  }
+  const upgraded = await openRecordStore(options);
+  try {
+    const worker = recoveryRuntime(upgraded).runtime;
+    for (const kind of ['waiting_input', 'inline'] as const)
+      assert.deepEqual(await worker.store.listDueExecutionIds(kind, through, 2), [
+        `${kind}-z`,
+        `${kind}-a`,
+      ]);
+    context.mock.method(Date, 'now', () => through);
+    await worker.expireDueExecutions();
+    for (const kind of ['waiting_input', 'inline'] as const) {
+      for (const suffix of ['z', 'a', 'b'])
+        assert.equal((await worker.get(`${kind}-${suffix}`)).status, 'timed_out');
+      assert.equal(
+        (await worker.get(`${kind}-future`)).status,
+        kind === 'inline' ? 'running' : 'waiting_input',
+      );
+    }
+    assert.equal((await worker.get(base.id)).status, 'running');
   } finally {
     await upgraded.close();
   }

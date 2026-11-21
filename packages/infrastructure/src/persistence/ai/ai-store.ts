@@ -38,6 +38,11 @@ class AiStoreAdapter implements AiStore {
   list<K extends AiTable>(table: K, query: AiRecordQuery) {
     return this.session.execute((q) => q.ai.list(table, query));
   }
+  listDueExecutionIds(kind: 'waiting_input' | 'inline', through: number, limit: number) {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000)
+      throw new Error('AI query limit is invalid');
+    return this.session.execute((q) => q.ai.listDueExecutionIds(kind, through, limit));
+  }
   summarizeExecutions() {
     return this.session.execute((q) => q.ai.summarizeExecutions());
   }

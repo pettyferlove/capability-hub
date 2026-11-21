@@ -51,6 +51,9 @@ class DrizzleStore implements RecordStore {
   listDueSources(now: number) {
     return this.execute((queries) => queries.listDueSources(now));
   }
+  catalogPromptSchedule() {
+    return this.execute((queries) => queries.catalogPromptSchedule());
+  }
   countScenarioReferences(id: string) {
     return this.execute((queries) => queries.countScenarioReferences(id));
   }

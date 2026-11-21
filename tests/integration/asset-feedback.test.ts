@@ -52,7 +52,7 @@ test('普通读者可以反馈，并发重试只生成一次；反馈仅对提�
     1,
   );
   assert.equal((await f.hub.feedback.get(f.admin, first.id)).can_manage, true);
-  assert.match(first.detail_url, new RegExp('feedback=' + first.id));
+  assert.equal(first.detail_url, `/asset/sample-skill?feedback=${first.id}`);
 });
 
 test('处理反馈检查维护权限、修订冲突和同资产修复版本，隐藏不可读的修复候选', async (context) => {
@@ -180,6 +180,47 @@ test('反馈和幂等重试重新核验受众，资产封禁后维护者仍可�
     resolution: '正在处理',
     fixed_version_id: null,
   });
+});
+
+test('撤销当前版本后可查历史及本人仍可读版本的反馈，当前受众限制不回退', async (context) => {
+  const f = await createTestHub(context);
+  const { intake: first } = await publishSkill(f);
+  const assetId = first.asset_id;
+  await f.hub.feedback.report(f.reviewer, input(first.version_id));
+  const { intake: middle } = await publishSkill(f, { assetId, version: '2.0.0', body: '中间版' });
+  const { intake: current } = await publishSkill(f, {
+    assetId,
+    version: '3.0.0',
+    body: '当前组织发布',
+    distribution: { mode: 'approved_audience', audience: ['organization'] },
+  });
+  await f.hub.feedback.report(f.reader, input(current.version_id));
+  const before = await f.hub.catalog.getVersionById(f.reader, assetId, first.version_id);
+  assert.equal(before.current_readable, true);
+  await f.hub.lifecycle.revokeVersion(f.admin, current.version_id, '撤回当前发布');
+
+  const detail = await f.hub.catalog.getVersionById(f.reader, assetId, first.version_id);
+  assert.equal(detail.release.version_id, first.version_id);
+  assert.equal(detail.latest_release?.version_id, middle.version_id);
+  assert.equal(detail.current_readable, false);
+  assert.equal(detail.public_readable, false);
+  await assert.rejects(() => f.hub.catalog.listHistory(f.reader, assetId), code('NOT_FOUND'));
+  await assert.rejects(() => f.hub.catalog.listHistory(null, assetId, true), code('NOT_FOUND'));
+  assert.deepEqual(
+    new Set((await f.hub.catalog.listHistory(f.reader, assetId, true)).map((v) => v.version_id)),
+    new Set([first.version_id, middle.version_id]),
+  );
+  const own = await f.hub.feedback.report(f.reader, input(first.version_id));
+  assert.equal(
+    own.detail_url,
+    `/asset/sample-skill?version_id=${first.version_id}&feedback=${own.id}`,
+  );
+  const list = await f.hub.feedback.list(f.reader, assetId, { page: 1, limit: 10 });
+  assert.deepEqual(
+    list.items.map((item) => item.id),
+    [own.id],
+  );
+  assert.equal(list.total, 1);
 });
 
 test('提交限额跨资源生效，达到限额后仍允许同一反馈重试，列表在服务端分页和筛选', async (context) => {

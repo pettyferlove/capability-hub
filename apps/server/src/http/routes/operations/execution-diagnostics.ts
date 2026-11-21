@@ -11,6 +11,7 @@ import type { HttpContext } from '../../context.js';
 import { jsonRoute } from '../../response.js';
 import { diagnosticMarkdown } from './diagnostic-markdown.js';
 import { executionResponse, interactionResponse, visibleArtifacts } from '../ai-views.js';
+import { executionOwnerName } from '../../../operations/execution-owner.js';
 
 async function executionRows<K extends keyof AiRecordMap>(
   store: AiStore,
@@ -65,8 +66,7 @@ function executionDiagnostics(hub: HttpContext['hub'], actor: Principal, id: str
       watermark: payload.last_seq,
       event_gaps: eventGaps,
       execution: executionResponse(row),
-      owner_display_name:
-        (await hub.store.get('users', row.owner_id))?.display_name ?? row.owner_id,
+      owner_display_name: await executionOwnerName(hub.store, row.owner_id),
       workflow: {
         workflow_id: payload.native_workflow_id,
         run_id: payload.native_run_id,

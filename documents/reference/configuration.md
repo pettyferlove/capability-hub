@@ -49,9 +49,13 @@ HUB_AI_PRIMARY_KEY=<实际凭据>
 
 `format` 选协议，`credential_ref` 引用密钥环境变量，`default_profile` 引用已有模型配置 ID。重启后生效，旧执行仍校验原模型摘要。预算和 MCP 白名单见 [AI 框架](../design/ai-framework.md)。
 
+配置 `default_profile` 即启用首页对话，无需额外 AI 角色；未配置时仅匹配关键词。模型出站请求限 32 KiB、响应限 512 KiB（非浏览器请求体上限）。每次提问最多 4096 个输出 token、60 秒；每次生成或预检提示最多 1024 个、20 秒。输出含推理，均不超过模型档案限额。
+
+提问每轮至多一次出站，每分钟每主体 8 次、每进程 30 次，最多 3 个在途。启用 Worker 后按 UTC 六小时窗口刷新提示，每窗限 4 批、20 次出站、45 秒。生成时发送同受众发布的类型、简介、标签和场景；预检发送候选问题及本批卡片。提问发送问题、沿用的对话条件与可见卡片；卡片含引用号、slug、类型、分类、场景、标签和简介开头。提供方须获准处理这些数据，包括受限发布。
+
 两种协议均支持 `request_headers`。值可为非敏感的单行 ASCII 字符串，或 `{"from":"execution_id","prefix":"ses_"}`（前缀可省略，续跑保留同一执行 ID）。头名不区分大小写，不可重复或覆盖鉴权、Host、报文传输等保留头。[OpenCode Go](https://opencode.ai/docs/console/go/#where-can-i-use-it) 用固定 `User-Agent: capability-hub` 和动态 `x-opencode-session`。
 
-Chat Completions 缺省发送 `max_tokens`。端点要求 `max_completion_tokens` 时，将 `chat_max_tokens_field` 设为 `max_completion_tokens`；数值仍取 `max_output_tokens`。
+Chat Completions 缺省发送 `max_tokens`。端点要求 `max_completion_tokens` 时，将 `chat_max_tokens_field` 设为该字段名；数值仍是本次调用的实际输出限额。
 
 `thinking_control` 默认 `protocol`，OpenAI 发送 `reasoning_effort=none`，Anthropic 发送 `thinking.type=disabled`。Chat 端点可用 `thinking_type` 发送 `thinking.type=disabled`，或用 `enable_thinking` 发送 `enable_thinking=false`。`omit` 不发思考参数，沿用端点默认值。
 

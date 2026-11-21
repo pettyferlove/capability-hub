@@ -82,6 +82,10 @@ export interface RecordStore {
   listReadyJobs(query: ReadyJobsQuery): Promise<RecordMap['jobs'][]>;
   listCancellationRequestedJobs(): Promise<RecordMap['jobs'][]>;
   listDueSources(now: number): Promise<GitSourceRecord[]>;
+  /** 只读提示单例的调度列，不解析批次正文；单例不存在时返回 `undefined`。 */
+  catalogPromptSchedule(): Promise<
+    { next_refresh_at: number; active_job_id: string | null } | undefined
+  >;
   countScenarioReferences(id: string): Promise<ScenarioReferenceCounts | undefined>;
   findHubFeedback(
     ref: string | number,

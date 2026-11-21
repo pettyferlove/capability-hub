@@ -1,4 +1,5 @@
 import { cn } from '../../shared/styles/cn.js';
+import { checkLabelStyles, textBtnStyles } from '../../shared/styles/recipes.js';
 
 export const assetCommunityStyles = cn(
   'group/asset-community flex flex-col gap-[var(--space-4)] pt-[var(--space-4)] pr-[var(--space-4)]',
@@ -175,240 +176,6 @@ export const detailMetaStyles = cn(
 
 export const managementToolsStyles =
   'mt-5 text-[length:12px] text-muted-ink [&_summary]:cursor-pointer [&_summary]:mb-[15px]';
-
-export const discoverStyles = 'group/discover';
-
-export const discoverHeroStyles = 'relative isolate flex overflow-hidden pb-2';
-
-export const heroDotsStyles = cn(
-  '[mask-image:linear-gradient(90deg,transparent,var(--mask-solid)_40px,var(--mask-solid)_calc(100%_-_40px),transparent),linear-gradient(transparent,var(--mask-solid)_40px,var(--mask-solid)_calc(100%_-_40px),transparent)]',
-  '[mask-composite:intersect]',
-);
-
-export const heroOrbStyles = cn(
-  'absolute top-0 right-0 bottom-0 left-auto w-[min(60%,_560px)]',
-  '[background:radial-gradient(ellipse_closest-side_at_center,_var(--hero-wash),_transparent)]',
-  'z-[-1]',
-);
-
-export const heroCopyStyles = 'relative z-[2] min-w-0 w-3/4 max-[850px]:w-full';
-
-export const catalogSearchStyles = cn(
-  'group/catalog-search grid grid-cols-[20px_minmax(0,_1fr)_32px] items-center gap-3 w-full',
-  'max-w-162.5 h-13.5 pt-0 pr-2.5 pb-0 pl-4 border border-solid border-[color:var(--line)]',
-  'rounded-[14px] bg-paper [box-shadow:0_2px_8px_color-mix(in_srgb,_var(--ink)_4%,_transparent)]',
-  'text-muted-ink [transition:border-color_150ms_ease]',
-  'hover:border-t-[color:color-mix(in_srgb,_var(--brand)_40%,_var(--line))]',
-  'hover:border-r-[color:color-mix(in_srgb,_var(--brand)_40%,_var(--line))]',
-  'hover:border-b-[color:color-mix(in_srgb,_var(--brand)_40%,_var(--line))]',
-  'hover:border-l-[color:color-mix(in_srgb,_var(--brand)_40%,_var(--line))]',
-  '[&_>_input]:min-w-0 [&_>_input]:min-h-0',
-  '[&_>_input]:w-full [&_>_input]:h-full [&_>_input]:mt-0 [&_>_input]:mr-0 [&_>_input]:mb-0',
-  '[&_>_input]:ml-0 [&_>_input]:pt-0 [&_>_input]:pr-0 [&_>_input]:pb-0 [&_>_input]:pl-0',
-  '[&_>_input]:border-0 [&_>_input]:rounded-none [&_>_input]:[outline:0] [&_>_input]:bg-transparent',
-  '[&_>_input]:[box-shadow:none] [&_>_input]:text-ink [&_>_input]:text-[length:15px]',
-  '[&_>_input]:leading-[1.5] [&_>_input::placeholder]:text-muted-ink',
-  '[&_>_input::placeholder]:opacity-[0.8] max-[600px]:h-12.5 max-[600px]:gap-2.5 max-[600px]:pl-3',
-  'max-[600px]:rounded-[12px] max-[600px]:[&_>_input]:text-[length:17px]',
-  '[&:has(>_input:focus)]:[outline:2px_solid_var(--brand)] [&:has(>_input:focus)]:-outline-offset-2',
-);
-
-export const catalogSearchIconStyles =
-  "[transition:color_150ms_ease] [[class~='group/catalog-search']:focus-within_&]:text-brand";
-
-export const catalogSearchActionStyles = cn(
-  'grid [place-items:center] w-8 h-8 [&_>_kbd]:grid [&_>_kbd]:[place-items:center] [&_>_kbd]:w-6',
-  '[&_>_kbd]:h-6 [&_>_kbd]:border [&_>_kbd]:border-solid [&_>_kbd]:border-[color:var(--line)] [&_>_kbd]:rounded-[6px] [&_>_kbd]:bg-page',
-  '[&_>_kbd]:text-muted-ink [&_>_kbd]:font-mono [&_>_kbd]:text-[length:12px] [&_>_kbd]:leading-[1]',
-);
-
-export const catalogSearchClearStyles = cn(
-  'grid [place-items:center] w-8 h-8 pt-0 pr-0 pb-0 pl-0 border-0 rounded-[8px] bg-transparent',
-  'text-muted-ink [transition:background-color_120ms_ease,_color_120ms_ease] hover:bg-brand-soft',
-  'hover:text-brand',
-);
-
-/** 可视高度容纳两行关键词（窄屏三行）和入场位移。 */
-export const quickSearchStyles = cn(
-  'relative flex h-18 max-w-162.5 flex-wrap content-start items-center gap-x-[9px] gap-y-2',
-  'overflow-x-hidden overflow-y-auto [scrollbar-width:thin] [scrollbar-gutter:stable]',
-  'mt-3.5 text-[length:11px] text-muted-ink max-[600px]:h-26 max-[600px]:gap-1.5',
-  "[[class~='group/discover']_&]:mt-[11px]",
-);
-
-export const quickSearchItemStyles = cn(
-  'inline-flex max-w-full shrink-0 items-center [&_>_button]:flex [&_>_button]:max-w-full',
-  '[&_>_button]:items-center [&_>_button]:gap-[7px] [&_>_button]:[overflow-wrap:anywhere]',
-  '[&_>_button:focus-visible]:-outline-offset-2 [&_svg]:shrink-0',
-  '[&_>_button]:border [&_>_button]:border-solid [&_>_button]:border-[color:var(--line)] [&_>_button]:bg-paper [&_>_button]:text-muted-ink',
-  '[&_>_button]:pt-[3px] [&_>_button]:pr-[9px] [&_>_button]:pb-[3px] [&_>_button]:pl-[9px]',
-  '[&_>_button]:rounded-[5px] [&_>_button]:text-[length:11px] [&_>_button:hover]:text-brand',
-  '[&_>_button:hover]:border-t-[color:var(--brand)]',
-  '[&_>_button:hover]:border-r-[color:var(--brand)]',
-  '[&_>_button:hover]:border-b-[color:var(--brand)]',
-  '[&_>_button:hover]:border-l-[color:var(--brand)] max-[600px]:[&_>_button]:text-[length:11px]',
-  'max-[600px]:[&_>_button]:pt-[3px] max-[600px]:[&_>_button]:pr-[7px]',
-  'max-[600px]:[&_>_button]:pb-[3px] max-[600px]:[&_>_button]:pl-[7px]',
-);
-
-export const keywordRefreshingStyles =
-  'motion-safe:[animation:keyword-refresh_0.9s_linear_infinite]';
-
-export const heroArtStyles = cn(
-  'group/hero-art pointer-events-none absolute top-0 right-5 h-[255px] w-70 origin-top-right scale-[0.68]',
-  'max-[1100px]:right-2 max-[850px]:right-0 max-[850px]:-z-1 max-[850px]:opacity-[0.22] max-[600px]:hidden',
-);
-
-export const orbitLineStyles =
-  'absolute w-60 h-35 top-9.5 left-0 [transform:rotate(-28deg)] overflow-visible [fill:none]';
-
-export const orbitTrackStyles =
-  '[stroke:color-mix(in_srgb,_var(--brand),_transparent_78%)] [stroke-width:1] [stroke-dasharray:3_3]';
-
-export const orbitSignalStyles = cn(
-  '[stroke:var(--brand)] [stroke-width:2] [stroke-linecap:round] [stroke-dasharray:3_97]',
-  'opacity-[0.65]',
-  "motion-safe:[[class~='group/hero-art']_&]:[animation:hero-orbit-signal_14s_linear_infinite]",
-);
-
-export const orbitTileStyles = cn(
-  '[--glyph-off:var(--hero-glyph-off)] flex flex-col items-center justify-center gap-[5px] absolute',
-  '[background:linear-gradient(145deg,_var(--hero-tile-start),_var(--paper))]',
-  'border border-solid border-[color:var(--hero-tile-border)] [box-shadow:var(--hero-tile-shadow)] rounded-[22px]',
-  'text-brand text-[length:12px]',
-);
-
-export const tileMainStyles = cn(
-  'left-4.5 top-[13px] w-[125px] h-33 [transform:rotate(-8deg)]',
-  "motion-safe:[[class~='group/hero-art']_&]:[animation:hero-skill-float_7s_ease-in-out_infinite]",
-);
-
-export const tileMcpStyles = cn(
-  'right-2 top-[105px] w-24 h-25.5 [transform:rotate(10deg)] text-warning',
-  "motion-safe:[[class~='group/hero-art']_&]:[animation:hero-mcp-float_8s_ease-in-out_-2s_infinite]",
-);
-
-export const artCrossStyles = cn(
-  'absolute text-brand text-[length:23px] [font-weight:200]',
-  "motion-safe:[[class~='group/hero-art']_&]:[animation:hero-cross-drift_6s_ease-in-out_infinite]",
-);
-
-export const cross1Styles = 'right-[17px] top-0';
-
-export const cross2Styles =
-  "left-[-30px] bottom-12.5 motion-safe:[[class~='group/hero-art']_&]:[animation-delay:-3s]";
-
-export const catalogToolbarStyles = cn(
-  'group/catalog-toolbar flex items-center justify-between gap-5 pt-4.5 pr-0 pb-6 pl-0 [&_h2]:flex',
-  '[&_h2]:items-center [&_h2]:mt-1.5 [&_h2]:text-[length:23px] max-[600px]:items-start',
-  'max-[600px]:flex-col max-[600px]:gap-4 max-[600px]:pt-[13px] max-[600px]:pb-4',
-  "max-[600px]:[&_h2]:text-[length:21px] [[class~='group/discover']_&]:pt-[15px]",
-  "[[class~='group/discover']_&]:pr-0 [[class~='group/discover']_&]:pb-[17px]",
-  "[[class~='group/discover']_&]:pl-0 [&_[class~='group/eyebrow']]:text-[length:9px]",
-);
-
-export const catalogFiltersStyles = cn(
-  'flex justify-between items-center gap-3 border-b [border-bottom-style:solid] border-b-[color:var(--line)] mb-[23px] flex-wrap',
-  'max-[600px]:gap-[5px]',
-);
-
-export const scenarioFilterStyles = cn(
-  'flex flex-row items-center gap-2 text-muted-ink [&_select]:bg-transparent [&_select]:border-0',
-  '[&_select]:text-muted-ink [&_select]:text-[length:12px] [&_select]:pt-1.5 [&_select]:pr-1.5',
-  '[&_select]:pb-1.5 [&_select]:pl-1.5 [&_select]:max-w-40 max-[600px]:ml-auto max-[600px]:mb-2',
-);
-
-export const catalogResultsStyles = cn(
-  "group/catalog-results min-h-85 [&_[class~='group/empty']]:min-h-85",
-  "[&_[class~='group/empty']]:mt-0 [&_[class~='group/empty']]:mr-0 [&_[class~='group/empty']]:mb-0",
-  "[&_[class~='group/empty']]:ml-0",
-);
-
-export const assetGridStyles = cn(
-  'relative grid grid-cols-[repeat(3,_minmax(0,_1fr))] gap-4.5',
-  'max-[850px]:grid-cols-[repeat(2,_minmax(0,_1fr))] max-[600px]:grid-cols-[1fr] max-[600px]:gap-3',
-);
-
-export const catalogResultStateStyles = '[grid-column:1_/_-1] min-w-0';
-
-export const assetGridItemStyles = 'group/asset-grid-item min-w-0';
-
-export const assetCardStyles = cn(
-  "group/asset-card relative isolate [[class~='group/asset-grid-item']_>_&]:h-full flex flex-col px-4.5 pt-[19px] pb-[15px]",
-  'bg-paper border border-solid border-[color:var(--line)] rounded-[14px] text-ink max-[600px]:px-4',
-  '[box-shadow:var(--shadow)] transition-[translate,border-color,box-shadow] duration-200 ease-out motion-reduce:transition-none',
-  'group-hover/asset-grid-item:border-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
-  'group-hover/asset-grid-item:[box-shadow:var(--shadow-floating)] motion-safe:group-hover/asset-grid-item:-translate-y-0.5',
-  'focus-visible:border-[color:color-mix(in_srgb,_var(--brand),_var(--line)_50%)]',
-  'focus-visible:[box-shadow:var(--shadow-floating)] motion-safe:focus-visible:-translate-y-0.5',
-  'focus-visible:[outline:2px_solid_var(--brand)] focus-visible:[outline-offset:3px]',
-  '[&_h3]:line-clamp-2 [&_h3]:font-mono [&_h3]:text-[length:16px] [&_h3]:font-medium',
-  '[&_h3]:leading-6 [&_h3]:tracking-[-0.25px] [&_h3]:[overflow-wrap:anywhere]',
-  '[&>p]:line-clamp-3 [&>p]:my-3 [&>p]:text-body [&>p]:leading-5',
-  '[&>p]:text-muted-ink [&>p]:[overflow-wrap:anywhere]',
-);
-
-export const assetCardCornerDotsStyles = cn(
-  'pointer-events-none absolute right-0 top-0 -z-10 h-24 w-1/2 max-w-44 rounded-tr-[inherit]',
-  'bg-top-right opacity-60 [background-size:var(--space-3)_var(--space-3)]',
-  '[mask-image:radial-gradient(ellipse_100%_100%_at_top_right,var(--mask-solid),transparent)] forced-colors:hidden',
-);
-
-export const assetCardPixelRevealStyles = cn(
-  'origin-center [transform-box:fill-box]',
-  'motion-safe:group-hover/asset-grid-item:animate-[agent-dot-in_380ms_var(--ease-out)_both]',
-  'motion-safe:group-focus-visible/asset-card:animate-[agent-dot-in_380ms_var(--ease-out)_both]',
-);
-
-export const assetCardTopStyles = 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5';
-
-export const assetCardSubtitleStyles =
-  'mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-label leading-4 text-muted-ink';
-
-export const cardArrowStyles = cn(
-  'mt-0.5 self-start text-muted-ink opacity-60 transition-[translate,color,opacity] duration-200 ease-out motion-reduce:transition-none',
-  'group-hover/asset-grid-item:text-brand group-hover/asset-grid-item:opacity-100',
-  'group-focus-visible/asset-card:text-brand group-focus-visible/asset-card:opacity-100',
-  'motion-safe:group-hover/asset-grid-item:translate-x-0.5 motion-safe:group-hover/asset-grid-item:-translate-y-0.5',
-  'motion-safe:group-focus-visible/asset-card:translate-x-0.5 motion-safe:group-focus-visible/asset-card:-translate-y-0.5',
-);
-
-export const assetVersionStyles =
-  'inline-flex min-w-0 max-w-full items-center gap-1 font-mono [&>svg]:shrink-0';
-
-export const assetCardTagsStyles = cn(
-  "mt-auto mb-3.5 items-start empty:mb-0 [&_[class~='group/tag']]:max-w-full",
-  "[&_[class~='group/tag']]:text-label [&_[class~='group/tag']]:leading-4",
-  "[&_[class~='group/tag']]:[overflow-wrap:anywhere]",
-);
-
-export const matchReasonStyles = cn(
-  'text-brand [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]',
-  'mb-3.5 overflow-hidden leading-5 [overflow-wrap:anywhere]',
-);
-
-export const assetCardFootStyles = cn(
-  'flex items-center gap-1.5 text-label leading-4 text-muted-ink border-t [border-top-style:solid] border-t-[color:var(--line)]',
-  'pt-3',
-);
-
-export const cardRecommendationsStyles =
-  'inline-flex items-center gap-[var(--space-2)] text-brand text-label';
-
-export const assetOwnerStyles = 'group/asset-owner inline-flex items-center flex-1 min-w-0 gap-1.5';
-
-export const ownerAvatarStyles = cn(
-  'flex items-center justify-center border border-solid border-[color:var(--line)] bg-brand-soft text-brand',
-  'rounded-[50%] font-semibold w-5.5 h-5.5 text-label',
-  "[[class~='group/asset-owner']_&]:shrink-0",
-);
-
-export const assetOwnerNameStyles = 'overflow-hidden text-ellipsis whitespace-nowrap';
-
-export const audienceLabelStyles =
-  'ml-auto inline-flex max-w-[48%] shrink-0 items-center gap-1 text-label [&>svg]:shrink-0';
-
-export const paginationStyles = 'flex justify-center mt-7.5';
 
 export const assetDetailScrollStyles = cn(
   'group/asset-detail-scroll [--detail-padding:26px] pt-[var(--detail-padding)]',
@@ -675,3 +442,701 @@ export const detailFileProofStyles = cn(
   "[[class~='group/asset-content']_&]:text-[length:11px]",
   "[[class~='group/asset-content']_&]:flex-wrap",
 );
+
+/** 首页发现的版面：首屏舞台、任务输入、能力横条、资源目录与提交后的结果面板。 */
+
+export const discoverStyles = '-mt-4 flex min-w-0 flex-col [overflow-anchor:none]';
+
+// 首屏标题与提问框整体居中；提交后收起标题区，让回应紧接在输入框下方。
+export const discoverHeroStyles = cn(
+  'relative flex flex-col items-center justify-center',
+  'min-h-[min(640px,calc(100dvh_-_200px))] pt-12 pb-14 motion-reduce:transition-none',
+  '[transition:min-height_520ms_var(--ease-out),padding_520ms_var(--ease-out)]',
+  'group-data-[engaged]/hero:min-h-0 group-data-[engaged]/hero:pt-7 group-data-[engaged]/hero:pb-5',
+  'max-[850px]:min-h-0 max-[850px]:pt-11 max-[850px]:pb-10 max-[600px]:pt-8 max-[600px]:pb-8',
+  'max-[850px]:group-data-[engaged]/hero:pt-5 max-[850px]:group-data-[engaged]/hero:pb-4',
+);
+
+// 背景覆盖输入区和整张结果面板，淡出跟随面板底边，而不跟随视口滚动。
+export const heroStageStyles = cn(
+  'pointer-events-none absolute inset-y-0 left-1/2 -z-10 w-screen -translate-x-1/2 overflow-clip',
+  '[background:radial-gradient(ellipse_46%_62%_at_50%_42%,color-mix(in_srgb,var(--brand)_9%,transparent),transparent_76%)]',
+  '[mask-image:linear-gradient(to_bottom,var(--mask-solid)_58%,transparent)]',
+  'group-data-[engaged]/hero:[mask-image:linear-gradient(to_bottom,var(--mask-solid)_calc(100%_-_48px),transparent)]',
+  'forced-colors:hidden',
+);
+
+// 长结果只绘制一屏点阵；sticky 始终留在舞台内，不在目录横条背后继续绘制。
+export const heroDotsStyles = 'sticky inset-auto top-0 max-h-lvh [--hero-dot-opacity:1]';
+
+// 提交后标题区以行高过渡收起，标题仍留在文档中供读屏使用。
+export const heroIntroStyles = cn(
+  'grid w-full grid-rows-[1fr] [transition:grid-template-rows_520ms_var(--ease-out),opacity_300ms_ease]',
+  'group-data-[engaged]/hero:grid-rows-[0fr] group-data-[engaged]/hero:opacity-0 motion-reduce:transition-none',
+);
+
+export const heroCopyStyles = cn(
+  'flex min-h-0 min-w-0 flex-col items-center gap-[18px] overflow-hidden pb-10 text-center',
+  'max-[850px]:gap-3.5 max-[850px]:pb-8 max-[600px]:gap-3 max-[600px]:pb-6',
+);
+
+export const heroEyebrowStyles =
+  'flex flex-wrap items-center justify-center gap-2.5 font-mono text-[length:10.5px] leading-none text-brand';
+
+export const heroEyebrowRuleStyles = 'h-px w-[30px] bg-brand-line-strong';
+
+export const heroEyebrowSubStyles =
+  'font-mono text-[length:10.5px] leading-none tracking-[1.6px] text-quieter';
+
+export const heroTitleStyles = cn(
+  'flex flex-col items-center text-[length:46px] leading-[58px] font-bold tracking-[-0.6px] text-ink',
+  'max-[1100px]:text-[length:40px] max-[1100px]:leading-[52px] max-[850px]:text-[length:32px]',
+  'max-[850px]:leading-[42px] max-[600px]:text-[length:26px] max-[600px]:leading-[35px]',
+);
+
+export const heroTitleAccentStyles = cn(
+  'bg-clip-text text-transparent forced-colors:bg-none forced-colors:text-ink',
+  '[background-image:linear-gradient(0deg,var(--headline-from),var(--brand)_55%,var(--headline-to))]',
+);
+
+// 提交后与下方回应面板同宽。
+export const taskComposerStyles = cn(
+  'group/composer relative z-[2] w-full max-w-[760px] group-data-[engaged]/hero:max-w-full',
+  '[transition:max-width_520ms_var(--ease-out)] motion-reduce:transition-none',
+);
+
+// 单行时文本域与按钮同为 40px 高；多行时按钮与快捷键沉到底部，图标停在首行。
+export const taskInputStyles = cn(
+  'group/task-input relative flex min-h-[58px] items-end gap-3 overflow-hidden rounded-[15px] py-2 pr-2 pl-[18px]',
+  'border border-solid border-[color:var(--line)] bg-surface-card [box-shadow:var(--shadow-panel)]',
+  'motion-safe:[transition:box-shadow_200ms_ease]',
+  'focus-within:[box-shadow:0_0_0_1px_var(--brand-line-strong),0_0_12px_2px_var(--brand-line),0_0_32px_4px_var(--brand-veil),var(--shadow-panel)]',
+  "after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:opacity-0 after:content-['']",
+  'after:bg-no-repeat after:[background-image:linear-gradient(90deg,transparent,var(--brand),transparent)]',
+  'after:[background-size:40%_100%] motion-reduce:after:[background-size:100%_100%] forced-colors:after:hidden',
+  'group-data-[busy]/composer:after:opacity-100',
+  'motion-safe:group-data-[busy]/composer:after:[animation:composer-progress_1.3s_ease-in-out_infinite]',
+  'forced-colors:has-[textarea:focus-visible]:outline-2 forced-colors:has-[textarea:focus-visible]:outline-solid',
+  'forced-colors:has-[textarea:focus-visible]:outline-offset-2 max-[600px]:gap-2 max-[600px]:pl-3.5',
+);
+
+export const taskInputIconStyles = cn(
+  'mt-[11.5px] shrink-0 self-start text-brand',
+  'motion-safe:group-data-[busy]/composer:[animation:hero-sparkle_1.4s_ease-in-out_infinite]',
+);
+
+export const taskFieldStyles = 'relative flex min-w-0 flex-1';
+
+export const taskInputFieldStyles = cn(
+  'max-h-32 w-full min-w-0 resize-none border-0 bg-transparent py-[9px] text-[length:15px] leading-[22px] text-ink',
+  '[field-sizing:content] [outline:0] [box-shadow:none] [&::placeholder]:text-quieter',
+  'max-[600px]:text-[length:16px]',
+);
+
+// 打字提示只在宽屏显示；原生占位文字变透明但保留，读屏与输入框高度仍以它为准。
+export const taskInputTypingStyles = 'min-[601px]:[&::placeholder]:text-transparent';
+
+export const taskTypingStyles = cn(
+  'pointer-events-none absolute inset-x-0 top-0 overflow-hidden py-[9px] text-[length:15px] leading-[22px]',
+  'whitespace-nowrap text-quieter max-[600px]:hidden',
+);
+
+export const taskTypingCursorStyles = cn(
+  'ml-0.5 inline-block h-[17px] w-[1.5px] translate-y-[3px] rounded-full bg-brand',
+  'motion-safe:[animation:caret-blink_1.05s_steps(1)_infinite]',
+);
+
+export const taskKbdStyles = cn(
+  'mb-[11px] shrink-0 rounded-[6px] border border-solid border-[color:var(--stroke-card)] bg-surface-chip',
+  'px-[6px] py-[2px] font-mono text-[length:11px] leading-[14px] text-muted-ink [transition:opacity_150ms_ease]',
+  'group-has-[textarea:placeholder-shown]/task-input:opacity-50 max-[600px]:hidden',
+);
+
+export const taskSubmitStyles = cn(
+  'group/submit inline-flex h-10 shrink-0 items-center justify-center gap-[7px] rounded-[10px]',
+  'bg-brand px-[18px] text-[length:13.5px] font-bold text-on-brand',
+  '[transition:background-color_150ms_ease,color_150ms_ease,scale_120ms_ease]',
+  'enabled:hover:bg-brand-hover enabled:active:scale-[0.97] pointer-coarse:min-h-11',
+  'disabled:bg-surface-chip disabled:text-quieter disabled:opacity-100',
+);
+
+export const taskSubmitIconStyles =
+  '[transition:translate_150ms_ease] group-enabled/submit:group-hover/submit:translate-x-0.5';
+
+// 示例与主题只用于开始新问题，提交后连同这一行收起。
+export const taskSuggestRowStyles = cn(
+  'relative z-[2] mt-5 flex w-full max-w-[760px] flex-wrap items-center justify-center gap-2',
+  'group-data-[engaged]/hero:hidden max-[600px]:mt-4',
+);
+
+export const taskMetaRowStyles = cn(
+  'relative z-[2] mt-4 flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-2',
+  'group-data-[engaged]/hero:mt-3 max-[600px]:mt-3',
+);
+
+export const taskSuggestLabelStyles = 'text-[length:11px] leading-none text-quieter';
+
+export const taskChipStyles = cn(
+  'rounded-[8px] border border-solid border-[color:var(--stroke-card)] bg-surface-chip-soft',
+  'px-[11px] py-[5px] text-[length:12px] leading-[17px] text-muted-ink',
+  '[transition:color_150ms_ease,border-color_150ms_ease,background-color_150ms_ease,translate_150ms_ease]',
+  'hover:border-[color:var(--brand-line)] hover:bg-brand-tint hover:text-ink motion-safe:hover:-translate-y-px',
+  'pointer-coarse:min-h-9',
+);
+
+export const taskTopicHashStyles = 'mr-0.5 font-mono text-quieter';
+
+export const taskPrivacyNoteStyles =
+  'inline-flex min-w-0 items-center gap-1.5 text-[length:11.5px] leading-[1.5] text-muted-ink';
+
+export const browseEntryStyles = cn(
+  'group/browse -mx-2 inline-flex shrink-0 items-center gap-[7px] rounded-[8px] px-2 py-1',
+  'text-[length:12.5px] font-medium text-ink [transition:color_150ms_ease,background-color_150ms_ease]',
+  'hover:bg-brand-tint hover:text-brand pointer-coarse:min-h-9',
+);
+
+export const browseEntryCountStyles = cn(
+  'min-w-[22px] rounded-full bg-surface-chip px-1.5 text-center font-mono text-[length:10.5px] leading-[17px]',
+  'font-normal text-muted-ink [transition:color_150ms_ease] group-hover/browse:text-brand',
+);
+
+export const capabilityTickerStyles = cn(
+  'flex min-h-[58px] items-center border-y border-solid border-y-[color:var(--stroke-card)] py-2.5',
+  'max-[600px]:min-h-12',
+);
+
+export const tickerLinkStyles = cn(
+  'group/ticker inline-flex items-center gap-2 py-1 font-mono text-[length:12px] tracking-[0.2px]',
+  'text-muted-ink [transition:color_150ms_ease] hover:text-ink',
+);
+
+export const tickerGlyphStyles =
+  'inline-flex opacity-60 [transition:opacity_150ms_ease] group-hover/ticker:opacity-100';
+
+export const directoryStyles = 'flex min-w-0 flex-col gap-[22px] pt-16 max-[850px]:pt-10';
+
+export const directoryHeadStyles =
+  'flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pt-2 max-[600px]:gap-y-3';
+
+export const directoryHeadCopyStyles = 'flex min-w-0 flex-col gap-2.5';
+
+export const directoryEyebrowStyles = 'flex items-center gap-[9px]';
+
+export const directoryEyebrowLabelStyles =
+  'font-mono text-[length:10.5px] leading-none tracking-[1.8px] text-quieter';
+
+export const directoryEyebrowRuleStyles = 'h-px w-[26px] bg-[color:var(--line)]';
+
+// 跳到目录时标题停在吸顶导航与上方标签之下。
+export const directoryTitleStyles = cn(
+  'mt-1.5 flex scroll-mt-36 items-baseline gap-2.5 text-[length:30px] leading-none font-bold tracking-[-0.4px]',
+  'text-ink max-[850px]:scroll-mt-44 max-[600px]:text-[length:24px]',
+);
+
+export const directoryCountStyles =
+  'font-mono text-[length:12px] font-normal tabular-nums text-quieter';
+
+export const directorySubStyles =
+  'max-w-[560px] text-[length:13px] leading-[21px] text-muted-ink max-[600px]:text-[length:12px]';
+
+export const typeSegmentedStyles = cn(
+  'rounded-[11px] border border-solid border-[color:var(--stroke-card)] bg-surface-sunken',
+  'p-1 gap-0.5',
+);
+
+export const typeSegmentedIndicatorStyles = 'rounded-[8px] bg-surface-seg shadow-none';
+
+export const typeSegmentedItemStyles = cn(
+  'min-h-0 rounded-[8px] px-3 py-1.5 text-[length:12px] text-muted-ink hover:text-ink',
+);
+
+export const filterRowStyles = cn(
+  'flex flex-wrap items-stretch justify-between gap-x-3 gap-y-2 border-b border-solid',
+  'border-b-[color:var(--stroke-card)]',
+);
+
+export const directoryTabsStyles = cn(
+  'flex gap-5 [&_>_button]:flex [&_>_button]:items-center [&_>_button]:gap-1.5',
+  '[&_>_button]:border-0 [&_>_button]:[background:none] [&_>_button]:px-0 [&_>_button]:pb-[10px]',
+  '[&_>_button]:pt-1.5 [&_>_button]:text-[length:12.5px] [&_>_button]:font-medium',
+  '[&_>_button]:text-muted-ink [&_>_button]:whitespace-nowrap [&_>_button]:border-b-2',
+  '[&_>_button]:border-b-transparent [&_>_button]:[transition:color_120ms_ease]',
+  '[&_>_button:hover]:text-ink',
+  "[&_>_button[class~='group/selected']]:font-semibold [&_>_button[class~='group/selected']]:text-ink",
+  "[&_>_button[class~='group/selected']]:border-b-[color:var(--brand)]",
+);
+
+export const directoryTabCountStyles = 'font-mono text-[length:10.5px] font-normal text-quieter';
+
+export const directoryTabCountActiveStyles =
+  'font-mono text-[length:10.5px] font-normal text-brand';
+
+export const directoryToolsStyles = cn(
+  'mb-1.5 flex w-[356px] max-w-full min-w-0 items-center rounded-full border border-control-border',
+  'bg-paper p-0.5 [box-shadow:var(--shadow-card)] max-[760px]:w-full',
+);
+
+export const keywordFieldStyles = cn(
+  'relative block min-w-0 flex-1',
+  'after:pointer-events-none after:absolute after:right-3 after:bottom-0.5 after:left-9 after:h-0.5',
+  'after:origin-left after:scale-x-0 after:rounded-full after:bg-brand has-[input:focus]:after:scale-x-100',
+  'motion-safe:after:transition-transform forced-colors:after:hidden',
+);
+
+export const keywordInputStyles = cn(
+  'min-h-8 rounded-full border-0 bg-transparent py-1.5 text-body leading-5 caret-brand',
+  'placeholder:text-muted-ink focus-visible:outline-none [&::-webkit-search-cancel-button]:appearance-none',
+  'forced-colors:focus-visible:[outline:2px_solid_Highlight] pointer-coarse:min-h-11 max-[600px]:text-[length:16px]',
+);
+
+export const keywordClearStyles = cn(
+  'grid size-6 place-items-center rounded-full text-muted-ink hover:bg-surface-sunken hover:text-ink',
+  'focus-visible:outline-brand pointer-coarse:size-9',
+);
+
+export const scenarioSelectStyles = cn(
+  'relative w-32 max-w-2/5 shrink-0 pl-1.5',
+  'before:pointer-events-none before:absolute before:top-1/2 before:left-0 before:h-4 before:w-px before:-translate-y-1/2 before:bg-line',
+  '[&_button]:min-h-8 [&_button]:gap-1 [&_button]:rounded-full [&_button]:border-0 [&_button]:bg-transparent',
+  '[&_button]:px-2 [&_button]:py-1.5 [&_button]:text-body [&_button]:font-medium [&_button]:text-muted-ink',
+  '[&_button>svg]:size-3.5 [&_button>svg]:text-current [&_button[data-focus-visible]]:-outline-offset-2',
+  '[&_button[data-hovered]]:bg-surface-chip-soft [&[data-open]_button]:bg-surface-sunken',
+  'pointer-coarse:[&_button]:min-h-11 motion-reduce:[&_button>svg]:transition-none',
+);
+
+export const scenarioActiveStyles = cn(
+  '[&_button]:bg-brand-tint [&_button]:font-semibold [&_button]:text-brand',
+  '[&_button[data-hovered]]:bg-brand-veil [&[data-open]_button]:bg-brand-veil',
+);
+
+export const directoryGridStyles = cn(
+  'grid grid-cols-[repeat(3,_minmax(0,1fr))] gap-4 max-[850px]:grid-cols-[repeat(2,_minmax(0,1fr))]',
+  'max-[600px]:grid-cols-[1fr] max-[600px]:gap-3',
+);
+
+export const directoryCardStyles = cn(
+  'group/card relative flex min-w-0 flex-col gap-[13px] rounded-[16px] p-[17px] [&>p]:mb-auto',
+  'min-h-[244px]',
+  'border border-solid border-[color:var(--stroke-card)] bg-paper text-ink',
+  '[box-shadow:var(--shadow-card)] [transition:border-color_180ms_ease,box-shadow_180ms_ease,translate_180ms_ease]',
+  'hover:border-[color:var(--brand-line)] hover:[box-shadow:var(--shadow-panel)]',
+  'focus-visible:border-[color:var(--brand)] focus-visible:[outline:2px_solid_var(--brand)]',
+  'focus-visible:[outline-offset:2px] motion-safe:hover:-translate-y-0.5',
+  'motion-reduce:transition-none max-[600px]:p-4',
+  '[&_h3]:line-clamp-1 [&_h3]:font-mono [&_h3]:text-[length:12.5px] [&_h3]:font-semibold [&_h3]:text-ink',
+  '[&>p]:line-clamp-3 [&>p]:text-[length:11.5px] [&>p]:leading-5 [&>p]:text-muted-ink',
+  '[&>p]:[overflow-wrap:anywhere]',
+);
+
+export const cardTopStyles = 'flex items-start gap-[11px]';
+
+export const cardGlyphStyles = cn(
+  'grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-brand-tint text-brand',
+  'outline outline-1 -outline-offset-[0.5px] outline-[color:var(--brand-line)]',
+  'group-[.mcp]/card:bg-[color:var(--success-soft)] group-[.mcp]/card:text-success',
+  'group-[.mcp]/card:outline-[color:color-mix(in_srgb,var(--success)_30%,transparent)]',
+);
+
+export const cardTitleColStyles = 'flex min-w-0 flex-1 flex-col gap-1';
+
+export const cardMetaStyles = 'flex flex-wrap items-center gap-1.5';
+
+export const cardTypeChipStyles = cn(
+  'rounded-[4px] bg-brand-tint px-[5px] py-px font-mono text-[length:8.5px] tracking-[0.6px]',
+  'leading-none text-brand',
+);
+
+export const cardTypeChipMcpStyles = cn(
+  'rounded-[4px] bg-[color:var(--success-soft)] px-[5px] py-px font-mono text-[length:8.5px]',
+  'leading-none tracking-[0.6px] text-success',
+);
+
+export const cardScopeStyles = 'text-[length:10.5px] leading-none text-quieter';
+
+export const cardOpenIconStyles =
+  'mt-0.5 shrink-0 text-quieter [transition:color_150ms_ease] group-hover/card:text-brand';
+
+export const cardTagRowStyles = 'flex flex-wrap items-center gap-1.5';
+
+export const cardFeatureTagStyles = cn(
+  'inline-flex items-center gap-1 rounded-[6px] px-[7px] py-[3px] text-[length:10px]',
+  'bg-[color:color-mix(in_srgb,var(--warning)_12%,transparent)] text-warning',
+  'outline outline-1 -outline-offset-[0.5px] outline-[color:color-mix(in_srgb,var(--warning)_26%,transparent)]',
+);
+
+export const cardTagStyles =
+  'rounded-[6px] bg-surface-chip px-[7px] py-[3px] text-[length:10px] text-muted-ink';
+
+export const cardFootStyles = cn(
+  'flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-solid',
+  'border-t-[color:var(--stroke-card)] pt-2.5 text-[length:10.5px] leading-none text-quieter',
+);
+
+export const cardFootItemStyles = 'inline-flex min-w-0 items-center gap-1.5';
+
+export const paginationStyles = 'flex flex-wrap justify-center gap-3 pt-1';
+
+/* 目录对当前访问者为空时的上线引导 */
+
+export const onboardingStyles = cn(
+  'relative isolate mt-1 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-12 gap-y-8',
+  'overflow-hidden rounded-[22px] p-8 border border-solid border-[color:var(--stroke-panel)]',
+  '[box-shadow:var(--shadow-panel)]',
+  '[background-image:linear-gradient(-133deg,var(--surface-panel-start)_26%,var(--surface-panel-end)_74%)]',
+  'max-[850px]:grid-cols-[minmax(0,1fr)] max-[600px]:rounded-[16px] max-[600px]:p-5',
+);
+
+export const onboardingDotsStyles = cn(
+  '[--hero-dot-opacity:1.6]',
+  '[mask-image:radial-gradient(ellipse_55%_90%_at_82%_50%,var(--mask-solid)_10%,transparent_80%)]',
+);
+
+export const onboardingCopyStyles = 'flex min-w-0 flex-col items-start gap-3';
+
+export const onboardingIconStyles = cn(
+  'mb-1 grid size-11 place-items-center rounded-[14px] bg-brand-soft text-brand',
+  'outline outline-1 -outline-offset-[0.5px] outline-[color:var(--brand-line)]',
+);
+
+export const onboardingTitleStyles = cn(
+  'scroll-mt-36 text-[length:21px] leading-[1.35] font-semibold text-ink outline-none',
+  'max-[850px]:scroll-mt-44 max-[600px]:text-[length:19px]',
+);
+
+export const onboardingTextStyles =
+  'max-w-[440px] text-[length:13px] leading-[1.8] text-muted-ink max-[600px]:text-[length:12px]';
+
+export const onboardingActionsStyles = 'mt-2 flex flex-wrap items-center gap-2.5';
+
+export const onboardingFlowStyles = 'relative min-w-0';
+
+// 竖线连接三个步骤圆点，光点沿线向下流动，表示资源从发布走到可用。
+export const onboardingTrackStyles = cn(
+  'absolute top-4 bottom-4 left-[15px] w-px overflow-hidden bg-[color:var(--stroke-card)]',
+);
+
+export const onboardingBeamStyles = cn(
+  'absolute left-0 h-1/4 w-px opacity-0 forced-colors:hidden',
+  '[background:linear-gradient(transparent,var(--brand),transparent)]',
+  'motion-safe:[animation:onboarding-beam_2.8s_ease-in-out_infinite]',
+);
+
+export const onboardingStepsStyles = 'relative m-0 flex list-none flex-col gap-5 p-0';
+
+export const onboardingStepStyles = 'relative flex items-start gap-3.5';
+
+export const onboardingStepIndexStyles = cn(
+  'grid size-8 shrink-0 place-items-center rounded-full border border-solid border-[color:var(--stroke-tile)]',
+  'bg-surface-card font-mono text-[length:12px] text-brand [box-shadow:var(--shadow-card)]',
+);
+
+export const onboardingStepTitleStyles = 'block pt-1 text-[length:13px] font-semibold text-ink';
+
+export const onboardingStepTextStyles =
+  'mt-0.5 block text-[length:12px] leading-[1.7] text-muted-ink';
+
+/* 提交后的任务面板 */
+
+// 只在最外层模糊背后的点阵。内部卡片叠加半透明底色，文字与操作不参与滤镜。
+export const taskPanelStyles = cn(
+  'relative mt-[18px] mb-7 overflow-hidden rounded-[22px] [overflow-anchor:none]',
+  'border border-solid border-[color:var(--stroke-panel)] bg-paper [box-shadow:var(--shadow-panel)]',
+  'supports-backdrop-filter:bg-paper/35 backdrop-blur-[1.5px]',
+  '[@media_(prefers-reduced-transparency:_reduce)]:bg-paper [@media_(prefers-reduced-transparency:_reduce)]:backdrop-filter-none',
+  'forced-colors:bg-[Canvas] forced-colors:backdrop-filter-none',
+  '[--text-quiet:var(--muted-ink)] [--text-quieter:var(--muted-ink)]',
+  'max-[600px]:rounded-[16px]',
+);
+
+// 面板高度跟随这一层的实际高度过渡，结果增减时不跳动。
+export const taskPanelBodyStyles = cn(
+  'flex flex-wrap items-start gap-4 p-5',
+  'max-[850px]:flex-col max-[850px]:items-stretch max-[600px]:p-3.5',
+);
+
+export const taskColumnStyles = 'flex min-w-0 flex-1 flex-col gap-3';
+
+// 本轮问题以靠右的对话气泡呈现，与上方输入框区分开，不会被当成第二个输入框。
+export const queryStripStyles = 'flex flex-row-reverse items-end justify-start gap-2.5';
+
+export const queryStripTextStyles = cn(
+  'max-w-[78%] rounded-[14px] rounded-br-[5px] bg-brand-tint px-3.5 py-2.5 text-[length:13px] leading-[1.6] text-ink',
+  'outline outline-1 -outline-offset-[0.5px] outline-[color:var(--brand-line)] [overflow-wrap:anywhere]',
+  'max-[600px]:max-w-[88%]',
+);
+
+export const queryEditStyles = cn(
+  'shrink-0 rounded-[7px] border border-solid border-[color:var(--stroke-card)] px-[9px] py-1',
+  'text-[length:11px] text-muted-ink [transition:color_120ms_ease] hover:text-ink',
+);
+
+export const resultsHeadStyles = 'flex flex-wrap items-center justify-between gap-2';
+
+export const resultsCountStyles = 'text-[length:12px] text-muted-ink';
+
+export const resultsSortStyles = cn(
+  'inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-[length:11.5px] text-quieter',
+  '[transition:color_120ms_ease,background-color_120ms_ease] hover:bg-brand-tint hover:text-ink',
+);
+
+export const resultCardStyles = cn(
+  'flex min-w-0 flex-wrap items-start gap-3 rounded-[13px] border border-solid',
+  'border-[color:var(--stroke-card)] bg-surface-card/50 p-[13px] pr-3.5',
+  '[transition:border-color_150ms_ease,box-shadow_180ms_ease,translate_180ms_ease]',
+  'hover:border-[color:var(--brand-line)] hover:[box-shadow:var(--shadow-card)] motion-safe:hover:-translate-y-px',
+);
+
+// 骨架卡上周期扫过一道品牌色微光，表示仍在查找；减少动态效果时只留骨架。
+export const resultSkeletonStyles = cn(
+  'relative flex items-start gap-3 overflow-hidden rounded-[13px] border border-solid',
+  'border-[color:var(--stroke-card)] bg-surface-card/50 p-[13px]',
+  "after:pointer-events-none after:absolute after:inset-0 after:content-[''] motion-reduce:after:hidden forced-colors:after:hidden",
+  'after:[background:linear-gradient(100deg,transparent_30%,color-mix(in_srgb,var(--brand)_8%,transparent)_50%,transparent_70%)]',
+  'after:[animation:skeleton-sweep_1.5s_ease-in-out_infinite]',
+);
+
+export const resultSkeletonLinesStyles = 'flex min-w-0 flex-1 flex-col gap-2.5 pt-1';
+
+export const resultGlyphStyles = cn(
+  'grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[10px] bg-brand-tint text-brand',
+  'outline outline-1 -outline-offset-[0.5px] outline-[color:var(--brand-line)]',
+);
+
+// 正文至少保留 240px，放不下时操作列换到下一行并与正文对齐。
+export const resultBodyStyles = 'flex min-w-0 flex-1 basis-[240px] flex-col gap-[5px]';
+
+export const resultNameRowStyles = 'flex flex-wrap items-center gap-[7px]';
+
+export const resultNameStyles =
+  'min-w-0 font-mono text-[length:13px] font-semibold text-ink [overflow-wrap:anywhere]';
+
+export const resultKindStyles = cn(
+  'rounded-[6px] bg-brand-tint px-2 py-[3px] text-[length:10px] leading-none text-brand',
+  'outline outline-1 -outline-offset-[0.5px] outline-[color:var(--brand-line)]',
+);
+
+export const resultKindMcpStyles =
+  'rounded-[6px] bg-surface-chip px-2 py-[3px] text-[length:10px] leading-none text-muted-ink outline outline-1 -outline-offset-[0.5px] outline-[color:var(--stroke-card)]';
+
+export const resultMetaStyles =
+  'text-[length:11px] leading-[1.5] text-quieter [overflow-wrap:anywhere]';
+
+export const resultDescStyles =
+  'line-clamp-2 text-[length:12px] leading-[19px] text-muted-ink [overflow-wrap:anywhere]';
+
+export const resultEvidenceStyles = cn(
+  'mt-0.5 flex flex-col gap-1 border-l-2 border-solid border-l-[color:var(--brand-line)]',
+  'pl-2 text-[length:11px] leading-[1.6] text-quiet',
+);
+
+export const resultEvidenceLabelStyles = 'font-medium text-brand';
+
+export const resultJudgmentStyles =
+  'mt-0.5 flex flex-col gap-1.5 text-[length:11.5px] leading-[1.65] text-ink [overflow-wrap:anywhere]';
+
+export const resultJudgmentLabelStyles = cn(
+  'mr-1.5 inline-flex items-center gap-1 rounded-[5px] bg-brand-tint px-1.5 py-px align-[1px]',
+  'text-[length:10px] leading-[16px] font-medium text-brand',
+);
+
+export const resultSideStyles = cn(
+  'ml-auto flex shrink-0 flex-col items-end gap-2',
+  'max-[600px]:w-full max-[600px]:flex-row max-[600px]:items-center max-[600px]:justify-between max-[600px]:pl-[46px]',
+);
+
+export const resultVisibilityStyles =
+  'rounded-[6px] bg-surface-chip px-2 py-[3px] text-[length:10px] leading-none text-muted-ink outline outline-1 -outline-offset-[0.5px] outline-[color:var(--stroke-card)]';
+
+export const resultInstallStyles = cn(
+  'inline-flex items-center gap-1 text-[length:11.5px] text-brand hover:underline pointer-coarse:min-h-9',
+);
+
+export const resultsNoteStyles =
+  'text-[length:11px] leading-[1.7] text-quieter [overflow-wrap:anywhere]';
+
+export const bundleSelectActionStyles = cn(
+  textBtnStyles,
+  'aria-disabled:cursor-default aria-disabled:opacity-50 pointer-coarse:min-h-10',
+);
+
+export const bundleRowStyles = cn(
+  checkLabelStyles,
+  'min-h-12 grid-cols-[minmax(0,1fr)_var(--check-size)] items-center gap-3 rounded-none px-1 py-2.5',
+  '[&>span]:col-start-1 [&>span]:row-start-1 [&>input]:col-start-2 [&>input]:row-start-1',
+  "[&_>_input[type='checkbox']]:[margin-block-start:0]",
+  '[&:has(>_input:checked)]:bg-transparent [&:has(>_input:checked)]:[box-shadow:none]',
+  '[@media_(hover:_hover)]:[&:hover:has(>_input:not(:disabled))]:bg-surface-chip-soft',
+  '[&:has(>_input:focus-visible)]:bg-brand-tint [&:has(>_input:focus-visible)]:[box-shadow:none]',
+);
+
+export const bundleEntryStyles = cn(
+  'grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5',
+  'max-[520px]:grid-cols-[auto_minmax(0,1fr)] max-[520px]:gap-x-2.5',
+);
+
+export const bundleVersionStyles =
+  'max-w-36 text-right font-mono text-caption font-normal text-muted-ink max-[520px]:col-start-2 max-[520px]:max-w-full max-[520px]:text-left';
+
+export const bundleMethodBarStyles = cn(
+  'flex w-full flex-nowrap gap-5 rounded-none border-b border-line p-0 [background:none] [box-shadow:none]',
+  'max-[520px]:gap-2',
+);
+
+export const bundleMethodStyles = cn(
+  'min-h-10 rounded-none px-1 py-2 aria-checked:font-semibold aria-checked:text-brand',
+  'focus-visible:-outline-offset-2 forced-colors:aria-checked:underline pointer-coarse:min-h-11 max-[520px]:flex-1',
+);
+
+// 追问区与结果用一条分隔线分开；快捷问题只填入不发送。
+export const followUpBlockStyles =
+  'mt-1 flex flex-col gap-2.5 border-t border-solid border-t-[color:var(--stroke-card)] pt-4';
+
+export const followUpQuickStyles = 'flex flex-wrap items-center gap-2';
+
+// 焦点线与原边框重合，不叠出两圈；需要更高对比度时恢复外置轮廓。
+export const followUpStyles = cn(
+  'flex min-h-12 items-center gap-2.5 rounded-[12px] border border-solid border-control-border bg-paper',
+  'py-1.5 pr-1.5 pl-3.5 -outline-offset-1 motion-safe:transition-shadow',
+  'has-[input:focus-visible]:outline-1 has-[input:focus-visible]:outline-solid has-[input:focus-visible]:outline-muted-ink/80',
+  'has-[input:focus-visible]:[box-shadow:0_0_12px_1px_var(--brand-veil)]',
+  'contrast-more:outline-offset-2 contrast-more:has-[input:focus-visible]:outline-2',
+  'forced-colors:outline-offset-2 forced-colors:has-[input:focus-visible]:outline-2 forced-colors:has-[input:focus-visible]:[outline-color:Highlight]',
+);
+
+export const followUpFieldStyles = cn(
+  'min-h-9 min-w-0 flex-1 border-0 bg-transparent text-[length:13px] text-ink [outline:0]',
+  '[box-shadow:none] [&::placeholder]:text-muted-ink max-[600px]:text-[length:16px]',
+);
+
+export const followUpSendStyles = cn(
+  'inline-flex h-9 shrink-0 items-center gap-1 rounded-[9px] bg-brand px-3.5 text-[length:12.5px] font-semibold',
+  'text-on-brand [transition:background-color_120ms_ease] enabled:hover:bg-brand-hover',
+  'disabled:bg-surface-chip disabled:text-quieter disabled:opacity-100 pointer-coarse:min-h-11',
+);
+
+export const stopButtonStyles = cn(
+  'inline-flex h-10 shrink-0 items-center gap-1.5 rounded-[10px] border border-solid border-[color:var(--stroke-card)]',
+  'bg-surface-chip px-3.5 text-[length:12.5px] font-medium text-ink [transition:background-color_120ms_ease]',
+  'hover:bg-brand-tint',
+);
+
+export const thinkingStyles = cn(
+  'flex w-fit items-center gap-2.5 rounded-[14px] rounded-tl-[5px] border border-solid border-[color:var(--stroke-card)]',
+  'bg-surface-bubble/65 px-3.5 py-2.5 text-[length:12px] text-muted-ink',
+);
+
+export const thinkingDotStyles = cn(
+  "relative size-2 shrink-0 rounded-full bg-brand after:absolute after:inset-0 after:rounded-full after:content-['']",
+  'after:bg-brand motion-safe:after:animate-ping',
+);
+
+// 文字底色与静止时相同，扫光只在允许动态效果时循环。
+export const thinkingTextStyles = cn(
+  'bg-clip-text text-transparent [background-size:250%_100%] [background-position:100%_50%]',
+  '[background-image:linear-gradient(110deg,var(--muted-ink)_40%,var(--ink)_50%,var(--muted-ink)_60%)]',
+  'motion-safe:[animation:react-bits-shine_1.8s_linear_infinite] forced-colors:bg-none forced-colors:text-ink',
+);
+
+export const thinkingStepsStyles = cn(
+  'w-fit rounded-[14px] rounded-tl-[5px] border border-solid border-[color:var(--stroke-card)]',
+  'bg-surface-bubble/65 px-3.5 py-3',
+);
+
+export const thinkingStepListStyles = 'm-0 flex list-none flex-col gap-2 p-0';
+
+export const thinkingStepStyles = cn(
+  'group/step flex items-center gap-2.5 text-[length:12px] leading-5 text-quieter',
+  '[transition:color_200ms_ease] data-[state=active]:text-ink data-[state=done]:text-muted-ink',
+);
+
+// 完成为对勾，进行中为跳动的实心点，未开始为空心圈。
+export const thinkingStepMarkStyles = cn(
+  'relative grid size-4 shrink-0 place-items-center rounded-full border border-solid border-[color:var(--stroke-card)]',
+  "after:absolute after:inset-[3px] after:rounded-full after:content-['']",
+  'group-data-[state=done]/step:border-transparent group-data-[state=done]/step:bg-brand-tint',
+  'group-data-[state=done]/step:text-brand group-data-[state=active]/step:border-[color:var(--brand)]',
+  'group-data-[state=active]/step:after:bg-brand motion-safe:group-data-[state=active]/step:after:animate-pulse',
+);
+
+export const taskBodyStyles = 'flex flex-col gap-2.5 [transition:opacity_200ms_ease]';
+
+export const taskBodyStaleStyles = 'opacity-45';
+
+export const conditionRailStyles = 'flex w-[300px] shrink-0 flex-col gap-3 max-[850px]:w-full';
+
+export const conditionCardStyles = cn(
+  'flex flex-col gap-2.5 rounded-[14px] border border-solid border-[color:var(--stroke-card)]',
+  'bg-surface-card/50 p-3.5',
+);
+
+export const conditionHeadStyles = 'flex items-center justify-between gap-2';
+
+export const conditionHeadTitleStyles =
+  'inline-flex items-center gap-1.5 text-[length:12px] font-semibold text-ink';
+
+export const conditionHeadHintStyles = 'text-[length:10px] text-quieter';
+
+export const conditionRowStyles = cn(
+  'flex w-full items-center justify-between gap-2 rounded-[6px] px-1 py-0.5 text-left',
+  '[transition:background-color_120ms_ease] hover:bg-brand-tint',
+);
+
+export const conditionKeyStyles = 'shrink-0 text-[length:11px] text-quieter';
+
+export const conditionValueStyles =
+  'min-w-0 text-right text-[length:11.5px] text-ink [overflow-wrap:anywhere]';
+
+export const conditionKeywordsStyles = 'flex flex-wrap justify-end gap-1';
+
+export const conditionKeywordStyles =
+  'rounded-[5px] bg-surface-chip px-1.5 py-px text-[length:11px] leading-[17px] text-ink';
+
+export const conditionNoteStyles = 'text-[length:10px] leading-[16px] text-quieter';
+
+export const conditionEditorStyles = 'flex flex-wrap items-center gap-1.5 pt-1';
+
+export const conditionChoiceStyles = cn(
+  'rounded-[6px] border border-solid border-[color:var(--stroke-card)] px-2 py-1 text-[length:11px]',
+  'text-muted-ink hover:text-ink data-[chosen]:border-[color:var(--brand)] data-[chosen]:text-brand',
+  'data-[chosen]:bg-brand-tint',
+);
+
+export const browseCardStyles = cn(
+  'flex flex-col items-start gap-2.5 rounded-[14px] border border-solid border-[color:var(--stroke-card)]',
+  'bg-surface-card/50 p-3.5',
+);
+
+export const browseCardTitleStyles = 'text-[length:12px] font-semibold text-ink';
+
+export const browseCardDescStyles = 'text-[length:11px] leading-[18px] text-muted-ink';
+
+export const browseCardButtonStyles = cn(
+  'inline-flex items-center gap-1.5 rounded-[8px] border border-solid border-[color:var(--brand-line)]',
+  'bg-brand-tint px-[11px] py-[7px] text-[length:11px] font-semibold text-brand hover:bg-brand-soft',
+);
+
+export const directionStyles = cn(
+  'flex w-full items-start gap-2.5 rounded-[11px] border border-solid border-[color:var(--stroke-card)]',
+  'bg-surface-card/50 p-3 text-left [transition:border-color_150ms_ease,background-color_150ms_ease,translate_180ms_ease]',
+  'hover:border-[color:var(--brand-line)] hover:bg-brand-tint motion-safe:hover:-translate-y-px',
+);
+
+export const directionIndexStyles =
+  'grid h-6 w-6 shrink-0 place-items-center rounded-full bg-surface-chip font-mono text-[length:11px] text-muted-ink';
+
+export const directionLabelStyles = 'flex min-w-0 flex-1 flex-col';
+
+export const directionTitleStyles = 'text-[length:12.5px] font-semibold text-ink';
+
+export const directionIntentStyles =
+  'mt-0.5 line-clamp-2 text-[length:11px] leading-[17px] text-muted-ink';
+
+export const directionExampleStyles = 'mt-1 font-mono text-[length:10.5px] text-quieter';
+
+export const answerStyles = cn(
+  'rounded-[14px] rounded-tl-[5px] border border-solid border-[color:var(--stroke-card)] bg-surface-bubble/65',
+  'px-3.5 py-3 text-[length:12.5px] leading-[1.7] text-ink [overflow-wrap:anywhere]',
+);
+
+export const taskStateStyles =
+  'rounded-[11px] border border-solid border-[color:var(--stroke-card)] bg-surface-card px-[13px] py-3 text-[length:12px] text-muted-ink';

@@ -1,5 +1,5 @@
 import { hubPageFor } from '@capability-hub/contracts/web-pages';
-import { parseHistoryRoute } from './history-route.js';
+import { parseHistoryRoute, type HubRoute } from './history-route.js';
 
 /**
  * 客户端导航完成后派发在 `window` 上的事件名。`pushState`/`replaceState` 本身不触发 `popstate`，
@@ -117,8 +117,9 @@ export function assetBackground(state: unknown): string | undefined {
 /**
  * 合并地址与 `history.state` 得到最终视图：详情路径本身只表示 `page: 'discover'`，
  * 需要靠 `asset_background` 把被遮挡的页面还原回去，因此同一个 URL 在有无 state 时可能渲染成不同背景页。
+ * 背景只还原页面与其查询串；抽屉参数始终取自当前地址，站内点击、直接打开、刷新和前进后退得到同一结果。
  */
-export function appRoute(pathname: string, search: string, state: unknown) {
+export function appRoute(pathname: string, search: string, state: unknown): HubRoute {
   const route = parseHistoryRoute(pathname, search);
   const background = route.asset ? assetBackground(state) : undefined;
   if (!background) return route;
@@ -127,7 +128,7 @@ export function appRoute(pathname: string, search: string, state: unknown) {
     index < 0 ? background : background.slice(0, index),
     index < 0 ? '' : background.slice(index),
   );
-  return { ...base, asset: route.asset };
+  return { ...base, asset: route.asset, drawer: route.drawer };
 }
 
 /**

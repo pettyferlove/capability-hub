@@ -10,6 +10,8 @@ export interface JobInputMap {
   intake: Record<string, never>;
   rescan: { version_id: string };
   source_sync: { requested_by: string; source_revision: number; scheduled?: boolean };
+  /** 首页开场提示的定时刷新；`profile_digest` 是入队时默认模型配置的摘要。 */
+  catalog_prompt_refresh: { window_start: number; profile_digest: string };
 }
 
 /**
