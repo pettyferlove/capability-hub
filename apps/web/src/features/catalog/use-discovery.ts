@@ -68,7 +68,8 @@ export interface DiscoveryState {
   asking: string;
   error: { message: string; request: Request } | undefined;
   notice: string;
-  submit: () => void;
+  /** 不传参数时提交草稿；传入开场提问时先把它填进输入框，再带着提示标识提交。 */
+  submit: (suggestion?: { text: string; suggestion_ref: string }) => void;
   followUp: () => void;
   applyFilter: (patch: Partial<DiscoveryCriteria>) => void;
   pick: (direction: DiscoveryDirectionResponse) => void;
@@ -274,17 +275,22 @@ export function useDiscovery(refresh: number): DiscoveryState {
     },
     [entry, bound, canContinue, discardViewer, modeChanged, task?.context, task?.question],
   );
-  const submit = useCallback(() => {
-    const value = draft.trim();
-    if (!value || !entry || status === 'thinking') return;
-    setFollowState('');
-    void run({
-      action: 'message',
-      text: value,
-      fresh: true,
-      ...(suggestionRef ? { suggestionRef } : {}),
-    });
-  }, [draft, entry, run, status, suggestionRef]);
+  const submit = useCallback(
+    (suggestion?: { text: string; suggestion_ref: string }) => {
+      const value = (suggestion?.text ?? draft).trim();
+      const ref = suggestion ? suggestion.suggestion_ref : suggestionRef;
+      if (!value || !entry || status === 'thinking') return;
+      if (suggestion) setDraftState({ text: suggestion.text, suggestionRef: ref });
+      setFollowState('');
+      void run({
+        action: 'message',
+        text: value,
+        fresh: true,
+        ...(ref ? { suggestionRef: ref } : {}),
+      });
+    },
+    [draft, entry, run, status, suggestionRef],
+  );
   // 追问、改条件和选方向都接着本轮，不改写顶部输入框：那里只用于开始新的一轮。
   const followUp = useCallback(() => {
     const value = follow.trim();

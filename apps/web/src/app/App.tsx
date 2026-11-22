@@ -179,15 +179,12 @@ export default function App() {
     (view.page === 'login' || ['publish', 'review', 'account', 'operations'].includes(view.page))
   ) {
     content = (
-      <>
-        <WebUpdateNotice />
-        <Login
-          initialized={initialized}
-          setupRequired={setupRequired}
-          ldapEnabled={ldapEnabled}
-          onLogin={load}
-        />
-      </>
+      <Login
+        initialized={initialized}
+        setupRequired={setupRequired}
+        ldapEnabled={ldapEnabled}
+        onLogin={load}
+      />
     );
   } else {
     content = (
@@ -295,14 +292,11 @@ export default function App() {
   }
   return (
     <LoadingScope scopeKey={pageScrollKey}>
-      <HubFeedbackHints
-        key={userId ?? 'anonymous'}
-        hidden={!!(panel?.open || palette || view.asset)}
-      />
       <HubCtx.Provider
         key={userId ?? 'anonymous'}
         value={{ me, reviewCount, refresh, reload, openPalette: () => setPalette(true), logout }}
       >
+        <HubFeedbackHints hidden={!!(panel?.open || palette || view.asset)} />
         {content}
         {panel && (
           <Suspense fallback={null}>

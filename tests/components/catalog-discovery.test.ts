@@ -198,6 +198,20 @@ test('示例只填入不发送，显式提交才带上提示标识，输入法�
   assert.equal(Object.hasOwn(posted[1].body, 'suggestion_ref'), false);
 });
 
+test('草稿到达 500 字上限时向读屏播报，删回上限以下即撤销', async (context) => {
+  const { mock } = mockApi({ mode: 'dialogue', viewer_key: 'anonymous' }, []);
+  context.mock.method(globalThis, 'fetch', mock);
+  const user = userEvent.setup();
+  render(page(createElement(DiscoverPage)));
+  const input = await screen.findByRole<HTMLTextAreaElement>('textbox', { name: '你想完成什么？' });
+  await user.click(input);
+  await user.paste('测'.repeat(520));
+  assert.equal(input.value.length, 500);
+  assert.equal(screen.getByRole('status').textContent, '已达到 500 字上限');
+  await user.keyboard('{Backspace}');
+  assert.equal(screen.getByRole('status').textContent, '');
+});
+
 test('入口读取失败后仍可编辑草稿，重取成功也不自动发送', async (context) => {
   const entry = { mode: 'dialogue' as const, viewer_key: 'fresh-key', suggestions: [] };
   const { mock, posted } = mockApi(entry, []);
@@ -220,7 +234,7 @@ test('入口读取失败后仍可编辑草稿，重取成功也不自动发送',
   assert.equal(posted.length, 0);
   assert.equal(input.value, '找回归测试');
   await act(async () => reload.resolve(Response.json(entry)));
-  const submit = await screen.findByRole('button', { name: '查找' });
+  const submit = await screen.findByRole('button', { name: '帮我找' });
   assert.equal(posted.length, 0);
   await user.click(submit);
   await screen.findByText(guide.reply);
@@ -249,7 +263,7 @@ test('访客键失效立即清除旧提示与草稿，新入口只允许用新�
   const user = userEvent.setup();
   render(page(createElement(DiscoverPage)));
   await user.click(await screen.findByRole('button', { name: '旧提示' }));
-  await user.click(screen.getByRole('button', { name: '查找' }));
+  await user.click(screen.getByRole('button', { name: '帮我找' }));
   await screen.findByText('访问身份已变化');
   const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '你想完成什么？' });
   assert.equal(input.value, '');
@@ -259,7 +273,7 @@ test('访客键失效立即清除旧提示与草稿，新入口只允许用新�
   await act(async () =>
     reload.resolve(Response.json({ ...entry, viewer_key: 'new-key', suggestions: [] })),
   );
-  const submit = await screen.findByRole('button', { name: '查找' });
+  const submit = await screen.findByRole('button', { name: '帮我找' });
   assert.equal(posted.length, 1);
   await user.click(submit);
   await screen.findByText(guide.reply);
@@ -297,13 +311,13 @@ test('配置改为关键词模式后保留草稿，旧方向不能再操作，�
   const user = userEvent.setup();
   render(page(createElement(DiscoverPage)));
   await user.type(await screen.findByRole('textbox', { name: '你想完成什么？' }), '回归测试');
-  await user.click(screen.getByRole('button', { name: '查找' }));
+  await user.click(screen.getByRole('button', { name: '帮我找' }));
   await screen.findByRole('button', { name: /确认关键接口没被改坏/ });
 
   // 服务端先改模式：旧模式发送被拒，页面保留草稿并提示，不自动重发。
   mode = 'keywords';
   const before = posted.length;
-  await user.click(screen.getByRole('button', { name: '查找' }));
+  await user.click(screen.getByRole('button', { name: '帮我找' }));
   await waitFor(() => assert(screen.getByText(/再次发送时改为关键词匹配/)));
   assert.equal(screen.queryByRole('button', { name: /确认关键接口没被改坏/ }), null);
   assert.equal(screen.queryByRole('textbox', { name: '继续追问' }), null);
@@ -334,7 +348,7 @@ test('键盘查找与停止共用同一个焦点，停止后丢弃迟到的结�
   const user = userEvent.setup();
   render(page(createElement(DiscoverPage)));
   await user.type(await screen.findByRole('textbox', { name: '你想完成什么？' }), '回归测试');
-  const button = screen.getByRole('button', { name: '查找' });
+  const button = screen.getByRole('button', { name: '帮我找' });
   await user.tab();
   assert.equal(document.activeElement, button);
   await user.keyboard('{Enter}');
@@ -342,7 +356,7 @@ test('键盘查找与停止共用同一个焦点，停止后丢弃迟到的结�
   assert.equal(screen.getByRole('button', { name: '停止' }), button);
   assert.equal(document.activeElement, button);
   await user.keyboard('{Enter}');
-  assert.equal(screen.getByRole('button', { name: '查找' }), button);
+  assert.equal(screen.getByRole('button', { name: '帮我找' }), button);
   assert.equal(document.activeElement, button);
   await act(async () => late.resolve(streamResult(guide)));
   await waitFor(() => assert.match(screen.getByText(/已停止本轮/).textContent ?? '', /已停止/));
@@ -362,7 +376,7 @@ test('入口换成另一访客会取消在途提问，迟到的结果不显示�
   const view = render(page(createElement(DiscoverPage)));
   const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '你想完成什么？' });
   await user.type(input, '上一位访客的问题');
-  await user.click(screen.getByRole('button', { name: '查找' }));
+  await user.click(screen.getByRole('button', { name: '帮我找' }));
   await screen.findByRole('button', { name: '停止' });
   entry.viewer_key = 'second';
   view.rerender(page(createElement(DiscoverPage), 1));
@@ -391,7 +405,7 @@ test('对话只读事件流：展示真实阶段，失败、缺失终帧或非�
   render(page(createElement(DiscoverPage)));
   const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '你想完成什么？' });
   await user.type(input, '找发布工具');
-  await user.click(screen.getByRole('button', { name: '查找' }));
+  await user.click(screen.getByRole('button', { name: '帮我找' }));
   const encoder = new TextEncoder();
   await act(async () => {
     writer.enqueue(encoder.encode(catalogFrame.slice(0, 9)));
@@ -464,7 +478,7 @@ test('同名方向按所选序号展开；追问期间旧条件不抢占请求�
   const user = userEvent.setup();
   render(page(createElement(DiscoverPage)));
   await user.type(screen.getByRole('textbox', { name: '你想完成什么？' }), '怎么准备发版？');
-  await user.click(screen.getByRole('button', { name: '查找' }));
+  await user.click(screen.getByRole('button', { name: '帮我找' }));
   await user.click(await screen.findByRole('button', { name: /核对发版记录/ }));
   await screen.findByText(matches.reply);
   assert.deepEqual(posted[1].body, {
@@ -519,7 +533,7 @@ test('结果卡锁定固定版本的安装页，关键词模式不渲染助手�
   const user = userEvent.setup();
   const view = render(page(createElement(DiscoverPage)));
   await user.type(await screen.findByRole('textbox', { name: '你想完成什么？' }), '接口回归');
-  await user.click(screen.getByRole('button', { name: '查找' }));
+  await user.click(screen.getByRole('button', { name: '帮我找' }));
   const link = await screen.findByRole('link', { name: /查看接入方式/ });
   assert.equal(
     link.getAttribute('href'),
@@ -566,7 +580,7 @@ test('批量安装只复制选中的固定版本，预览、实际安装与 Agen
   const user = userEvent.setup();
   render(page(createElement(DiscoverPage)));
   await user.type(await screen.findByRole('textbox', { name: '你想完成什么？' }), '回归测试');
-  await user.click(screen.getByRole('button', { name: '查找' }));
+  await user.click(screen.getByRole('button', { name: '帮我找' }));
   for (const [slug, number] of [
     [result.slug, '1'],
     [mcp.slug, '2'],
@@ -811,7 +825,7 @@ test('快捷追问只填入，发送时沿用上轮上下文；顶部重新查�
   render(page(createElement(DiscoverPage)));
   const top = await screen.findByRole<HTMLTextAreaElement>('textbox', { name: '你想完成什么？' });
   await user.type(top, '找接口测试');
-  await user.click(screen.getByRole('button', { name: '查找' }));
+  await user.click(screen.getByRole('button', { name: '帮我找' }));
   await user.click(await screen.findByRole('button', { name: '第一个适合我吗？' }));
   const input = screen.getByRole<HTMLInputElement>('textbox', { name: '继续追问' });
   assert.equal(document.activeElement, input);
@@ -826,7 +840,7 @@ test('快捷追问只填入，发送时沿用上轮上下文；顶部重新查�
   assert.equal(top.value, '第一个适合我吗？');
   await user.clear(top);
   await user.type(top, '找文档生成工具');
-  await user.click(screen.getByRole('button', { name: '查找' }));
+  await user.click(screen.getByRole('button', { name: '帮我找' }));
   await screen.findByText(guide.reply);
   assert.equal(posted[2].body.text, '找文档生成工具');
   assert.equal(Object.hasOwn(posted[2].body, 'context'), false);

@@ -12,10 +12,34 @@ import { useAutoDismiss } from '../../apps/web/src/app/use-auto-dismiss.js';
 Object.defineProperty(globalThis, '__HUB_WEB_BUILD__', { value: 'bundled-build' });
 const { api } = await import('../../apps/web/src/shared/api/client.js');
 const { WebUpdateNotice } = await import('../../apps/web/src/app/WebUpdateNotice.js');
+const { default: App } = await import('../../apps/web/src/app/App.js');
 const { lazyView, watchPreloadErrors } =
   await import('../../apps/web/src/shared/navigation/lazy-view.js');
 
 afterEach(cleanup);
+
+test('新版从受限页面进入登录表单时不要求确认更新', async (context) => {
+  const { href } = location;
+  const state: unknown = history.state;
+  const key = 'capability-hub:confirmed-web-build';
+  const previous = window.localStorage.getItem(key);
+  context.after(() => {
+    history.replaceState(state, '', href);
+    if (previous === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, previous);
+  });
+  history.replaceState(null, '', '/account');
+  window.localStorage.setItem(key, 'previous-build');
+  context.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === '/api/auth/status') return Response.json({ initialized: true });
+    if (path === '/api/me') return Response.json({}, { status: 401 });
+    throw new Error('意外请求 ' + path);
+  });
+
+  render(createElement(App));
+  assert(await screen.findByRole('form', { name: '本地登录' }));
+  assert(!screen.queryByRole('region', { name: '版本更新' }), '登录表单上方不应出现版本横幅');
+});
 
 test('发现新构建时提示刷新，关闭后同一构建不再提示', async (context) => {
   let build = 'bundled-build';

@@ -40,6 +40,7 @@ import {
 } from '../../shared/icons/lucide.js';
 import { useState, type SubmitEvent } from 'react';
 import { latestFailedRequest, latestHubVersion, mutate } from '../../shared/api/client.js';
+import { usePendingWebBuild } from '../../shared/api/use-pending-web-build.js';
 import { bundledWebBuild } from '../../shared/api/web-build.js';
 import { CopyButton } from '../../shared/components/CopyButton.js';
 import { Message } from '../../shared/components/Message.js';
@@ -75,6 +76,7 @@ export default function LoginPage({
   const [method, setMethod] = useState<LoginProvider>(ldapEnabled ? 'ldap' : 'local');
   const [backgroundPaused, setBackgroundPaused] = useState(false);
   const [diagnosticsTime, setDiagnosticsTime] = useState('');
+  const pendingBuild = usePendingWebBuild();
   const provider = initialized && ldapEnabled ? method : 'local';
   const directoryLogin = provider === 'ldap';
   async function submit(e: SubmitEvent<HTMLFormElement>) {
@@ -287,6 +289,19 @@ export default function LoginPage({
           >
             <summary className={cn(textBtnStyles, 'cursor-pointer')}>登录遇到问题？</summary>
             <div className="mt-2 grid justify-items-start gap-2">
+              {pendingBuild && (
+                <div className="flex flex-wrap items-baseline gap-x-2 text-caption text-muted-ink">
+                  <span>页面有新版本，刷新后可能需要重新填写。</span>
+                  <button
+                    type="button"
+                    className={textBtnStyles}
+                    disabled={busy}
+                    onClick={() => location.reload()}
+                  >
+                    刷新页面
+                  </button>
+                </div>
+              )}
               <pre className="max-w-full whitespace-pre-wrap break-all text-caption text-muted-ink">
                 {diagnostics}
               </pre>

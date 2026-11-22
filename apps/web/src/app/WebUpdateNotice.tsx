@@ -1,14 +1,7 @@
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Menu, MenuItem, MenuTrigger, Popover } from 'react-aria-components';
-import { checkWebBuild } from '../shared/api/client.js';
+import { usePendingWebBuild } from '../shared/api/use-pending-web-build.js';
 import { bundledWebBuild, webBuildUpdates } from '../shared/api/web-build.js';
 import { DotGrid } from '../shared/components/react-bits/DotGrid.js';
 import { ShinyText } from '../shared/components/react-bits/ShinyText.js';
@@ -67,7 +60,7 @@ function reloadCurrentPage() {
 
 /** 本地只记录实际加载的构建，旧页面关闭待刷新提示不等于已加载新版。 */
 export function WebUpdateNotice({ onReload = reloadCurrentPage }: { onReload?: () => void }) {
-  const build = useSyncExternalStore(webBuildUpdates.subscribe, webBuildUpdates.getSnapshot);
+  const build = usePendingWebBuild();
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
   const [loadedUpdate, setLoadedUpdate] = useState(() => {
     const previous = bundledWebBuild ? readConfirmedBuild() : null;
@@ -82,24 +75,8 @@ export function WebUpdateNotice({ onReload = reloadCurrentPage }: { onReload?: (
       if (event.key === confirmedBuildKey && event.newValue === bundledWebBuild)
         setLoadedUpdate(false);
     };
-    let checking = false;
-    const checkOnReturn = () => {
-      if (document.visibilityState !== 'visible' || checking) return;
-      checking = true;
-      void checkWebBuild()
-        .catch(() => {
-          // 离线时不打断页面，后续业务请求仍能发现更新。
-        })
-        .finally(() => {
-          checking = false;
-        });
-    };
     window.addEventListener('storage', syncConfirmation);
-    document.addEventListener('visibilitychange', checkOnReturn);
-    return () => {
-      window.removeEventListener('storage', syncConfirmation);
-      document.removeEventListener('visibilitychange', checkOnReturn);
-    };
+    return () => window.removeEventListener('storage', syncConfirmation);
   }, []);
 
   const reduceMotion = useReducedMotion();

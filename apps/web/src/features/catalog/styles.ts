@@ -489,9 +489,16 @@ export const heroEyebrowSubStyles =
   'font-mono text-[length:10.5px] leading-none tracking-[1.6px] text-quieter';
 
 export const heroTitleStyles = cn(
-  'flex flex-col items-center text-[length:46px] leading-[58px] font-bold tracking-[-0.6px] text-ink',
-  'max-[1100px]:text-[length:40px] max-[1100px]:leading-[52px] max-[850px]:text-[length:32px]',
-  'max-[850px]:leading-[42px] max-[600px]:text-[length:26px] max-[600px]:leading-[35px]',
+  'flex flex-col items-center text-[length:56px] leading-[68px] font-bold tracking-[-0.6px] text-ink',
+  'max-[1100px]:text-[length:48px] max-[1100px]:leading-[60px] max-[850px]:text-[length:38px]',
+  'max-[850px]:leading-[48px] max-[600px]:text-[length:30px] max-[600px]:leading-[39px]',
+);
+
+// 第二行字多，字号与字重各退一级，宽度落在标题与输入框之间，自上而下逐行加宽。
+export const heroTitleSubStyles = cn(
+  'text-[length:40px] leading-[56px] font-medium',
+  'max-[1100px]:text-[length:34px] max-[1100px]:leading-[48px] max-[850px]:text-[length:28px]',
+  'max-[850px]:leading-[40px] max-[600px]:text-[length:20px] max-[600px]:leading-[30px]',
 );
 
 export const heroTitleAccentStyles = cn(
@@ -505,9 +512,11 @@ export const taskComposerStyles = cn(
   '[transition:max-width_520ms_var(--ease-out)] motion-reduce:transition-none',
 );
 
-// 单行时文本域与按钮同为 40px 高；多行时按钮与快捷键沉到底部，图标停在首行。
+// 单行时文本域与按钮同为 40px 高；草稿在单行的文字列宽内放不下时，文本域占满整行，
+// 快捷键与按钮移到下一行右侧，图标停在首行。
 export const taskInputStyles = cn(
-  'group/task-input relative flex min-h-[58px] items-end gap-3 overflow-hidden rounded-[15px] py-2 pr-2 pl-[18px]',
+  'group/task-input relative grid min-h-[58px] grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-x-3 gap-y-1',
+  'cursor-text overflow-hidden rounded-[15px] py-2 pr-2 pl-[18px]',
   'border border-solid border-[color:var(--line)] bg-surface-card [box-shadow:var(--shadow-panel)]',
   'motion-safe:[transition:box-shadow_200ms_ease]',
   'focus-within:[box-shadow:0_0_0_1px_var(--brand-line-strong),0_0_12px_2px_var(--brand-line),0_0_32px_4px_var(--brand-veil),var(--shadow-panel)]',
@@ -517,28 +526,46 @@ export const taskInputStyles = cn(
   'group-data-[busy]/composer:after:opacity-100',
   'motion-safe:group-data-[busy]/composer:after:[animation:composer-progress_1.3s_ease-in-out_infinite]',
   'forced-colors:has-[textarea:focus-visible]:outline-2 forced-colors:has-[textarea:focus-visible]:outline-solid',
-  'forced-colors:has-[textarea:focus-visible]:outline-offset-2 max-[600px]:gap-2 max-[600px]:pl-3.5',
+  'forced-colors:has-[textarea:focus-visible]:outline-offset-2 max-[600px]:gap-x-2 max-[600px]:pl-3.5',
 );
 
 export const taskInputIconStyles = cn(
-  'mt-[11.5px] shrink-0 self-start text-brand',
+  'col-start-1 row-start-1 mt-[11.5px] self-start text-brand',
   'motion-safe:group-data-[busy]/composer:[animation:hero-sparkle_1.4s_ease-in-out_infinite]',
 );
 
-export const taskFieldStyles = 'relative flex min-w-0 flex-1';
+const taskInputTextStyles = 'text-[length:15px] leading-[22px] max-[600px]:text-[length:16px]';
 
-export const taskInputFieldStyles = cn(
-  'max-h-32 w-full min-w-0 resize-none border-0 bg-transparent py-[9px] text-[length:15px] leading-[22px] text-ink',
-  '[field-sizing:content] [outline:0] [box-shadow:none] [&::placeholder]:text-quieter',
-  'max-[600px]:text-[length:16px]',
+export const taskFieldStyles =
+  'relative col-start-2 row-start-1 flex min-w-0 group-data-[multiline]/task-input:col-end-4';
+
+// 与文本域同字号、同换行规则的不可见量尺，只占单行布局的文字列和一行高度；末尾补空格，结尾换行也算一行。
+export const taskFieldMeasureStyles = cn(
+  'invisible absolute inset-x-0 top-0 col-start-2 col-end-3 row-start-1 h-lh overflow-hidden',
+  "whitespace-pre-wrap break-words after:content-[attr(data-value)_'_']",
+  taskInputTextStyles,
 );
 
-// 打字提示只在宽屏显示；原生占位文字变透明但保留，读屏与输入框高度仍以它为准。
-export const taskInputTypingStyles = 'min-[601px]:[&::placeholder]:text-transparent';
+// 展开后最多显示九行再滚动；文字只在上下 9px 内边距里渐隐，光标带动滚动时也留出这段边距，
+// 正在输入的行不会落进渐隐区。
+export const taskInputFieldStyles = cn(
+  'max-h-32 w-full min-w-0 resize-none border-0 bg-transparent py-[9px] [scroll-padding-block:9px]',
+  'text-ink [scrollbar-width:thin]',
+  taskInputTextStyles,
+  '[field-sizing:content] [outline:0] [box-shadow:none] [&::placeholder]:text-quieter',
+  'group-data-[multiline]/task-input:max-h-54 group-data-[multiline]/task-input:pr-2.5',
+  'group-data-[multiline]/task-input:[mask-image:linear-gradient(transparent,var(--mask-solid)_9px,var(--mask-solid)_calc(100%_-_9px),transparent)]',
+);
 
+// 原生占位文字在打字提示期间变透明但保留，读屏与输入框高度仍以它为准。
+export const taskInputTypingStyles = '[&::placeholder]:text-transparent';
+
+// 输入框为空时按钮只会发送这句示例；悬停或键盘聚焦按钮时提高它的对比度，表明要发出的就是这句。
 export const taskTypingStyles = cn(
   'pointer-events-none absolute inset-x-0 top-0 overflow-hidden py-[9px] text-[length:15px] leading-[22px]',
-  'whitespace-nowrap text-quieter max-[600px]:hidden',
+  'text-ellipsis whitespace-nowrap text-quieter [transition:color_150ms_ease]',
+  'group-has-[[type=submit]:enabled:hover]/task-input:text-muted-ink',
+  'group-has-[[type=submit]:enabled:focus-visible]/task-input:text-muted-ink',
 );
 
 export const taskTypingCursorStyles = cn(
@@ -546,8 +573,17 @@ export const taskTypingCursorStyles = cn(
   'motion-safe:[animation:caret-blink_1.05s_steps(1)_infinite]',
 );
 
+// 接近上限的字数只在展开后的第二行与文字左对齐；达到上限改用警示色。
+export const taskCountStyles = cn(
+  'col-start-2 row-start-2 self-center text-caption leading-none tabular-nums text-muted-ink',
+  'data-[full]:font-medium data-[full]:text-warning',
+);
+
+export const taskActionsStyles =
+  'col-start-3 row-start-1 flex items-center gap-3 group-data-[multiline]/task-input:row-start-2';
+
 export const taskKbdStyles = cn(
-  'mb-[11px] shrink-0 rounded-[6px] border border-solid border-[color:var(--stroke-card)] bg-surface-chip',
+  'shrink-0 rounded-[6px] border border-solid border-[color:var(--stroke-card)] bg-surface-chip',
   'px-[6px] py-[2px] font-mono text-[length:11px] leading-[14px] text-muted-ink [transition:opacity_150ms_ease]',
   'group-has-[textarea:placeholder-shown]/task-input:opacity-50 max-[600px]:hidden',
 );

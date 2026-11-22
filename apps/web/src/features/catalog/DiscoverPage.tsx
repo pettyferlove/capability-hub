@@ -88,6 +88,7 @@ import {
   heroEyebrowSubStyles,
   heroTitleAccentStyles,
   heroTitleStyles,
+  heroTitleSubStyles,
   keywordClearStyles,
   keywordFieldStyles,
   keywordInputStyles,
@@ -225,10 +226,11 @@ export default function DiscoverPage() {
                 </span>
               </p>
               <h1 className={heroTitleStyles}>
-                <BlurText text="团队的能力都在这里" delay={0.05} />
+                <BlurText text="团队沉淀的能力" delay={0.05} />
                 <BlurText
-                  text="按任务或名字，一句话找到"
+                  text="说出要做的事，一句话就能找到"
                   delay={0.3}
+                  className={heroTitleSubStyles}
                   pieceClassName={heroTitleAccentStyles}
                 />
               </h1>
