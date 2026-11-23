@@ -7,7 +7,6 @@ import type {
 import { motion, useIsPresent, useReducedMotion } from 'motion/react';
 import { useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { assetHref } from '../../shared/navigation/history-route.js';
-import { contentTransition } from '../../shared/motion/transitions.js';
 import { cn } from '../../shared/styles/cn.js';
 import type { DiscoveryProgress, DiscoveryState } from './use-discovery.js';
 import {
@@ -333,41 +332,52 @@ export function TaskComposer({
           </span>
         </form>
       </div>
-      {chips.length > 0 && (
-        <div className={taskSuggestRowStyles}>
-          <span className={taskSuggestLabelStyles}>{suggestions.length ? '示例' : '常见主题'}</span>
-          {chips.map((chip, index) => (
-            <motion.button
-              key={chip.key}
-              type="button"
-              className={taskChipStyles}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ...contentTransition, duration: 0.3, delay: 0.5 + index * 0.05 }}
-              onClick={chip.pick}
-            >
-              {chip.topic && (
-                <span className={taskTopicHashStyles} aria-hidden="true">
-                  #
-                </span>
-              )}
-              {chip.label}
-            </motion.button>
-          ))}
-        </div>
-      )}
+      <div
+        className={taskSuggestRowStyles}
+        onFocus={({ currentTarget, target }) => {
+          if (
+            currentTarget.scrollWidth > currentTarget.clientWidth &&
+            target.matches(':focus-visible')
+          ) {
+            target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          }
+        }}
+      >
+        {chips.length > 0 && (
+          <>
+            <span className={taskSuggestLabelStyles}>
+              {suggestions.length ? '示例' : '常见主题'}
+            </span>
+            {chips.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                className={taskChipStyles}
+                title={chip.label}
+                onClick={chip.pick}
+              >
+                {chip.topic && (
+                  <span className={taskTopicHashStyles} aria-hidden="true">
+                    #
+                  </span>
+                )}
+                {chip.label}
+              </button>
+            ))}
+          </>
+        )}
+      </div>
       <div className={taskMetaRowStyles}>
-        {dialogue && (
-          <span className={taskPrivacyNoteStyles}>
-            <ShieldCheck size={13} aria-hidden="true" className="shrink-0" />
-            问题会交由本站配置的模型处理，勿填凭据
-          </span>
-        )}
-        {!dialogue && entry && (
-          <span className={taskPrivacyNoteStyles}>
-            当前为关键词匹配，不会询问模型；换个说法或使用资源目录。
-          </span>
-        )}
+        <span className={taskPrivacyNoteStyles}>
+          {dialogue ? (
+            <>
+              <ShieldCheck size={13} aria-hidden="true" className="shrink-0" />
+              问题会交由本站配置的模型处理，勿填凭据
+            </>
+          ) : entry ? (
+            '当前为关键词匹配，不会询问模型；换个说法或使用资源目录。'
+          ) : null}
+        </span>
         {onBrowse && (
           <button type="button" className={browseEntryStyles} onClick={onBrowse}>
             <LayoutGrid size={13} aria-hidden="true" />

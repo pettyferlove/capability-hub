@@ -598,15 +598,18 @@ export const taskSubmitStyles = cn(
 export const taskSubmitIconStyles =
   '[transition:translate_150ms_ease] group-enabled/submit:group-hover/submit:translate-x-0.5';
 
-// 示例与主题只用于开始新问题，提交后连同这一行收起。
+// 示例与常见主题共用一行；横向滚动不改变舞台高度，提交后整行收起。
 export const taskSuggestRowStyles = cn(
-  'relative z-[2] mt-5 flex w-full max-w-[760px] flex-wrap items-center justify-center gap-2',
-  'group-data-[engaged]/hero:hidden max-[600px]:mt-4',
+  'relative z-[2] mt-4 flex h-10 w-full max-w-[760px] items-center justify-center-safe gap-2',
+  'overflow-x-auto px-1 [scrollbar-width:thin] [&>*]:shrink-0 [&>button]:max-w-full [&>button]:truncate',
+  '[&>button]:focus-visible:-outline-offset-2 group-data-[engaged]/hero:hidden max-[600px]:mt-3 pointer-coarse:h-12',
 );
 
 export const taskMetaRowStyles = cn(
-  'relative z-[2] mt-4 flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-2',
-  'group-data-[engaged]/hero:mt-3 max-[600px]:mt-3',
+  'relative z-[2] mt-2 flex min-h-(--discovery-browse-height) w-full items-center justify-center gap-x-5',
+  '[--discovery-browse-height:28px] pointer-coarse:[--discovery-browse-height:36px]',
+  'group-data-[engaged]/hero:mt-3 max-[600px]:mt-1',
+  'max-[520px]:grid max-[520px]:grid-cols-1 max-[520px]:grid-rows-[auto_var(--discovery-browse-height)] max-[520px]:justify-items-center max-[520px]:gap-y-2',
 );
 
 export const taskSuggestLabelStyles = 'text-[length:11px] leading-none text-quieter';
@@ -621,13 +624,15 @@ export const taskChipStyles = cn(
 
 export const taskTopicHashStyles = 'mr-0.5 font-mono text-quieter';
 
-export const taskPrivacyNoteStyles =
-  'inline-flex min-w-0 items-center gap-1.5 text-[length:11.5px] leading-[1.5] text-muted-ink';
+export const taskPrivacyNoteStyles = cn(
+  'inline-flex min-h-[1.5em] min-w-0 items-center justify-center gap-1.5 text-center text-[length:11.5px] leading-[1.5] text-muted-ink',
+  'max-[380px]:min-h-[3em]',
+);
 
 export const browseEntryStyles = cn(
-  'group/browse -mx-2 inline-flex shrink-0 items-center gap-[7px] rounded-[8px] px-2 py-1',
-  'text-[length:12.5px] font-medium text-ink [transition:color_150ms_ease,background-color_150ms_ease]',
-  'hover:bg-brand-tint hover:text-brand pointer-coarse:min-h-9',
+  'group/browse -mx-2 inline-flex min-h-(--discovery-browse-height) shrink-0 items-center gap-[7px] rounded-[8px] px-2 py-1',
+  'text-[length:12.5px] leading-5 font-medium text-ink [transition:color_150ms_ease,background-color_150ms_ease]',
+  'hover:bg-brand-tint hover:text-brand',
 );
 
 export const browseEntryCountStyles = cn(
