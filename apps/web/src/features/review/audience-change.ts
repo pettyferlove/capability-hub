@@ -1,3 +1,16 @@
+import type { MeResponse } from '@capability-hub/contracts/http';
+
+/** 仅用于提示当前账号是否属于申请受众，实际目录读取仍由服务端校验。 */
+export function isInAudience(audience: readonly string[], me: Pick<MeResponse, 'id' | 'groups'>) {
+  return audience.some(
+    (id) =>
+      id === 'public' ||
+      id === 'organization' ||
+      id === `principal:${me.id}` ||
+      me.groups.some((group) => id === `group:${group.id}`),
+  );
+}
+
 /** 受众变化的方向，不是精确差异：同一方向上不同的增减会得到同一个值，不能据此还原差集。 */
 export type AudienceChange = 'unchanged' | 'expanded' | 'narrowed' | 'changed';
 

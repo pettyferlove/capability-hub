@@ -389,6 +389,12 @@ export const reviewDecisionSheetHeaderStyles = cn(
   'max-[600px]:[&_>_span]:text-[length:17px]',
 );
 
+export const reviewAudienceConfirmationStyles =
+  'rounded-[20px] border border-line bg-paper text-ink shadow-[var(--shadow-floating)]';
+
+export const reviewAudienceConfirmationFooterStyles =
+  'sticky bottom-0 rounded-b-[19px] border-t border-line bg-paper px-4 py-3.5 sm:px-6 sm:py-4';
+
 export const reviewDecisionPanelStyles = cn(
   'group/review-decision-panel border border-solid border-[color:var(--line)] rounded-[12px] bg-paper pt-5 pr-5.5',
   'pb-5 pl-5.5 [scroll-margin-top:110px] [&_textarea]:w-full',
@@ -516,6 +522,12 @@ export const reviewPageStyles = cn(
   "max-[600px]:[&_[class~='group/page-head']_>_[class~='group/btn']]:pb-1.5",
   "max-[600px]:[&_[class~='group/page-head']_>_[class~='group/btn']]:pl-2.5",
   "max-[600px]:[&_[class~='group/page-head']_>_[class~='group/btn']]:text-[length:11px]",
+);
+
+export const reviewApprovalStyles = cn(
+  'mb-4 grid scroll-mt-[101px] grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2',
+  'rounded-xl border border-success/25 bg-success-soft px-4 py-3 text-label text-ink',
+  'max-[600px]:scroll-mt-[139px] max-[600px]:grid-cols-[auto_minmax(0,1fr)] max-[600px]:[&>a]:col-start-2',
 );
 
 export const reviewStatusbarStyles = 'mb-6 flex min-w-0 items-center justify-between gap-4';

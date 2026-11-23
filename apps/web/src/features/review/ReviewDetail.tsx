@@ -5,6 +5,7 @@
 import { ReviewAuditEvidence, type ReviewAuditAdvice } from './ReviewAuditEvidence.js';
 import { PublicationReviewAssistant } from './PublicationReviewAssistant.js';
 import { ReviewEvidenceChecklist } from './ReviewEvidenceChecklist.js';
+import { Glyph } from '../../shared/components/Glyph.js';
 import { VersionComparison } from '../../shared/components/VersionComparison.js';
 import {
   reviewOverviewStyles,
@@ -52,6 +53,8 @@ import {
   reviewAcknowledgementStyles,
   reviewCommentLabelStyles,
   decisionPanelFooterStyles,
+  reviewAudienceConfirmationStyles,
+  reviewAudienceConfirmationFooterStyles,
   reviewViewOnlyStyles,
   reviewRecordStyles,
 } from './styles.js';
@@ -82,6 +85,7 @@ import {
   Info,
   LockKeyhole,
   ShieldCheck,
+  Users,
   X,
 } from '../../shared/icons/lucide.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -97,7 +101,7 @@ import { FileWorkbench } from './FileWorkbench.js';
 import type { ChangeFile, ReviewFileFocus } from './types.js';
 import { shortVersion } from '../../shared/format/version-label.js';
 import { VersionLabel } from '../../shared/components/VersionLabel.js';
-import { audienceChange } from './audience-change.js';
+import { audienceChange, isInAudience } from './audience-change.js';
 import { reviewScope, type PlatformReviewReason } from './review-scope.js';
 import { ApiKeyBadge } from '../catalog/ApiKeyBadge.js';
 import { ScenarioSummary } from '../../shared/components/ScenarioSummary.js';
@@ -121,9 +125,11 @@ const reviewScopeNotices: Record<PlatformReviewReason | 'scenario' | 'team', str
 export function ReviewDetail({
   request: r,
   autoStartBrief = true,
+  onApproved,
 }: {
   request: ReviewResponse;
   autoStartBrief?: boolean;
+  onApproved?: (request: ReviewResponse) => void;
 }) {
   const { reload, me } = useHub();
   const [draft, setDraft] = useState<{ comment: string; advice?: ReviewAuditAdvice }>({
@@ -135,6 +141,7 @@ export function ReviewDetail({
     [warnings, setWarnings] = useState<Record<string, string>>({}),
     [section, setSection] = useState('changes'),
     [decisionOpen, setDecisionOpen] = useState(false),
+    [confirmAudience, setConfirmAudience] = useState(false),
     [fileFocus, setFileFocus] = useState<ReviewFileFocus>();
   const [decisionBriefSlot, setDecisionBriefSlot] = useState<HTMLDivElement | null>(null);
   const pendingEvidence = useRef<ReviewFileFocus | null>(null);
@@ -193,7 +200,13 @@ export function ReviewDetail({
       setBusy(false);
     }
   }
-  async function decide(decision: string) {
+  function closeAudienceConfirmation() {
+    if (!busy) {
+      setConfirmAudience(false);
+      setError('');
+    }
+  }
+  async function decide(decision: 'approve' | 'reject') {
     if (decision === 'reject' && !comment.trim()) {
       setError('请在审核意见中说明需要修改的问题');
       document.getElementById('review-comment')?.focus();
@@ -201,6 +214,7 @@ export function ReviewDetail({
     }
     setBusy(true);
     setError('');
+    const from = location.href;
     try {
       await mutate(
         `/api/publication-requests/${r.id}/decision`,
@@ -215,6 +229,11 @@ export function ReviewDetail({
         'POST',
         r.revision,
       );
+      if (decision === 'approve') {
+        setConfirmAudience(false);
+        setDecisionOpen(false);
+        if (location.href === from) onApproved?.(r);
+      }
       reload();
     } catch (e) {
       setError(
@@ -661,7 +680,7 @@ export function ReviewDetail({
             <Overlay
               open={decisionOpen}
               onClose={() => {
-                if (!busy) setDecisionOpen(false);
+                if (!busy && !confirmAudience) setDecisionOpen(false);
               }}
               label="记录审核决定"
               variant="sheet"
@@ -771,7 +790,7 @@ export function ReviewDetail({
                     )}
                   </div>
                 )}
-                {error && <Message error>{error}</Message>}
+                {error && !confirmAudience && <Message error>{error}</Message>}
                 <div className={decisionPanelFooterStyles}>
                   <span>
                     {warningMissing
@@ -788,7 +807,14 @@ export function ReviewDetail({
                     <Submit
                       busy={busy}
                       disabled={!accepted || warningMissing || r.scan?.state !== 'passed'}
-                      onClick={() => decide('approve')}
+                      onClick={() => {
+                        if (me && !isInAudience(r.distribution.audience, me)) {
+                          setError('');
+                          setConfirmAudience(true);
+                        } else {
+                          void decide('approve');
+                        }
+                      }}
                     >
                       <Check size={16} />
                       通过并发布
@@ -796,6 +822,84 @@ export function ReviewDetail({
                   </div>
                 </div>
               </section>
+              <Overlay
+                open={confirmAudience}
+                onClose={closeAudienceConfirmation}
+                label="确认分发范围"
+                variant="showcase"
+              >
+                <div className={reviewAudienceConfirmationStyles}>
+                  <div className="space-y-4 p-4 sm:space-y-5 sm:p-6">
+                    <div>
+                      <h2 className="text-section leading-snug font-semibold">确认分发范围</h2>
+                      <p className="mt-1.5 text-body leading-relaxed text-muted-ink">
+                        你不在本次分发受众中。
+                      </p>
+                    </div>
+                    <div className="overflow-hidden rounded-xl border border-line bg-page">
+                      <div className="flex items-start gap-3 p-4">
+                        <span
+                          className="grid size-9 shrink-0 place-items-center rounded-lg border border-line bg-paper"
+                          aria-hidden="true"
+                        >
+                          <Glyph seed={r.candidate.content_digest} kind={r.asset.kind} size={24} />
+                        </span>
+                        <div className="min-w-0 [overflow-wrap:anywhere]">
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                            <strong className="min-w-0 font-mono text-[length:14px] font-semibold">
+                              {r.asset.slug}
+                            </strong>
+                            <span className="min-w-0 rounded-md border border-line bg-paper px-1.5 py-0.5 font-mono text-caption text-muted-ink">
+                              <VersionLabel value={r.candidate.version_label} />
+                            </span>
+                          </div>
+                          <p className="mt-1.5 line-clamp-3 text-body leading-relaxed text-muted-ink">
+                            {r.candidate.metadata.description}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 border-t border-line bg-brand-soft/45 p-4">
+                        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-paper text-brand">
+                          <Users size={17} aria-hidden="true" />
+                        </span>
+                        <dl className="min-w-0 [overflow-wrap:anywhere]">
+                          <dt className="text-caption text-muted-ink">分发受众</dt>
+                          <dd className="mt-0.5 text-body font-semibold">{r.visibility_label}</dd>
+                          <dt className="mt-2.5 text-caption text-muted-ink">本次共享目的</dt>
+                          <dd className="mt-0.5 line-clamp-2 text-body leading-relaxed text-muted-ink">
+                            {r.source_consent.purpose}
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={reviewAudienceConfirmationFooterStyles}>
+                    {error && (
+                      <Message error className="mb-3">
+                        {error}
+                      </Message>
+                    )}
+                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+                      <p className="min-w-0 flex-1 basis-36 text-caption leading-relaxed text-muted-ink">
+                        确认后按上方范围发布，并保留审核记录。
+                      </p>
+                      <div className="ml-auto flex flex-wrap justify-end gap-2.5 max-[420px]:w-full max-[420px]:[&>button]:min-h-11 max-[420px]:[&>button]:flex-1">
+                        <button
+                          type="button"
+                          className={btnStyles}
+                          onClick={closeAudienceConfirmation}
+                          disabled={busy}
+                        >
+                          返回核对
+                        </button>
+                        <Submit type="button" busy={busy} onClick={() => decide('approve')}>
+                          确认通过并发布
+                        </Submit>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Overlay>
             </Overlay>
           </>
         ) : (

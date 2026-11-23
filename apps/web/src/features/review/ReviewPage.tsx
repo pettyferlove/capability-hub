@@ -7,6 +7,7 @@ import { shortVersion } from '../../shared/format/version-label.js';
 import { Glyph } from '../../shared/components/Glyph.js';
 import {
   reviewPageStyles,
+  reviewApprovalStyles,
   reviewStatusbarStyles,
   reviewWorkspaceStyles,
   reviewInboxStyles,
@@ -30,7 +31,7 @@ import {
 import { cn } from '../../shared/styles/cn.js';
 import { ApiKeyBadge } from '../catalog/ApiKeyBadge.js';
 import type { ReviewResponse } from '@capability-hub/contracts/http';
-import { ArrowRight, RefreshCw, ShieldCheck } from '../../shared/icons/lucide.js';
+import { ArrowRight, CheckCheck, RefreshCw, ShieldCheck } from '../../shared/icons/lucide.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { Empty } from '../../shared/components/Empty.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
@@ -43,6 +44,7 @@ import { pageHref, reviewLocation } from '../../shared/navigation/history-route.
 import { navigate } from '../../shared/navigation/history-navigation.js';
 import { ReviewDetail } from './ReviewDetail.js';
 import { ReviewStatusTabs } from './ReviewStatusTabs.js';
+import { isInAudience } from './audience-change.js';
 import type { ChangeFile } from './types.js';
 
 /** 队列底边与视口保持的间距，与顶栏下方留白一致。 */
@@ -54,12 +56,22 @@ const inboxMinHeight = 240;
  * 切状态保留上一份数据（`keepPreviousData`）以免闪空，期间状态条只显示占位而不是旧计数。
  */
 export default function ReviewPage({ query = location.search }: { query?: string }) {
-  const { refresh, reload } = useHub();
+  const { refresh, reload, me } = useHub();
   const { state, request: selected } = reviewLocation(query);
+  const [approval, setApproval] = useState<{
+    query: string;
+    id: string;
+    slug: string;
+    audienceLabel: string;
+    audience: readonly string[];
+  }>();
+  const receipt = approval?.query === query ? approval : undefined;
+  const receiptRef = useRef<HTMLDivElement>(null);
   const { data, error, errorProps, loading, isPreviousData } = useQuery<{
     items: ReviewResponse[];
   }>('/api/publication-requests?state=' + state, refresh, { keepPreviousData: true });
-  const items = data?.items ?? [];
+  const rows = data?.items ?? [];
+  const items = approval ? rows.filter((r) => r.id !== approval.id || r.state !== 'pending') : rows;
   const active = items.find((r) => r.id === selected) ?? items[0];
   const [inbox, setInbox] = useState<HTMLElement | null>(null);
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
@@ -105,6 +117,23 @@ export default function ReviewPage({ query = location.search }: { query?: string
     if (stage.getBoundingClientRect().top < parseFloat(getComputedStyle(stage).scrollMarginTop))
       stage.scrollIntoView({ block: 'start' });
   }, [stage, active?.id]);
+  useLayoutEffect(() => {
+    if (!receipt) return;
+    const node = receiptRef.current;
+    node?.focus({ preventScroll: true });
+    node?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
+  }, [receipt]);
+
+  function showApproval({ id, asset, distribution, visibility_label }: ReviewResponse) {
+    setApproval({
+      query,
+      id,
+      slug: asset.slug,
+      audienceLabel: visibility_label,
+      audience: distribution.audience,
+    });
+  }
+
   return (
     <div className={reviewPageStyles}>
       <PageHead
@@ -118,6 +147,32 @@ export default function ReviewPage({ query = location.search }: { query?: string
           </button>
         }
       />
+      {receipt && (
+        <div
+          ref={receiptRef}
+          className={reviewApprovalStyles}
+          role="group"
+          aria-label="发布结果"
+          aria-describedby="review-approval-summary"
+          tabIndex={-1}
+        >
+          <CheckCheck size={18} className="mt-0.5 text-success" />
+          <div id="review-approval-summary" className="min-w-0 space-y-1 [overflow-wrap:anywhere]">
+            <strong className="text-ink">
+              审核通过，已发布 <span className="font-mono">{receipt.slug}</span>
+            </strong>
+            <p>分发受众：{receipt.audienceLabel}</p>
+            {me && !isInAudience(receipt.audience, me) && <p>你不在本次分发受众中。</p>}
+          </div>
+          <a
+            className={cn(btnStyles, 'justify-self-start')}
+            href={pageHref('review', { state: 'approved', request: receipt.id })}
+          >
+            查看审核记录
+            <ArrowRight size={14} />
+          </a>
+        </div>
+      )}
       <div className={reviewStatusbarStyles}>
         <ReviewStatusTabs
           state={state}
@@ -223,7 +278,12 @@ export default function ReviewPage({ query = location.search }: { query?: string
             </aside>
             <div ref={setStage} className={reviewStageStyles}>
               {active && (
-                <ReviewDetail key={active.id} request={active} autoStartBrief={!isPreviousData} />
+                <ReviewDetail
+                  key={active.id}
+                  request={active}
+                  autoStartBrief={!isPreviousData}
+                  onApproved={showApproval}
+                />
               )}
             </div>
           </div>

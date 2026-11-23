@@ -308,6 +308,68 @@ test('提交者可撤回已失效的未分类申请，接手的维护者能回�
   );
 });
 
+test('受众之外的审核者可以返回核对，确认后才发布并获得该申请的回看入口', async (context) => {
+  const f = await createTestHub(context);
+  const audience = await f.hub.administration.createGroup(f.admin, { name: '交付团队' });
+  const intake = await receiveSkill(f);
+  const request = await submitPublication(f, intake, {
+    mode: 'approved_audience',
+    audience: [`group:${audience.id}`],
+  });
+  const viewer = await f.hub.profile.current(f.reviewer, '');
+  let submitted = false;
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path === '/api/publication-requests?state=pending')
+      return Response.json({ items: await f.hub.publicationQueries.listRequests(f.reviewer) });
+    if (path === '/api/ai/model-options')
+      return Response.json({ default_profile: '', profiles: [] });
+    if (path.startsWith('/api/ai/executions?'))
+      return Response.json({ items: [], next_cursor: null });
+    if (path.startsWith('/api/management/versions/')) return new Response('Skill 使用说明');
+    assert.equal(path, `/api/publication-requests/${request.id}/decision`);
+    assert.equal(options.method, 'POST');
+    submitted = true;
+    return Response.json(
+      await f.hub.publications.decide(
+        f.reviewer,
+        request.id,
+        JSON.parse(String(options.body)),
+        new Headers(options.headers).get('If-Match') ?? undefined,
+        randomUUID(),
+      ),
+    );
+  });
+  const user = userEvent.setup();
+  render(page(createElement(ReviewPage, { query: '' }), 0, viewer.groups, viewer.id));
+
+  await user.click((await screen.findAllByRole('button', { name: '审核决定' }))[0]);
+  const decision = within(await screen.findByRole('dialog', { name: '记录审核决定' }));
+  await user.type(decision.getByRole('textbox', { name: '审核意见' }), '已核对共享范围');
+  await user.click(decision.getByRole('checkbox', { name: /我已核对变更摘要/ }));
+  await user.click(decision.getByRole('button', { name: '通过并发布' }));
+  assert.equal(submitted, false, '第一次点击不能提交受众外的发布决定');
+  const confirm = await screen.findByRole('dialog', { name: '确认分发范围' });
+  assert(within(confirm).getByText('交付团队'));
+  assert(within(confirm).getByText('你不在本次分发受众中。'));
+  await user.click(within(confirm).getByRole('button', { name: '返回核对' }));
+  await waitFor(() => assert.equal(screen.queryByRole('dialog', { name: '确认分发范围' }), null));
+  assert.equal(submitted, false);
+  assert.equal(
+    decision.getByRole<HTMLTextAreaElement>('textbox', { name: '审核意见' }).value,
+    '已核对共享范围',
+  );
+
+  await user.click(decision.getByRole('button', { name: '通过并发布' }));
+  await user.click(await screen.findByRole('button', { name: '确认通过并发布' }));
+  const link = await screen.findByRole('link', { name: '查看审核记录' });
+  assert.equal(link.getAttribute('href'), `/review?state=approved&request=${request.id}`);
+  const receipt = screen.getByRole('group', { name: '发布结果' });
+  assert.match(receipt.textContent ?? '', /交付团队.*你不在本次分发受众中/);
+  const approved = await f.store.get('requests', request.id);
+  assert.equal(approved?.state, 'approved');
+  assert.equal(approved?.decision_reason, '已核对共享范围');
+});
+
 test('接收详情默认打开发布申请时也能重扫旧规则下的固定快照', async (context) => {
   const f = await createTestHub(context);
   const intake = await receiveSkill(f);
