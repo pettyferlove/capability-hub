@@ -17,7 +17,7 @@ import { z } from 'zod';
 import type { HubServices } from '../bootstrap/hub-services.js';
 import { createClientConfiguration } from './client-config.js';
 
-/** MCP 配置生成入参；`scope` 缺省按项目级处理，客户端标识必须是受支持列表中的值。 */
+/** 配置含共享密钥时仅支持用户级；其他配置默认项目级。 */
 export const mcpConfigurationInput = z
   .object({
     version_id: z.uuid(),

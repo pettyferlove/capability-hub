@@ -84,25 +84,25 @@ export function createMcp(
             _principal: Principal;
           },
         ) => R | Promise<R>,
-        contribution = false,
+        operation: 'read' | 'issue-ticket' | 'contribute' = 'read',
       ) => {
-        if (contribution && scope !== 'hub:contribute') return;
+        if (operation === 'contribute' && scope !== 'hub:contribute') return;
         return server.registerTool(
           name,
           {
             description,
             inputSchema: schema,
             annotations: {
-              readOnlyHint: !contribution,
+              readOnlyHint: operation === 'read',
               destructiveHint: false,
-              idempotentHint: true,
+              idempotentHint: operation !== 'issue-ticket',
               openWorldHint: false,
             },
           },
           async (args) => {
             try {
               const current = await hub.identity.principal(p.id);
-              if (contribution && scope !== 'hub:contribute')
+              if (operation === 'contribute' && scope !== 'hub:contribute')
                 fail(403, 'TOKEN_SCOPE', '此操作需要贡献权限，请在接入页追加授权并刷新工具列表');
               const result = await call({ ...schema.parse(args), _principal: current });
               return {
@@ -149,6 +149,7 @@ export function createMcp(
         '为固定版本 Skill 返回清单、摘要、下载地址和 CLI 安装命令；非公开版本使用 10 分钟内一次有效的票据。由客户端确认位置后交给 CLI 写入，不在服务器安装。transfer 为 inline 时分段返回 Base64，仅用于无法下载的环境。',
         skillInstallationInput,
         async ({ _principal, ...b }) => await deliverSkill(hub, _principal, credential, b),
+        'issue-ticket',
       );
       register(
         'get_asset_version',
@@ -173,7 +174,7 @@ export function createMcp(
         '将用户选择的 Skill 文件提交扫描，支持 UTF-8 与 Base64；新建时先调用 list_share_teams 获取 owner_group_id；更新已有上传 Skill 时 destination.asset_id 可填 UUID 或 slug。需要连接的贡献权限；新建须已加入目标团队并有创建权限，更新须有资产维护权限；扫描结果与发布审核在网页查看和处理。',
         skillSharingInput,
         async ({ _principal, ...b }) => await shareSkill(hub, _principal, b),
-        true,
+        'contribute',
       );
       register(
         'report_asset_feedback',
@@ -183,14 +184,14 @@ export function createMcp(
           const result = await hub.feedback.report(_principal, body);
           return { ...result, detail_url: new URL(result.detail_url, hub.config.publicUrl).href };
         },
-        true,
+        'contribute',
       );
       register(
         'rate_asset',
         '按 asset_id 推荐或取消推荐可读的 Skill/MCP 资源。每人对同一资源只计一次，需要连接的贡献权限。',
         assetRecommendationRequestSchema,
         async ({ _principal, ...b }) => await hub.community.rate(_principal, b),
-        true,
+        'contribute',
       );
       register(
         'load_skill',
@@ -207,13 +208,9 @@ export function createMcp(
               compatibility: v.metadata.frontmatter?.compatibility ?? '',
             };
           });
+          const { bytes } = await hub.content.getFile(_principal, version_id, 'SKILL.md');
           await hub.store.audit(_principal.id, 'skill.loaded', version_id);
-          return {
-            ...metadata,
-            body: (await hub.content.getFile(_principal, version_id, 'SKILL.md')).bytes.toString(
-              'utf8',
-            ),
-          };
+          return { ...metadata, body: bytes.toString('utf8') };
         },
       );
       register(

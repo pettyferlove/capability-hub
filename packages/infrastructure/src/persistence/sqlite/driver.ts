@@ -43,7 +43,7 @@ export async function openSqliteDriver(path: string): Promise<RecordDriver> {
       const client = new DatabaseSync(canonical);
       try {
         chmodSync(canonical, 0o600);
-        client.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;');
+        client.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;');
         const db = drizzle(
           (statement: string, parameters: unknown[], method) => {
             const query = client.prepare(statement);
@@ -53,7 +53,8 @@ export async function openSqliteDriver(path: string): Promise<RecordDriver> {
               return Promise.resolve({ rows: [] });
             }
             query.setReturnArrays(true);
-            const rows = query.all(...values).map((row) => Object.values(row));
+            // node:sqlite 的类型不随 setReturnArrays 切换，实际结果已是列数组。
+            const rows = query.all(...values) as unknown as unknown[][];
             return Promise.resolve({ rows: method === 'get' ? (rows[0] ?? []) : rows });
           },
           { schema: sqliteSchema, logger: false },

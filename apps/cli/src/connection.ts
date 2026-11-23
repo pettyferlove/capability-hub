@@ -36,7 +36,9 @@ export async function openHubConnection(
     credentialError(error: unknown): Promise<void>;
     httpError(error: HubApiError): Promise<void>;
   },
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const identity = await readConnection(path, url).catch(async (error: unknown) => {
     await diagnostics?.credentialError(error);
     throw error;
@@ -46,13 +48,24 @@ export async function openHubConnection(
     await client.connect(
       new StreamableHTTPClientTransport(new URL(url + '/mcp'), {
         fetch: async (input, init) => {
+          signal?.throwIfAborted();
           const target = new URL(input instanceof Request ? input.url : String(input));
           if (target.origin !== url || target.pathname !== '/mcp')
             throw new Error('桥接请求不能离开当前 Hub MCP');
           const headers = new Headers(init?.headers);
           const token = await connectionToken(path, url, identity.client_id);
           headers.set('Authorization', 'Bearer ' + token);
-          const response = await fetch(input, { ...init, headers, redirect: 'error' });
+          const requestSignal =
+            init?.signal ?? (input instanceof Request ? input.signal : undefined);
+          const response = await fetch(input, {
+            ...init,
+            headers,
+            redirect: 'error',
+            signal:
+              signal && requestSignal
+                ? AbortSignal.any([signal, requestSignal])
+                : (signal ?? requestSignal),
+          });
           observeCliResponse(url, response);
           const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
           // SDK 将 GET/DELETE 405 视为不支持可选的流或会话关闭。
@@ -78,9 +91,11 @@ export async function openHubConnection(
           return response;
         },
       }),
+      { signal },
     );
   } catch (error) {
     await client.close();
+    signal?.throwIfAborted();
     throw error;
   }
   return client;
@@ -148,14 +163,19 @@ export async function connectAgent(
     const toolCount = await ui.task(
       '验证 Hub 工具发现与检索',
       'Hub 工具发现与检索已验证',
-      async () => {
-        const client = await openHubConnection(options.url, pending ? temporary : path);
+      async (_update, signal) => {
+        const client = await openHubConnection(
+          options.url,
+          pending ? temporary : path,
+          undefined,
+          signal,
+        );
         try {
-          const tools = await client.listTools();
-          const result = await client.callTool({
-            name: 'search_skills',
-            arguments: { query: '', limit: 1 },
-          });
+          const tools = await client.listTools(undefined, { signal });
+          const result = await client.callTool(
+            { name: 'search_skills', arguments: { query: '', limit: 1 } },
+            { signal },
+          );
           if ('isError' in result && result.isError)
             throw new Error('Hub 检索验证失败，请检查账号权限');
           return tools.tools.length;
@@ -175,13 +195,14 @@ export async function connectAgent(
       }
       if (latest?.client_id !== previous?.client_id)
         throw new Error('另一接入进程已经更换了此连接，请重新运行 connect；已保留它的授权与配置');
-      const backup = await writeConnectionConfig(prepared);
+      const backup = await writeConnectionConfig(prepared, async () => {
+        if (pending) {
+          await savePrivateJson(path, pending);
+          superseded = latest;
+        }
+        committed = true;
+      });
       if (backup) ui.message(`配置原文已备份到私有目录：${terminalText(backup)}`);
-      if (pending) {
-        await savePrivateJson(path, pending);
-        superseded = latest;
-      }
-      committed = true;
     });
     if (superseded) await revokeConnection(options.url, superseded);
     ui.step(
@@ -194,8 +215,11 @@ export async function connectAgent(
     );
     ui.outro(`${agentClients[options.client].label} 接入配置已就绪。`);
   } finally {
-    await rm(temporary, { force: true });
-    if (pending && !committed) await revokeConnection(options.url, pending);
+    try {
+      await rm(temporary, { force: true });
+    } finally {
+      if (pending && !committed) await revokeConnection(options.url, pending);
+    }
   }
 }
 
@@ -274,15 +298,24 @@ export async function checkConnection(
   agent: AgentClient,
   ui = new CliUi(),
 ) {
-  const count = await ui.task('检查 Hub 连接与工具发现', '连接检查完成', async () => {
-    const client = await openHubConnection(url, connectionFile(directory, url, agent));
-    try {
-      const { tools } = await client.listTools();
-      return tools.length;
-    } finally {
-      await client.close();
-    }
-  });
+  const count = await ui.task(
+    '检查 Hub 连接与工具发现',
+    '连接检查完成',
+    async (_update, signal) => {
+      const client = await openHubConnection(
+        url,
+        connectionFile(directory, url, agent),
+        undefined,
+        signal,
+      );
+      try {
+        const { tools } = await client.listTools(undefined, { signal });
+        return tools.length;
+      } finally {
+        await client.close();
+      }
+    },
+  );
   process.stdout.write(`Hub 连接正常，可发现 ${count} 个工具。\n`);
   if (ui.interactive) ui.outro('连接可用，可以继续在 Agent 中使用 Hub。');
 }

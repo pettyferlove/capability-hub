@@ -14,10 +14,7 @@ const skillDirectory = new URL(
   import.meta.url,
 );
 
-/** 匿名交付只读取随服务打包的目录，文件、清单和归档来自同一份字节。 */
-export async function readHubClientSkillBundle(): Promise<
-  HubClientSkillBundleResponse & { files: ContentFile[]; archive: Buffer }
-> {
+async function readBundledSkill() {
   const files: ContentFile[] = [];
   for (const entry of await readdir(skillDirectory, { recursive: true, withFileTypes: true })) {
     if (entry.isDirectory()) continue;
@@ -29,7 +26,14 @@ export async function readHubClientSkillBundle(): Promise<
       executable: false,
     });
   }
-  const inspected = inspect('skill', files, hubClientSkillName);
+  return inspect('skill', files, hubClientSkillName);
+}
+
+/** 匿名交付的归档摘要只标识本次打包的字节，不用来判断历史发布的文件内容。 */
+export async function readHubClientSkillBundle(): Promise<
+  HubClientSkillBundleResponse & { files: ContentFile[]; archive: Buffer }
+> {
+  const inspected = await readBundledSkill();
   const bytes = await archive(inspected.files);
   return {
     slug: hubClientSkillName,
@@ -48,13 +52,11 @@ export async function publishedHubClientSkillUrl(hub: HubServices): Promise<stri
       null,
       hubClientSkillName,
     );
-    const bundle = await readHubClientSkillBundle();
+    if (asset.kind !== 'skill' || asset.lifecycle !== 'active') return;
+    const bundled = await readBundledSkill();
     if (
-      asset.kind !== 'skill' ||
-      asset.lifecycle !== 'active' ||
-      canonical(version.manifest) !== canonical(bundle.manifest) ||
-      version.content_digest !== bundle.content_digest ||
-      version.artifact_digest !== bundle.artifact_digest
+      version.content_digest !== bundled.content_digest ||
+      canonical(version.manifest) !== canonical(bundled.manifest)
     )
       return;
     return new URL(

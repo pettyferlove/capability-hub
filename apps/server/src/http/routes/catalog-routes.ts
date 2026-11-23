@@ -60,7 +60,7 @@ export function registerCatalogRoutes(app: Express, { hub, security }: HttpConte
     }
   });
   app.get(
-    '/api/assets/keywords',
+    '/api/catalog/keywords',
     read,
     send(
       async (req, res) =>
@@ -155,6 +155,7 @@ export function registerCatalogRoutes(app: Express, { hub, security }: HttpConte
       const archive = await hub.content.getArchive(
         res.locals.viewer ?? null,
         String(req.params.id),
+        req.method === 'HEAD',
       );
       res.set({
         'Content-Type': 'application/zip',

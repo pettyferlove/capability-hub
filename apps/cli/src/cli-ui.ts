@@ -10,12 +10,11 @@ import {
   outro,
   S_BAR,
   S_BAR_END,
-  spinner,
   symbol,
   text,
   unicode,
 } from '@clack/prompts';
-import type { Key } from 'node:readline';
+import { clearLine, cursorTo, emitKeypressEvents, type Key } from 'node:readline';
 import { styleText } from 'node:util';
 import packageJson from '../package.json' with { type: 'json' };
 import { terminalText } from './api-client.js';
@@ -265,48 +264,79 @@ export class CliUi {
   async task<T>(
     message: string,
     complete: string,
-    work: (update: (message: string) => void) => Promise<T>,
+    work: (update: (message: string) => void, signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
+    const controller = new AbortController();
     const progress = this.animated
-      ? spinner({
-          output: process.stderr,
-          indicator: 'dots',
-          styleFrame: (frame) => styleText('cyan', frame, { stream: process.stderr }),
-          frames: unicode
-            ? ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-            : ['-', '\\', '|', '/'],
-          onCancel: () => process.exit(130),
-          cancelMessage: '操作已取消',
-        })
+      ? taskProgress(message, () => controller.abort(new CliCancelled()))
       : undefined;
-    const cancelOnKeypress = (_input: string, key: Key) => {
-      if ((key.ctrl && key.name === 'c') || key.name === 'escape') {
-        progress?.cancel('操作已取消');
-        process.exit(130);
-      }
-    };
-    if (progress) {
-      // Clack 将取消按键按成功退出处理，需优先恢复终端并退出 130。
-      process.stdin.prependListener('keypress', cancelOnKeypress);
-      progress.start(message);
-    } else if (this.interactive) log.step(message, { output: process.stderr });
+    if (!progress && this.interactive) log.step(message, { output: process.stderr });
     try {
       const result = await work((message) => {
-        if (progress) progress.message(terminalText(message));
+        if (progress) progress.update(terminalText(message));
         else this.message(terminalText(message));
-      });
-      const completed = styleText('dim', complete, { stream: process.stderr });
-      if (progress) progress.stop(completed);
-      else if (this.interactive) log.success(completed, { output: process.stderr });
+      }, controller.signal);
+      controller.signal.throwIfAborted();
+      progress?.clear();
+      if (this.interactive)
+        log.success(styleText('dim', complete, { stream: process.stderr }), {
+          output: process.stderr,
+        });
       return result;
     } catch (error) {
-      if (progress) progress.error('未完成：' + message);
-      else if (this.interactive) log.error('未完成：' + message, { output: process.stderr });
+      progress?.clear();
+      controller.signal.throwIfAborted();
+      if (this.interactive) log.error('未完成：' + message, { output: process.stderr });
       throw error;
     } finally {
-      process.stdin.off('keypress', cancelOnKeypress);
+      progress?.close();
     }
   }
+}
+
+// Clack 的 spinner 会在取消按键上直接退出，无法等待操作回滚或释放授权。
+function taskProgress(message: string, cancel: () => void) {
+  const input = process.stdin;
+  const output = process.stderr;
+  const raw = input.isRaw;
+  const flowing = input.readableFlowing;
+  const frames = unicode ? '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' : '-\\|/';
+  let index = 0;
+  const draw = () => {
+    cursorTo(output, 0);
+    clearLine(output, 0);
+    const line = wrapTextWithPrefix(output, message, '  ').split('\n', 1)[0];
+    const frame = styleText('cyan', frames[index++ % frames.length], { stream: output });
+    output.write(frame + line.slice(1));
+  };
+  const keypress = (_input: string, key: Key) => {
+    if ((key.ctrl && key.name === 'c') || key.name === 'escape') cancel();
+  };
+  emitKeypressEvents(input);
+  input.on('keypress', keypress);
+  input.setRawMode(true);
+  input.resume();
+  process.on('SIGINT', cancel);
+  process.on('SIGTERM', cancel);
+  draw();
+  const timer = setInterval(draw, 80);
+  return {
+    update(value: string) {
+      message = value;
+    },
+    clear() {
+      clearInterval(timer);
+      cursorTo(output, 0);
+      clearLine(output, 0);
+    },
+    close() {
+      process.off('SIGTERM', cancel);
+      process.off('SIGINT', cancel);
+      input.off('keypress', keypress);
+      input.setRawMode(raw);
+      if (!flowing) input.pause();
+    },
+  };
 }
 
 /** 人读表格写到 stdout：末列不补齐，说明逐行缩进写在所属行之后。 */

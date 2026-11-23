@@ -855,7 +855,7 @@ test('目录只将维护组受众简写为团队可见，同名个人保留实�
     if (path === '/api/catalog/discovery')
       return Response.json({ mode: 'keywords', viewer_key: 'anonymous', suggestions: [] });
     if (path === '/api/scenarios') return Response.json([]);
-    if (path.startsWith('/api/assets/keywords?')) return Response.json({ items: [] });
+    if (path.startsWith('/api/catalog/keywords?')) return Response.json({ items: [] });
     assert(path.startsWith('/api/assets?'));
     return Response.json(await fixture.hub.catalog.search(memberPrincipal, {}));
   });

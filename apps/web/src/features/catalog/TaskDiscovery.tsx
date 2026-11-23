@@ -127,7 +127,7 @@ function subscribeWide(onChange: () => void) {
 }
 
 /**
- * 首页输入区：显式提交，示例与主题只填入不发送；输入框为空时，按钮发送正在轮播的那句开场提问。
+ * 首页输入区：示例与主题只填入不发送；空输入可发送完整展示的轮播提问，预览不全则先填入草稿。
  * 没有开场示例时用目录里的常见主题兜底；对话模式始终说明问题的去向。有进行中的对话时提交即开始新的一轮，
  * 不沿用上一轮条件。
  */
@@ -171,6 +171,7 @@ export function TaskComposer({
   const [buttonFocused, setButtonFocused] = useState(false);
   const offerId = useId();
   const measure = useRef<HTMLSpanElement>(null);
+  const preview = useRef<HTMLSpanElement>(null);
   const [overflow, setOverflow] = useState(false);
   const prompt = restart ? restartPlaceholder : placeholder;
   // 量尺按单行布局的文字列宽排版草稿，空草稿时排版长提示：草稿一行放不下时文本域才占满整行、
@@ -189,8 +190,7 @@ export function TaskComposer({
   const full = draft.length >= draftLimit;
   const filled = !!draft.trim();
   const typing = !draft && !focused && !restart && wide;
-  // 首轮先打通用提示，之后只轮播开场提问；正在展示的那句可由按钮直接发送。指针停在框上或按钮
-  // 获得焦点时停在整句上，发出的就是看到的这句。
+  // 指针停在框上或按钮获得焦点时，轮播停在当前整句。
   const current = position > 0 ? suggestions[position - 1] : undefined;
   const offered = typing ? current : undefined;
   const chips = suggestions.length
@@ -209,7 +209,19 @@ export function TaskComposer({
   const send = () => {
     if (!entry || busy) return;
     if (filled) onSubmit();
-    else if (offered) onSubmit(offered);
+    else if (offered) {
+      const line = preview.current;
+      const text = line?.firstElementChild;
+      const width = text?.getBoundingClientRect().width ?? 0;
+      if (
+        line &&
+        text?.textContent === offered.text &&
+        width > 0 &&
+        width <= line.getBoundingClientRect().width
+      )
+        onSubmit(offered);
+      else onSuggestion(offered);
+    }
   };
   return (
     <>
@@ -259,10 +271,10 @@ export function TaskComposer({
               className={cn(taskInputFieldStyles, typing && taskInputTypingStyles)}
             />
             {typing && (
-              <span className={taskTypingStyles} aria-hidden="true">
+              <span ref={preview} className={taskTypingStyles} aria-hidden="true">
                 <TextType
                   key={position}
-                  text={current?.text ?? hint}
+                  text={current?.text.replace(/[\r\n]+/g, ' ') ?? hint}
                   onNext={
                     suggestions.length
                       ? () => setPosition((at) => (at >= suggestions.length ? 1 : at + 1))
@@ -316,7 +328,7 @@ export function TaskComposer({
             </button>
             {offered && !busy && (
               <span id={offerId} hidden>
-                发送示例：{offered.text}
+                示例：{offered.text}（未完整显示时会先填入输入框）
               </span>
             )}
           </span>

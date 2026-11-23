@@ -105,7 +105,7 @@ export async function runCommand(
       agentClientIds.map((value) => ({ value, label: agentClients[value].label, hint: value })),
     );
   }
-  if (guided && !flags.scope && ['connect', 'hub-config', 'mcp-config'].includes(command))
+  if (guided && !flags.scope && ['connect', 'hub-config'].includes(command))
     flags.scope = await ui.choose('--scope', '配置保存在哪个范围？', [
       { value: 'project', label: '当前项目', hint: process.cwd() },
       { value: 'user', label: '当前用户', hint: '供此用户的多个项目使用' },
@@ -210,21 +210,25 @@ export async function runCommand(
       throw new Error('Hub 返回了无效的浏览器批准地址');
     ui.note('CLI 授权', `请在浏览器登录，核对授权码后批准。\n\n授权码  ${login.user_code}`);
     ui.link(verification.toString());
-    await ui.task('等待浏览器批准登录', 'CLI 登录完成', async () => {
-      const expires = Date.now() + login.expires_in * 1000;
-      while (Date.now() < expires) {
-        await delay(2000);
-        const poll = await api.json('/auth/cli/poll', pollResponseSchema, {
-          device_code: login.device_code,
-          verifier,
-        });
-        if (poll.state === 'complete') {
-          await saveCredentials(credentialsFile, { url: api.url, token: poll.token });
-          return;
+    const token = await ui.task(
+      '等待浏览器批准登录',
+      '浏览器已批准登录',
+      async (_update, signal) => {
+        const expires = Date.now() + login.expires_in * 1000;
+        while (Date.now() < expires) {
+          await delay(2000, undefined, { signal });
+          const poll = await api.json(
+            '/auth/cli/poll',
+            pollResponseSchema,
+            { device_code: login.device_code, verifier },
+            { signal },
+          );
+          if (poll.state === 'complete') return poll.token;
         }
-      }
-      throw new Error('登录等待超时，请重新发起');
-    });
+        throw new Error('登录等待超时，请重新发起');
+      },
+    );
+    await saveCredentials(credentialsFile, { url: api.url, token });
     ui.outro('已登录 · 下一步：capability-hub search <关键词>');
     return;
   }
@@ -252,8 +256,10 @@ export async function runCommand(
   const credentials = await getCredentials();
   const api = new HubApiClient(credentials.url, credentials.token);
   if (command === 'search') {
-    const result = await ui.task('搜索可见资源', '搜索完成', () =>
-      api.json('/api/assets?q=' + encodeURIComponent(args.join(' ')), searchSchema),
+    const result = await ui.task('搜索可见资源', '搜索完成', (_update, signal) =>
+      api.json('/api/assets?q=' + encodeURIComponent(args.join(' ')), searchSchema, undefined, {
+        signal,
+      }),
     );
     if (flags.json) process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     else {
@@ -406,7 +412,7 @@ export async function runCommand(
       version_id: version.version_id,
       installation_option_id: option,
       client: flags.client,
-      scope,
+      ...(flags.scope !== undefined && { scope }),
     });
     process.stdout.write(configuration.text + '\n');
     ui.note(
@@ -575,7 +581,7 @@ function showLatestVersion(
 }
 
 function downloadSkillArchive(ui: CliUi, api: HubApiClient, path: string) {
-  return ui.task('下载 Skill 归档', '归档下载完成，开始校验', (update) =>
+  return ui.task('下载 Skill 归档', '归档下载完成，开始校验', (update, signal) =>
     api.archive(
       path,
       ui.animated
@@ -586,6 +592,7 @@ function downloadSkillArchive(ui: CliUi, api: HubApiClient, path: string) {
             );
           }
         : undefined,
+      signal,
     ),
   );
 }

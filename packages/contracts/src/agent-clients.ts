@@ -315,7 +315,7 @@ export function hubMcpConnectionGuide(
     method === 'assistant' && needsPath
       ? `${agentClients[client].label} 的用户配置文件（由 --config-file 指定）`
       : configuration.target_file;
-  const assistantCommand = `capability-hub connect --url ${base} --client ${client} --scope ${scope}${permission === 'contribute' ? ' --contribute' : ''}${needsPath ? ' --config-file ""' : ''}`;
+  const assistantCommand = `capability-hub connect --url ${base} --client ${client} --scope ${scope}${permission === 'contribute' ? ' --contribute' : ''}`;
   const assistantInstruction = [
     ...(method !== requestedMethod
       ? ['当前适配通过接入助手申请贡献权限。请先确认使用本地桥接。']
@@ -326,7 +326,7 @@ export function hubMcpConnectionGuide(
           client === 'vscode'
             ? '通过 MCP: Open User Configuration 确认用户 mcp.json 的路径。'
             : '确认 Claude Code 当前用户配置文件的路径。',
-          '将 --config-file 后的空引号填入该文件的实际绝对路径。交互终端也可保留空值，由助手询问路径。',
+          '交互终端会询问配置文件的实际路径。非交互执行时，请追加 --config-file 并传入该文件的实际绝对路径。',
         ]
       : []),
   ].join('');

@@ -27,8 +27,9 @@ export async function savePrivateJson(path: string, value: unknown): Promise<voi
       await file.close();
     }
     await rename(temporary, path);
-  } finally {
+  } catch (error) {
     await rm(temporary, { force: true });
+    throw error;
   }
 }
 

@@ -66,7 +66,7 @@ Mastra 通过 `jsonPromptInjection: 'system'` 发送完整 JSON Schema。客户�
 
 只支持两种协议：`openai` 使用 Chat Completions，`anthropic` 使用 Messages；均由官方 AI SDK provider 生成请求。配置地址是 API 前缀，不能包含最终操作路径、用户信息、查询或 fragment。HTTP 需要 `allow_http=true`。凭据仅在发送请求时通过环境变量名解析，不存入配置、快照或 SSE。
 
-模型请求在数据库预留后才访问端点；确定未派发则撤回预留，已经派发的失败请求不退计数。工作流出站复查执行权限，首页遵守目录授权与[短调用预算](../reference/configuration.md#ai-配置)，均拒绝重定向。执行默认最多 96 次模型请求、200 次工具调用；单请求默认 4096 token、60 秒。单次活跃调度默认 10 分钟，总期限 24 小时，最多 8 次人工继续。流事件默认限 10 MB，保留终止空间。每执行最多 100 个成果，单个限 1 MB、合计 4 MB（含内部证据）。
+模型请求先预留再出站；未派发可撤回预留，已派发的失败不退计数。工作流出站复查执行权；首页在调用预留事务内复核会话、续轮来源与整批卡片，返回前再次复核。网络调用不占事务，均拒绝重定向。执行默认最多 96 次模型请求、200 次工具调用；单请求默认 4096 token、60 秒，首页另受[短调用预算](../reference/configuration.md#ai-配置)约束。单次活跃调度默认 10 分钟，总期限 24 小时，最多 8 次人工继续。流事件限 10 MB 并预留终止空间。每执行最多 100 个成果，单个限 1 MB、合计 4 MB（含内部证据）。
 
 Token 取自完整 JSON 或正常结束的事件流。输入、输出都已上报才计入已确认合计，包括输出校验失败的调用；真实零值不同于缺报。崩溃、断流或用量不完整时记 unknown，部分计数单列。[Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events) 取最终 usage 帧及 `[DONE]`；[Messages](https://platform.claude.com/docs/en/build-with-claude/streaming) 的输入合计基础、缓存创建及读取用量，输出取累计值，以 `message_stop` 结束。传输失败不隐式重试。
 

@@ -11,6 +11,7 @@ import { observeWebBuild } from './web-build.js';
 
 export { PreviewUnavailable } from './preview.js';
 let csrfToken = '';
+let identityGeneration = 0;
 let hubVersion: string | undefined;
 const failedRequests: HubFeedbackFailedRequest[] = [];
 
@@ -69,26 +70,29 @@ function notifyRequestFailure(status: number, code: string, request?: HubFeedbac
   });
 }
 
-function networkFailure(error: unknown, path: string, options: RequestInit) {
+function networkFailure(error: unknown, path: string, options: RequestInit, generation: number) {
   if (
     options.signal?.aborted ||
     (error !== null && typeof error === 'object' && 'name' in error && error.name === 'AbortError')
   )
     throw error;
+  if (generation !== identityGeneration) return;
   const failure = rememberFailure(options.method ?? 'GET', path, 0, 'NETWORK_ERROR');
   notifyRequestFailure(0, 'NETWORK_ERROR', failure);
   return failure;
 }
 
 function fetchRequest(path: string, options: RequestInit) {
+  const generation = identityGeneration;
   return fetch(path, options).catch((error: unknown) => {
-    networkFailure(error, path, options);
+    networkFailure(error, path, options, generation);
     throw error;
   });
 }
 
-/** 注入 CSRF 令牌来源：由 `use-session` 在登录/刷新会话成功后写入，退出或失败时清空。 */
-export function setCsrf(value: string): void {
+/** 核验新会话时即使令牌仍为空，也必须隔离此前发出的请求。 */
+export function setCsrf(value: string, newSession = false): void {
+  if (newSession || value !== csrfToken) identityGeneration++;
   if (value !== csrfToken) {
     failedRequests.length = 0;
     clearBrowserDiagnostics();
@@ -127,13 +131,19 @@ export function apiErrorContext(error: unknown): ApiErrorContext | undefined {
     : undefined;
 }
 
-async function responseError(response: Response, path: string, method = 'GET'): Promise<ApiError> {
+async function responseError(
+  response: Response,
+  path: string,
+  generation: number,
+  method = 'GET',
+): Promise<ApiError> {
   return httpFailure(
     await response.json().catch(() => null),
     response.status,
     path,
     method,
     response.headers.get('X-Request-Id'),
+    generation,
   );
 }
 
@@ -143,6 +153,7 @@ function httpFailure(
   path: string,
   method: string,
   headerId: string | null,
+  generation: number,
 ): ApiError {
   const detail =
     body &&
@@ -161,6 +172,7 @@ function httpFailure(
     ('request_id' in detail && typeof detail.request_id === 'string' && detail.request_id) ||
     headerId ||
     '';
+  if (generation !== identityGeneration) return new ApiError(status, code, message, requestId);
   const failure = rememberFailure(method, path, status, code, requestId);
   reportError('http.failed', {
     status,
@@ -179,8 +191,8 @@ function httpFailure(
  * 写请求自动带 `X-CSRF-Token`（值来自 {@link setCsrf}）与未显式提供时的 `Idempotency-Key`，
  * 因此重试同一调用不要自己生成 key，否则服务端会当成两次操作。
  * `redirect: 'error'` 用来暴露登录重定向，避免把 HTML 登录页当 JSON 解析。
- * 非 2xx 一律抛 {@link ApiError}；401 且目标不是 `/auth/*` 或 `/api/me` 时还会派发
- * `hub:unauthenticated`，让全局退回登录态。204 返回 `undefined`，调用方不要解构结果。
+ * 非 2xx 一律抛 {@link ApiError}；仅当前身份的非 `/auth/*`、非 `/api/me` 请求遇到 401 时
+ * 派发 `hub:unauthenticated`。204 返回 `undefined`，调用方不要解构结果。
  */
 export async function api<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await apiResponse(path, options);
@@ -189,6 +201,7 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
 }
 
 async function apiResponse(path: string, options: RequestInit): Promise<Response> {
+  const generation = identityGeneration;
   const headers = new Headers(options.headers);
   if (options.body && !(options.body instanceof FormData))
     headers.set('Content-Type', 'application/json');
@@ -202,8 +215,8 @@ async function apiResponse(path: string, options: RequestInit): Promise<Response
     credentials: 'same-origin',
     redirect: 'error',
   }).catch((error: unknown) => {
-    const failure = networkFailure(error, path, options);
-    reportError('http.failed', { error });
+    const failure = networkFailure(error, path, options, generation);
+    if (generation === identityGeneration) reportError('http.failed', { error });
     throw new ApiError(
       0,
       'NETWORK_ERROR',
@@ -213,7 +226,7 @@ async function apiResponse(path: string, options: RequestInit): Promise<Response
     );
   });
   observeResponse(response);
-  if (!response.ok) throw await responseError(response, path, options.method);
+  if (!response.ok) throw await responseError(response, path, generation, options.method);
   return response;
 }
 
@@ -262,6 +275,7 @@ export async function fileText(
   management = false,
   signal?: AbortSignal,
 ): Promise<string> {
+  const generation = identityGeneration;
   const url = `/api/${management ? 'management/' : ''}versions/${version}/files?path=${encodeURIComponent(path)}`;
   const response = await fetchRequest(url, {
     credentials: 'same-origin',
@@ -269,7 +283,7 @@ export async function fileText(
     signal,
   });
   observeResponse(response);
-  if (!response.ok) throw await responseError(response, url);
+  if (!response.ok) throw await responseError(response, url, generation);
   return readPreviewText(response);
 }
 
@@ -298,13 +312,14 @@ export async function hubFeedbackAttachmentText(
   path: string,
   signal?: AbortSignal,
 ): Promise<{ text: string; lines: number }> {
+  const generation = identityGeneration;
   const response = await fetchRequest(path, {
     credentials: 'same-origin',
     redirect: 'error',
     signal,
   });
   observeResponse(response);
-  if (!response.ok) throw await responseError(response, path);
+  if (!response.ok) throw await responseError(response, path, generation);
   const lines = (await response.text()).split(/\r\n?|\n/);
   // 末尾换行不构成新的一行，否则恰好满额的附件会被误报为截断。
   if (lines.at(-1) === '') lines.pop();
@@ -331,6 +346,7 @@ export async function streamEvents(
   signal: AbortSignal,
   lastEventId?: string,
 ): Promise<void> {
+  const generation = identityGeneration;
   const response = await fetchRequest(path, {
     credentials: 'same-origin',
     redirect: 'error',
@@ -341,7 +357,7 @@ export async function streamEvents(
     },
   });
   observeResponse(response);
-  if (!response.ok) throw await responseError(response, path);
+  if (!response.ok) throw await responseError(response, path, generation);
   if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream'))
     throw new ApiError(502, 'STREAM_INVALID', '事件连接不可用');
   await readEvents(response.body, onEvent);
@@ -391,6 +407,7 @@ export async function postEvents(
   onEvent: (event: ServerEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
+  const generation = identityGeneration;
   const response = await apiResponse(path, {
     method: 'POST',
     body: JSON.stringify(body),
@@ -415,6 +432,13 @@ export async function postEvents(
       detail.status > 599
     )
       throw new ApiError(502, 'STREAM_INVALID', '事件连接不可用');
-    throw httpFailure(detail, detail.status, path, 'POST', response.headers.get('X-Request-Id'));
+    throw httpFailure(
+      detail,
+      detail.status,
+      path,
+      'POST',
+      response.headers.get('X-Request-Id'),
+      generation,
+    );
   });
 }

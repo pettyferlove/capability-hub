@@ -87,7 +87,7 @@ export class IntakeProcessor {
         executable: f.executable,
       })),
     );
-    return await this.jobs.withLease(job, async () => {
+    return await this.jobs.withLease(job, async (currentJob) => {
       await checkSourceCredential?.();
       const current = await this.assets.getAsset(a.id);
       if (current.lifecycle === 'blocked') fail(409, 'ASSET_BLOCKED', '资产已封禁');
@@ -110,12 +110,16 @@ export class IntakeProcessor {
         fail(409, 'SOURCE_CONFIG_CHANGED', '来源配置已变化');
       if (intake.source_generation && source.generation !== intake.source_generation)
         fail(409, 'SOURCE_GENERATION_CHANGED', '较新的同步已开始');
-      const sameLabel = (await this.context.store.all('versions')).find(
-        (v) => v.asset_id === a.id && v.version_label === intake.version_label,
-      );
-      if (sameLabel && sameLabel.content_digest !== inspected.content_digest)
-        fail(409, 'VERSION_CONTENT_CONFLICT', '同版本已经存在不同内容');
-      let version = sameLabel;
+      let version =
+        job.kind === 'rescan'
+          ? await this.context.store.get('versions', job.input.version_id)
+          : (await this.context.store.where('versions', 'asset_id', a.id)).find(
+              (v) => v.version_label === intake.version_label,
+            );
+      if (job.kind === 'rescan' && (!version || version.asset_id !== a.id))
+        fail(409, 'INTAKE_MISMATCH', '重扫目标与接收记录不匹配');
+      if (version && version.content_digest !== inspected.content_digest)
+        fail(409, 'VERSION_CONTENT_CONFLICT', '固定版本已存在不同内容');
       if (!version && intake.binding_id)
         version = (await this.context.store.all('versions'))
           .filter(
@@ -184,6 +188,13 @@ export class IntakeProcessor {
         },
       );
       await this.onReady?.(intake.requested_by, version.id);
+      if (currentJob.kind === 'intake' || currentJob.kind === 'rescan')
+        await this.context.store.put('jobs', {
+          ...currentJob,
+          state: 'succeeded',
+          finished_at: result.finished_at!,
+          lease_until: 0,
+        });
       return result;
     });
   }

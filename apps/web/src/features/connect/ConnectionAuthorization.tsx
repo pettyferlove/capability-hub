@@ -22,7 +22,7 @@ import {
 } from './styles.js';
 import { cn } from '../../shared/styles/cn.js';
 import type { ConnectionAuthorizationResponse } from '@capability-hub/contracts';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '../../shared/api/use-query.js';
 import { ApiError, apiErrorContext, mutate } from '../../shared/api/client.js';
 import { errorMessage } from '../../shared/api/error-message.js';
@@ -49,6 +49,13 @@ import { ListSkeleton } from '../../shared/components/Skeleton.js';
  */
 export function ConnectionAuthorization({ requestId }: { requestId: string }) {
   const { me } = useHub();
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [contribute, setContribute] = useState(false);
   const [pending, setPending] = useState<'allow' | 'cancel' | null>(null);
   const busy = pending !== null;
@@ -73,9 +80,11 @@ export function ConnectionAuthorization({ requestId }: { requestId: string }) {
     }
     setPending(allow ? 'allow' : 'cancel');
     setFailure(undefined);
+    const originPage = location.href;
     try {
       const response = await mutate<{ redirect_uri: string }>(path, { allow, contribute });
-      window.location.assign(response.redirect_uri);
+      if (mounted.current && location.href === originPage)
+        window.location.assign(response.redirect_uri);
     } catch (error) {
       setFailure(error instanceof Error ? error : new Error(errorMessage(error)));
       setPending(null);

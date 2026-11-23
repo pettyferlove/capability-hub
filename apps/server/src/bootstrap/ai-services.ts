@@ -23,6 +23,14 @@ import type { VersionRecord } from '@capability-hub/domain/models';
 import type { ServerConfig } from '../config/server-config.js';
 
 const businessOperations = new Set(['resource-audit', 'feedback-triage', 'publication-review']);
+type ResourceAccessMode = 'execute' | 'inspect' | 'shared-feedback' | 'audit-write';
+
+function isUnavailableResource(error: unknown) {
+  return (
+    error instanceof HubError &&
+    ['FORBIDDEN', 'NOT_FOUND', 'CONTENT_UNAVAILABLE'].includes(error.code)
+  );
+}
 
 function requireAiConsole(principal: Principal, execute = false) {
   if (!has(principal, 'ai:inspect'))
@@ -51,11 +59,12 @@ function approvesAssessment(response: unknown) {
  */
 export class HubAiServices {
   readonly runtime: AiRuntime;
-  private readonly recheckResources: (
+  // 目标无权直接拒绝；仅历史依据不可交付时返回原因，允许首份审计跳过该条记录。
+  private readonly checkResources: (
     principal: Principal,
     execution: ExecutionRecord,
-    mode?: 'execute' | 'inspect' | 'shared-feedback' | 'audit-write',
-  ) => Promise<void>;
+    mode: ResourceAccessMode,
+  ) => Promise<string | undefined>;
   constructor(
     private readonly identity: IdentityService,
     private readonly store: RecordStore,
@@ -67,7 +76,7 @@ export class HubAiServices {
     private readonly publications: PublicationQueryService,
   ) {
     const aiStore = createAiStore(store);
-    this.recheckResources = async (principal, execution, mode = 'execute') => {
+    this.checkResources = async (principal, execution, mode) => {
       if (execution.payload.execution_mode === 'inline') {
         requireAiConsole(principal);
         if (mode !== 'inspect') throw new AiError('AI_FORBIDDEN', '自动执行记录只可查看');
@@ -128,6 +137,50 @@ export class HubAiServices {
       } else {
         requireAiConsole(principal, mode !== 'inspect');
       }
+      const refs = execution.payload.evidence_refs;
+      if (refs) {
+        for (const id of refs) {
+          try {
+            await evidence.version(principal.id, id, false);
+          } catch (error) {
+            if (isUnavailableResource(error)) return '执行引用的业务资源不可访问';
+            throw error;
+          }
+        }
+      } else if (
+        (execution.payload.operation_id === 'resource-audit' ||
+          execution.payload.operation_id === 'feedback-triage') &&
+        execution.payload.usage.tools
+      ) {
+        // 旧比较未记基线；只有工具记录齐全，且比较没有交付任何结果时才沿用旧报告。
+        const count = execution.payload.usage.tools;
+        const query = { execution_id: execution.id, limit: Math.min(count, 1000) };
+        const starts = await aiStore.list('ai_events', { ...query, event_types: ['tool.started'] });
+        if (
+          starts.length !== count ||
+          starts.some((row) => typeof row.payload.data.tool_id !== 'string')
+        )
+          return '无法核实历史执行的工具依据';
+        const comparisons = starts.filter((row) => row.payload.data.tool_id === 'compare-release');
+        if (comparisons.length) {
+          const failed = await aiStore.list('ai_events', {
+            ...query,
+            event_types: ['tool.failed'],
+          });
+          const discarded = new Set(
+            failed
+              .filter((row) => row.payload.data.tool_id === 'compare-release')
+              .map((row) => row.payload.data.invocation_id),
+          );
+          if (
+            comparisons.some(
+              ({ payload: { data } }) =>
+                typeof data.invocation_id !== 'string' || !discarded.has(data.invocation_id),
+            )
+          )
+            return '无法核实历史执行的比较依据';
+        }
+      }
       for (const artifact of await aiStore.list('ai_artifacts', {
         execution_id: execution.id,
         limit: 1000,
@@ -146,8 +199,7 @@ export class HubAiServices {
         try {
           await access.requireReadableVersion(principal, match[1]);
         } catch (error) {
-          if (error instanceof HubError)
-            throw new AiError('AI_FORBIDDEN', '执行引用的资源权限已变化');
+          if (isUnavailableResource(error)) return '执行引用的资源权限已变化';
           throw error;
         }
       }
@@ -161,8 +213,6 @@ export class HubAiServices {
             (execution && execution.owner_id !== ownerId)
           )
             throw new AiError('AI_FORBIDDEN', '当前账号无权执行 AI 操作');
-          if (action === 'respond' && execution && execution.owner_id !== principal.id)
-            throw new AiError('AI_FORBIDDEN', '只能回答自己的交互');
           if (execution) {
             const auditWrite =
               execution.payload.operation_id === 'resource-audit' &&
@@ -220,6 +270,15 @@ export class HubAiServices {
       config.ai,
     );
   }
+  private async recheckResources(
+    principal: Principal,
+    execution: ExecutionRecord,
+    mode: ResourceAccessMode = 'execute',
+  ) {
+    const reason = await this.checkResources(principal, execution, mode);
+    if (reason) throw new AiError('AI_FORBIDDEN', reason);
+  }
+
   async consolePrincipal(principal: Principal) {
     const fresh = await this.identity.principal(principal.id);
     requireAiConsole(fresh);
@@ -274,22 +333,23 @@ export class HubAiServices {
 
   async ensureResourceAudit(principal: Principal, versionId: string) {
     return this.runtime.store.tx(async () => {
+      const fresh = await this.principal(principal);
       const existing = await this.latestOwnedExecution(
-        principal.id,
+        fresh.id,
         'resource-audit',
         'version_id',
         versionId,
+        async (row) => {
+          try {
+            return !(await this.checkResources(fresh, row, 'audit-write'));
+          } catch (error) {
+            if (isUnavailableResource(error))
+              throw new AiError('AI_FORBIDDEN', '执行引用的业务资源不可访问');
+            throw error;
+          }
+        },
       );
-      if (!existing)
-        return this.runtime.submit(principal.id, 'resource-audit', { version_id: versionId });
-      try {
-        await this.recheckResources(principal, existing, 'audit-write');
-      } catch (error) {
-        if (error instanceof HubError)
-          throw new AiError('AI_FORBIDDEN', '执行引用的业务资源不可访问');
-        throw error;
-      }
-      return existing;
+      return existing ?? this.runtime.submit(fresh.id, 'resource-audit', { version_id: versionId });
     });
   }
 
@@ -298,6 +358,7 @@ export class HubAiServices {
     operation: 'publication-review' | 'resource-audit',
     key: 'publication_request_id' | 'version_id',
     id: string,
+    canReuse?: (row: ExecutionRecord) => Promise<boolean>,
   ) {
     let after: { position: number; id: string } | undefined;
     for (;;) {
@@ -308,10 +369,17 @@ export class HubAiServices {
         after,
         limit: 100,
       });
-      const existing = rows.find(({ payload: { input } }) => {
-        return input && typeof input === 'object' && !Array.isArray(input) && input[key] === id;
-      });
-      if (existing) return existing;
+      for (const row of rows) {
+        const input = row.payload.input;
+        if (
+          input &&
+          typeof input === 'object' &&
+          !Array.isArray(input) &&
+          input[key] === id &&
+          (!canReuse || (await canReuse(row)))
+        )
+          return row;
+      }
       if (rows.length < 100) return;
       const last = rows[rows.length - 1];
       after = { position: last.position, id: last.id };

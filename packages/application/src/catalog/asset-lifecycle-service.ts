@@ -252,7 +252,7 @@ export class AssetLifecycleService {
       });
       await this.publications.invalidatePending(a.id, 'ASSET_LIFECYCLE_CHANGED');
       await this.context.store.audit(p.id, 'asset.' + b.lifecycle, a.id, b.reason);
-      return next;
+      return { id: next.id, lifecycle: next.lifecycle, revision: next.revision };
     });
   }
   /**
@@ -303,7 +303,12 @@ export class AssetLifecycleService {
       matchRevision(a, etag);
       const old = (await this.context.store.get('sources', a.source_id))!,
         destination = await this.context.store.get('sources', b.destination_source_id);
-      if (!destination || destination.kind !== 'git' || destination.state === 'blocked')
+      if (
+        !destination ||
+        destination.kind !== 'git' ||
+        destination.state === 'blocked' ||
+        destination.distribution_revoked_at
+      )
         fail(422, 'DESTINATION_SOURCE', '迁移目标来源不可用');
       if (destination.id === old.id) fail(422, 'SAME_SOURCE', '路径调整请编辑当前来源');
       if (destination.revision !== b.destination_source_revision)
@@ -370,11 +375,14 @@ export class AssetLifecycleService {
       await this.context.store.put('sources', {
         ...old,
         revision: old.revision + 1,
-        ...(!(await this.context.store.where('bindings', 'source_id', old.id)).some(
-          (t) => !t.retired_at && t.enabled,
-        )
-          ? { state: 'paused' }
-          : {}),
+        state:
+          old.state !== 'blocked' &&
+          !old.distribution_revoked_at &&
+          !(await this.context.store.where('bindings', 'source_id', old.id)).some(
+            (t) => !t.retired_at && t.enabled,
+          )
+            ? 'paused'
+            : old.state,
       });
       for (const asset of (await this.context.store.all('assets')).filter((x) =>
         [old.id, destination.id].includes(x.source_id),

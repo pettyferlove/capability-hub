@@ -8,8 +8,9 @@ import { z } from 'zod';
 import { fixture } from '../support/ai-provider.js';
 import { frameworkFixture, frameworkConfig } from '../support/ai-framework.js';
 
-for (const readOnly of [true, false])
-  test(`AI MCP 真实传输与只读工具门禁：readOnly=${readOnly}`, { timeout: 20000 }, async (t) => {
+for (const mode of ['read-only', 'writable', 'missing'] as const)
+  test(`AI MCP 真实传输与只读工具门禁：${mode}`, { timeout: 20000 }, async (t) => {
+    const readOnly = mode !== 'writable';
     let calls = 0;
     const handler = createMcpHandler(
       () => {
@@ -46,7 +47,7 @@ for (const readOnly of [true, false])
         id: 'fixture',
         url: `http://127.0.0.1:${address.port}/mcp`,
         allow_http: true,
-        read_only_tools: ['inspect_text'],
+        read_only_tools: mode === 'missing' ? ['constructor'] : ['inspect_text'],
       },
     ];
     const hub = await frameworkFixture(t, config, async (context) => {
@@ -54,8 +55,8 @@ for (const readOnly of [true, false])
         context.withMcp('fixture', (tools) =>
           context.agent({ id: 'mcp', instructions: 'Use tools.', prompt: 'Count hello', tools }),
         );
-      if (!readOnly) {
-        await assert.rejects(invoke, /只读/);
+      if (mode !== 'read-only') {
+        await assert.rejects(invoke, mode === 'missing' ? /不存在/ : /只读/);
         return null;
       }
       const result = await invoke();
@@ -67,12 +68,12 @@ for (const readOnly of [true, false])
     await hub.run();
     const result = await hub.runtime.get(execution.id);
     assert.equal(result.status, 'succeeded', JSON.stringify(result.payload.error));
-    assert.equal(calls, readOnly ? 1 : 0);
-    assert.equal(provider.requests.length, readOnly ? 2 : 0);
+    assert.equal(calls, mode === 'read-only' ? 1 : 0);
+    assert.equal(provider.requests.length, mode === 'read-only' ? 2 : 0);
     const artifacts = await hub.runtime.store.list('ai_artifacts', {
       execution_id: execution.id,
       limit: 100,
     });
-    if (readOnly)
+    if (mode === 'read-only')
       assert(artifacts.some((artifact) => artifact.payload.name === 'mcp:fixture:inspect_text'));
   });

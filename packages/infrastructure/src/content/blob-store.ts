@@ -72,7 +72,7 @@ export class BlobStore implements BlobStorage {
     }
   }
   async health(): Promise<void> {
-    await this.read(await this.put(Buffer.from('capability-hub-readiness')));
+    await this.put(Buffer.from('capability-hub-readiness'));
   }
   async *list() {
     for (const hash of await readdir(this.root)) {

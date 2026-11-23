@@ -33,13 +33,15 @@ function jobSnapshot(jobs: JobRecord[]) {
       error_code: job.last_error_code ?? null,
       created_at: job.created_at,
     }));
+  let retrying = 0;
+  for (const { state, attempt } of jobs)
+    if ((state === 'queued' && attempt > 0) || (state === 'running' && attempt > 1)) retrying++;
   return {
     by_state: counts(jobs),
     oldest_wait_seconds: oldest
       ? Math.max(0, Math.floor((Date.now() - Date.parse(oldest)) / 1000))
       : 0,
-    retrying: jobs.filter((job) => ['queued', 'running'].includes(job.state) && job.attempt > 0)
-      .length,
+    retrying,
     expired_leases: jobs.filter((job) => job.state === 'running' && job.lease_until < Date.now())
       .length,
     recent_failures: latest,

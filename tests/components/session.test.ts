@@ -115,6 +115,38 @@ test('会话失效会取消正在读取的身份，迟到响应不能恢复登�
   assert.equal(new Headers(calls[2].headers).get('X-CSRF-Token'), '');
 });
 
+test('旧账号的受保护请求迟到 401 不清除新账号，新会话的 401 仍使其失效', async (context) => {
+  const late = deferred<Response>();
+  let account = 'first';
+  let csrf = '';
+  const unauthorized = () => Response.json({ error: { message: '需要登录' } }, { status: 401 });
+  context.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
+    if (path === '/api/auth/status') return Response.json({ initialized: true });
+    if (path === '/api/me') return Response.json({ id: account, csrf_token: `${account}-csrf` });
+    if (path === '/api/old') return late.promise;
+    if (path === '/api/protected') return unauthorized();
+    csrf = new Headers(init.headers).get('X-CSRF-Token') ?? '';
+    return new Response(null, { status: 204 });
+  });
+  const hook = renderHook(() => useSession(0));
+  await waitFor(() => assert.equal(hook.result.current.me?.id, 'first'));
+  const old = api('/api/old');
+  await act(async () => {
+    await hook.result.current.logout();
+    account = 'second';
+    await hook.result.current.load();
+    late.resolve(unauthorized());
+    await assert.rejects(old, { status: 401 });
+  });
+  assert.equal(hook.result.current.me?.id, 'second');
+  await api('/api/write', { method: 'POST' });
+  assert.equal(csrf, 'second-csrf');
+  await act(async () => {
+    await assert.rejects(api('/api/protected'), { status: 401 });
+  });
+  assert.equal(hook.result.current.me, null);
+});
+
 test('API 写入保留调用方的幂等键、设置修订与 CSRF，表单文件让浏览器生成边界', async (context) => {
   const calls: RequestInit[] = [];
   context.mock.method(globalThis, 'fetch', (_path: string, options: RequestInit) => {

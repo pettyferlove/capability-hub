@@ -2,7 +2,7 @@
  * 资源发现页（`/`）：首屏按任务提问，提交后原地给出回应、方向或固定版本结果；
  * 下方资源目录继续提供与检索模型无关的类型、分类、场景筛选和游标分页。
  * 依赖 `GET /api/catalog/discovery`（入口模式与开场提示）、`POST /api/catalog/discovery/turn`
- * 与目录自己的 `GET /api/assets`、`GET /api/scenarios`、`GET /api/assets/keywords`。
+ * 与目录自己的 `GET /api/assets`、`GET /api/scenarios`、`GET /api/catalog/keywords`。
  */
 import type { AssetResponse, KeywordSuggestionsResponse } from '@capability-hub/contracts/http';
 import type { ScenarioResponse } from '@capability-hub/contracts/http';
@@ -188,7 +188,7 @@ export default function DiscoverPage() {
   const tickerAssets = useMemo(() => data?.items.slice(0, 12) ?? [], [data]);
   const { data: topics } = useQuery<KeywordSuggestionsResponse>(
     discovery.entry && !discovery.entry.suggestions.length && data && !empty
-      ? '/api/assets/keywords?limit=6'
+      ? '/api/catalog/keywords?limit=6'
       : null,
     refresh,
   );

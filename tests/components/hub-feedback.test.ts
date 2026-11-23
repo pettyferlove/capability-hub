@@ -2,9 +2,10 @@ import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test, type TestContext } from 'node:test';
 import { createElement, useEffect, useState } from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { userEvent, type UserEvent } from '@testing-library/user-event';
 import type { HubFeedbackCreateRequest } from '@capability-hub/contracts';
+import App from '../../apps/web/src/app/App.js';
 import HubFeedbackAssistant from '../../apps/web/src/features/feedback/HubFeedbackAssistant.js';
 import { HubFeedbackFiles } from '../../apps/web/src/features/feedback/HubFeedbackFiles.js';
 import { HubFeedbackHints } from '../../apps/web/src/features/feedback/HubFeedbackHints.js';
@@ -137,6 +138,63 @@ test('失败后提交未改动的反馈，复用相同的幂等键', async (cont
   assert.equal(requests[0].metadata.title, '目录没有加载');
   assert.equal(requests[0].metadata.description, '打开目录后未显示资源。');
   assert.deepEqual(requests[1].metadata, requests[0].metadata);
+});
+
+test('认领待处理反馈后，运营导航角标同步反映新状态', async (context) => {
+  const previous = location.href;
+  context.after(() => history.replaceState(null, '', previous));
+  history.replaceState(null, '', '/operations?tab=feedback');
+  const me = { ...hub.me!, capabilities: { ...hub.me!.capabilities, can_manage_feedback: true } };
+  const detail = {
+    id: 'feedback-one',
+    number: 1,
+    title: '安装指引需要说明',
+    kind: 'suggestion',
+    surface: 'web',
+    channel: 'web',
+    description: '希望补充说明。',
+    status: 'pending',
+    revision: 1,
+    created_at: '2026-11-20T00:00:00Z',
+    last_activity_at: '2026-11-20T00:00:00Z',
+    events: [],
+    attachments: [],
+  };
+  context.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
+    switch (new URL(path, location.href).pathname) {
+      case '/api/auth/status':
+        return Response.json({ initialized: true });
+      case '/api/me':
+        return Response.json(me);
+      case '/api/publication-requests':
+        return Response.json({ items: [] });
+      case '/api/hub-feedback/summary':
+        return Response.json({ unread: 0, open: 0 });
+      case '/api/admin/hub-feedback/summary':
+        return Response.json({ pending: detail.status === 'pending' ? 1 : 0 });
+      case '/api/admin/hub-feedback':
+        return Response.json({ items: [detail], total: 1, page: 1, limit: 20 });
+      case '/api/admin/hub-feedback/feedback-one':
+        if (init.method === 'PATCH') {
+          assert.deepEqual(JSON.parse(String(init.body)), { assignee_id: me.id });
+          Object.assign(detail, { assignee_id: me.id, status: 'in_progress', revision: 2 });
+        }
+        return Response.json(detail);
+      default:
+        throw new Error('意外请求 ' + path);
+    }
+  });
+  render(createElement(App));
+  const user = userEvent.setup();
+  const nav = within(await screen.findByRole('navigation', { name: '运营中心导航' }));
+  assert(await nav.findByRole('link', { name: /平台反馈\s*1/ }));
+  await user.click(await screen.findByRole('link', { name: detail.title }));
+  const dialog = within(await screen.findByRole('dialog', { name: '反馈详情' }));
+  await user.click(await dialog.findByText('处理反馈'));
+  await user.click(dialog.getByRole('button', { name: '认领给我' }));
+  assert(await dialog.findByText('处理中'));
+  await user.click(dialog.getByRole('button', { name: '关闭' }));
+  assert(await nav.findByRole('link', { name: '平台反馈' }));
 });
 
 test('收起后通过草稿胶囊恢复填写的反馈', async () => {

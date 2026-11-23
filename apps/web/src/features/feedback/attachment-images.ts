@@ -2,8 +2,10 @@ import { hubFeedbackLimits } from '@capability-hub/contracts';
 
 /** 描边保留原图，遮挡则覆盖选区的像素。 */
 export type AnnotationTool = 'outline' | 'mask';
+
 /** 以图片左上角为原点，每个轴独立归一化到 0–1。 */
 export type ImagePoint = { x: number; y: number };
+
 /** 保留拖动的起止点，允许从任意方向划选。 */
 export type ImageAnnotation = { tool: AnnotationTool; start: ImagePoint; end: ImagePoint };
 

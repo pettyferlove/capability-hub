@@ -8,14 +8,19 @@ import type {
   HubFeedbackRecord,
   HubFeedbackStatus,
 } from '@capability-hub/domain/models';
-import type { HubFeedbackRecordQuery, HubFeedbackSecretScanner } from '../ports/index.js';
+import type {
+  HubFeedbackEventPage,
+  HubFeedbackRecordQuery,
+  HubFeedbackSecretScanner,
+} from '../ports/index.js';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { IdempotencyService } from '../shared/idempotency-service.js';
 import { matchRevision } from '../shared/revision.js';
 import {
+  checkHubFeedbackUploads,
+  persistHubFeedbackUploads,
   scanHubFeedbackText,
-  storeHubFeedbackUploads,
-  type HubFeedbackStoredUpload,
+  type HubFeedbackCheckedUpload,
 } from './attachments.js';
 import type {
   HubFeedbackAccess,
@@ -26,7 +31,11 @@ import type {
   HubFeedbackUpdateCommand,
   HubFeedbackUpload,
 } from './commands.js';
-import { presentHubFeedbackDetail, presentHubFeedbackItem } from './queries.js';
+import {
+  presentHubFeedbackDetail,
+  presentHubFeedbackItem,
+  presentHubFeedbackReceipt,
+} from './queries.js';
 
 const transitions: Readonly<Record<HubFeedbackStatus, readonly HubFeedbackStatus[]>> = {
   pending: ['in_progress', 'needs_info', 'resolved', 'declined'],
@@ -111,15 +120,19 @@ export class HubFeedbackService {
       : await this.context.store.summarizeHubFeedbackForHandler(current.id);
   }
 
-  async detail(principal: Principal, access: HubFeedbackAccess, ref: string | number) {
+  async detail(
+    principal: Principal,
+    access: HubFeedbackAccess,
+    ref: string | number,
+    view?: 'receipt' | HubFeedbackEventPage,
+  ) {
     const { store } = this.context;
     return await store.tx(async () => {
       const current = await this.current(principal, access);
-      return await presentHubFeedbackDetail(
-        store,
-        await this.visible(ref, current, access),
-        access,
-      );
+      const row = await this.visible(ref, current, access);
+      return view === 'receipt'
+        ? await presentHubFeedbackReceipt(store, row, access)
+        : await presentHubFeedbackDetail(store, row, access, view);
     });
   }
 
@@ -129,27 +142,22 @@ export class HubFeedbackService {
     uploads: readonly HubFeedbackUpload[],
     submission: HubFeedbackSubmission,
     key: string | undefined,
+    receipt = false,
   ) {
-    const { blobs, store } = this.context;
+    const { store, blobs } = this.context;
     for (const field of ['title', 'description', 'steps', 'expected'] as const)
       scanHubFeedbackText(this.scan, input[field], { field });
     scanHubFeedbackText(this.scan, JSON.stringify(input.diagnostics), { field: 'diagnostics' });
-    const files = await storeHubFeedbackUploads(blobs, this.scan, uploads);
-    return await store.tx(async () => {
-      const actor = await this.current(principal, 'submitter');
-      const id = await this.idempotency.execute(
-        actor,
-        'hub_feedback.create',
-        key,
-        digest(canonical({ metadata: createHashMetadata(input), files })),
-        async () => {
-          const now = Date.now();
-          if (
-            (await store.countRecentHubFeedback(
-              actor.id,
-              new Date(now - 3_600_000).toISOString(),
-            )) >= 10
-          )
+    const files = checkHubFeedbackUploads(this.scan, uploads);
+    return await this.command(
+      'hub_feedback.create',
+      key,
+      digest(canonical({ metadata: createHashMetadata(input), files })),
+      {
+        authorize: async () => ({ actor: await this.current(principal, 'submitter') }),
+        admit: async ({ actor }) => {
+          const since = new Date(Date.now() - 3_600_000).toISOString();
+          if ((await store.countRecentHubFeedback(actor.id, since)) >= 10)
             throw new HubError(
               429,
               'HUB_FEEDBACK_RATE_LIMIT',
@@ -157,7 +165,10 @@ export class HubFeedbackService {
               {},
               true,
             );
-          const at = new Date(now).toISOString();
+        },
+        upload: uploads.length ? () => persistHubFeedbackUploads(blobs, uploads, files) : undefined,
+        write: async ({ actor }) => {
+          const at = new Date().toISOString();
           const row = await store.insert('hub_feedback', {
             ...input,
             id: randomUUID(),
@@ -185,13 +196,14 @@ export class HubFeedbackService {
           });
           return row.id;
         },
-      );
-      return await presentHubFeedbackDetail(
-        store,
-        await this.visible(id, actor, 'submitter'),
-        'submitter',
-      );
-    });
+        view: async (id: string, { actor }) => {
+          const row = await this.visible(id, actor, 'submitter');
+          return receipt
+            ? await presentHubFeedbackReceipt(store, row, 'submitter', [null])
+            : await presentHubFeedbackDetail(store, row, 'submitter');
+        },
+      },
+    );
   }
 
   async comment(
@@ -205,9 +217,8 @@ export class HubFeedbackService {
   ) {
     const { store, blobs } = this.context;
     if (access === 'submitter') visibility = 'public';
-    if (uploads.length) await this.visible(id, await this.current(principal, access), access);
     scanHubFeedbackText(this.scan, body, { field: 'body' });
-    const files = await storeHubFeedbackUploads(blobs, this.scan, uploads);
+    const files = checkHubFeedbackUploads(this.scan, uploads);
     return await this.mutate(
       principal,
       access,
@@ -216,25 +227,6 @@ export class HubFeedbackService {
       { body, visibility, files },
       mutation,
       async (row, actor) => {
-        const since = new Date(Date.now() - 3_600_000).toISOString();
-        if ((await store.countRecentHubFeedbackComments(actor.id, since)) >= 60)
-          throw new HubError(
-            429,
-            'HUB_FEEDBACK_RATE_LIMIT',
-            '每小时最多发表 60 条留言，请稍后再试',
-            {},
-            true,
-          );
-        const { count, size } = await store.summarizeHubFeedbackAttachments(id);
-        if (
-          count + files.length > 20 ||
-          size + files.reduce((sum, file) => sum + file.size, 0) > 40 * 1024 * 1024
-        )
-          fail(
-            413,
-            'HUB_FEEDBACK_ATTACHMENT_LIMIT',
-            '每条反馈的附件最多 20 个，合计不得超过 40 MiB',
-          );
         const at = nextActivity(row);
         const eventId = randomUUID();
         const attachmentIds = await this.attachments(id, actor.id, at, eventId, files);
@@ -263,6 +255,31 @@ export class HubFeedbackService {
             access === 'handler' && visibility === 'public' ? at : row.last_handler_public_at,
           revision: row.revision + 1,
         });
+        return eventId;
+      },
+      {
+        upload: uploads.length ? () => persistHubFeedbackUploads(blobs, uploads, files) : undefined,
+        admit: async (actor) => {
+          const since = new Date(Date.now() - 3_600_000).toISOString();
+          if ((await store.countRecentHubFeedbackComments(actor.id, since)) >= 60)
+            throw new HubError(
+              429,
+              'HUB_FEEDBACK_RATE_LIMIT',
+              '每小时最多发表 60 条留言，请稍后再试',
+              {},
+              true,
+            );
+          const { count, size } = await store.summarizeHubFeedbackAttachments(id);
+          if (
+            count + files.length > 20 ||
+            size + files.reduce((sum, file) => sum + file.size, 0) > 40 * 1024 * 1024
+          )
+            fail(
+              413,
+              'HUB_FEEDBACK_ATTACHMENT_LIMIT',
+              '每条反馈的附件最多 20 个，合计不得超过 40 MiB',
+            );
+        },
       },
     );
   }
@@ -506,6 +523,40 @@ export class HubFeedbackService {
     return { name: file.name, mediaType: file.media_type, bytes: await blobs.read(file.sha256) };
   }
 
+  /** 附件存储不占用数据库事务；上传期间准入条件或幂等记录可能已改变。 */
+  private async command<State extends { actor: Principal }, Result, View>(
+    route: string,
+    key: string | undefined,
+    hash: string,
+    action: {
+      authorize: () => Promise<State>;
+      admit: (state: State) => Promise<void>;
+      upload?: () => Promise<void>;
+      write: (state: State) => Promise<Result>;
+      view: (result: Result, state: State) => Promise<View>;
+    },
+  ) {
+    const { store } = this.context;
+    if (action.upload) {
+      const replay = await store.tx(async () => {
+        const state = await action.authorize();
+        const existing = await this.idempotency.lookup<Result>(state.actor, route, key, hash);
+        if (existing.hit) return { view: await action.view(existing.response, state) };
+        await action.admit(state);
+      });
+      if (replay) return replay.view;
+      await action.upload();
+    }
+    return await store.tx(async () => {
+      const state = await action.authorize();
+      const result = await this.idempotency.execute(state.actor, route, key, hash, async () => {
+        await action.admit(state);
+        return await action.write(state);
+      });
+      return await action.view(result, state);
+    });
+  }
+
   private async mutate(
     principal: Principal,
     access: HubFeedbackAccess,
@@ -513,25 +564,30 @@ export class HubFeedbackService {
     route: string,
     metadata: unknown,
     mutation: HubFeedbackMutation,
-    write: (row: HubFeedbackRecord, actor: Principal) => Promise<void>,
+    write: (row: HubFeedbackRecord, actor: Principal) => Promise<string | void>,
+    attachments?: { admit: (actor: Principal) => Promise<void>; upload?: () => Promise<void> },
   ) {
     const { store } = this.context;
-    return await store.tx(async () => {
-      const actor = await this.current(principal, access);
-      const row = await this.visible(id, actor, access);
-      if (!mutation.etag) matchRevision(row, mutation.etag);
-      await this.idempotency.execute(
-        actor,
-        route,
-        mutation.key,
-        digest(canonical({ id, access, metadata })),
-        async () => {
-          matchRevision(row, mutation.etag);
-          await write(row, actor);
-          return null;
-        },
-      );
-      return await presentHubFeedbackDetail(store, await this.visible(id, actor, access), access);
+    const hash = digest(canonical({ id, access, metadata }));
+    return await this.command(route, mutation.key, hash, {
+      authorize: async () => {
+        const actor = await this.current(principal, access);
+        const row = await this.visible(id, actor, access);
+        if (!mutation.etag) matchRevision(row, mutation.etag);
+        return { actor, row };
+      },
+      admit: async ({ actor, row }) => {
+        matchRevision(row, mutation.etag);
+        if (attachments) await attachments.admit(actor);
+      },
+      upload: attachments?.upload,
+      write: async ({ actor, row }) => (await write(row, actor)) ?? null,
+      view: async (eventId: string | null, { actor }) => {
+        const current = await this.visible(id, actor, access);
+        return mutation.receipt
+          ? await presentHubFeedbackReceipt(store, current, access, eventId ? [eventId] : [])
+          : await presentHubFeedbackDetail(store, current, access);
+      },
     });
   }
 
@@ -591,7 +647,7 @@ export class HubFeedbackService {
     actorId: string,
     at: string,
     eventId: string | null,
-    files: readonly HubFeedbackStoredUpload[],
+    files: readonly HubFeedbackCheckedUpload[],
   ) {
     const ids: string[] = [];
     for (const file of files) {

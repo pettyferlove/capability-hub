@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
+import type { BlobStorage } from '@capability-hub/application/ports';
 import type { HubFeedbackAttachmentResponse } from '@capability-hub/contracts/http';
+import { sha256 } from '@capability-hub/domain/canonical';
+import { HubError } from '@capability-hub/domain/errors';
 import { createApp } from '@capability-hub/server';
 import type { Agent, Test } from 'supertest';
 import { createTestHub } from '../support/application.js';
 import { httpClient, signIn } from '../support/http.js';
+import { deferred } from '../support/store.js';
 
 const self = '/api/hub-feedback';
 const queue = '/api/admin/hub-feedback';
@@ -64,6 +68,36 @@ async function expectError(request: Test, status: number, code: string) {
   const response = await request.expect(status);
   assert.equal(response.body.error.code, code);
   return response;
+}
+
+async function duringUpload(
+  context: TestContext,
+  blobs: BlobStorage,
+  request: Test,
+  concurrent: () => Promise<void>,
+) {
+  const entered = deferred();
+  const release = deferred();
+  const put = blobs.put.bind(blobs);
+  context.mock.method(
+    blobs,
+    'put',
+    async (bytes: Buffer) => {
+      entered.resolve();
+      await release.promise;
+      return await put(bytes);
+    },
+    { times: 1 },
+  );
+  const result = request.then((response) => response);
+  try {
+    await Promise.race([entered.promise, result.then(() => assert.fail('请求未等待附件存储'))]);
+    await concurrent();
+  } finally {
+    release.resolve();
+    await result;
+  }
+  return await result;
 }
 
 test('平台反馈自助读取只限本人，内部备注和附件仅处理人员可见', async (context) => {
@@ -126,6 +160,177 @@ test('平台反馈自助读取只限本人，内部备注和附件仅处理人�
     [handlerOwn.body.id],
   );
   await expectError(bearer.get(adminDetail), 403, 'TOKEN_SCOPE');
+});
+
+test('附件存储失败不提交反馈，重试仍可使用原键且不会删除共享附件', async (context) => {
+  const fixture = await createTestHub(context);
+  const submitter = await signIn(fixture, 'reader');
+  const original = await create(submitter, {}, [screenshot]).expect(201);
+  const extra = { name: 'log.txt', kind: 'text', bytes: Buffer.from('New report') };
+  const key = randomUUID();
+  const send = () => create(submitter, {}, [screenshot, extra], key);
+  const put = fixture.blobs.put.bind(fixture.blobs);
+  const fault = context.mock.method(fixture.blobs, 'put', async (bytes: Buffer) => {
+    if (bytes.equals(extra.bytes)) throw new HubError(503, 'BLOB_UNAVAILABLE', '对象暂不可用');
+    return await put(bytes);
+  });
+  await expectError(send(), 503, 'BLOB_UNAVAILABLE');
+  assert.equal((await submitter.get(self).expect(200)).body.total, 1);
+  const url = `${self}/${original.body.id}/attachments/${original.body.attachments[0].id}`;
+  assert.deepEqual((await submitter.get(url).expect(200)).body, png);
+  fault.mock.restore();
+  const accepted = await send().expect(201);
+  assert.equal(accepted.body.attachments.length, 2);
+});
+
+test('上传期间新增无关角色不阻止留言，先前已鉴权的同键请求仍可重放', async (context) => {
+  const fixture = await createTestHub(context);
+  const submitter = await signIn(fixture, 'reader');
+  const created = await create(submitter).expect(201);
+  const id = String(created.body.id);
+  const key = randomUUID();
+  const etag = created.headers.etag;
+  const body = '补充版本信息';
+  const file = { name: 'version.txt', kind: 'text' as const, bytes: Buffer.from('1.0.0') };
+  const post = multipart(revise(submitter.post(`${self}/${id}/comments`), etag, key), { body }, [
+    file,
+  ]);
+  const saved = await duringUpload(context, fixture.blobs, post, async () => {
+    await fixture.hub.administration.createRole(fixture.admin, {
+      name: '运营统计',
+      permissions: ['audit:read'],
+    });
+  });
+  assert.equal(saved.status, 200, saved.text);
+  const [attachment] = saved.body.attachments;
+  assert.equal(saved.body.events[0].body, body);
+  assert.deepEqual(saved.body.events[0].attachment_ids, [attachment.id]);
+
+  const replay = await fixture.hub.hubFeedback.comment(
+    fixture.reader,
+    'submitter',
+    id,
+    body,
+    'public',
+    [file],
+    { key, etag },
+  );
+  assert.equal(replay.revision, saved.body.revision);
+  assert.deepEqual(replay.attachments, saved.body.attachments);
+});
+
+test('留言上传期间修订变化时只保留并发操作，不追加留言或附件', async (context) => {
+  const fixture = await createTestHub(context);
+  const submitter = await signIn(fixture, 'reader');
+  const created = await create(submitter).expect(201);
+  const path = `${self}/${created.body.id}`;
+  const key = randomUUID();
+  const post = multipart(
+    revise(submitter.post(`${path}/comments`), created.headers.etag, key),
+    { body: 'New detail' },
+    [screenshot],
+  );
+  const rejected = await duringUpload(context, fixture.blobs, post, async () => {
+    await revise(submitter.post(`${path}/close`), created.headers.etag)
+      .timeout({ deadline: 5000 })
+      .expect(200);
+  });
+  assert.equal(rejected.status, 412);
+  assert.equal(rejected.body.error.code, 'REVISION_CONFLICT');
+  const current = await submitter.get(path).expect(200);
+  assert.equal(current.body.status, 'resolved');
+  assert.deepEqual(
+    current.body.events.map((e: { kind: string }) => e.kind),
+    ['status'],
+  );
+  assert.deepEqual(current.body.attachments, []);
+  assert(!(await fixture.store.all('idempotency')).some((r) => r.key === key));
+});
+
+test('留言上传期间同键提交先完成时，两次回执指向同一事件附件', async (context) => {
+  const fixture = await createTestHub(context);
+  const submitter = await signIn(fixture, 'reader');
+  const created = await create(submitter).expect(201);
+  const path = `${self}/${created.body.id}`;
+  const key = randomUUID();
+  const send = () =>
+    multipart(
+      revise(submitter.post(`${path}/comments?view=receipt`), created.headers.etag, key),
+      { body: 'One comment' },
+      [screenshot],
+    );
+  let attachmentId: string | undefined;
+  const replay = await duringUpload(context, fixture.blobs, send(), async () => {
+    const winner = await send().timeout({ deadline: 5000 }).expect(200);
+    attachmentId = winner.body.attachments[0].id;
+  });
+  assert.equal(replay.status, 200);
+  assert.equal(replay.body.attachments[0].id, attachmentId);
+  const current = await submitter.get(path).expect(200);
+  assert.equal(current.body.events.length, 1);
+  assert.deepEqual(current.body.events[0].attachment_ids, [attachmentId]);
+  assert.equal(current.body.attachments.length, 1);
+});
+
+test('时间线游标沿用公开事件序号，附件只随所属页或本次写入回执返回', async (context) => {
+  const fixture = await createTestHub(context);
+  const [submitter, handler] = await Promise.all([signIn(fixture, 'reader'), signIn(fixture)]);
+  const created = await create(submitter, {}, [screenshot]).expect(201);
+  const path = `${self}/${created.body.id}`;
+  const internal = await multipart(
+    revise(handler.post(`${queue}/${created.body.id}/comments`), created.headers.etag),
+    { body: 'Internal note', visibility: 'internal' },
+    [{ ...screenshot, name: 'internal.png' }],
+  ).expect(200);
+  const key = randomUUID();
+  const comment = (etag: string, key: string, name: string) =>
+    multipart(
+      revise(submitter.post(`${path}/comments?view=receipt`), etag, key),
+      { body: 'One more detail' },
+      [{ ...screenshot, name }],
+    );
+  const names = (files: HubFeedbackAttachmentResponse[]) => files.map(({ name }) => name).sort();
+  const first = await comment(internal.headers.etag, key, 'first.png').expect(200);
+  assert.deepEqual(names(first.body.attachments), ['first.png']);
+  assert(!('events' in first.body));
+  const replay = await comment(internal.headers.etag, key, 'first.png').expect(200);
+  assert.deepEqual(replay.body, first.body);
+  const resumed = await comment(first.headers.etag, key, 'first.png').expect(200);
+  assert.deepEqual(resumed.body, first.body);
+  const historical = (await fixture.store.all('idempotency')).find((entry) => entry.key === key);
+  assert(historical);
+  await fixture.store.put('idempotency', { ...historical, response: null });
+  const unavailable = context.mock.method(fixture.blobs, 'put', async () => {
+    throw new HubError(503, 'BLOB_UNAVAILABLE', '对象暂不可用');
+  });
+  const legacy = await comment(internal.headers.etag, key, 'first.png').expect(200);
+  assert.equal(legacy.body.id, first.body.id);
+  assert.equal(legacy.body.revision, first.body.revision);
+  assert.deepEqual(legacy.body.attachments, []);
+  unavailable.mock.restore();
+  await expectError(
+    comment(internal.headers.etag, randomUUID(), 'first.png'),
+    412,
+    'REVISION_CONFLICT',
+  );
+  await comment(first.headers.etag, randomUUID(), 'second.png').expect(200);
+  const page = await submitter.get(`${path}?view=timeline&limit=1`).expect(200);
+  assert.deepEqual(
+    page.body.events.map((event: { sequence: number }) => event.sequence),
+    [2],
+  );
+  assert.equal(page.body.next_after, 2);
+  assert.deepEqual(names(page.body.attachments), ['capture.png', 'first.png']);
+  const last = await submitter.get(`${path}?view=timeline&limit=1&after=2`).expect(200);
+  assert.deepEqual(
+    last.body.events.map((event: { sequence: number }) => event.sequence),
+    [3],
+  );
+  assert.equal(last.body.next_after, null);
+  assert.deepEqual(names(last.body.attachments), ['second.png']);
+  for (const view of ['timeline', 'receipt']) {
+    await expectError(handler.get(`${path}?view=${view}`), 404, 'NOT_FOUND');
+  }
 });
 
 test('补充按负责人恢复状态，已关闭反馈的未回复留言不使其重开', async (context) => {
@@ -291,13 +496,38 @@ test('提交幂等按元数据和附件内容判定，重放即使达到每小�
     409,
     'IDEMPOTENCY_CONFLICT',
   );
+  assert.equal(await fixture.blobs.exists(sha256(otherPng)), false);
   const initialReplay = await send().expect(201);
   assert.equal(initialReplay.body.id, created.body.id);
-  for (let index = 1; index < 10; index++) {
+  for (let index = 1; index < 9; index++) {
     await create(submitter, { title: `Feedback ${index}` }).expect(201);
   }
-  const overLimit = await expectError(create(submitter), 429, 'HUB_FEEDBACK_RATE_LIMIT');
-  assert.equal(overLimit.body.error.retryable, true);
+  const lastFile = { name: 'details.txt', kind: 'text', bytes: Buffer.from('Concurrent report') };
+  const pendingKey = randomUUID();
+  const rejected = await duringUpload(
+    context,
+    fixture.blobs,
+    create(submitter, {}, [lastFile], pendingKey),
+    async () => {
+      const before = await submitter.get(self).timeout({ deadline: 5000 }).expect(200);
+      assert.equal(before.body.total, 9);
+      await create(submitter, { title: 'Last allowed report' })
+        .timeout({ deadline: 5000 })
+        .expect(201);
+    },
+  );
+  assert.equal(rejected.status, 429);
+  assert.equal(rejected.body.error.code, 'HUB_FEEDBACK_RATE_LIMIT');
+  assert.equal(rejected.body.error.retryable, true);
+  const referenced = await fixture.store.all('hub_feedback_attachments');
+  const rejectedHash = sha256(lastFile.bytes);
+  assert(!referenced.some((file) => file.sha256 === rejectedHash));
+  assert(!(await fixture.store.all('idempotency')).some((r) => r.key === pendingKey));
+  const audits = await fixture.store.all('audit');
+  assert.equal(audits.filter((entry) => entry.action === 'hub_feedback.submitted').length, 10);
+  const overQuota = { ...lastFile, bytes: Buffer.from('Already over quota') };
+  await expectError(create(submitter, {}, [overQuota]), 429, 'HUB_FEEDBACK_RATE_LIMIT');
+  assert.equal(await fixture.blobs.exists(sha256(overQuota.bytes)), false);
   const replay = await send().expect(201);
   assert.equal(replay.body.id, created.body.id);
   assert.equal(replay.body.number, created.body.number);
@@ -455,7 +685,11 @@ test('附件累计超过二十个时拒绝留言，移除后可重新上传', as
     const appended = await post(etag, files).expect(200);
     etag = appended.headers.etag;
   }
-  await expectError(post(etag, [screenshot]), 413, 'HUB_FEEDBACK_ATTACHMENT_LIMIT');
+  const rejected = { name: 'extra.txt', kind: 'text', bytes: Buffer.from('Extra attachment') };
+  await expectError(post(first.headers.etag, [rejected]), 412, 'REVISION_CONFLICT');
+  assert.equal(await fixture.blobs.exists(sha256(rejected.bytes)), false);
+  await expectError(post(etag, [rejected]), 413, 'HUB_FEEDBACK_ATTACHMENT_LIMIT');
+  assert.equal(await fixture.blobs.exists(sha256(rejected.bytes)), false);
   const remove = submitter.delete(`${detail}/attachments/${first.body.attachments[0].id}`);
   const removed = await revise(remove, etag).expect(200);
   const appended = await post(removed.headers.etag, [screenshot]).expect(200);
@@ -498,7 +732,7 @@ test('隐去正文后，先前提交与留言的幂等重放不恢复已隐去�
   }
 });
 
-test('平台反馈权限只接受平台绑定，撤权对已登录会话的下一次请求生效', async (context) => {
+test('平台反馈权限只接受平台绑定，上传中撤权时不得追加内部留言', async (context) => {
   const fixture = await createTestHub(context);
   const { hub, admin } = fixture;
   const role = await hub.administration.createRole(admin, {
@@ -519,7 +753,25 @@ test('平台反馈权限只接受平台绑定，撤权对已登录会话的下�
   await handler.get(queue).expect(200);
   const during = await handler.get('/api/me').expect(200);
   assert.equal(during.body.capabilities.can_manage_feedback, true);
-  await hub.administration.removeGrant(admin, 'role_bindings', platform.id);
+  const owner = await signIn(fixture);
+  const created = await create(owner).expect(201);
+  const path = `${queue}/${created.body.id}`;
+  const post = multipart(
+    revise(handler.post(`${path}/comments`), created.headers.etag),
+    { body: 'Internal note', visibility: 'internal' },
+    [screenshot],
+  );
+  const rejected = await duringUpload(context, fixture.blobs, post, async () => {
+    await owner
+      .delete(`/api/admin/bindings/${platform.id}`)
+      .timeout({ deadline: 5000 })
+      .expect(200);
+  });
+  assert.equal(rejected.status, 403);
+  assert.equal(rejected.body.error.code, 'FORBIDDEN');
+  const current = await owner.get(path).expect(200);
+  assert.deepEqual(current.body.events, []);
+  assert.deepEqual(current.body.attachments, []);
   await expectError(handler.get(queue), 403, 'FORBIDDEN');
   const after = await handler.get('/api/me').expect(200);
   assert.equal(after.body.capabilities.can_manage_feedback, false);

@@ -2,7 +2,7 @@ import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { test, afterEach } from 'node:test';
 import { createElement } from 'react';
-import { render, screen, cleanup, within, fireEvent } from '@testing-library/react';
+import { act, render, screen, cleanup, within, fireEvent } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { cliInstallationGuide } from '@capability-hub/contracts';
 import { ConnectionAuthorization } from '../../apps/web/src/features/connect/ConnectionAuthorization.js';
@@ -98,6 +98,25 @@ test('授权页默认只允许读取，贡献权限需用户选择，失败后�
   await screen.findByText('取消失败');
 });
 
+test('离开授权页后才返回的批准回执不再跳回客户端', async (context) => {
+  const original = location.href;
+  context.after(() => history.replaceState(null, '', original));
+  history.replaceState(null, '', '/connect?authorization=request');
+  const decision = deferred<Response>();
+  context.mock.method(globalThis, 'fetch', async (_path: string, init: RequestInit) =>
+    init.method === 'POST' ? decision.promise : authorizationResponse(),
+  );
+  const view = renderAuthorization();
+  await userEvent.setup().click(await screen.findByRole('button', { name: '允许连接' }));
+  assert(screen.getByRole('button', { busy: true }));
+  view.unmount();
+  history.pushState(null, '', '/account');
+  await act(async () => {
+    decision.resolve(Response.json({ redirect_uri: '#approved' }));
+  });
+  assert.equal(location.pathname + location.hash, '/account');
+});
+
 test('连接列表按客户端区分读取和贡献权限，断开操作只针对所选的有效连接', async (context) => {
   const disconnected: string[] = [];
   const read = {
@@ -176,7 +195,8 @@ test('需要贡献权限时会显示可用桥接命令并保留客户端管理�
   assert((methods.getByRole('button', { pressed: false }) as HTMLButtonElement).disabled);
   await user.click(screen.getByRole('button', { name: '复制 Hub 接入指令' }));
   const prompt = await navigator.clipboard.readText();
-  assert(prompt.includes('--scope user --contribute --config-file ""'));
+  assert.match(prompt, /--scope user --contribute$/m);
+  assert(!prompt.includes('--config-file ""'));
   assert(prompt.includes('MCP: Open User Configuration'));
 });
 
@@ -363,4 +383,38 @@ test('登录后的接入页恢复客户端、范围、贡献权限与手动入�
   const summary = screen.getByText('高级手动接入 · 访问令牌');
   assert.equal(summary.closest('details')?.open, true);
   assert(container.textContent?.includes('~/.cursor/mcp.json'));
+});
+
+test('切换 Agent 不丢失在途令牌回执，隐藏后使用新客户端的草稿', async (context) => {
+  const original = location.href;
+  context.after(() => history.replaceState(null, '', original));
+  history.replaceState(null, '', '/connect?client=codex&method=token');
+  const issued = deferred<Response>();
+  const requests: unknown[] = [];
+  context.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
+    if (path === '/api/tokens' && init.method === 'POST') {
+      requests.push(JSON.parse(String(init.body)));
+      return issued.promise;
+    }
+    if (path === '/api/cli-installation')
+      return Response.json(cliInstallationGuide('https://hub.example'));
+    if (path === '/api/hub-share')
+      return Response.json({ installation_url: 'https://hub.example/INSTALL.md', prompt: 'test' });
+    return Response.json([]);
+  });
+  render(createElement(HubCtx.Provider, { value: state }, createElement(ConnectPage)));
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('button', { name: '生成令牌' }));
+  await user.click(screen.getByRole('button', { name: /Agent 客户端/ }));
+  await user.click(screen.getByRole('option', { name: 'OpenCode' }));
+  assert.deepEqual(requests, [{ name: 'codex 手动接入', scope: 'hub:read' }]);
+  await act(async () => issued.resolve(Response.json({ token: 'test-only-receipt' })));
+  assert(screen.getByText('test-only-receipt'));
+  assert(screen.getByText(/令牌「codex 手动接入」已创建/));
+  await user.click(screen.getByRole('button', { name: '我已安全保存，隐藏令牌' }));
+  assert.equal(screen.queryByText('test-only-receipt'), null);
+  assert.equal(
+    screen.getByRole<HTMLInputElement>('textbox', { name: '令牌名称' }).value,
+    'opencode 手动接入',
+  );
 });

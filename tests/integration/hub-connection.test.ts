@@ -10,6 +10,7 @@ import {
   cliInstallationResponseSchema,
   hubClientSkillBundleResponseSchema,
 } from '@capability-hub/contracts';
+import { IntakeProcessor } from '@capability-hub/application';
 import { canonical, digest } from '@capability-hub/domain/canonical';
 import { inspect, unzip } from '@capability-hub/infrastructure/content';
 import { install } from '../../apps/cli/src/install.js';
@@ -267,7 +268,32 @@ test('官方安装链接只指向当前公开且完整包匹配的目录版本',
     randomUUID(),
   );
   await checkLinks();
+  // 历史打包器可为相同文件写入不同的 ZIP 元数据，版本仍须按它自己的归档摘要交付。
+  const previousPackager = new IntakeProcessor(
+    fixture.hub,
+    fixture.hub.assetAccess,
+    fixture.hub.jobs,
+    async ({ bytes, kind, slug }) => {
+      assert(bytes);
+      const comment = Buffer.from('previous packager');
+      const zip = Buffer.concat([bytes, comment]);
+      zip.writeUInt16LE(comment.length, bytes.length - 2);
+      return { inspected: inspect(kind, await unzip(zip), slug), zip };
+    },
+  );
+  const packager = context.mock.method(
+    fixture.hub.intakeProcessor,
+    'process',
+    previousPackager.process.bind(previousPackager),
+  );
   const published = await publishSkill(fixture, { ...next, files, version: '6.0.0' });
+  packager.mock.restore();
+  const bundled = hubClientSkillBundleResponseSchema.parse(
+    (await http.get(`/connect/skills/${name}/manifest`).expect(200)).body,
+  );
+  const fixed = await fixture.hub.content.getManifest(null, published.intake.version_id);
+  assert.deepEqual(fixed.manifest, bundled.manifest);
+  assert.notEqual(fixed.artifact_digest, bundled.artifact_digest);
   await checkLinks({ label: '6.0.0', id: published.intake.version_id });
   const asset = await fixture.hub.assetAccess.getAsset(next.assetId);
   await fixture.hub.lifecycle.updateState(

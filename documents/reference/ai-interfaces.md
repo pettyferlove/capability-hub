@@ -23,7 +23,7 @@
 
 ## 业务任务
 
-`resource-audit` 输入 `{version_id}`，`feedback-triage` 输入 `{version_id, feedback_id}`，`publication-review` 输入 `{publication_request_id}`。审计和简报可在请求外层传 `reuse_existing: true`（不指定模型），分别按本人和版本、本人和申请原子复用最近任务，不论状态；无任务才入队，返回 200、执行 DTO 和 ETag。
+`resource-audit` 输入 `{version_id}`，`feedback-triage` 输入 `{version_id, feedback_id}`，`publication-review` 输入 `{publication_request_id}`。审计和简报可传 `reuse_existing: true`（不指定模型），分别按本人和版本、本人和申请原子复用最近可交付的任务，不限状态。旧审计的比较依据已撤销或无法核实时跳过；无可复用任务且当前仍有发起权才入队。返回 200、执行 DTO 和 ETag。
 
 业务历史只分页本人任务；空页仍可有 `next_cursor`。反馈首页额外返回可读的 `automatic_triage`（含 `owner_display_name`）。权限见 [业务 Agent](../design/business-agents.md)。
 

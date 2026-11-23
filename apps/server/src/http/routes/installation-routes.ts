@@ -62,7 +62,7 @@ export function registerInstallationRoutes(app: Express, { hub }: HttpContext): 
           String(req.params.slug),
           String(req.params.version),
         );
-        const archive = await hub.content.getArchive(null, version.id);
+        const archive = await hub.content.getArchive(null, version.id, req.method === 'HEAD');
         res.set({
           'Content-Type': 'application/zip',
           'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(`${archive.slug}-${version.version_label}.zip`)}`,

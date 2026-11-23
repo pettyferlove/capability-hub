@@ -40,13 +40,15 @@ export class IdentityService {
       const user = await this.store.get('users', id);
       if (!user || !user.active) fail(401, 'UNAUTHENTICATED', '账号不可用');
       const groups = await filterAsync(
-        (await this.store.all('memberships'))
-          .filter((r) => r.user_id === id)
-          .map((r) => r.group_id),
+        (await this.store.where('memberships', 'user_id', id)).map((r) => r.group_id),
         async (g) => (await this.store.get('groups', g))?.active,
       );
       const bindings = (await this.store.all('role_bindings'))
-        .filter((r) => r.principal_id === id || groups.includes(r.principal_id))
+        .filter(
+          (r) =>
+            (r.principal_id === id || groups.includes(r.principal_id)) &&
+            (r.id !== user.ldap_maintainer_binding_id || groups.includes(r.scope_id)),
+        )
         .map((r) => ({ role_id: r.role_id, scope_type: r.scope_type, scope_id: r.scope_id }));
       return {
         id,
@@ -71,20 +73,26 @@ export class IdentityService {
           .filter((role) => role.permissions.includes(permission))
           .map((role) => role.id),
       );
-      const grantees = new Set(
-        (await this.store.all('role_bindings'))
-          .filter((binding) => roles.has(binding.role_id) && bindingMatchesScope(binding, scope))
-          .map((binding) => binding.principal_id),
-      );
+      const users = (await this.store.all('users')).filter((user) => user.active);
+      const automatic = new Set(users.map((user) => user.ldap_maintainer_binding_id));
+      const grantees = new Set<string>();
+      const automaticTeams = new Map<string, string>();
+      for (const binding of await this.store.all('role_bindings')) {
+        if (!roles.has(binding.role_id) || !bindingMatchesScope(binding, scope)) continue;
+        if (automatic.has(binding.id)) automaticTeams.set(binding.principal_id, binding.scope_id);
+        else grantees.add(binding.principal_id);
+      }
       const groups = new Set(
-        (await this.store.all('groups'))
-          .filter((group) => group.active && grantees.has(group.id))
-          .map((group) => group.id),
+        (await this.store.all('groups')).filter((group) => group.active).map((group) => group.id),
       );
-      for (const member of await this.store.all('memberships'))
-        if (groups.has(member.group_id)) grantees.add(member.user_id);
-      return (await this.store.all('users'))
-        .filter((user) => user.active && grantees.has(user.id))
+      for (const { user_id, group_id } of await this.store.all('memberships'))
+        if (
+          groups.has(group_id) &&
+          (grantees.has(group_id) || automaticTeams.get(user_id) === group_id)
+        )
+          grantees.add(user_id);
+      return users
+        .filter((user) => grantees.has(user.id))
         .sort((a, b) => a.username.localeCompare(b.username, 'en'))
         .map((user) => user.id);
     });

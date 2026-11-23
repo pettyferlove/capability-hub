@@ -175,8 +175,7 @@ function modelFailure(error: unknown) {
 
 /**
  * 首页提问不改目录、不建聊天或幂等记录。AI 执行进入统一账本，问题与回答不落库、不写日志。
- * 出站前后各开一次短事务：先核对访客、模式和本轮沿用内容的发布依据并取最小输入，
- * 等待模型时不持有事务；返回后用新快照重新授权，再生成回应、计数和固定版本卡片。
+ * 选卡后在出站预留事务内复核实际输入；等待模型时不持锁，投递结果前再次复核。
  */
 export class DiscoveryService {
   private readonly signer: DiscoverySigner;
@@ -439,10 +438,9 @@ export class DiscoveryService {
       reported = characters;
       progress?.({ stage: 'writing', characters });
     };
-    const verify = async (decision: DiscoveryDecision) => {
+    const authorizeInput = async () => {
       const current = await scope.readViewer();
       requireDiscoveryRequest(scope.signal);
-      // 模型返回前失权、换号或依据被撤回，都丢弃这次输出。
       if (this.signer.viewer(current.principal, current.sessionId) !== viewerKey)
         fail(409, 'DISCOVERY_VIEWER_CHANGED', '登录状态已变化，原问题和结果已清除，请重新提问');
       if (suggestionRef && !(await this.prompts.findPrompt(current.principal, suggestionRef)))
@@ -458,8 +456,13 @@ export class DiscoveryService {
           pending.delete(candidate.release.id);
       }
       if (pending.size) unavailable();
+      requireDiscoveryRequest(scope.signal);
+      return { viewer: current.principal, candidates };
+    };
+    const verify = async (decision: DiscoveryDecision) => {
+      const authorized = await authorizeInput();
       const state: TurnState = {
-        viewer: current.principal,
+        ...authorized,
         viewerKey,
         goal: decision.goal || context?.goal || null,
         releases: retainSources(context?.releases, refs.values()),
@@ -469,7 +472,6 @@ export class DiscoveryService {
         pendingDimension: null,
         unsure: 0,
         criteria: context?.criteria ?? emptyCriteria,
-        candidates,
       };
       if (decision.action === 'refer') return await this.referTurn(state, decision, context, refs);
       if (decision.action === 'guide') return await this.guideTurn(state, decision, context, refs);
@@ -495,7 +497,8 @@ export class DiscoveryService {
               maxOutputTokens: profile.max_output_tokens,
               timeoutMs: profile.request_timeout_ms,
             },
-            reserve: () => {
+            reserve: async () => {
+              await authorizeInput();
               release = this.limiter.acquire(
                 viewer ? `user:${viewer.id}` : `ip:${scope.clientAddress}`,
               );

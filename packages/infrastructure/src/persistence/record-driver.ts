@@ -9,10 +9,12 @@ export type RecordQueries = Pick<
   RecordStore,
   | 'get'
   | 'all'
+  | 'hasUsers'
   | 'where'
   | 'listRunningJobIds'
   | 'listReadyJobs'
   | 'listCancellationRequestedJobs'
+  | 'listAiExecutionJobs'
   | 'listDueSources'
   | 'catalogPromptSchedule'
   | 'countScenarioReferences'

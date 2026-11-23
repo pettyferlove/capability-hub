@@ -12,10 +12,10 @@ import { crc32 } from 'node:zlib';
 const MiB = 1024 * 1024;
 
 /**
- * 解压上传的 ZIP 为内存文件列表，不写磁盘、不解压嵌套归档。
+ * 解压 ZIP 为内存文件列表，不写磁盘、不解压嵌套归档。
  *
- * 上限：归档 ≤ 20 MiB、条目数 ≤ 6500、文件数 ≤ 500、单文件 ≤ 10 MiB、解压总量 ≤ 100 MiB
- * （413 `UPLOAD_SIZE` / `PACKAGE_LIMIT`）。同时按实际流出的字节数二次计数，不信任条目头声明的大小。
+ * 上传归档 ≤ 20 MiB、发布归档 ≤ 120 MiB；解压时均限制条目数 ≤ 6500、文件数 ≤ 500、
+ * 单文件 ≤ 10 MiB、总量 ≤ 100 MiB，并按实际流出的字节数二次计数，不信任条目头声明的大小。
  *
  * 安全边界：路径经 {@link safePath} 拒绝 `..` 与绝对路径，并做大小写/Unicode 归一化判重
  * （422 `PATH_COLLISION`）；路径必须能按 UTF-8 严格解码，非 ASCII 路径缺少 UTF-8 标志位
@@ -23,9 +23,19 @@ const MiB = 1024 * 1024;
  * 每条目解压后重新计算 CRC32，与头部不符抛 422 `ZIP_CRC`。一旦出错即关闭归档并 reject，
  * 已读出的部分结果不会返回。
  */
-export async function unzip(bytes: Buffer): Promise<ContentFile[]> {
-  if (!bytes.length || bytes.length > 20 * MiB)
-    fail(413, 'UPLOAD_SIZE', '上传文件必须为非空且不超过 20 MiB');
+export async function unzip(
+  bytes: Buffer,
+  source: 'upload' | 'release' = 'upload',
+): Promise<ContentFile[]> {
+  const limit = source === 'upload' ? 20 : 120;
+  if (!bytes.length || bytes.length > limit * MiB)
+    fail(
+      413,
+      source === 'upload' ? 'UPLOAD_SIZE' : 'ARCHIVE_SIZE',
+      source === 'upload'
+        ? '上传文件必须为非空且不超过 20 MiB'
+        : '发布归档必须为非空且不超过 120 MiB',
+    );
   return new Promise((resolve, reject) =>
     yauzl.fromBuffer(
       bytes,
@@ -170,7 +180,7 @@ export function normalizeSkill(files: ContentFile[]) {
 /**
  * 把文件列表打包为 ZIP 字节流，全部在内存中完成。
  *
- * 结果必须可复现：条目按路径 UTF-8 字节序排列、修改时间固定为 2000-01-01T00:00:00Z、
+ * 结果必须可复现：条目按路径 UTF-8 字节序排列、仅写固定的 DOS 本地时间字段，
  * 权限位只区分 0644/0755，因此同一份内容重复打包得到相同的 `sha256`（下游据此判等与去重）。
  * 只写入文件条目，不产生目录条目，也不保留除可执行位以外的文件系统元数据。
  */
@@ -178,6 +188,7 @@ export async function archive(files: ContentFile[], signal?: AbortSignal) {
   signal?.throwIfAborted();
   const zip = new yazl.ZipFile();
   const chunks: Buffer[] = [];
+  const mtime = new Date(2000, 0, 1);
   zip.outputStream.on('data', (chunk: Buffer) => {
     if (!signal?.aborted) chunks.push(chunk);
   });
@@ -187,7 +198,8 @@ export async function archive(files: ContentFile[], signal?: AbortSignal) {
       // addBuffer 压完该文件才写条目头；可取消的合包一次只提交一个无法中断的 deflate。
       const writing = signal && once(zip.outputStream, 'data');
       zip.addBuffer(f.bytes, f.path, {
-        mtime: new Date('2000-01-01T00:00:00Z'),
+        mtime,
+        forceDosTimestamp: true,
         mode: f.executable ? 0o100755 : 0o100644,
       });
       if (writing) await writing;

@@ -151,7 +151,7 @@ export class SourceService {
         for (const t of b.targets)
           if (await this.store.find('assets', 'slug', t.slug))
             fail(409, 'SLUG_CONFLICT', '资产名称已占用');
-        const source = await this.store.insert('sources', {
+        const source: GitSourceRecord = {
           id: randomUUID(),
           kind: 'git',
           provider: b.provider,
@@ -165,10 +165,13 @@ export class SourceService {
           generation: 0,
           next_poll_at: Date.now() + 300000,
           created_at: new Date().toISOString(),
-        });
-        for (const t of b.targets) await this.createTarget(source, t);
+        };
+        await this.store.insert('sources', source);
+        const targets = [];
+        for (const t of b.targets)
+          targets.push({ ...(await this.createTarget(source, t)), slug: t.slug, kind: t.kind });
         await this.store.audit(principal.id, 'source.created', source.id);
-        return await this.get(principal, source.id);
+        return { ...source, targets };
       },
     );
   }

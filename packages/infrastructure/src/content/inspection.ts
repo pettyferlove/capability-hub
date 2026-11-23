@@ -11,6 +11,7 @@ import type {
   InstallationOption,
 } from '@capability-hub/domain/content';
 import type { ContentInspection, ContentFile } from '@capability-hub/domain/content';
+import { consumableInstallationOptions } from '@capability-hub/domain/content';
 import { canonical, digest, sha256, utf8Compare } from '@capability-hub/domain/canonical';
 import { fail } from '@capability-hub/domain/errors';
 import {
@@ -20,7 +21,7 @@ import {
   packagingMetadata,
 } from '@capability-hub/domain/files';
 import { isFixedVersionLabel } from '@capability-hub/domain/version-labels';
-import { artifactPath, collisionKey } from '@capability-hub/domain/paths';
+import { artifactPath, collisionKey, hasDirectoryCaseConflict } from '@capability-hub/domain/paths';
 import { Ajv } from 'ajv';
 import addFormats from 'ajv-formats';
 import { readFileSync } from 'node:fs';
@@ -38,7 +39,7 @@ const schemaBytes = readFileSync(
 );
 const ajv = new Ajv({ allErrors: true, strict: false });
 (addFormats as unknown as (a: Ajv) => void)(ajv);
-const schema: unknown = boundedJson(schemaBytes.toString());
+const schema: unknown = boundedJson(schemaBytes);
 if (!schema || typeof schema !== 'object' || Array.isArray(schema))
   throw new Error('MCP schema must be an object');
 
@@ -118,6 +119,7 @@ export function inspect(
       1,
       '已排除 macOS 打包元数据；原始上传归档保留，业务文件字节保持原样。',
     );
+  if (hasDirectoryCaseConflict(files)) fail(422, 'PATH_COLLISION', '包内目录拼写冲突');
   const keys = new Set<string>();
   const fileKeys = new Set(files.map((file) => collisionKey(file.path)));
   for (const file of files) {
@@ -319,7 +321,7 @@ export function inspect(
   } else {
     if (files.length !== 1 || files[0].path !== 'server.json')
       fail(422, 'MCP_ROOT', 'MCP 只接受单个 server.json');
-    const json = boundedJson(files[0].bytes.toString());
+    const json = boundedJson(files[0].bytes);
     if (!validateMcp(json))
       fail(422, 'MCP_SCHEMA', 'server.json 不符合固定官方 Schema', {
         errors: validateMcp.errors?.slice(0, 12),
@@ -408,7 +410,10 @@ export function inspect(
       server_json: json,
       schema_id: schemaId,
       schema_digest: digest(schemaBytes),
-      installation_options: options,
+      installation_options: consumableInstallationOptions({
+        server_json: json,
+        installation_options: options,
+      }),
       declared_tools: [],
       tools_verified: false,
     };

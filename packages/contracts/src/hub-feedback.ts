@@ -289,6 +289,21 @@ export const hubFeedbackQueueQuerySchema = z.strictObject({
   q: z.string().trim().max(200).optional(),
 });
 
+/** 请求紧凑回执，不把完整反馈时间线放进写操作的响应。 */
+export const hubFeedbackReceiptQuerySchema = z.strictObject({ view: z.literal('receipt') });
+
+/** `after` 是排他的可见事件游标，省略时包含首帖及第一页事件。 */
+export const hubFeedbackTimelineQuerySchema = z.strictObject({
+  view: z.literal('timeline'),
+  after: z
+    .string()
+    .regex(/^(?:0|[1-9]\d*)$/)
+    .transform(Number)
+    .pipe(z.int().nonnegative())
+    .default(0),
+  limit: z.coerce.number().int().min(1).max(20).default(20),
+});
+
 export const hubFeedbackRefSchema = z.union([
   z.uuid(),
   z

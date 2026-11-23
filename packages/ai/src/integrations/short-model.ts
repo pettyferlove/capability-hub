@@ -19,7 +19,7 @@ import {
   endpointProviderOptions,
   reasoningEffortFor,
 } from './endpoint-model.js';
-import { ModelWireUsage } from './provider-diagnostics.js';
+import { ModelSseFrames, ModelWireUsage } from './provider-diagnostics.js';
 
 /** 短调用失败的环节，供宿主区分超时、限流、无效输出等状态。 */
 export type ShortModelFailureReason =
@@ -305,16 +305,11 @@ export async function callShortModel<T extends z.ZodType>(
         await response.body?.cancel();
         throw new ShortModelError('provider');
       }
-      const decoder = new TextDecoder();
-      let buffer = '';
-      const inspect = (frame: string) => {
-        try {
-          wire.inspectSseFrame(frame, elapsed());
-        } catch (error) {
-          if (error instanceof AiError) transportFailure = error.code;
-          streamFailure = new ShortModelError('provider');
-          throw streamFailure;
-        }
+      const frames = new ModelSseFrames(wire);
+      const streamError = (error: unknown) => {
+        if (error instanceof AiError) transportFailure = error.code;
+        streamFailure = new ShortModelError('provider');
+        return streamFailure;
       };
       const limited = new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
@@ -324,22 +319,21 @@ export async function callShortModel<T extends z.ZodType>(
             streamFailure = new ShortModelError('output_too_large');
             throw streamFailure;
           }
-          buffer += decoder.decode(chunk, { stream: true });
-          const frames = buffer.split(/\r?\n\r?\n/);
-          buffer = frames.pop() ?? '';
-          for (const frame of frames) inspect(frame);
-          controller.enqueue(chunk);
+          try {
+            controller.enqueue(frames.take(chunk, elapsed()));
+          } catch (error) {
+            throw streamError(error);
+          }
+          if (transport.terminal_received) {
+            complete = true;
+            controller.terminate();
+          }
         },
         flush(controller) {
-          buffer += decoder.decode();
-          if (buffer.trim() && !transport.terminal_received) {
-            inspect(buffer);
-            // 端点可能在终止标记后直接 EOF；只补 SDK 分帧所需的空行，不补终止标记或用量。
-            if (transport.terminal_received) controller.enqueue(new Uint8Array([10, 10]));
-          }
-          if (!transport.terminal_received) {
-            streamFailure = new ShortModelError('provider');
-            throw streamFailure;
+          try {
+            controller.enqueue(frames.finish(elapsed()));
+          } catch (error) {
+            throw streamError(error);
           }
           complete = true;
         },
@@ -450,8 +444,7 @@ export async function callShortModel<T extends z.ZodType>(
     lifecycle.abort();
     try {
       await outbound?.catch(() => undefined);
-      transport.request_timed_out = timedOut();
-      if (transport.request_timed_out || call.signal?.aborted) complete = false;
+      transport.request_timed_out = !complete && timedOut();
       await reservation?.finish(
         fetchStarted
           ? {

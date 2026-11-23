@@ -87,12 +87,91 @@ test('HTTPS 入口经 HTTP 转发登录请求时仍签发 Secure 会话 Cookie',
   assert.match(cookie[0], /; Secure\b/i);
 });
 
+test('直连设备码签发按对端限额，未受信的转发头不改变来源且轮询不占额度', async (context) => {
+  const fixture = await createTestHub(context, { trustedProxyAddresses: [] });
+  const http = httpClient(fixture);
+  context.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const verifier = randomBytes(32).toString('base64url');
+  const input = { challenge: sha256(verifier) };
+  const request = () => http.post('/auth/cli/request').send(input);
+  const first = await request().expect(200);
+  for (let index = 1; index < 6; index++) await request().expect(200);
+  const limited = await http
+    .post('/auth/cli/request')
+    .set('X-Forwarded-For', '192.0.2.1')
+    .send(input);
+  assertFailure(limited, 429, 'CLI_LOGIN_RATE_LIMIT');
+  assert.equal(limited.headers['retry-after'], '60');
+  assert.equal((await fixture.store.all('cli_logins')).length, 6);
+  const poll = await http
+    .post('/auth/cli/poll')
+    .send({ device_code: first.body.device_code, verifier })
+    .expect(200);
+  assert.equal(poll.body.state, 'pending');
+  context.mock.timers.tick(60_000);
+  await request().expect(200);
+});
+
+test('受信代理区分来源，设备码签发仍受进程总额度约束', async (context) => {
+  const fixture = await createTestHub(context, { trustedProxyAddresses: ['127.0.0.1', '::1'] });
+  const http = httpClient(fixture);
+  context.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const request = (source: number) =>
+    http
+      .post('/auth/cli/request')
+      .set('X-Forwarded-For', `192.0.2.${source}`)
+      .send({ challenge: sha256(randomUUID()) });
+  for (let index = 0; index < 6; index++) await request(1).expect(200);
+  assertFailure(await request(1), 429, 'CLI_LOGIN_RATE_LIMIT');
+  for (let index = 6; index < 60; index++) await request(1 + Math.floor(index / 6)).expect(200);
+  assertFailure(await request(11), 429, 'CLI_LOGIN_RATE_LIMIT');
+  assert.equal((await fixture.store.all('cli_logins')).length, 60);
+});
+
 test('Bearer 只访问消费接口，不能读取个人管理资料；失效凭据不会降级为匿名读取', async (context) => {
   const fixture = await createTestHub(context);
   const token = await fixture.hub.tokens.issue(fixture.admin, { name: '只读工具' });
   const client = httpClient(fixture).set('Authorization', 'Bearer ' + token.token);
   await client.get('/api/me').expect(200);
   await client.get('/api/assets').expect(200);
+  const { intake } = await publishSkill(fixture, {
+    distribution: { mode: 'approved_audience', audience: ['organization'] },
+  });
+  const asset = `/api/assets/${intake.asset_id}`;
+  const version = `/api/versions/${intake.version_id}`;
+  for (const path of [
+    '/api/catalog/keywords',
+    '/api/scenarios',
+    asset,
+    `${asset}/versions`,
+    `${asset}/versions/${intake.version_id}`,
+    `${version}/manifest`,
+    `${version}/files?path=SKILL.md`,
+  ])
+    await client.get(path).expect(200);
+  await client.head(`${version}/archive`).expect(200);
+  assertFailure(await client.get(`${version}/mcp-options`), 422, 'NOT_MCP');
+  const session = await signIn(fixture);
+  const feedbackPath = `${asset}/feedback`;
+  await (
+    await signIn(fixture, 'reader')
+  )
+    .post('/api/feedback')
+    .send({
+      version_id: intake.version_id,
+      idempotency_key: randomUUID(),
+      consent: true,
+      kind: 'defect',
+      title: '导入失败',
+      scenario: '导入示例数据',
+      expected: '完成导入',
+      actual: '缺少列说明',
+    })
+    .expect(200);
+  const feedback = await session.get(feedbackPath).expect(200);
+  assert.equal(feedback.body.items[0].title, '导入失败');
+  assertFailure(await client.get(feedbackPath), 403, 'TOKEN_SCOPE');
+  await client.head(feedbackPath).expect(403);
   assertFailure(await client.get('/api/me/profile'), 403, 'TOKEN_SCOPE');
   assertFailure(await client.get('/api/admin/identity'), 403, 'TOKEN_SCOPE');
   const guest = httpClient(fixture);

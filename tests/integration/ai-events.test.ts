@@ -126,6 +126,35 @@ test('AI SSE 实时增量、断开不取消、游标重放、越界重置和实�
   await pendingEvents.close();
 });
 
+test('中间件后会话撤销时不能收到首帧快照或重置', async (t) => {
+  const hub = await serveTestHub(t, { ai: frameworkConfig() });
+  const runtime = hub.hub.ai.runtime;
+  const execution = await runtime.submit(hub.admin.id, 'assistant', { prompt: 'first-frame-only' });
+  const sessions = hub.hub.sessions;
+  const find = sessions.find.bind(sessions);
+  for (const cursor of ['', `?cursor=${execution.id}:operator:99999`]) {
+    const cookie = await login(hub.origin);
+    t.mock.method(
+      sessions,
+      'find',
+      async (raw: string) => {
+        const session = await find(raw);
+        await sessions.revokeAll(hub.admin.id);
+        return session;
+      },
+      { times: 1 },
+    );
+    const response = await fetch(
+      `${hub.origin}/api/ai/executions/${execution.id}/events${cursor}`,
+      {
+        headers: { Cookie: cookie },
+      },
+    );
+    assert.equal(response.status, 401);
+    assert.doesNotMatch(await response.text(), /first-frame-only|stream\.snapshot|stream\.reset/);
+  }
+});
+
 for (const delivery of ['detail', 'events', 'diagnostics'] as const)
   test(
     `AI ${delivery} 授权期间并发提交受限资源内容不会越过读取边界`,

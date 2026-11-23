@@ -3,13 +3,14 @@ import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { request as httpRequest } from 'node:http';
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import {
   readFile,
   stat,
   realpath,
   writeFile,
   readdir,
+  rename,
   symlink,
   mkdir,
   utimes,
@@ -25,6 +26,8 @@ import { withFileLock } from '../../apps/cli/src/file-lock.js';
 import { connectAgent } from '../../apps/cli/src/connection.js';
 import { connectionFile, connectionToken } from '../../apps/cli/src/connection-auth.js';
 import { loadPrivateJson, savePrivateJson } from '../../apps/cli/src/private-json.js';
+import { runCli } from '../../apps/cli/src/cli.js';
+import { CliCancelled, CliUi } from '../../apps/cli/src/cli-ui.js';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
@@ -268,6 +271,78 @@ test('助手恢复崩溃锁，并发配置写入只有一个成功且备份保�
   await assert.rejects(writeConnectionConfig(unchanged), /其他程序修改/);
 });
 
+test('凭据提交失败只撤回本次写入，不覆盖另一个程序的配置', async (context) => {
+  const fixture = await serveTestHub(context);
+  const directory = await realpath(fixture.directory);
+  const unavailable = join(directory, 'unavailable');
+  await mkdir(unavailable);
+  for (const scenario of ['new', 'existing', 'edited', 'replaced']) {
+    const target = join(directory, `${scenario}.json`);
+    if (scenario !== 'new') await writeFile(target, '{}\n');
+    const prepared = await prepareConnectionConfig({
+      client: 'cursor',
+      scope: 'project',
+      url: fixture.origin,
+      directory,
+      configFile: target,
+    });
+    await assert.rejects(
+      writeConnectionConfig(prepared, async () => {
+        assert.equal(await readFile(target, 'utf8'), prepared.text);
+        if (scenario === 'edited') await writeFile(target, '{"external":true}');
+        if (scenario === 'replaced') {
+          await writeFile(target + '.replacement', prepared.text);
+          await rename(target + '.replacement', target);
+        }
+        await savePrivateJson(unavailable, {});
+      }),
+      scenario === 'edited' || scenario === 'replaced' ? /未回滚最新文件/ : /凭据文件不能/,
+    );
+    if (scenario === 'new') await assert.rejects(readFile(target), { code: 'ENOENT' });
+    else
+      assert.equal(
+        await readFile(target, 'utf8'),
+        scenario === 'replaced'
+          ? prepared.text
+          : scenario === 'edited'
+            ? '{"external":true}'
+            : '{}\n',
+      );
+  }
+});
+
+test('Codex 配置解析失败只报告行列，失败诊断不带配置原文', async (context) => {
+  const fixture = await serveTestHub(context);
+  const directory = await realpath(fixture.directory);
+  const target = join(directory, 'config.toml');
+  const config = 'profile = "private-engineering-channel"\n[broken header\n';
+  await writeFile(target, config);
+  await assert.rejects(
+    runCli([
+      'connect',
+      '--client',
+      'codex',
+      '--url',
+      fixture.origin,
+      '--no-interactive',
+      '--config-dir',
+      directory,
+      '--config-file',
+      target,
+    ]),
+    (error: unknown) => {
+      assert(error instanceof Error);
+      assert.match(error.message, /^TOML 配置无效（第 \d+ 行，第 \d+ 列），未修改文件$/);
+      assert.equal(error.cause, undefined);
+      return true;
+    },
+  );
+  const diagnostic = await readFile(join(directory, 'last-failure.json'), 'utf8');
+  assert.match(diagnostic, /TOML 配置无效/);
+  assert.doesNotMatch(diagnostic, /private-engineering-channel|broken header/);
+  assert.equal(await readFile(target, 'utf8'), config);
+});
+
 test('助手拒绝重复 JSON 字段和空值冲突，能够合并 TOML 内联表', async (context) => {
   const fixture = await serveTestHub(context);
   const directory = await realpath(fixture.directory);
@@ -330,8 +405,9 @@ test('网络异常保留原凭据和配置，不发起新授权或覆盖文件',
   assert.deepEqual(calls, [fixture.origin + '/oauth/token']);
 });
 
-test('追加权限未获批准或授权期间配置冲突时，保留原连接并撤销新授权', async (context) => {
-  for (const conflict of [false, true]) {
+test('追加权限未获批准、配置冲突或验证被取消时，保留原连接并撤销新授权', async (context) => {
+  for (const outcome of ['denied', 'conflict', 'cancelled']) {
+    const conflict = outcome === 'conflict';
     const fixture = await serveTestHub(context);
     const directory = await realpath(fixture.directory);
     const path = connectionFile(directory, fixture.origin, 'cursor');
@@ -382,24 +458,46 @@ test('追加权限未获批准或授权期间配置冲突时，保留原连接�
       capture(String(value));
       return true;
     });
+    const ui = new CliUi();
+    if (outcome === 'cancelled') {
+      const controller = new AbortController();
+      const task = ui.task.bind(ui);
+      ui.task = (message, complete, work) =>
+        task(message, complete, (update) => work(update, controller.signal));
+      const fetchRequest = globalThis.fetch;
+      const cancelDuringVerification: typeof fetch = (input, init) => {
+        const target = input instanceof Request ? input.url : String(input);
+        if (target === fixture.origin + '/mcp') controller.abort(new CliCancelled());
+        return fetchRequest(input, init);
+      };
+      context.mock.method(globalThis, 'fetch', cancelDuringVerification);
+    }
     try {
       const completion = assert.rejects(
-        connectAgent({
-          client: 'cursor',
-          scope: 'project',
-          url: fixture.origin,
-          directory,
-          configFile: target,
-          contribute: true,
-          noBrowser: true,
-        }),
-        conflict ? /其他程序修改/ : /只授予了读取权限/,
+        connectAgent(
+          {
+            client: 'cursor',
+            scope: 'project',
+            url: fixture.origin,
+            directory,
+            configFile: target,
+            contribute: true,
+            noBrowser: true,
+          },
+          ui,
+        ),
+        conflict ? /其他程序修改/ : outcome === 'cancelled' ? /操作已取消/ : /只授予了读取权限/,
       );
       const started = await fetch(await authorization, { redirect: 'manual' });
       const id = new URL(started.headers.get('location')!, fixture.origin).searchParams.get(
         'authorization',
       )!;
-      const approved = await fixture.hub.oauth.decide(fixture.admin, id, true, conflict);
+      const approved = await fixture.hub.oauth.decide(
+        fixture.admin,
+        id,
+        true,
+        outcome !== 'denied',
+      );
       if (conflict) await writeFile(target, '{"concurrent":true}');
       assert.equal((await fetch(approved.redirect_uri)).status, 200);
       await completion;
@@ -407,6 +505,7 @@ test('追加权限未获批准或授权期间配置冲突时，保留原连接�
       output.mock.restore();
     }
     assert.deepEqual(await loadPrivateJson(path), previous);
+    assert.deepEqual(await readdir(dirname(path)), [basename(path)]);
     assert.equal(await readFile(target, 'utf8'), conflict ? '{"concurrent":true}' : '{}');
     const grants = await fixture.hub.oauth.list(fixture.admin.id);
     assert.equal(grants.length, 2);

@@ -1,4 +1,5 @@
 import type {
+  HubFeedbackEventPage,
   HubFeedbackRecordQuery,
   ReadyJobsQuery,
   ScenarioReferenceCounts,
@@ -15,6 +16,7 @@ import {
   count,
   desc,
   eq,
+  gt,
   gte,
   inArray,
   isNotNull,
@@ -42,6 +44,7 @@ import {
   role_bindings,
   scenarios,
   sources,
+  users,
 } from './schema.js';
 
 const feedbackOpen = isNull(hub_feedback.closed_at);
@@ -76,6 +79,13 @@ export class PgQueries implements RecordQueries {
     const relation = pgTableFor(table);
     const rows = await this.db.select({ data: relation.data }).from(relation).orderBy(relation.id);
     return rows.map((row) => parseRecord(table, row.data));
+  }
+  async hasUsers(): Promise<boolean> {
+    const rows = await this.db
+      .select({ present: sql`1` })
+      .from(users)
+      .limit(1);
+    return rows.length > 0;
   }
   async listRunningJobIds(now: number): Promise<string[]> {
     const rows = await this.db
@@ -115,6 +125,15 @@ export class PgQueries implements RecordQueries {
       )
       .orderBy(jobs.id);
     return rows.map((row) => parseRecord('jobs', row.data));
+  }
+  async listAiExecutionJobs(executionId: string): Promise<RecordMap['jobs'][]> {
+    const rows = await this.db
+      .select({ data: jobs.data })
+      .from(jobs)
+      .where(
+        and(eq(jobs.aggregate_id, executionId), sql`${jobs.data} ->> 'kind' = 'ai_execution'`),
+      );
+    return rows.map(({ data }) => parseRecord('jobs', data));
   }
   async catalogPromptSchedule() {
     const [row] = await this.db
@@ -218,17 +237,36 @@ export class PgQueries implements RecordQueries {
           )
         : undefined,
     );
-    const order = [desc(t.last_activity_at), desc(t.number)];
-    if (submittedBy === undefined) order.unshift(desc(t.blocking));
-    const [total] = await this.db.select({ value: count() }).from(t).where(filters);
-    const rows = await this.db
-      .select({ data: t.data })
+    const order: ('blocking' | 'last_activity_at' | 'number')[] = ['last_activity_at', 'number'];
+    if (submittedBy === undefined) order.unshift('blocking');
+    const totals = this.db
+      .select({ total: count().as('total') })
       .from(t)
       .where(filters)
-      .orderBy(...order)
+      .as('totals');
+    const page = this.db
+      .select({
+        data: t.data,
+        blocking: t.blocking,
+        last_activity_at: t.last_activity_at,
+        number: t.number,
+      })
+      .from(t)
+      .where(filters)
+      .orderBy(...order.map((key) => desc(t[key])))
       .limit(query.limit)
-      .offset((query.page - 1) * query.limit);
-    return { items: rows.map(({ data }) => parseRecord('hub_feedback', data)), total: total.value };
+      .offset((query.page - 1) * query.limit)
+      .as('page');
+    // 总数作左表，越过末页时也在同一快照中返回总数。
+    const rows = await this.db
+      .select({ total: totals.total, data: page.data })
+      .from(totals)
+      .leftJoin(page, sql`true`)
+      .orderBy(...order.map((key) => desc(page[key])));
+    return {
+      total: rows[0].total,
+      items: rows[0].data === null ? [] : rows.map(({ data }) => parseRecord('hub_feedback', data)),
+    };
   }
   async summarizeHubFeedbackForSubmitter(submittedBy: string) {
     const t = hub_feedback;
@@ -258,32 +296,53 @@ export class PgQueries implements RecordQueries {
       .from(t);
     return summary;
   }
-  async listHubFeedbackEvents(feedbackId: string, publicOnly: boolean) {
+  async listHubFeedbackEvents(
+    feedbackId: string,
+    publicOnly: boolean,
+    page?: HubFeedbackEventPage,
+  ) {
+    if (page && page.limit <= 0) return [];
     const t = hub_feedback_events;
-    const rows = await this.db
+    const select = this.db
       .select({ data: t.data })
       .from(t)
       .where(
-        and(eq(t.feedback_id, feedbackId), publicOnly ? eq(t.visibility, 'public') : undefined),
+        and(
+          eq(t.feedback_id, feedbackId),
+          publicOnly ? eq(t.visibility, 'public') : undefined,
+          page ? gt(t.sequence, page.afterSequence) : undefined,
+        ),
       )
       .orderBy(t.sequence);
+    const rows = await (page ? select.limit(page.limit) : select);
     return rows.map(({ data }) => parseRecord('hub_feedback_events', data));
   }
-  async listHubFeedbackAttachments(feedbackId: string, publicOnly: boolean) {
+  async listHubFeedbackAttachments(
+    feedbackId: string,
+    publicOnly: boolean,
+    eventIds?: readonly (string | null)[],
+  ) {
+    if (eventIds?.length === 0) return [];
     const t = hub_feedback_attachments;
     const event = hub_feedback_events;
+    const filter = and(
+      eq(t.feedback_id, feedbackId),
+      eventIds &&
+        or(
+          inArray(
+            t.event_id,
+            eventIds.filter((id) => id !== null),
+          ),
+          eventIds.includes(null) ? isNull(t.event_id) : undefined,
+        ),
+    );
     const select = this.db.select({ data: t.data }).from(t);
     const rows = publicOnly
       ? await select
           .leftJoin(event, and(eq(t.event_id, event.id), eq(t.feedback_id, event.feedback_id)))
-          .where(
-            and(
-              eq(t.feedback_id, feedbackId),
-              or(isNull(t.event_id), eq(event.visibility, 'public')),
-            ),
-          )
+          .where(and(filter, or(isNull(t.event_id), eq(event.visibility, 'public'))))
           .orderBy(t.created_at, t.id)
-      : await select.where(eq(t.feedback_id, feedbackId)).orderBy(t.created_at, t.id);
+      : await select.where(filter).orderBy(t.created_at, t.id);
     return rows.map(({ data }) => parseRecord('hub_feedback_attachments', data));
   }
   async nextHubFeedbackNumber() {

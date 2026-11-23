@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { release } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
@@ -10,9 +11,10 @@ import {
   hubFeedbackRefSchema,
   hubFeedbackStatuses,
   hubFeedbackSurfaces,
+  hubFeedbackTimelineQuerySchema,
 } from '@capability-hub/contracts';
 import { canonical, sha256 } from '@capability-hub/domain/canonical';
-import type { z } from 'zod';
+import { z } from 'zod';
 import packageJson from '../package.json' with { type: 'json' };
 import { HubApiClient, HubApiError, terminalText } from './api-client.js';
 import type { CliOptions } from './cli-commands.js';
@@ -27,9 +29,9 @@ import {
   type FeedbackFile,
 } from './feedback-files.js';
 import {
-  feedbackDetailSchema,
   feedbackListSchema,
-  feedbackResultSchema,
+  feedbackPageSchema,
+  feedbackReceiptSchema,
   feedbackSummarySchema,
 } from './response-schemas.js';
 
@@ -48,10 +50,12 @@ export interface FeedbackOptions {
   status?: 'open' | 'closed' | 'all';
   message?: string;
   messageFile?: string;
+  after?: string;
+  requestId?: string;
 }
 
-type FeedbackDetail = z.output<typeof feedbackDetailSchema>;
-type FeedbackResult = z.output<typeof feedbackResultSchema>;
+type FeedbackPage = z.output<typeof feedbackPageSchema>;
+type FeedbackResult = z.output<typeof feedbackReceiptSchema>;
 
 const collection = '/api/hub-feedback';
 const oldHub = '此 Hub 版本尚不支持 CLI 反馈，请在网页反馈或联系管理员';
@@ -83,27 +87,23 @@ function metadataFiles(files: readonly FeedbackFile[]) {
   return files.map(({ kind, name }, part) => ({ part, kind, name }));
 }
 
-function writeOptions(
-  api: HubApiClient,
-  path: string,
-  metadata: unknown,
-  files: readonly FeedbackFile[] = [],
-  revision?: number,
-) {
-  const idempotencyKey = sha256(
-    `${api.url}\n${path}\n${canonical(metadata)}\n${files.map((file) => file.digest).join('')}`,
-  );
-  return {
-    method: 'POST',
-    idempotencyKey,
-    ...(revision === undefined ? {} : { ifMatch: `"${revision}"` }),
-  };
+function revisionWrite(revision: number, idempotencyKey: string = randomUUID()) {
+  return { method: 'POST', idempotencyKey, ifMatch: `"${revision}"` };
 }
 
-async function feedbackRequest<T>(api: HubApiClient, record: boolean, action: () => Promise<T>) {
+async function feedbackRequest<T>(
+  api: HubApiClient,
+  record: boolean,
+  action: () => Promise<T>,
+  retryKey?: string,
+) {
   try {
     return await action();
   } catch (error) {
+    if (retryKey && (!(error instanceof HubApiError) || error.status >= 500))
+      process.stderr.write(
+        `未能确认写入结果；24 小时内可用相同参数及 --request-id ${retryKey} 重试。\n`,
+      );
     if (!(error instanceof HubApiError)) throw error;
     let unsupported = error.status === 403 && error.code === 'TOKEN_SCOPE';
     if (error.status === 404) {
@@ -295,12 +295,12 @@ async function createFeedback(flags: CliOptions, ui: CliUi, directory: string, g
   await confirmWrite(flags, ui, '提交此反馈？');
   const api = new HubApiClient(credentials.url, token);
   const detail = await feedbackRequest(api, false, () =>
-    api.json(
-      collection,
-      feedbackResultSchema,
-      multipart(encoded, files),
-      writeOptions(api, collection, metadata, files),
-    ),
+    api.json(`${collection}?view=receipt`, feedbackReceiptSchema, multipart(encoded, files), {
+      method: 'POST',
+      idempotencyKey: sha256(
+        `${api.url}\n${collection}\n${canonical(metadata)}\n${files.map((file) => file.digest).join('')}`,
+      ),
+    }),
   );
   printResult(detail, api, flags, '已提交反馈');
 }
@@ -326,13 +326,16 @@ async function bodyInput(
   return body;
 }
 
-function printResult(detail: FeedbackResult, api: HubApiClient, flags: CliOptions, label: string) {
-  const detailUrl = new URL(`/account?tab=feedback&feedback=${detail.id}`, api.url).href;
-  if (flags.json) outputJson({ ...detail, detail_url: detailUrl });
+function printResult(
+  { id, number, status, attachments }: FeedbackResult,
+  api: HubApiClient,
+  flags: CliOptions,
+  label: string,
+) {
+  const detailUrl = new URL(`/account?tab=feedback&feedback=${id}`, api.url).href;
+  if (flags.json) outputJson({ id, number, status, attachments, detail_url: detailUrl });
   else
-    process.stdout.write(
-      `${label} #${detail.number}（${hubFeedbackStatuses[detail.status]}）\n${detailUrl}\n`,
-    );
+    process.stdout.write(`${label} #${number}（${hubFeedbackStatuses[status]}）\n${detailUrl}\n`);
 }
 
 function feedbackHeading(item: {
@@ -343,7 +346,7 @@ function feedbackHeading(item: {
   return `#${item.number}（${hubFeedbackStatuses[item.status]}） ${terminalText(item.title)}`;
 }
 
-function printDetail(detail: FeedbackDetail, json = false) {
+function printDetail(detail: FeedbackPage, json = false) {
   if (json) return outputJson(detail);
   const safeLines = (text: string) =>
     text
@@ -368,7 +371,7 @@ function printDetail(detail: FeedbackDetail, json = false) {
       );
       const body = event.redacted_at ? '内容已隐去' : safeLines(event.body);
       const status = event.status_to ? hubFeedbackStatuses[event.status_to] : '';
-      rows.push(`${event.created_at}  ${actor}${status ? ` · ${status}` : ''}`);
+      rows.push(`#${event.sequence}  ${event.created_at}  ${actor}${status ? ` · ${status}` : ''}`);
       if (body) rows.push(body);
     }
   }
@@ -378,6 +381,11 @@ function printDetail(detail: FeedbackDetail, json = false) {
     for (const file of attachments)
       rows.push(`${terminalText(file.name)} · ${file.media_type} · ${file.size} B`);
   }
+  if (detail.next_after !== null)
+    rows.push(
+      '',
+      `下一页：capability-hub feedback show ${detail.number} --after ${detail.next_after}`,
+    );
   process.stdout.write(rows.join('\n') + '\n');
 }
 
@@ -394,6 +402,8 @@ export async function runFeedback(
     return;
   }
   if (command === 'feedback reply' || command === 'feedback close') writeConsent(flags, ui);
+  if (flags.requestId !== undefined && !z.uuid().safeParse(flags.requestId).success)
+    throw new Error('--request-id 必须是 UUID');
   const ref = command === 'feedback list' ? undefined : feedbackRef(args[0]);
   const credentials = await feedbackCredentials(directory, flags);
   const api = new HubApiClient(credentials.url, credentials.token);
@@ -412,31 +422,45 @@ export async function runFeedback(
     }
     return;
   }
+  if (command === 'feedback show') {
+    const query = validate(hubFeedbackTimelineQuerySchema, {
+      view: 'timeline',
+      after: flags.after,
+    });
+    const detail = await feedbackRequest(api, true, () =>
+      api.json(`${collection}/${ref}?view=timeline&after=${query.after}`, feedbackPageSchema),
+    );
+    if (detail.next_after === undefined) {
+      if (query.after !== 0)
+        throw new Error('此 Hub 不支持反馈分页，请省略 --after 查看完整时间线');
+      detail.next_after = null;
+    }
+    if (detail.unread && detail.next_after === null && (!query.after || detail.events.length)) {
+      const receipt = await feedbackRequest(api, true, () =>
+        api.json(
+          `${collection}/${detail.id}/read?view=receipt`,
+          feedbackReceiptSchema,
+          undefined,
+          revisionWrite(detail.revision),
+        ),
+      );
+      detail.unread = receipt.unread;
+    }
+    printDetail(detail, flags.json);
+    return;
+  }
   const detail = await feedbackRequest(api, true, () =>
-    api.json(`${collection}/${ref}`, feedbackDetailSchema),
+    api.json(`${collection}/${ref}?view=receipt`, feedbackReceiptSchema),
   );
   const path = `${collection}/${detail.id}`;
-  if (command === 'feedback show') {
-    const result = detail.unread
-      ? await feedbackRequest(api, true, () =>
-          api.json(
-            `${path}/read`,
-            feedbackDetailSchema,
-            undefined,
-            writeOptions(api, `${path}/read`, { revision: detail.revision }, [], detail.revision),
-          ),
-        )
-      : detail;
-    printDetail(result, flags.json);
-  } else if (command === 'feedback close') {
+  const write = revisionWrite(detail.revision, flags.requestId);
+  if (command === 'feedback close') {
     await confirmWrite(flags, ui, `关闭反馈 #${detail.number}？`);
-    const result = await feedbackRequest(api, true, () =>
-      api.json(
-        `${path}/close`,
-        feedbackResultSchema,
-        undefined,
-        writeOptions(api, `${path}/close`, null, [], detail.revision),
-      ),
+    const result = await feedbackRequest(
+      api,
+      true,
+      () => api.json(`${path}/close?view=receipt`, feedbackReceiptSchema, undefined, write),
+      write.idempotencyKey,
     );
     printResult(result, api, flags, '已关闭反馈');
   } else if (command === 'feedback reply') {
@@ -463,13 +487,17 @@ export async function runFeedback(
         ].join('\n'),
       );
     await confirmWrite(flags, ui, `向反馈 #${detail.number} 发送留言？`);
-    const result = await feedbackRequest(api, true, () =>
-      api.json(
-        `${path}/comments`,
-        feedbackResultSchema,
-        multipart(encoded, files),
-        writeOptions(api, `${path}/comments`, metadata, files, detail.revision),
-      ),
+    const result = await feedbackRequest(
+      api,
+      true,
+      () =>
+        api.json(
+          `${path}/comments?view=receipt`,
+          feedbackReceiptSchema,
+          multipart(encoded, files),
+          write,
+        ),
+      write.idempotencyKey,
     );
     printResult(result, api, flags, '已发送留言');
   }

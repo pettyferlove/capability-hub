@@ -8,6 +8,7 @@ import {
   readFile,
   readdir,
   realpath,
+  rename,
   rm,
   stat,
   symlink,
@@ -795,6 +796,231 @@ test('CLI 向真实 Hub 提交反馈附件并返回编号和详情地址，同�
   assert(!(result.stdout + result.stderr + replayed.stdout + replayed.stderr).includes(token));
 });
 
+test('CLI 可分页跟进超过 1 MiB 的反馈，同次留言重试不重复，重新确认可发送同文', async (context) => {
+  const fixture = await serveTestHub(context);
+  const { token } = await fixture.hub.tokens.issue(fixture.reader, {
+    name: '时间线',
+    scope: 'hub:read',
+  });
+  const directory = join(fixture.directory, 'cli-config');
+  const options = ['--url', fixture.origin, '--config-dir', directory, '--json'];
+  const created = await cli([...feedbackNew(fixture.origin, directory), '--yes', '--json'], token);
+  assert.equal(created.code, 0, created.stderr);
+  const { id, number } = z
+    .object({ id: z.uuid(), number: z.int() })
+    .parse(JSON.parse(created.stdout));
+  const body = '进'.repeat(5000);
+  const row = await fixture.store.get('hub_feedback', id);
+  assert(row);
+  const at = new Date(Date.parse(row.created_at) + 1000).toISOString();
+  await fixture.store.tx(async () => {
+    for (let sequence = 1; sequence <= 72; sequence++) {
+      await fixture.store.insert('hub_feedback_events', {
+        id: randomUUID(),
+        feedback_id: id,
+        sequence,
+        actor_id: fixture.admin.id,
+        actor_role: 'handler',
+        kind: 'comment',
+        visibility: 'public',
+        body,
+        status_from: null,
+        status_to: null,
+        decline_reason: null,
+        attachment_ids: [],
+        redacted_at: null,
+        created_at: at,
+      });
+    }
+    await fixture.store.put('hub_feedback', {
+      ...row,
+      last_handler_public_at: at,
+      last_activity_at: at,
+      updated_at: at,
+      revision: 73,
+    });
+  });
+  const run = (command: string, ...args: string[]) =>
+    cli(['feedback', command, String(number), ...options, ...args], token);
+  const first = await run('show');
+  assert.equal(first.code, 0, first.stderr);
+  assert.equal(JSON.parse(first.stdout).next_after, 20);
+  assert.equal(JSON.parse(first.stdout).unread, true);
+  const last = await run('show', '--after', '60');
+  assert.equal(last.code, 0, last.stderr);
+  const page = JSON.parse(last.stdout);
+  assert.equal(page.events[0].sequence, 61);
+  assert.equal(page.events.at(-1).sequence, 72);
+  assert.equal(page.next_after, null);
+  assert.equal(page.unread, false);
+  const key = randomUUID();
+  const reply = (...args: string[]) => run('reply', '--message', '仍需跟进', '--yes', ...args);
+  for (const args of [['--request-id', key], ['--request-id', key], []]) {
+    const result = await reply(...args);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).id, id);
+  }
+  const closed = await run('close', '--yes');
+  assert.equal(closed.code, 0, closed.stderr);
+  const recent = await fixture.store.listHubFeedbackEvents(id, true, {
+    afterSequence: 72,
+    limit: 4,
+  });
+  assert.deepEqual(
+    recent.map((event) => event.body),
+    ['仍需跟进', '仍需跟进', '提交者确认已解决'],
+  );
+});
+
+function legacyFeedbackDetail() {
+  const at = '2026-01-01T00:00:00.000Z';
+  return {
+    ...feedbackReport,
+    id: randomUUID(),
+    number: 1,
+    area: null,
+    channel: 'cli',
+    blocking: false,
+    status: 'pending',
+    created_at: at,
+    last_activity_at: at,
+    revision: 2,
+    unread: true,
+    awaiting_reply: false,
+    steps: '',
+    expected: '',
+    diagnostics: null,
+    description_redacted_at: null,
+    closed_at: null,
+    decline_reason: null,
+    events: [
+      {
+        id: randomUUID(),
+        sequence: 1,
+        actor_role: 'handler',
+        actor_name: null,
+        kind: 'comment',
+        visibility: 'public',
+        body: '请补充版本信息',
+        status_from: null,
+        status_to: null,
+        decline_reason: null,
+        attachment_ids: [],
+        redacted_at: null,
+        created_at: at,
+      },
+    ],
+    attachments: [],
+  };
+}
+
+test('CLI 可在只返回完整详情的旧 Hub 查看、留言和关闭反馈，不重复写入', async (context) => {
+  let detail = legacyFeedbackDetail();
+  const { directory, origin, requests } = await serveCliFeedbackBoundary(context, (req, res) => {
+    if (req.method === 'POST') {
+      if (req.headers['if-match'] !== `"${detail.revision}"`) {
+        res.writeHead(412).end();
+        return;
+      }
+      detail = {
+        ...detail,
+        revision: req.url?.includes('/read?') ? detail.revision : detail.revision + 1,
+        unread: false,
+        status: req.url?.includes('/close?') ? 'resolved' : detail.status,
+      };
+    }
+    res.end(JSON.stringify({ ...detail, external_reference: 'support-123' }));
+  });
+  const run = (command: string, ...args: string[]) =>
+    cli(
+      ['feedback', command, '1', '--url', origin, '--config-dir', directory, '--json', ...args],
+      'legacy-feedback-token',
+    );
+  const continuation = await run('show', '--after', '1');
+  assert.equal(continuation.code, 1);
+  assert.equal(continuation.stdout, '');
+  assert.match(continuation.stderr, /不支持反馈分页.*--after/);
+  const shown = await run('show');
+  assert.equal(shown.code, 0, shown.stderr);
+  const page = JSON.parse(shown.stdout);
+  assert.deepEqual(page.events, detail.events);
+  assert.equal(page.unread, false);
+  assert.equal(page.next_after, null);
+  for (const [command, ...options] of [['reply', '--message', '版本已更新'], ['close']]) {
+    const result = await run(command, ...options, '--yes');
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      id: detail.id,
+      number: 1,
+      status: command === 'close' ? 'resolved' : 'pending',
+      attachments: [],
+      detail_url: `${origin}/account?tab=feedback&feedback=${detail.id}`,
+    });
+  }
+  assert.deepEqual(
+    requests.filter((request) => request.startsWith('POST ')),
+    ['read', 'comments', 'close'].map(
+      (path) => `POST /api/hub-feedback/${detail.id}/${path}?view=receipt`,
+    ),
+  );
+});
+
+test('CLI 忽略反馈分页和已读回执的新增字段，仍返回当前时间线和已读状态', async (context) => {
+  const detail = legacyFeedbackDetail();
+  const { id, number, status, revision, attachments } = detail;
+  const { directory, origin } = await serveCliFeedbackBoundary(context, (req, res) => {
+    const body =
+      req.method === 'GET'
+        ? { ...detail, next_after: null }
+        : { view: 'receipt', id, number, status, revision, unread: false, attachments };
+    res.end(JSON.stringify({ ...body, external_reference: 'support-123' }));
+  });
+  const shown = await cli(
+    ['feedback', 'show', '1', '--url', origin, '--config-dir', directory, '--json'],
+    'feedback-token',
+  );
+  assert.equal(shown.code, 0, shown.stderr);
+  const page = JSON.parse(shown.stdout);
+  assert.deepEqual(page.events, detail.events);
+  assert.equal(page.unread, false);
+  assert.equal(page.next_after, null);
+  assert(!Object.hasOwn(page, 'external_reference'));
+});
+
+test('CLI 拒绝损坏的反馈分页、回执和不完整的旧详情，不为解析失败重发写入', async (context) => {
+  const detail = legacyFeedbackDetail();
+  let response: unknown;
+  const { directory, origin, requests } = await serveCliFeedbackBoundary(context, (req, res) => {
+    const preflight = req.method === 'GET' && req.url?.endsWith('?view=receipt');
+    res.end(JSON.stringify(preflight ? detail : response));
+  });
+  const run = (...args: string[]) =>
+    cli(
+      ['feedback', ...args, '--url', origin, '--config-dir', directory, '--json'],
+      'feedback-token',
+    );
+  for (const invalid of [
+    { ...detail, next_after: 'invalid' },
+    { ...detail, view: 'broken' },
+    { ...detail, events: [{}] },
+  ]) {
+    response = invalid;
+    const shown = await run('show', '1');
+    assert.equal(shown.code, 1);
+    assert.equal(shown.stdout, '');
+    assert.match(shown.stderr, /Hub 响应结构无效/);
+  }
+  response = { ...detail, view: 'broken' };
+  const closed = await run('close', '1', '--yes');
+  assert.equal(closed.code, 1);
+  assert.equal(closed.stdout, '');
+  assert.match(closed.stderr, /Hub 响应结构无效/);
+  assert.deepEqual(
+    requests.filter((request) => request.startsWith('POST ')),
+    [`POST /api/hub-feedback/${detail.id}/close?view=receipt`],
+  );
+});
+
 test('CLI 向旧版 Hub 提交反馈收到 404 时提示改用网页', async (context) => {
   const { directory, origin, requests } = await serveCliFeedbackBoundary(context, (_req, res) => {
     res.writeHead(404).end();
@@ -806,7 +1032,7 @@ test('CLI 向旧版 Hub 提交反馈收到 404 时提示改用网页', async (co
   assert.equal(result.code, 1, result.stderr);
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /尚不支持 CLI 反馈.*网页/);
-  assert.deepEqual(requests, ['POST /api/hub-feedback']);
+  assert.deepEqual(requests, ['POST /api/hub-feedback?view=receipt']);
 });
 
 test('CLI 私有记录失败请求，反馈预览只附带脱敏诊断', async (context) => {
@@ -846,17 +1072,45 @@ test('CLI 私有记录失败请求，反馈预览只附带脱敏诊断', async (
   for (const option of ['--title', '--description', '--config-dir']) {
     assert(record.options.includes(option));
   }
+  const invalidPreview = await cli(
+    [
+      ...feedbackNew(origin, directory),
+      '--attach',
+      join(directory, 'absent.txt'),
+      '--dry-run',
+      '--json',
+    ],
+    token,
+  );
+  assert.equal(invalidPreview.code, 1, invalidPreview.stderr);
+  assert.equal(await readFile(path, 'utf8'), rawRecord);
   const result = await cli(
     [...feedbackNew(origin, directory), '--last-error', '--dry-run', '--json'],
     token,
   );
   assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(requests, ['POST /api/hub-feedback']);
+  assert.deepEqual(requests, ['POST /api/hub-feedback?view=receipt']);
   const client = feedbackPreview.parse(JSON.parse(result.stdout)).metadata.diagnostics?.client;
   assert(client?.kind === 'cli');
   assert.deepEqual(client.last_failure, record);
   for (const hidden of [token, storedToken, title, description, directory]) {
     assert(!(failed.stderr + rawRecord + result.stdout + result.stderr).includes(hidden));
+  }
+  for (const command of [
+    ['add', 'absent-skill', '--version', '1.0.0', '--url', origin],
+    ['remove', 'absent-skill'],
+  ]) {
+    const preview = await cli([
+      ...command,
+      '--to',
+      join(directory, 'not-installed'),
+      '--config-dir',
+      directory,
+      '--dry-run',
+      '--no-interactive',
+    ]);
+    assert.equal(preview.code, 1, preview.stderr);
+    assert.equal(await readFile(path, 'utf8'), rawRecord);
   }
 });
 
@@ -1205,6 +1459,13 @@ test('outdated 按安装状态检查来源、补全旧记录，并且只向匹�
   assert.equal(table.code, 0, table.stderr);
   assert.match(table.stdout, /STATUS.*SKILL.*INSTALLED.*LATEST.*PATH/);
   assert.match(table.stdout, /unavailable\s+sample-skill\s+3\.0\.0/);
+
+  const customPath = join(parent('.claude/skills'), 'custom-folder');
+  await rename(join(parent('.claude/skills'), slug), customPath);
+  const [custom] = await check(['.claude/skills'], 2, '--exit-code');
+  assert.equal(custom.path, customPath);
+  assert.equal(custom.status, 'update_available');
+  assert.doesNotMatch(custom.next_step, /\bcapability-hub add\b/);
 });
 
 test('outdated 仅报告含入口文件的无来源 Skill，不要求登录或指定 Hub', async (context) => {

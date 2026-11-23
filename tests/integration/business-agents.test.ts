@@ -317,6 +317,92 @@ test('提交人可回看版本审计，待审期间不能采纳，撤回后可�
   assert.equal(provider.requests.length, requestsBeforeResume, '人工恢复不重复调用模型');
 });
 
+for (const [name, legacy] of [
+  ['旧审计的比较来源无法核实时，审核页只建一份新审计且不再交付旧报告', true],
+  ['比较基线单独撤销后，目标仍可审计但不能交付或续跑已派生的报告', false],
+] as const) {
+  test(name, async (t) => {
+    const provider = await fixture('openai', 'tools', false, script);
+    t.after(provider.close);
+    const previous = process.env.AI_FIXTURE_KEY;
+    process.env.AI_FIXTURE_KEY = 'ai-fixture-key';
+    t.after(() => {
+      if (previous === undefined) delete process.env.AI_FIXTURE_KEY;
+      else process.env.AI_FIXTURE_KEY = previous;
+    });
+    const f = await createTestHub(t);
+    const { intake: base } = await publishSkill(f, {
+      files: [
+        { path: 'SKILL.md', bytes: skillDocument('sample-skill'), executable: false },
+        { path: 'references/baseline.md', bytes: Buffer.from('旧说明'), executable: false },
+      ],
+    });
+    const target = await receiveSkill(f, { assetId: base.asset_id, version: '2.0.0' });
+    await submitPublication(f, target);
+    const runtime = f.hub.ai.runtime;
+    Object.assign(runtime.config, frameworkConfig(provider.url));
+    await runtime.submit(f.reviewer.id, 'resource-audit', { version_id: target.version_id });
+    const waiting = await run(f);
+    assert.equal(waiting.status, 'waiting_input', JSON.stringify(waiting.payload.error));
+    const client = await signIn(f, f.reviewer.username);
+    const path = `/api/ai/executions/${waiting.id}`;
+    const [interaction] = (await runtime.view(waiting.id)).interactions;
+    await client.get(path).expect(200);
+    await runtime.respond(waiting.id, interaction.id, f.reviewer.id, interaction.payload.revision, {
+      approved: true,
+      apply_feedback: false,
+      comment: '',
+    });
+
+    if (legacy) {
+      const historical = await runtime.get(waiting.id);
+      delete historical.payload.evidence_refs;
+      await runtime.store.put('ai_executions', historical);
+    } else {
+      await f.hub.lifecycle.revokeVersion(f.admin, base.version_id, '撤回基线');
+      await submitPublication(f, target);
+    }
+    await evidenceFor(f).version(f.reviewer.id, target.version_id, false);
+    await client.get(path).expect(403);
+    await client.get(`${path}/events`).expect(403);
+    await (
+      await signIn(f)
+    )
+      .get(`/api/admin/operations/agents/executions/${waiting.id}/diagnostics`)
+      .expect(403);
+    const resumed = await run(f);
+    assert.equal(resumed.id, waiting.id);
+    assert.equal(resumed.status, 'failed');
+    assert.equal(resumed.payload.error?.code, 'AI_FORBIDDEN');
+
+    const visibleIds = async () => {
+      const response = await client
+        .get('/api/ai/executions')
+        .query({ operation_id: 'resource-audit', version_id: target.version_id })
+        .expect(200);
+      return aiExecutionListResponseSchema.parse(response.body).items.map((row) => row.id);
+    };
+    assert.deepEqual(await visibleIds(), []);
+    const open = () =>
+      client
+        .post('/api/ai/executions')
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          operation_id: 'resource-audit',
+          input: { version_id: target.version_id },
+          reuse_existing: true,
+        })
+        .expect(200);
+    const [created, concurrent] = await Promise.all([open(), open()]);
+    assert.equal(created.body.status, 'queued');
+    assert.notEqual(created.body.id, waiting.id);
+    assert.equal(concurrent.body.id, created.body.id);
+    assert.equal((await open()).body.id, created.body.id);
+    assert.deepEqual(await visibleIds(), [created.body.id]);
+    await client.get(path).expect(403);
+  });
+}
+
 test('同版本待审仅禁止提交人发起资源审计，自动触发也不能替他创建任务', async (t) => {
   const provider = await fixture('openai', 'tools', false, script);
   t.after(provider.close);
@@ -1560,7 +1646,14 @@ test('首份版本审计在并发打开时按审核员和版本复用，取消�
   const stopped = (await start(reviewer).expect(200)).body;
   assert.equal(stopped.id, first.body.id);
   assert.equal(stopped.status, 'cancelled');
-  assert.notEqual((await start(reviewer, false).expect(201)).body.id, stopped.id);
+  const manual = (await start(reviewer, false).expect(201)).body;
+  assert.notEqual(manual.id, stopped.id);
+  const historical = await f.hub.ai.runtime.get(manual.id);
+  delete historical.payload.evidence_refs;
+  historical.payload.usage.tools = 1;
+  await f.hub.ai.runtime.store.put('ai_executions', historical);
+  await reviewer.get(`/api/ai/executions/${manual.id}`).expect(403);
+  assert.equal((await start(reviewer).expect(200)).body.id, stopped.id);
 });
 
 test('审核助手要求独立审核及目标范围的 AI 权限，撤权后简报、事件与提交重放均受限', async (t) => {

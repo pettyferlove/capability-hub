@@ -2,7 +2,6 @@ import type { Principal } from '@capability-hub/domain/identity';
 import { canonical, digest } from '@capability-hub/domain/canonical';
 import type { RecordStore } from '../ports/index.js';
 import { fail } from '@capability-hub/domain/errors';
-import { someAsync } from '@capability-hub/domain/async';
 import { builtinRoles, PERMISSIONS } from '@capability-hub/domain/rbac';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -88,14 +87,25 @@ export class IdentityAdministrationService {
   }
   private async guardLastAdmin() {
     const adminRole = (await this.store.find('roles', 'key', 'admin'))!;
-    const users = (await this.store.all('users')).filter((u) => u.active);
+    const admins = new Set(
+      (await this.store.where('role_bindings', 'role_id', adminRole.id))
+        .filter((binding) => binding.scope_type === 'platform')
+        .map((binding) => binding.principal_id),
+    );
+    const users = new Set((await this.store.all('users')).filter((u) => u.active).map((u) => u.id));
+    if ([...admins].some((id) => users.has(id))) return;
+    // 目录调动会自动移除部门成员关系，不能把它当作最后一条管理入口。
+    const localGroups = new Set(
+      (await this.store.all('groups'))
+        .filter((group) => group.active && !group.ldap_entry_uuid && admins.has(group.id))
+        .map((group) => group.id),
+    );
     if (
-      !(await someAsync(users, async (u) => {
-        const p = await this.identity.principal(u.id);
-        return p.bindings.some((b) => b.role_id === adminRole.id && b.scope_type === 'platform');
-      }))
+      !(await this.store.all('memberships')).some(
+        (member) => users.has(member.user_id) && localGroups.has(member.group_id),
+      )
     )
-      fail(409, 'LAST_ADMIN', '必须保留至少一个有效平台管理员');
+      fail(409, 'LAST_ADMIN', '必须保留至少一个不依赖目录部门归属的平台管理员');
   }
   /**
    * 新建账号并挂团队。密码哈希在事务外算完，事务内再次校验调用者权限，

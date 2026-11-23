@@ -323,10 +323,12 @@ test('同一目录条目更名保留账号，复用旧 uid 的其他条目不能
 
 test('同一 OU 共用部门团队，部门更名保留团队且不接管同名本地团队', async (context) => {
   const fixture = await createTestHub(context);
+  const prefix = '研'.repeat(40);
+  const fullName = prefix + '𠮷部';
   const local = await fixture.hub.administration.createGroup(fixture.admin, {
-    name: 'Engineering',
+    name: fullName,
   });
-  const department = { entryUuid: randomUUID(), displayName: 'Engineering' };
+  const department = { entryUuid: randomUUID(), displayName: fullName };
   const identities: Record<string, string> = {
     first: randomUUID(),
     second: randomUUID(),
@@ -344,12 +346,13 @@ test('同一 OU 共用部门团队，部门更名保留团队且不接管同名�
   const group = await fixture.store.find('groups', 'ldap_entry_uuid', department.entryUuid);
   assert(group);
   assert.notEqual(group.id, local.id);
+  assert.equal(group.name, `${prefix} · ${department.entryUuid}`);
   for (const user of users)
     assert.deepEqual((await fixture.hub.identity.principal(user.id)).groups, [group.id]);
   department.displayName = 'Platform';
   await auth.login('first', testPassword, 'test', 'ldap');
   assert.equal((await fixture.store.get('groups', group.id))?.name, 'Platform');
-  assert.equal((await fixture.store.get('groups', local.id))?.name, 'Engineering');
+  assert.equal((await fixture.store.get('groups', local.id))?.name, fullName);
   assert.equal(
     (await fixture.store.find('groups', 'ldap_entry_uuid', department.entryUuid))?.id,
     group.id,
@@ -514,7 +517,7 @@ test('目录部门的名称和成员不能手工改写，拒绝操作不改变�
   assert.deepEqual((await fixture.hub.identity.principal(fixture.reader.id)).groups, []);
 });
 
-test('停用目录部门后登录不会重新启用团队或恢复维护授权', async (context) => {
+test('目录部门启停即时约束自动维护授权，不误伤独立手工授权', async (context) => {
   const fixture = await createTestHub(context);
   const identity = {
     entryUuid: randomUUID(),
@@ -533,11 +536,31 @@ test('停用目录部门后登录不会重新启用团队或恢复维护授权',
   );
   assert(group);
   await fixture.hub.administration.updateGroup(fixture.admin, group.id, { active: false }, '"1"');
+  const scope = { team: group.id };
+  const canMaintain = async () =>
+    has(await fixture.hub.identity.principal(user.id), 'asset:maintain', scope);
+  const candidates = () => fixture.hub.identity.userIdsWithPermission('asset:maintain', scope);
+  assert.equal(await canMaintain(), false);
+  assert(!(await candidates()).includes(user.id));
   await auth.login('member', testPassword, 'test', 'ldap');
   assert.equal((await fixture.store.get('groups', group.id))?.active, false);
   const principal = await fixture.hub.identity.principal(user.id);
   assert.deepEqual(principal.groups, []);
   assert(!has(principal, 'asset:maintain', { team: group.id }));
+  await fixture.hub.administration.updateGroup(fixture.admin, group.id, { active: true }, '"2"');
+  assert(await canMaintain());
+  assert((await candidates()).includes(user.id));
+  const auto = await fixture.store.get('role_bindings', user.ldap_maintainer_binding_id);
+  assert(auto);
+  await fixture.hub.administration.grantRole(fixture.admin, {
+    principal_id: user.id,
+    role_id: auto.role_id,
+    scope_type: 'team',
+    scope_id: group.id,
+  });
+  await fixture.hub.administration.updateGroup(fixture.admin, group.id, { active: false }, '"3"');
+  assert(await canMaintain());
+  assert((await candidates()).includes(user.id));
 });
 
 test('一个来源的登录失败不会锁住同名另一账号，另一来源的成功也不会清除锁定', async (context) => {
@@ -645,6 +668,34 @@ test('不能停用或移除最后一个平台管理员，失败后账号和授�
     code('LAST_ADMIN'),
   );
   assert(await fixture.store.get('role_bindings', binding.id));
+});
+
+test('目录团队继承不能作为唯一管理员，本地团队继承不受目录调动影响', async (context) => {
+  const { hub, admin, store, teamId, reviewer } = await createTestHub(context);
+  const department = { entryUuid: randomUUID(), displayName: '目录部门' };
+  const identity = { entryUuid: randomUUID(), displayName: '目录人员', department };
+  const auth = directoryLogin(hub, { authenticate: async () => identity });
+  const member = await auth.login('member', testPassword, 'test', 'ldap');
+  const group = await store.find('groups', 'ldap_entry_uuid', department.entryUuid);
+  const role = await store.find('roles', 'key', 'admin');
+  assert(group && role);
+  const grant = { role_id: role.id, scope_type: 'platform', scope_id: '' };
+  await hub.administration.grantRole(admin, { ...grant, principal_id: group.id });
+  assert(has(await hub.identity.principal(member.id), 'identity:manage'));
+  const direct = (await store.where('role_bindings', 'principal_id', admin.id)).find(
+    (binding) => binding.role_id === role.id,
+  );
+  assert(direct);
+  await assert.rejects(
+    () => hub.administration.removeGrant(admin, 'role_bindings', direct.id),
+    code('LAST_ADMIN'),
+  );
+  await hub.administration.grantRole(admin, { ...grant, principal_id: teamId });
+  await hub.administration.removeGrant(admin, 'role_bindings', direct.id);
+  identity.department = { entryUuid: randomUUID(), displayName: '新部门' };
+  await auth.login('member', testPassword, 'test', 'ldap');
+  assert(!has(await hub.identity.principal(member.id), 'identity:manage'));
+  assert(has(await hub.identity.principal(reviewer.id), 'identity:manage'));
 });
 
 test('CLI 批准只可被正确校验码消费一次，并发轮询不会重复签发令牌', async (context) => {

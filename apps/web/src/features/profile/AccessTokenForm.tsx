@@ -22,7 +22,7 @@ import { useHub } from '../../shared/context/HubContext.js';
 /**
  * 新建个人访问令牌：明文只在 `POST /api/tokens` 的响应里返回一次，保存在本地 state 中，
  * 关闭或点击「我已安全保存」后即丢弃，无法再次查看。令牌长期有效、只能撤销，
- * 因此提交用 `pending` ref 与 `token` 双重守卫，防止重复点击签出多张令牌。
+ * 在途请求与尚未收起的回执都会阻止重复签发，切换客户端只重置草稿。
  */
 export function AccessTokenForm({
   defaultName = '',
@@ -36,13 +36,19 @@ export function AccessTokenForm({
   const { reload } = useHub();
   const pending = useRef(false);
   const [scope, setScope] = useState<'hub:read' | 'hub:contribute'>('hub:read');
-  const [token, setToken] = useState('');
+  const [receipt, setReceipt] = useState<{ token: string; name: string }>();
+  const [draftFor, setDraftFor] = useState(defaultName);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  if (draftFor !== defaultName) {
+    setDraftFor(defaultName);
+    setScope('hub:read');
+    setError('');
+  }
 
   async function create(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pending.current || token) return;
+    if (pending.current || receipt) return;
     const value = new FormData(event.currentTarget).get('name');
     const name = typeof value === 'string' ? value.trim() : '';
     if (!name) {
@@ -55,7 +61,7 @@ export function AccessTokenForm({
     setError('');
     try {
       const result = await mutate<IssuedTokenResponse>('/api/tokens', { name, scope });
-      setToken(result.token);
+      setReceipt({ token: result.token, name });
       reload();
     } catch (error) {
       setError(errorMessage(error));
@@ -66,19 +72,21 @@ export function AccessTokenForm({
     }
   }
 
-  if (token)
+  if (receipt)
     return (
       <div className={installationContentStyles}>
-        <Message>令牌已创建，只展示这一次。请先复制并安全保存，关闭后无法再次查看。</Message>
+        <Message>
+          令牌「{receipt.name}」已创建，只展示这一次。请先复制并安全保存，关闭后无法再次查看。
+        </Message>
         <div data-sensitive="" className="min-w-0">
-          <CodeBlock title="个人 Hub 访问令牌" code={token} />
+          <CodeBlock title="个人 Hub 访问令牌" code={receipt.token} />
         </div>
         <div>
           <button
             type="button"
             className={cn(btnStyles, btnPrimaryStyles)}
             onClick={() => {
-              setToken('');
+              setReceipt(undefined);
               onDone?.();
             }}
           >
@@ -93,6 +101,7 @@ export function AccessTokenForm({
       <label>
         令牌名称
         <InputField
+          key={defaultName}
           icon="tag"
           name="name"
           defaultValue={defaultName}

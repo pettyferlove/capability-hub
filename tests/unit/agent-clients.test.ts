@@ -127,10 +127,9 @@ test('OAuth 适配区分读取和贡献范围，无法表达范围时交付可�
           client,
         ]);
         assert(guide.assistant_command.includes('--scope user --contribute'));
-        assert.equal(
-          guide.assistant_command.includes('--config-file ""'),
-          client === 'claude-code' || client === 'vscode',
-        );
+        assert(!guide.assistant_command.includes('--config-file'));
+        if (client === 'claude-code' || client === 'vscode')
+          assert(guide.installation_prompt.includes('--config-file'));
         continue;
       }
       assert.equal(guide.method, 'oauth');

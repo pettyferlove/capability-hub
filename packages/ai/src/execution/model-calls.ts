@@ -78,9 +78,10 @@ export async function settleModelCall(
   call.payload.error_code = result.errorCode;
   call.payload.input_tokens = result.inputTokens ?? 0;
   call.payload.output_tokens = result.outputTokens ?? 0;
-  execution.payload.usage.input_tokens += call.payload.input_tokens;
-  execution.payload.usage.output_tokens += call.payload.output_tokens;
-  if (!known) execution.payload.usage.unknown_requests++;
+  if (known) {
+    execution.payload.usage.input_tokens += call.payload.input_tokens;
+    execution.payload.usage.output_tokens += call.payload.output_tokens;
+  } else execution.payload.usage.unknown_requests++;
   await events.store.put('ai_calls', call);
   await events.append(execution, 'usage.updated', { ...execution.payload.usage });
 }

@@ -20,6 +20,7 @@ import App from '../../apps/web/src/app/App.js';
 import { applyAiEvent, useAiExecution } from '../../apps/web/src/features/ai/use-ai-execution.js';
 import { useAiCommand } from '../../apps/web/src/features/ai/use-ai-command.js';
 import { SchemaFields, initialValues } from '../../apps/web/src/features/ai/SchemaFields.js';
+import { NewExecution } from '../../apps/web/src/features/operations/agents/NewExecution.js';
 
 afterEach(cleanup);
 
@@ -209,6 +210,42 @@ test('Agent 视图可用键盘切换，分析采样失败时仍能返回执行�
   await act(async () => history.back());
   assert(await screen.findByRole('heading', { name: 'Agent 运行概况' }));
   assert.equal(location.search, '?tab=agents&view=analytics');
+});
+
+test('新建任务时先离开表单，迟到的创建结果不再打开详情', async (t) => {
+  const receipt = deferred<Response>();
+  t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
+    assert.equal(path, '/api/ai/executions');
+    assert.equal(init.method, 'POST');
+    return receipt.promise;
+  });
+  const opened: string[] = [];
+  const page = render(
+    createElement(NewExecution, {
+      catalog: {
+        default_profile: 'primary',
+        profiles: [{ id: 'primary', label: '测试模型', format: 'openai', model: 'test' }],
+        operations: [
+          {
+            id: 'assistant',
+            version: '1',
+            title: '测试任务',
+            description: '',
+            input_schema: {},
+            output_schema: {},
+            interactions: {},
+            digest: 'a'.repeat(64),
+          },
+        ],
+      },
+      onCreated: (id) => opened.push(id),
+    }),
+  );
+  await userEvent.setup().click(screen.getByRole('button', { name: '开始任务' }));
+  assert(screen.getByRole('button', { name: '正在创建…' }));
+  page.unmount();
+  await act(async () => receipt.resolve(Response.json(streamView().execution)));
+  assert.deepEqual(opened, []);
 });
 
 test('诊断页按原事件序号定位并展示交接快照，导出链接只指向当前任务', async (t) => {

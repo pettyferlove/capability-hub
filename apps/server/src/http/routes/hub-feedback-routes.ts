@@ -5,8 +5,10 @@ import {
   hubFeedbackLimits,
   hubFeedbackListQuerySchema,
   hubFeedbackQueueQuerySchema,
+  hubFeedbackReceiptQuerySchema,
   hubFeedbackRedactionRequestSchema,
   hubFeedbackRefSchema,
+  hubFeedbackTimelineQuerySchema,
   hubFeedbackUpdateRequestSchema,
   hubVersionHeaders,
   type HubFeedbackAttachmentKind,
@@ -59,9 +61,16 @@ function uploadedFiles(
   return result;
 }
 
-const mutation = (req: Pick<Request, 'get'>) => ({
+function receiptRequested(query: Record<string, unknown>) {
+  if (query.view === undefined) return false;
+  hubFeedbackReceiptQuerySchema.parse(query);
+  return true;
+}
+
+const mutation = (req: Pick<Request, 'get'> & { query: Record<string, unknown> }) => ({
   key: idempotencyKey(req),
   etag: req.get('If-Match'),
+  receipt: receiptRequested(req.query),
 });
 const sessionOnly: RequestHandler = (_req, res, next) => {
   if (!res.locals.session) fail(403, 'TOKEN_SCOPE', '此操作仅支持网页会话');
@@ -71,16 +80,23 @@ const sessionOnly: RequestHandler = (_req, res, next) => {
 function feedbackDetailRoutes(router: Router, { hub }: HttpContext, access: HubFeedbackAccess) {
   router.get(
     '/:ref',
-    jsonRoute(async (req, res) =>
-      withRevision(
+    jsonRoute(async (req, res) => {
+      const query =
+        req.query.view === 'timeline' ? hubFeedbackTimelineQuerySchema.parse(req.query) : undefined;
+      return withRevision(
         res,
         await hub.hubFeedback.detail(
           res.locals.principal,
           access,
           hubFeedbackRefSchema.parse(req.params.ref),
+          query
+            ? { afterSequence: query.after, limit: query.limit }
+            : receiptRequested(req.query)
+              ? 'receipt'
+              : undefined,
         ),
-      ),
-    ),
+      );
+    }),
   );
   router.get('/:id/attachments/:aid', async (req, res) => {
     const file = await hub.hubFeedback.attachment(
@@ -168,6 +184,7 @@ export function registerHubFeedbackRoutes(app: Express, context: HttpContext): v
           client: readSessionClient(req.get('User-Agent')),
         },
         idempotencyKey(req),
+        receiptRequested(req.query),
       );
       res.status(201);
       return withRevision(res, result);

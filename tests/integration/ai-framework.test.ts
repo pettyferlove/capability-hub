@@ -356,6 +356,8 @@ for (const format of ['openai', 'anthropic'] as const)
       const result = await hub.runtime.get(submitted.id);
       assert.equal(result.payload.error?.message, '模型请求超时');
       assert.equal(result.payload.usage.unknown_requests, 1);
+      assert.equal(result.payload.usage.input_tokens, 0);
+      assert.equal(result.payload.usage.output_tokens, 0);
       const [call] = await hub.runtime.store.list('ai_calls', {
         execution_id: submitted.id,
         limit: 1,
@@ -639,6 +641,37 @@ async function inlineFixture(t: TestContext, url: string, credentials?: Credenti
   };
   return { ...hub, options, input };
 }
+
+test('模型协议终止即交付并关闭上游，不等待 HTTP EOF，不重复结算', { timeout: 20000 }, async (t) => {
+  for (const format of ['openai', 'anthropic'] as const) {
+    const provider = await fixture(format, 'text', 'after-terminal');
+    t.after(provider.close);
+    const hub = await frameworkFixture(t, frameworkConfig(provider.url, format), (context) =>
+      context.agent({ id: 'writer', instructions: 'Answer briefly.', prompt: 'Hello' }),
+    );
+    const execution = await hub.runtime.submit(hub.admin.id, 'framework-test', {});
+    await hub.run();
+    const row = await hub.runtime.get(execution.id);
+    assert.equal(row.status, 'succeeded', JSON.stringify(row.payload.error));
+    assert.deepEqual(row.payload.usage, {
+      requests: 1,
+      tools: 0,
+      unknown_requests: 0,
+      input_tokens: 10,
+      output_tokens: 8,
+    });
+    await provider.disconnected.promise;
+  }
+  const provider = await fixture('openai', 'json', 'after-terminal');
+  t.after(provider.close);
+  const { runtime, options, input } = await inlineFixture(t, provider.url);
+  const result = await runtime.runInline(options, (run) =>
+    run.call('check', { ...input, onPartial: () => undefined }),
+  );
+  assert.deepEqual(result.value, { verdict: 'ok', count: 7 });
+  assert.deepEqual(result.usage, { input_tokens: 10, output_tokens: 8 });
+  await provider.disconnected.promise;
+});
 
 test('内联操作只在允许出站后建账，空操作和预留拒绝不产生执行或模型调用', async (t) => {
   const provider = await fixture('openai', 'json');

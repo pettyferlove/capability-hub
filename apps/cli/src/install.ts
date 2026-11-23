@@ -1,9 +1,10 @@
 import { unzip } from '@capability-hub/infrastructure/content/zip-archive';
-import type { Manifest } from '@capability-hub/contracts';
 import {
   assetSlugSchema,
-  manifestFileSchema,
+  installSourceRecordSchema,
   manifestSchema,
+  type InstallSourceRecord,
+  type Manifest,
   type ManifestFile,
 } from '@capability-hub/contracts';
 import { canonical, digest, sha256, utf8Compare } from '@capability-hub/domain/canonical';
@@ -12,15 +13,35 @@ import { executableText } from '@capability-hub/domain/files';
 import {
   artifactPath,
   collisionKey,
+  hasDirectoryCaseConflict,
   installSourceFile,
   safePath,
 } from '@capability-hub/domain/paths';
-import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  readlink,
+  rename,
+  rm,
+  rmdir,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { safeDirectory } from './filesystem.js';
+import {
+  assertSameDirectory,
+  identifyDirectory,
+  pinDirectory,
+  safeDirectory,
+  type DirectoryIdentity,
+} from './filesystem.js';
+import { hubUrl } from './credentials.js';
 import { createHash } from 'node:crypto';
-import { constants } from 'node:fs';
-import { open, readlink } from 'node:fs/promises';
+import { constants, type Stats } from 'node:fs';
 
 /**
  * 清单校验：路径必须已排序且无大小写/规范化碰撞、不能同时是文件与目录，单文件 ≤10 MiB、
@@ -35,6 +56,8 @@ export function validateManifest(value: unknown): asserts value is Manifest {
   let prev = '';
   const keys = new Set<string>();
   const allPaths = new Set(manifest.files.map((file) => collisionKey(file.path)));
+  if (hasDirectoryCaseConflict(manifest.files))
+    fail(422, 'MANIFEST_INVALID', '同一目录的拼写不一致');
   for (const f of manifest.files) {
     artifactPath(f.path);
     if (
@@ -78,23 +101,31 @@ export function validateManifest(value: unknown): asserts value is Manifest {
  * 来源记录可能由 Agent 自行写入：Windows PowerShell 5.1 的 `Set-Content -Encoding UTF8` 带 BOM，
  * `Out-File` 默认写 UTF-16LE。按 BOM 选择编码，TextDecoder 会去掉 BOM。
  */
-export async function readSourceRecord(path: string): Promise<unknown> {
-  const bytes = await readFile(path);
-  const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? 'utf-16le' : 'utf-8';
-  return JSON.parse(new TextDecoder(encoding).decode(bytes));
+export async function readSourceRecord(path: string) {
+  const stat = await lstat(path, { bigint: true });
+  if (!stat.isFile()) throw new Error('本地来源记录不是普通文件');
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const opened = await file.stat({ bigint: true });
+    if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino)
+      throw new Error('本地来源记录发生变化');
+    const bytes = await file.readFile();
+    const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? 'utf-16le' : 'utf-8';
+    const receipt = installSourceRecordSchema.parse(
+      JSON.parse(new TextDecoder(encoding, { fatal: true }).decode(bytes)),
+    );
+    receipt.hub_url = hubUrl(receipt.hub_url);
+    return receipt;
+  } finally {
+    await file.close();
+  }
 }
 
-/** 来源记录中的文件清单；记录缺失、不是普通文件或格式无效时返回原因。 */
-async function recordedFiles(directory: string): Promise<ManifestFile[] | string> {
+async function installationReceipt(directory: string) {
   try {
-    const recordPath = join(directory, installSourceFile);
-    if (!(await lstat(recordPath)).isFile()) return '本地来源记录不是普通文件';
-    const value = await readSourceRecord(recordPath);
-    if (!value || typeof value !== 'object' || !('files' in value))
-      throw new Error('Invalid receipt');
-    return manifestFileSchema.array().parse(value.files);
+    return await readSourceRecord(join(directory, installSourceFile));
   } catch {
-    return '目录不是已验证的 Hub 安装';
+    return undefined;
   }
 }
 
@@ -116,8 +147,8 @@ export async function localDiff(path: string, receiptFiles?: ManifestFile[]) {
       else if (name !== installSourceFile) files.push(name);
     }
   }
-  const expected = receiptFiles ?? (await recordedFiles(path));
-  if (typeof expected === 'string') return [expected];
+  const expected = receiptFiles ?? (await installationReceipt(path))?.files;
+  if (!expected) return ['目录不是已验证的 Hub 安装'];
   await walk(path);
   const diff: string[] = [];
   const checkExecutable = process.platform !== 'win32';
@@ -197,7 +228,103 @@ async function lockSkill(root: string, slug: string) {
       );
     throw error;
   }
-  return lock;
+  return identifyDirectory(lock);
+}
+
+async function assertWorkspace(root: DirectoryIdentity, lock?: DirectoryIdentity) {
+  await safeDirectory(root.path, false);
+  await assertSameDirectory(root);
+  if (lock) await assertSameDirectory(lock);
+}
+
+async function cleanDirectory(
+  root: DirectoryIdentity,
+  directory: DirectoryIdentity,
+  recursive = false,
+) {
+  try {
+    await assertWorkspace(root);
+    await assertSameDirectory(directory);
+  } catch {
+    // 原路径已不能证明归属，不触碰替代目录。
+    return;
+  }
+  if (recursive) await rm(directory.path, { recursive: true });
+  else await rmdir(directory.path);
+}
+
+async function withRelocatedDirectory<T>(
+  root: DirectoryIdentity,
+  lock: DirectoryIdentity,
+  target: DirectoryIdentity,
+  prefix: string,
+  use: (
+    relocated: DirectoryIdentity,
+    assertLocation: (parent?: string) => Promise<void>,
+    markDeleted: () => void,
+  ) => Promise<T>,
+) {
+  await assertWorkspace(root, lock);
+  const container = await identifyDirectory(await mkdtemp(join(root.path, prefix)));
+  const path = join(container.path, basename(target.path));
+  let relocated: DirectoryIdentity | undefined;
+  let moved = false;
+  let deleting = false;
+  const assertLocation = async (parent = container.path) => {
+    await safeDirectory(parent, false);
+    await assertSameDirectory(root);
+    await assertSameDirectory(lock);
+    await assertSameDirectory(container);
+    if (relocated) await assertSameDirectory(relocated);
+  };
+  try {
+    await assertLocation();
+    await assertSameDirectory(target);
+    const handle = await pinDirectory(target);
+    try {
+      await rename(target.path, path);
+      moved = true;
+      await assertLocation();
+      relocated = await identifyDirectory(path);
+      const bound = (await handle?.stat({ bigint: true })) ?? target;
+      if (
+        relocated.dev !== target.dev ||
+        relocated.dev !== bound.dev ||
+        relocated.ino !== bound.ino
+      )
+        fail(409, 'INSTALL_TARGET_CHANGED', `目录在搬移期间发生变化：${target.path}`);
+    } finally {
+      await handle?.close();
+    }
+    const result = await use(relocated, assertLocation, () => {
+      deleting = true;
+    });
+    if (deleting) moved = false;
+    return result;
+  } catch (error) {
+    if (moved) {
+      if (deleting || !relocated) {
+        const reason = deleting ? '已删除部分条目，不恢复残缺目录' : '无法确认搬移后的目录身份';
+        throw new AggregateError([error], `${reason}，请人工核对暂存位置：${path}`, {
+          cause: error,
+        });
+      }
+      try {
+        await assertLocation();
+        if (await directoryExists(target.path))
+          throw new Error('恢复位置已被占用', { cause: error });
+        await rename(path, target.path);
+        moved = false;
+      } catch (restoreError) {
+        throw new AggregateError([error, restoreError], `操作中止，请人工核对暂存位置：${path}`, {
+          cause: restoreError,
+        });
+      }
+    }
+    throw error;
+  } finally {
+    if (!moved) await cleanDirectory(root, container);
+  }
 }
 
 /**
@@ -221,7 +348,7 @@ export async function install(
   validateInstallManifest(input);
   if (digest(input.archive) !== input.artifact_digest)
     fail(422, 'ARTIFACT_DIGEST_MISMATCH', '下载归档摘要不匹配');
-  const files = await unzip(input.archive);
+  const files = await unzip(input.archive, 'release');
   if (files.length !== input.manifest.files.length)
     fail(422, 'ARCHIVE_MANIFEST_MISMATCH', 'ZIP 与清单文件数不匹配');
   for (const f of input.manifest.files) {
@@ -237,26 +364,21 @@ export async function install(
   const root = await safeDirectory(input.to, !input.dryRun);
   const destination = join(root, input.slug);
   if (input.dryRun) return describeDestination(destination, input.manifest, true);
-  const originalRoot = await lstat(root, { bigint: true });
-  const assertRoot = async () => {
-    await safeDirectory(root, false);
-    const current = await lstat(root, { bigint: true });
-    if (current.dev !== originalRoot.dev || current.ino !== originalRoot.ino)
-      fail(409, 'INSTALL_TARGET_CHANGED', '安装父目录在准备期间发生变化，请检查后重试');
-  };
+  const originalRoot = await identifyDirectory(root);
   const lock = await lockSkill(root, input.slug);
-  let staging: string | undefined;
-  let backup: string | undefined;
-  let backupDirectory: string | undefined;
+  let staging: DirectoryIdentity | undefined;
+  let originalTarget: DirectoryIdentity | undefined;
   try {
-    const description = await describeDestination(destination, input.manifest, false);
-    if (description.existing && !input.replace) targetExists(description);
-    const initialFingerprint = description.existing
-      ? await directoryFingerprint(destination)
-      : null;
-    staging = await mkdtemp(join(root, '.capability-hub-stage-'));
+    await assertWorkspace(originalRoot, lock);
+    if (await directoryExists(destination)) {
+      if (!input.replace)
+        targetExists(await describeDestination(destination, input.manifest, false));
+      originalTarget = await identifyDirectory(destination);
+    }
+    const initialFingerprint = originalTarget ? await directoryFingerprint(destination) : null;
+    staging = await identifyDirectory(await mkdtemp(join(root, '.capability-hub-stage-')));
     for (const file of input.manifest.files) {
-      const path = join(staging, file.path);
+      const path = join(staging.path, file.path);
       await mkdir(dirname(path), { recursive: true, mode: 0o700 });
       await writeFile(path, files.find((entry) => entry.path === file.path)!.bytes, {
         mode: file.executable ? 0o700 : 0o600,
@@ -264,7 +386,7 @@ export async function install(
       });
     }
     await writeFile(
-      join(staging, installSourceFile),
+      join(staging.path, installSourceFile),
       JSON.stringify(
         {
           ...input.source,
@@ -278,53 +400,37 @@ export async function install(
       { mode: 0o600, flag: 'wx' },
     );
     await input.beforeCommit?.();
-    await assertRoot();
-    // 网络授权确认期间目标可能被修改，提交前比较实际字节和文件属性。
-    const current = await describeDestination(destination, input.manifest, false);
-    if (
-      current.existing !== description.existing ||
-      (current.existing ? await directoryFingerprint(destination) : null) !== initialFingerprint
-    )
-      fail(409, 'INSTALL_TARGET_CHANGED', '安装目标在准备期间发生变化，请检查后重试');
-    if (current.existing) {
-      backupDirectory = await mkdtemp(join(root, `.${input.slug}.backup-`));
-      const backupPath = join(backupDirectory, input.slug);
-      await rename(destination, backupPath);
-      backup = backupPath;
-    }
-    await rename(staging, destination);
-    staging = undefined;
-    return { dry_run: false, destination, backup, files: input.manifest.files.length };
-  } catch (error) {
-    if (backup) {
-      try {
-        await assertRoot();
-        if (await directoryExists(destination))
-          throw new Error('恢复位置已被占用', { cause: error });
-        await rename(backup, destination);
-        backup = undefined;
-      } catch (restoreError) {
-        throw new AggregateError([error, restoreError], '安装失败，请从 ' + backup + ' 手动恢复', {
-          cause: restoreError,
-        });
-      }
-    }
-    throw error;
+    await assertWorkspace(originalRoot, lock);
+    await assertSameDirectory(staging);
+    const stage = staging;
+    const commitInstall = async (backup?: string): Promise<InstallResult> => {
+      await assertWorkspace(originalRoot, lock);
+      await assertSameDirectory(stage);
+      if (await directoryExists(destination))
+        fail(409, 'INSTALL_TARGET_CHANGED', '安装目标在准备期间发生变化，请检查后重试');
+      await rename(stage.path, destination);
+      staging = undefined;
+      return { dry_run: false, destination, backup, files: input.manifest.files.length };
+    };
+    if (!originalTarget) return await commitInstall();
+    return await withRelocatedDirectory(
+      originalRoot,
+      lock,
+      originalTarget,
+      `.${input.slug}.backup-`,
+      async (backup, assertLocation) => {
+        if ((await directoryFingerprint(backup.path)) !== initialFingerprint)
+          fail(409, 'INSTALL_TARGET_CHANGED', '安装目标在准备期间发生变化，请检查后重试');
+        await assertLocation();
+        return commitInstall(backup.path);
+      },
+    );
   } finally {
-    // 父目录被移走时，原路径可能已指向其他内容，不能再用它执行清理。
-    if (
-      await assertRoot().then(
-        () => true,
-        () => false,
-      )
-    )
-      await Promise.all([
-        ...(staging ? [rm(staging, { recursive: true, force: true })] : []),
-        ...(backupDirectory && !backup
-          ? [rm(backupDirectory, { recursive: true, force: true })]
-          : []),
-        rm(lock, { recursive: true, force: true }),
-      ]);
+    try {
+      if (staging) await cleanDirectory(originalRoot, staging, true);
+    } finally {
+      await cleanDirectory(originalRoot, lock);
+    }
   }
 }
 
@@ -352,6 +458,46 @@ async function skillBackups(root: string, slug: string) {
     .sort(utf8Compare);
 }
 
+async function discardDirectory(
+  root: DirectoryIdentity,
+  lock: DirectoryIdentity,
+  target: DirectoryIdentity,
+  fingerprint: string,
+  receipt?: InstallSourceRecord,
+) {
+  await withRelocatedDirectory(
+    root,
+    lock,
+    target,
+    '.capability-hub-remove-',
+    async (staged, assertLocation, markDeleted) => {
+      if (
+        receipt &&
+        canonical((await installationReceipt(staged.path)) ?? null) !== canonical(receipt)
+      )
+        fail(409, 'INSTALL_TARGET_CHANGED', '待删除安装的来源记录发生变化');
+      const entries: VerifiedEntry[] = [];
+      if ((await directoryFingerprint(staged.path, entries)) !== fingerprint)
+        fail(409, 'INSTALL_TARGET_CHANGED', '待删除内容发生变化，已停止删除');
+      // 只处理刚核验的条目。新出现的文件让 rmdir 失败，不被递归删除。
+      for (const { path, stat } of entries) {
+        await assertLocation(dirname(path));
+        const current = await lstat(path);
+        if (
+          current.dev !== stat.dev ||
+          current.ino !== stat.ino ||
+          current.mode !== stat.mode ||
+          (!stat.isDirectory() && (current.size !== stat.size || current.mtimeMs !== stat.mtimeMs))
+        )
+          fail(409, 'INSTALL_TARGET_CHANGED', `待删除条目发生变化：${path}`);
+        if (stat.isDirectory()) await rmdir(path);
+        else await unlink(path);
+        markDeleted();
+      }
+    },
+  );
+}
+
 /**
  * 删除 `to/<slug>`：只处理带有效来源记录的安装，本地有差异时须 `force`。`backups` 改为只删除
  * `--replace` 留下的同名备份，不动当前安装。与同名安装互斥，路径不能经过链接；目录先移入隐藏
@@ -368,44 +514,63 @@ export async function remove(input: {
   const root = await safeDirectory(input.to, false);
   const dryRun = input.dryRun === true;
   const destination = join(root, input.slug);
-  const describe = async (): Promise<RemoveResult> => {
-    const backups = await skillBackups(root, input.slug);
-    if (input.backups) return { dry_run: dryRun, removed: backups };
-    if (!(await directoryExists(destination)))
-      fail(404, 'INSTALL_NOT_FOUND', `未找到安装目录：${destination}`);
-    const files = await recordedFiles(destination);
-    if (typeof files === 'string')
-      fail(422, 'INSTALL_UNVERIFIED', `${files}；CLI 只删除可验证的 Hub 安装，请手动核对后处理`);
-    const differences = await localDiff(destination, files);
-    if (differences.length && !input.force)
-      fail(409, 'INSTALL_MODIFIED', `本地有修改，确认丢弃后加 --force：${differences.join('、')}`, {
-        differences,
-      });
-    return {
-      dry_run: dryRun,
-      removed: [destination],
-      ...(differences.length ? { differences } : {}),
-      ...(backups.length ? { backups } : {}),
-    };
+  if (!(await directoryExists(root))) {
+    if (input.backups) return { dry_run: dryRun, removed: [] };
+    fail(404, 'INSTALL_NOT_FOUND', `未找到安装目录：${destination}`);
+  }
+  const originalRoot = await identifyDirectory(root);
+  const backups = await skillBackups(root, input.slug);
+  const removed = input.backups ? backups : [destination];
+  const result: RemoveResult = {
+    dry_run: dryRun,
+    removed,
+    ...(!input.backups && backups.length ? { backups } : {}),
   };
-  const preview = await describe();
-  if (dryRun || !preview.removed.length) return preview;
-  const lock = await lockSkill(root, input.slug);
+  if (!removed.length) return result;
+  if (!input.backups && !(await directoryExists(destination)))
+    fail(404, 'INSTALL_NOT_FOUND', `未找到安装目录：${destination}`);
+  const lock = dryRun ? undefined : await lockSkill(root, input.slug);
+  const completed: string[] = [];
   try {
-    // 检查与加锁之间目录可能被替换或修改，持锁后按同一规则复核。
-    await safeDirectory(root, false);
-    const result = await describe();
-    for (const path of result.removed) {
-      const trash = await mkdtemp(join(root, '.capability-hub-remove-'));
-      try {
-        await rename(path, join(trash, basename(path)));
-      } finally {
-        await rm(trash, { recursive: true, force: true });
+    const targets = [];
+    for (const path of removed) {
+      await assertWorkspace(originalRoot, lock);
+      const target = await identifyDirectory(path);
+      const receipt = input.backups ? undefined : await installationReceipt(path);
+      if (!input.backups && !receipt)
+        fail(422, 'INSTALL_UNVERIFIED', '目录不是已验证的 Hub 安装；请手动核对后处理');
+      const fingerprint = lock ? await directoryFingerprint(path) : '';
+      if (receipt) {
+        const differences = await localDiff(path, receipt.files);
+        if (differences.length && !input.force)
+          fail(
+            409,
+            'INSTALL_MODIFIED',
+            `本地有修改，确认丢弃后加 --force：${differences.join('、')}`,
+            {
+              differences,
+            },
+          );
+        if (differences.length) result.differences = differences;
+      }
+      targets.push({ target, fingerprint, receipt });
+    }
+    if (lock) {
+      for (const { target, fingerprint, receipt } of targets) {
+        await discardDirectory(originalRoot, lock, target, fingerprint, receipt);
+        completed.push(target.path);
       }
     }
     return result;
+  } catch (error) {
+    if (completed.length)
+      throw new Error(
+        `其余删除未完成；已删除：${completed.join('、')}。${error instanceof Error ? error.message : ''}`,
+        { cause: error },
+      );
+    throw error;
   } finally {
-    await rm(lock, { recursive: true, force: true });
+    if (lock) await cleanDirectory(originalRoot, lock);
   }
 }
 
@@ -437,19 +602,25 @@ async function describeDestination<T extends boolean>(
   };
 }
 
-async function directoryFingerprint(directory: string): Promise<string> {
+interface VerifiedEntry {
+  path: string;
+  stat: Stats;
+}
+
+async function directoryFingerprint(directory: string, entries?: VerifiedEntry[]): Promise<string> {
   const hash = createHash('sha256');
   async function walk(path: string, relative = ''): Promise<void> {
     const stat = await lstat(path);
+    // 根目录身份单独核对，rename 也会改变根目录 ctime；子项身份、元数据和内容仍须一致。
     hash.update(
       JSON.stringify([
         relative,
         stat.dev,
-        stat.ino,
+        relative ? stat.ino : null,
         stat.mode,
         stat.size,
         stat.mtimeMs,
-        stat.ctimeMs,
+        relative ? stat.ctimeMs : null,
       ]),
     );
     if (stat.isSymbolicLink()) hash.update(await readlink(path));
@@ -457,14 +628,21 @@ async function directoryFingerprint(directory: string): Promise<string> {
       for (const name of (await readdir(path)).sort(utf8Compare))
         await walk(join(path, name), relative + '/' + name);
     } else if (stat.isFile()) {
-      const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const file = await open(
+        path,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
       try {
+        const opened = await file.stat();
+        if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino)
+          fail(409, 'INSTALL_TARGET_CHANGED', `读取期间文件发生变化：${path}`);
         for await (const bytes of file.createReadStream({ autoClose: false }))
           hash.update(bytes as Buffer);
       } finally {
         await file.close();
       }
     } else fail(422, 'INSTALL_PATH', '安装目标包含特殊文件');
+    entries?.push({ path, stat });
   }
   await walk(directory);
   return hash.digest('hex');

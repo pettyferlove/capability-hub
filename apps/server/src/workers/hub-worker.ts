@@ -198,7 +198,11 @@ export class HubWorker {
           ? await this.hub.store.where('intakes', 'source_sync_job_id', job.id)
           : [await this.hub.store.get('intakes', job.aggregate_id)];
       for (const intake of intakes)
-        if (intake && ['received', 'fetching', 'scanning'].includes(intake.state))
+        if (
+          intake &&
+          !(job.kind === 'source_sync' && intake.rescan_of) &&
+          ['received', 'fetching', 'scanning'].includes(intake.state)
+        )
           await this.hub.store.put('intakes', {
             ...intake,
             state: 'cancelled',
@@ -244,6 +248,49 @@ export class HubWorker {
       });
     }
   }
+  private async processContent(job: JobRecord) {
+    let terminal: Pick<JobRecord, 'state' | 'last_error_code' | 'error_message'> = {
+      state: 'succeeded',
+    };
+    if (job.kind === 'source_sync') {
+      if (!job.result) await this.hub.sourceSync.process(job);
+    } else {
+      const intake = (await this.hub.store.get('intakes', job.aggregate_id))!;
+      if (intake.state === 'failed' || intake.state === 'cancelled') {
+        terminal = {
+          state: intake.state,
+          last_error_code: intake.error_code ?? undefined,
+          error_message: intake.error_message ?? undefined,
+        };
+      } else if (intake.state !== 'ready') {
+        let files;
+        if (job.kind === 'rescan') {
+          const version = await this.hub.store.get('versions', job.input.version_id);
+          if (!version || version.asset_id !== intake.asset_id)
+            throw new HubError(409, 'INTAKE_MISMATCH', '重扫目标与接收记录不匹配');
+          files = await Promise.all(
+            version.files.map(async (f) => ({
+              path: f.path,
+              bytes: await this.hub.blobs.read(f.blob_ref),
+              executable: f.executable,
+            })),
+          );
+        }
+        await this.hub.intakeProcessor.process(intake, job, files);
+        return 'succeeded';
+      }
+    }
+    // 旧作业可能已提交业务结果，但尚未结算租约。
+    await this.hub.jobs.withLease(job, async (current) => {
+      await this.hub.store.put('jobs', {
+        ...current,
+        ...terminal,
+        finished_at: new Date().toISOString(),
+        lease_until: 0,
+      });
+    });
+    return terminal.state;
+  }
   private async runContent(job: JobRecord) {
     let heartbeat: ReturnType<typeof setTimeout> | undefined;
     let renewal = Promise.resolve();
@@ -280,35 +327,9 @@ export class HubWorker {
         heartbeat.unref();
       };
       scheduleRenewal();
-      if (job.kind === 'source_sync') await this.hub.sourceSync.process(job);
-      else {
-        const intake = (await this.hub.store.get('intakes', job.aggregate_id))!;
-        const version =
-          job.kind === 'rescan'
-            ? await this.hub.store.get('versions', job.input.version_id)
-            : undefined;
-        const files = version
-          ? await Promise.all(
-              version.files.map(async (f) => ({
-                path: f.path,
-                bytes: await this.hub.blobs.read(f.blob_ref),
-                executable: f.executable,
-              })),
-            )
-          : undefined;
-        await this.hub.intakeProcessor.process(intake, job, files);
-      }
-      await this.cancelRequestedJobs();
-      await this.hub.jobs.withLease(job, async (current) => {
-        await this.hub.store.put('jobs', {
-          ...current,
-          state: 'succeeded',
-          finished_at: new Date().toISOString(),
-          lease_until: 0,
-        });
-      });
+      const state = await this.processContent(job);
       this.hub.logs.logger.info({
-        event: 'job.succeeded',
+        event: 'job.' + state,
         job_id: job.id,
         lease_epoch: job.lease_epoch,
       });
@@ -338,7 +359,7 @@ export class HubWorker {
           });
           if (['intake', 'rescan'].includes(job.kind)) {
             const intake = await this.hub.store.get('intakes', job.aggregate_id);
-            if (intake)
+            if (intake && intake.state !== 'ready')
               await this.hub.store.put('intakes', {
                 ...intake,
                 state: retry ? 'received' : cancelled ? 'cancelled' : 'failed',

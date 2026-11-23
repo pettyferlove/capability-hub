@@ -109,6 +109,7 @@ export class GitRepositoryAdapter implements GitRepository {
     return new Promise<Buffer>((resolve, reject) => {
       const child = spawn('/usr/bin/git', args, {
         cwd,
+        detached: true,
         env: {
           PATH: process.env.PATH ?? '/usr/bin:/bin',
           HOME: cwd,
@@ -130,7 +131,17 @@ export class GitRepositoryAdapter implements GitRepository {
       const terminate = (error: HubError) => {
         if (failure) return;
         failure = error;
-        child.kill('SIGKILL');
+        clearTimeout(timer);
+        // detached 让本次 Git 和传输 helper 独占进程组，不能向宿主进程组发信号。
+        try {
+          if (child.pid && child.pid > 1) process.kill(-child.pid, 'SIGKILL');
+        } catch (cause) {
+          if ((cause as NodeJS.ErrnoException).code !== 'ESRCH')
+            failure = new HubError(502, 'GIT_UNAVAILABLE', '无法终止受控 Git 客户端');
+        }
+        child.stdout.destroy();
+        child.stderr.destroy();
+        reject(failure);
       };
       const timer = setTimeout(() => {
         terminate(new HubError(504, 'GIT_TIMEOUT', 'Git 拉取超时', {}, true));
@@ -146,14 +157,13 @@ export class GitRepositoryAdapter implements GitRepository {
         const remaining = 4096 - errors.reduce((n, b) => n + b.length, 0);
         if (remaining > 0) errors.push(c.subarray(0, remaining));
       });
-      child.on('error', () => {
-        clearTimeout(timer);
-        failure ??= new HubError(502, 'GIT_UNAVAILABLE', '无法启动受控 Git 客户端');
+      child.once('error', () => {
+        terminate(new HubError(502, 'GIT_UNAVAILABLE', '无法启动受控 Git 客户端'));
       });
       child.on('close', (code) => {
         clearTimeout(timer);
-        if (failure) reject(failure);
-        else if (code === 0) resolve(Buffer.concat(chunks));
+        if (failure) return;
+        if (code === 0) resolve(Buffer.concat(chunks));
         else {
           const text = Buffer.concat(errors).toString();
           const authError =

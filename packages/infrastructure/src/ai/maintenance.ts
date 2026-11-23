@@ -30,9 +30,7 @@ export async function purgeAiHistory(store: RecordStore, retentionDays = 30): Pr
           Date.parse(current.updated_at) >= cutoff
         )
           return;
-        const jobs = (await store.all('jobs')).filter(
-          (job) => job.kind === 'ai_execution' && job.aggregate_id === row.id,
-        );
+        const jobs = await store.listAiExecutionJobs(row.id);
         if (jobs.some((job) => ['queued', 'running'].includes(job.state))) return;
         for (const table of aiTables.filter((table) => table !== 'ai_executions')) {
           for (;;) {

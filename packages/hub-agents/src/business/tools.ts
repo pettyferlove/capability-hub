@@ -177,7 +177,11 @@ export function businessTools(
       'compare-release',
       '比较当前发布版本的文件清单，不加载正文。base_version_id 为 null 表示没有可比较的基线，不能据此断言行为未变或发生回归。',
       empty,
-      () => service.compare(context.ownerId, versionId),
+      async () => {
+        const result = await service.compare(context.ownerId, versionId);
+        if (result.base_version_id) await context.recordEvidence(result.base_version_id);
+        return result;
+      },
     ),
     ...(feedbackId
       ? {

@@ -154,9 +154,9 @@ export class IntakeService {
     );
   }
   /**
-   * 把失败且可重试的接收重置为 `received` 并重新排入 `intake` 作业。
+   * 把失败且可重试的接收重置为 `received`，重扫仍以原作业的固定版本为输入。
    *
-   * 状态重置与作业入队在同一事务内提交，本方法不使用幂等键，重复调用会重复入队。
+   * 状态重置与作业入队在同一事务内提交。
    * 仅 `failed` 且 `retryable` 且未绑定来源版本（无 `binding_id`）的记录可重试，
    * 否则 409/`NOT_RETRYABLE`；资产或来源被封禁/分发撤销时 409/`CONTENT_UNAVAILABLE`。
    * 需要资产维护权限，记录不存在时 404。
@@ -180,6 +180,7 @@ export class IntakeService {
         fail(409, 'CONTENT_UNAVAILABLE', '资源或来源已封禁');
       await this.context.store.put('intakes', {
         ...intake,
+        ...(intake.rescan_of ? { source_sync_job_id: undefined } : {}),
         state: 'received',
         error_code: null,
         error_message: null,
@@ -187,7 +188,14 @@ export class IntakeService {
         progress: [{ step: 'received', started_at: now() }],
         finished_at: null,
       });
-      const job = await this.jobs.enqueue('intake', intake.id, {});
+      const rescan = intake.rescan_of
+        ? (await this.context.store.where('jobs', 'aggregate_id', intake.id)).find(
+            (job) => job.kind === 'rescan',
+          )
+        : undefined;
+      const job = rescan
+        ? await this.jobs.enqueue('rescan', intake.id, rescan.input)
+        : await this.jobs.enqueue('intake', intake.id, {});
       return { job_id: job.id, intake_id: intake.id };
     });
   }
@@ -250,8 +258,8 @@ export class IntakeService {
         if (inProgress)
           return {
             intake_id: inProgress.id,
-            job_id: (await this.context.store.all('jobs')).find(
-              (j) => j.aggregate_id === inProgress.id,
+            job_id: (await this.context.store.where('jobs', 'aggregate_id', inProgress.id)).find(
+              (j) => j.state === 'queued' || j.state === 'running',
             )?.id,
           };
         for (const r of await filterAsync(
@@ -277,6 +285,7 @@ export class IntakeService {
           rescan_of: old.id,
           historical: true,
           binding_id: null,
+          source_sync_job_id: undefined,
           source_revision: currentSource.revision,
           source_generation: null,
           version_id: null,

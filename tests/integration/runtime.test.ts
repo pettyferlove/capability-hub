@@ -187,6 +187,21 @@ test('执行趋势按北京时间创建日分桶，包含零值日期并排除�
   assert(!response.text.includes('AI_PRIVATE_DIAGNOSTICS'));
 });
 
+test('运行快照区分首次领取、等待重试与正在重试的作业', async (context) => {
+  const f = await createTestHub(context);
+  const admin = await signIn(f);
+  const retrying = async () =>
+    ((await admin.get(operationsPath).expect(200)).body as OperationsResponse).jobs?.retrying;
+  await f.hub.jobs.enqueue('intake', randomUUID(), {});
+  const first = await f.hub.jobs.claim('worker', ['intake']);
+  assert(first);
+  assert.equal(await retrying(), 0);
+  await f.store.put('jobs', { ...first, state: 'queued', lease_until: 0 });
+  assert.equal(await retrying(), 1);
+  assert.equal((await f.hub.jobs.claim('worker', ['intake']))?.id, first.id);
+  assert.equal(await retrying(), 1);
+});
+
 test('运行快照按 Agent 汇总保留的执行，只向审计员披露统计与模型标识', async (context) => {
   const fixture = await createTestHub(context, { ai: frameworkConfig() });
   const { runtime } = fixture.hub.ai;

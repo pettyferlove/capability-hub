@@ -25,7 +25,12 @@ docker compose --env-file .env up -d server
 
 需要 Compose 托管依赖时，另设 `COMPOSE_PROFILES=postgres`、`minio` 或 `postgres,minio`，并选择相应驱动。内置 PostgreSQL 使用 `CAPABILITY_HUB_POSTGRES_PASSWORD`，内置 MinIO 使用指定镜像和独立管理账号。首次使用内置 MinIO 时先运行 `docker compose --env-file .env --profile bootstrap run --rm minio-bootstrap` 创建私有桶及应用权限，再启动 Hub。已有账号或策略不会被覆盖。
 
-server 默认发布到回环地址。内网 HTTP 直连可设 `CAPABILITY_HUB_BIND_HOST=192.168.1.20`、`CAPABILITY_HUB_PORT=4100` 和 `CAPABILITY_HUB_PUBLIC_URL=http://192.168.1.20:4100`，将示例 IP 换成服务器内网地址。选择 HTTPS 时由反向代理终止 TLS，并转发公开地址的 Host。容器根文件系统只读，Git 和扫描作业所需的 /tmp 容量按实际负载配置。
+server 默认发布到回环地址。内网 HTTP 直连可设置 `CAPABILITY_HUB_BIND_HOST`、`CAPABILITY_HUB_PORT` 和对应的公开地址。HTTPS 代理需转发公开 Host；如需按访客区分限流，设置 `CAPABILITY_HUB_TRUSTED_PROXY_ADDRESSES` 为 Hub 实际看到的受信代理地址，并由代理重写转发头或追加真实来源。Compose 中该地址可能是桥接网关，不能直接照填宿主回环地址或信任整个网段。容器根文件系统只读，按负载配置 Git 和扫描所需的 `/tmp`。
+
+## 已有实例升级
+
+- 从旧扫描规则升级到 `2026-11-23.1` 时，旧规则下待审的申请不能继续批准（`409 REVIEW_STALE`）。先重扫固定版本，再提交新申请；历史回退、通用提名也需要目标版本的当前规则扫描。已发布内容不重打包、不改写。
+- 升级前确认至少一个启用账号是直接授予的平台管理员，或通过启用的本地团队获得该角色。若现有管理员全靠 LDAP 部门继承，升级后受保护的账号、团队或授权变更会返回 `409 LAST_ADMIN`。仍有管理权限的管理员可在「团队与权限」先向启用账号直接授予平台范围的内置 `admin` 角色，再重试原操作。
 
 ## 验收
 

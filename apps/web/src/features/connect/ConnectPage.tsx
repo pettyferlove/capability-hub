@@ -277,7 +277,7 @@ function HubConnection() {
             </p>
             <CodeBlock title="手动令牌配置" code={manual.text} />
             {me ? (
-              <AccessTokenForm key={client} defaultName={client + ' 手动接入'} />
+              <AccessTokenForm defaultName={client + ' 手动接入'} />
             ) : (
               <a
                 className={btnStyles}

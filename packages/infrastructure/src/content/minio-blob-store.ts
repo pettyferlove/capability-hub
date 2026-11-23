@@ -173,7 +173,7 @@ export class MinioBlobStore implements BlobStorage {
     } catch (error) {
       throw storageError(error);
     }
-    await this.read(await this.put(Buffer.from('capability-hub-readiness')));
+    await this.put(Buffer.from('capability-hub-readiness'));
   }
   close(): Promise<void> {
     if (!this.closed) {

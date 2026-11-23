@@ -1,7 +1,7 @@
 import { fail } from '@capability-hub/domain/errors';
 
 const MiB = 1024 * 1024;
-// 在 JSON.parse 覆盖重复键前检查嵌套深度与对象成员。
+const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 /**
  * 受限 JSON 解析：任何拒绝都以 413/422 抛出，不返回部分结果。
@@ -11,8 +11,14 @@ const MiB = 1024 * 1024;
  * 也视为同一键，因为下游按字段取值时无法感知被覆盖的那份数据。重复键抛 422 `JSON_DUPLICATE`。
  * 注意：此处只做结构约束，不做 Schema 校验，调用方需自行用 Ajv 等继续验证。
  */
-export function boundedJson(text: string): unknown {
-  if (Buffer.byteLength(text) > 10 * MiB) fail(413, 'JSON_SIZE', 'JSON 过大');
+export function boundedJson(input: string | Uint8Array): unknown {
+  if (Buffer.byteLength(input) > 10 * MiB) fail(413, 'JSON_SIZE', 'JSON 过大');
+  let text: string;
+  try {
+    text = typeof input === 'string' ? input : utf8.decode(input);
+  } catch {
+    fail(422, 'JSON_INVALID', 'JSON 需要有效的 UTF-8 编码');
+  }
   let depth = 0,
     inString = false,
     escape = false;

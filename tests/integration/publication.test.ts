@@ -692,12 +692,14 @@ test('资源删除不能绕过封禁，删除 Git 同步绑定还需来源管理
     randomUUID(),
   );
   await f.worker.tick();
+  const original = await f.hub.assetAccess.getAsset(receipt.asset_id);
   const blocked = await f.hub.lifecycle.updateState(
     f.admin,
     receipt.asset_id,
     { lifecycle: 'blocked', reason: '待调查' },
     '"1"',
   );
+  assert.deepEqual(blocked, { id: receipt.asset_id, lifecycle: 'blocked', revision: 2 });
   assert.equal((await f.hub.assetManagement.list(f.admin)).items[0].can_delete, false);
   await assert.rejects(
     () =>
@@ -786,7 +788,7 @@ test('资源删除不能绕过封禁，删除 Git 同步绑定还需来源管理
   );
   assert.equal(await f.store.get('assets', receipt.asset_id), undefined);
   assert.deepEqual(await f.store.where('bindings', 'asset_id', receipt.asset_id), []);
-  assert.equal(await f.store.get('sources', blocked.source_id), undefined);
+  assert.equal(await f.store.get('sources', original.source_id), undefined);
   const remaining = await f.hub.sources.get(f.admin, source.id);
   assert.equal(remaining.targets.length, 1);
   const last = await f.hub.assetAccess.getAsset(remaining.targets[0].asset_id);
@@ -907,7 +909,7 @@ test('从未发布的弃用资源可清理全部候选版本和已结束审核�
     .send({ reason: '不再发布' })
     .expect(200);
   assert.equal(await f.store.get('assets', asset.id), undefined);
-  assert.equal(await f.store.get('sources', asset.source_id), undefined);
+  assert.equal(await f.store.get('sources', first.source_id), undefined);
   assert.deepEqual(await f.store.where('versions', 'asset_id', asset.id), []);
   assert.deepEqual(await f.store.where('requests', 'asset_id', asset.id), []);
   assert.deepEqual(await f.store.where('intakes', 'asset_id', asset.id), []);
@@ -1624,6 +1626,15 @@ test('团队审核者只能审查自己有权审核的申请版本，不能借�
   );
   const detail = await fixture.hub.intakeQueries.getDetail(scoped, first.intake.id);
   assert.equal(detail.version?.id, first.intake.version_id);
+  const wider = await submitPublication(fixture, first.intake);
+  assert.equal(
+    (await fixture.hub.intakeQueries.getDetail(scoped, first.intake.id)).publication?.id,
+    first.request.id,
+  );
+  assert.equal(
+    (await fixture.hub.intakeQueries.getDetail(fixture.reviewer, first.intake.id)).publication?.id,
+    wider.id,
+  );
 });
 
 test('审核范围提示与实际审核授权一致，团队、来源和资产范围的审核者只能审核所属团队内部的未分类申请', async (context) => {
@@ -1847,4 +1858,80 @@ test('更新摘要展示当前发布与待审版本，历史审核保持提交�
   const refreshed = await f.hub.intakeQueries.getDetail(f.admin, next.id);
   assert.equal(refreshed.current_version?.version_label, '1.0.1');
   assert.notEqual(refreshed.current_release_id, next.current_release_id);
+});
+
+test('固定版本重扫后可提名和回退，申请保留原来源授权并冻结新扫描', async (context) => {
+  const f = await createTestHub(context);
+  const first = await publishSkill(f);
+  const record = (await f.store.get('intakes', first.intake.id))!;
+  const oldScan = await f.store.insert('scans', {
+    ...(await f.store.get('scans', record.scan_run_id))!,
+    id: randomUUID(),
+    ruleset_version: 'previous-rules',
+  });
+  await f.store.put('intakes', { ...record, scan_run_id: oldScan.id });
+  const rescan = await f.hub.intakes.rescan(f.admin, record.id, randomUUID());
+  await f.worker.tick();
+  const refreshed = await f.store.get('intakes', rescan.intake_id);
+  assert(refreshed?.scan_run_id && refreshed.version_id === record.version_id);
+  const asset = await f.hub.assetAccess.getAsset(record.asset_id);
+  const nomination = await f.hub.publications.nominate(
+    f.reader,
+    { release_id: asset.current_release_id!, reason: '可作为通用实践' },
+    randomUUID(),
+  );
+  assert.equal(nomination.scan_run_id, refreshed.scan_run_id);
+  assert.equal(nomination.source_intake_id, record.id);
+  assert.deepEqual(nomination.source_consent, first.request.source_consent);
+  await f.hub.publications.decide(
+    f.reviewer,
+    nomination.id,
+    approval(nomination),
+    '"1"',
+    randomUUID(),
+  );
+  const next = await publishSkill(f, { assetId: asset.id, version: '2.0.0' });
+  const rollback = await f.hub.lifecycle.requestRollback(
+    f.admin,
+    asset.id,
+    {
+      target_version_id: first.intake.version_id,
+      reason: '使用已验证的历史版本',
+      current_policy_digest: next.request.policy_digest,
+    },
+    randomUUID(),
+  );
+  assert.equal(rollback.scan_run_id, refreshed.scan_run_id);
+  assert.equal(rollback.source_intake_id, record.id);
+  assert.equal(rollback.policy_source_id, record.source_id);
+});
+
+test('第三方证据账号停用阻止批准，不把当前审核者视为未登录', async (context) => {
+  const f = await createTestHub(context);
+  const first = await publishSkill(f);
+  const asset = await f.hub.assetAccess.getAsset(first.intake.asset_id);
+  const nomination = await f.hub.publications.nominate(
+    f.reader,
+    { release_id: asset.current_release_id!, reason: '可作为通用实践' },
+    randomUUID(),
+  );
+  for (const id of [f.reader.id, f.admin.id]) {
+    const user = (await f.store.get('users', id))!;
+    await f.store.put('users', { ...user, active: false });
+    await assert.rejects(
+      () =>
+        f.hub.publications.decide(
+          f.reviewer,
+          nomination.id,
+          approval(nomination),
+          '"1"',
+          randomUUID(),
+        ),
+      (error: unknown) =>
+        error instanceof HubError && error.status === 409 && error.code === 'CONSENT_REVOKED',
+    );
+    await f.store.put('users', user);
+  }
+  assert.equal((await f.store.get('requests', nomination.id))?.state, 'pending');
+  assert.equal((await f.store.all('releases')).length, 1);
 });

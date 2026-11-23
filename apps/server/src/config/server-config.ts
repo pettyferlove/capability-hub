@@ -56,6 +56,7 @@ const configSchema = z
     host: z.string().min(1),
     port: z.number().int().min(1).max(65535),
     publicUrl: z.string().min(1, '必须设置 CAPABILITY_HUB_PUBLIC_URL 为 HTTP(S) 根地址'),
+    trustedProxyAddresses: z.array(z.union([z.ipv4(), z.ipv6()])),
     cliRegistry: z.string().optional(),
     production: z.boolean(),
     secret: z.union([secretSchema, z.literal('')]),
@@ -252,6 +253,9 @@ export function loadServerConfig(
     host: environment.CAPABILITY_HUB_HOST ?? '127.0.0.1',
     port: Number(environment.PORT ?? 4100),
     publicUrl: environment.CAPABILITY_HUB_PUBLIC_URL ?? (production ? '' : 'http://127.0.0.1:4100'),
+    trustedProxyAddresses: environment.CAPABILITY_HUB_TRUSTED_PROXY_ADDRESSES
+      ? environment.CAPABILITY_HUB_TRUSTED_PROXY_ADDRESSES.split(',').map((ip) => ip.trim())
+      : [],
     cliRegistry: environment.CAPABILITY_HUB_CLI_REGISTRY || undefined,
     production,
     secret: environment.CAPABILITY_HUB_INSTANCE_SECRET ?? '',

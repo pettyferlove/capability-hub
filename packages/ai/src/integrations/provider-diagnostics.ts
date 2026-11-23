@@ -253,3 +253,51 @@ export class ModelWireUsage {
     this.transport.terminal_received = true;
   }
 }
+
+/** 只转发到当前协议终止帧的空行；终止帧可能跨网络分块，后面的字节不属于模型响应。 */
+export class ModelSseFrames {
+  private readonly decoder = new TextDecoder();
+  private buffer = '';
+  private emptyLine = true;
+
+  constructor(
+    private readonly wire: ModelWireUsage,
+    private readonly maxFrameChars = Infinity,
+  ) {}
+
+  private append(bytes: Uint8Array) {
+    this.buffer += this.decoder.decode(bytes, { stream: true });
+    if (this.buffer.length > this.maxFrameChars)
+      throw new AiError('AI_STREAM_INCOMPLETE', '模型事件帧超过限制');
+  }
+
+  take(chunk: Uint8Array, elapsed: number) {
+    let start = 0;
+    for (let index = 0; index < chunk.length; index++) {
+      const byte = chunk[index];
+      if (byte !== 10) {
+        if (byte !== 13) this.emptyLine = false;
+        continue;
+      }
+      if (this.emptyLine) {
+        this.append(chunk.subarray(start, index + 1));
+        this.wire.inspectSseFrame(this.buffer, elapsed);
+        this.buffer = '';
+        start = index + 1;
+        if (this.wire.transport.terminal_received)
+          return start === chunk.length ? chunk : chunk.subarray(0, start);
+      }
+      this.emptyLine = true;
+    }
+    if (start < chunk.length) this.append(chunk.subarray(start));
+    return chunk;
+  }
+
+  /** 部分端点在最后一帧后直接 EOF；只补分帧空行，不能补协议终止标记。 */
+  finish(elapsed: number) {
+    this.wire.inspectSseFrame(this.buffer + this.decoder.decode(), elapsed);
+    if (!this.wire.transport.terminal_received)
+      throw new AiError('AI_STREAM_INCOMPLETE', '模型流在终止帧之前结束', true);
+    return new Uint8Array([10, 10]);
+  }
+}

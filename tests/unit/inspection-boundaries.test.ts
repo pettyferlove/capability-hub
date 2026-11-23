@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { inspect } from '@capability-hub/infrastructure/content';
 import { contentText } from '@capability-hub/domain/files';
+import { consumableInstallationOptions } from '@capability-hub/domain/content';
 import { HubError } from '@capability-hub/domain/errors';
 import { skillDocument } from '../support/content.js';
 
@@ -120,6 +121,57 @@ test('原始文件预算在忽略打包元数据之前检查', () => {
         Array.from({ length: 500 }, (_, index) => file(`__MACOSX/${index}`, 'metadata')),
       ),
     code('PACKAGE_LIMIT'),
+  );
+});
+
+test('MCP 根文件接受 UTF-8 BOM，保留分发字节并拒绝无效字节', () => {
+  const document = {
+    name: 'io.example/sample',
+    description: 'Sample server',
+    version: '1.0.0',
+    remotes: [{ type: 'streamable-http', url: 'https://example.test/mcp' }],
+  };
+  const bytes = Buffer.from('\ufeff' + JSON.stringify(document));
+  assert.deepEqual(inspect('mcp', [file('server.json', bytes)], 'sample').files[0].bytes, bytes);
+  bytes[bytes.indexOf('Sample server')] = 0xff;
+  assert.throws(() => inspect('mcp', [file('server.json', bytes)], 'sample'), code('JSON_INVALID'));
+});
+
+test('声明独立仓库、摘要或不同运行时的 npm 项在新扫描与历史消费投影中均不可执行', () => {
+  const standard = {
+    registryType: 'npm',
+    identifier: '@example/sample',
+    version: '1.0.1',
+    transport: { type: 'stdio' },
+  };
+  const document = {
+    name: 'io.example/sample',
+    description: 'Sample server',
+    version: '1.0.0',
+    packages: [
+      { ...standard, registryBaseUrl: 'https://example.test/registry' },
+      { ...standard, fileSha256: '0'.repeat(64) },
+      { ...standard, runtimeHint: 'custom' },
+      { ...standard, runtimeHint: 'npx' },
+    ],
+  };
+  const { metadata } = inspect('mcp', [file('server.json', JSON.stringify(document))], 'sample');
+  const options = metadata.installation_options!;
+  assert.deepEqual(
+    options.map((option) => option.supported),
+    [false, false, false, true],
+  );
+  const historical = options.map((option) => ({ ...option, supported: true }));
+  assert.deepEqual(
+    consumableInstallationOptions({ server_json: document, installation_options: historical }),
+    options,
+  );
+});
+
+test('不同文件共享同一目录前缀时必须使用一致的目录拼写', () => {
+  assert.throws(
+    () => skill('正文', [file('docs/Guides/a.md', ''), file('docs/guides/b.md', '')]),
+    code('PATH_COLLISION'),
   );
 });
 

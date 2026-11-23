@@ -145,11 +145,9 @@ export const feedbackListSchema = z.object({
   limit: z.number().int().positive(),
 });
 
-export const feedbackResultSchema = feedbackItemSchema
-  .pick({ id: true, number: true, status: true })
-  .extend({ attachments: z.array(feedbackAttachmentSchema) });
-
-export const feedbackDetailSchema = feedbackItemSchema.extend({
+// 旧 Hub 忽略 view，返回没有 next_after 和 view 的完整详情。
+const feedbackDetailSchema = feedbackItemSchema.extend({
+  view: z.undefined().optional(),
   description: text,
   steps: text,
   expected: text,
@@ -160,6 +158,17 @@ export const feedbackDetailSchema = feedbackItemSchema.extend({
   events: z.array(feedbackEventSchema),
   attachments: z.array(feedbackAttachmentSchema),
 });
+
+export const feedbackPageSchema = feedbackDetailSchema.extend({
+  next_after: z.int().positive().nullable().optional(),
+});
+
+export const feedbackReceiptSchema = z.union([
+  feedbackDetailSchema
+    .pick({ id: true, number: true, status: true, revision: true, unread: true, attachments: true })
+    .extend({ view: z.literal('receipt') }),
+  feedbackDetailSchema,
+]);
 
 export const feedbackSummarySchema = z.object({
   unread: z.number().int().nonnegative(),

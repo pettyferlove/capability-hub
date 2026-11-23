@@ -14,9 +14,15 @@ import { useAppRoute } from '../../apps/web/src/app/use-app-route.js';
 import AssetSheet from '../../apps/web/src/features/catalog/AssetSheet.js';
 import type { AssetDetail, AssetRelease } from '../../apps/web/src/features/catalog/asset-view.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
-import { appRoute, closeAsset } from '../../apps/web/src/shared/navigation/history-navigation.js';
+import {
+  appRoute,
+  closeAsset,
+  navigate,
+} from '../../apps/web/src/shared/navigation/history-navigation.js';
 import {
   assetHref,
+  loginHref,
+  loginReturnPath,
   parseHistoryRoute,
   type AssetDrawer,
 } from '../../apps/web/src/shared/navigation/history-route.js';
@@ -102,6 +108,18 @@ test('直接详情链接与不可信来源状态均使用发现页，关闭不�
 const oldVersion = '11111111-1111-4111-8111-111111111111';
 const newVersion = '22222222-2222-4222-8222-222222222222';
 const fixedHref = `/asset/example?version_id=${oldVersion}&tab=installation`;
+
+test('替换登录页返回固定版本，关闭抽屉不会回到同一资源', () => {
+  history.replaceState(null, '', fixedHref);
+  render(createElement(NavigationFixture));
+  act(() => navigate(loginHref(fixedHref)));
+  act(() => navigate(loginReturnPath(location.search), { replace: true }));
+  assert.equal(location.pathname + location.search, fixedHref);
+  assert.deepEqual(drawerShown(), { slug: 'example', versionId: oldVersion, tab: 'installation' });
+  fireEvent.click(screen.getByRole('button', { name: '关闭详情' }));
+  assert.equal(location.pathname, '/discover');
+  assert.equal(drawerShown(), null);
+});
 
 test('资源链接按固定顺序拼接版本与页签，抽屉参数只取当前地址', () => {
   assert.equal(assetHref('example'), '/asset/example');

@@ -1,6 +1,7 @@
 import { auditDefinitions } from '@capability-hub/domain/audit';
 import type { RecordMap, TableName } from '@capability-hub/domain/models';
 import type {
+  HubFeedbackEventPage,
   HubFeedbackRecordQuery,
   ReadyJobsQuery,
   RecordStore,
@@ -39,6 +40,9 @@ class DrizzleStore implements RecordStore {
   all<K extends TableName>(table: K): Promise<RecordMap[K][]> {
     return this.execute((queries) => queries.all(table));
   }
+  hasUsers() {
+    return this.execute((queries) => queries.hasUsers());
+  }
   listRunningJobIds(now: number) {
     return this.execute((queries) => queries.listRunningJobIds(now));
   }
@@ -47,6 +51,9 @@ class DrizzleStore implements RecordStore {
   }
   listCancellationRequestedJobs() {
     return this.execute((queries) => queries.listCancellationRequestedJobs());
+  }
+  listAiExecutionJobs(executionId: string) {
+    return this.execute((queries) => queries.listAiExecutionJobs(executionId));
   }
   listDueSources(now: number) {
     return this.execute((queries) => queries.listDueSources(now));
@@ -69,11 +76,17 @@ class DrizzleStore implements RecordStore {
   summarizeHubFeedbackForHandler(assigneeId: string) {
     return this.execute((queries) => queries.summarizeHubFeedbackForHandler(assigneeId));
   }
-  listHubFeedbackEvents(feedbackId: string, publicOnly: boolean) {
-    return this.execute((queries) => queries.listHubFeedbackEvents(feedbackId, publicOnly));
+  listHubFeedbackEvents(feedbackId: string, publicOnly: boolean, page?: HubFeedbackEventPage) {
+    return this.execute((queries) => queries.listHubFeedbackEvents(feedbackId, publicOnly, page));
   }
-  listHubFeedbackAttachments(feedbackId: string, publicOnly: boolean) {
-    return this.execute((queries) => queries.listHubFeedbackAttachments(feedbackId, publicOnly));
+  listHubFeedbackAttachments(
+    feedbackId: string,
+    publicOnly: boolean,
+    eventIds?: readonly (string | null)[],
+  ) {
+    return this.execute((queries) =>
+      queries.listHubFeedbackAttachments(feedbackId, publicOnly, eventIds),
+    );
   }
   nextHubFeedbackNumber() {
     return this.execute((queries) => queries.nextHubFeedbackNumber());

@@ -1,4 +1,4 @@
-import type { ContentFile } from '@capability-hub/domain/content';
+import { consumableInstallationOptions, type ContentFile } from '@capability-hub/domain/content';
 import type { Principal } from '@capability-hub/domain/identity';
 import { fail, notFound } from '@capability-hub/domain/errors';
 import { safePath } from '@capability-hub/domain/paths';
@@ -24,15 +24,16 @@ export class AssetContentService {
     private readonly archive: (files: ContentFile[], signal: AbortSignal) => Promise<Buffer>,
   ) {}
   /**
-   * 下载走 blob 存储（可能为外部对象存储，耗时不受事务保护）；先做可读性校验，
-   * 不可读抛 404，随后无条件写 `content.download` 审计，未登录者记为 `anonymous`。
+   * HEAD 与下载共用版本授权；只在实际读出归档后记录下载，未登录者记为 `anonymous`。
    */
-  async getArchive(p: Principal | null, id: string) {
+  async getArchive(p: Principal | null, id: string, metadataOnly = false) {
     const version = await this.access.requireReadableVersion(p, id);
     const asset = await this.access.getAsset(version.asset_id);
+    const metadata = { slug: asset.slug, artifact_digest: version.artifact_digest };
+    if (metadataOnly) return { ...metadata, bytes: undefined };
     const bytes = await this.context.blobs.read(version.artifact_ref);
     await this.context.store.audit(p?.id ?? 'anonymous', 'content.download', version.id);
-    return { bytes, slug: asset.slug, artifact_digest: version.artifact_digest };
+    return { ...metadata, bytes };
   }
   /** 先核对整批固定版本，再在事务外读取、打包；交付前复核会话及受众，并原子记录下载。 */
   async getSkillBundle(
@@ -93,7 +94,7 @@ export class AssetContentService {
     const version = await this.access.requireReadableVersion(p, id);
     if ((await this.access.getAsset(version.asset_id)).kind !== 'mcp')
       fail(422, 'NOT_MCP', '需要 MCP 版本');
-    return { installation_options: version.metadata.installation_options };
+    return { installation_options: consumableInstallationOptions(version.metadata) };
   }
   /**
    * `management` 模式读候选版本：未登录抛 401/`UNAUTHENTICATED`，并通过

@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
+import { createServer, type Socket } from 'node:net';
+import { tmpdir } from 'node:os';
 import { SourceSyncService } from '@capability-hub/application';
 import type { GitRepository } from '@capability-hub/application/ports';
 import { HubError } from '@capability-hub/domain/errors';
 import { archive } from '@capability-hub/infrastructure/content';
+import { GitRepositoryAdapter } from '@capability-hub/infrastructure/git';
 import {
   createTestHub,
   publishSkill,
@@ -636,4 +640,286 @@ test('Git 同提交同步不复用临时失败或过期扫描规则的接收证�
   assert.equal(reads, 3);
   assert.equal((await fixture.store.where('versions', 'asset_id', ready.asset_id)).length, 1);
   assert.equal((await fixture.store.all('scans')).length, 2);
+});
+
+test('仅有团队创建权限的用户收到来源回执，但不能独立读取配置', async (context) => {
+  const f = await sources(context);
+  const role = await f.hub.administration.createRole(f.admin, {
+    name: '仅登记来源',
+    permissions: ['source:create'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'team',
+    scope_id: f.teamId,
+  });
+  const creator = await f.hub.identity.principal(f.reader.id);
+  const source = await f.sources.create(
+    creator,
+    {
+      repository_url: 'https://127.0.0.1/team/create-only.git',
+      provider: 'generic-git',
+      branch: 'main',
+      owner_group_id: f.teamId,
+      targets: [
+        {
+          slug: 'create-only',
+          kind: 'skill',
+          path: '.',
+          category: 'uncategorized',
+          scenario_ids: [],
+          distribution: { mode: 'approved_audience', audience: ['group:' + f.teamId] },
+        },
+      ],
+    },
+    randomUUID(),
+  );
+  assert.deepEqual(await f.sources.get(f.admin, source.id), source);
+  await assert.rejects(() => f.sources.get(creator, source.id), code('FORBIDDEN'));
+});
+
+test('迁出最后一个目标保留来源封禁，历史撤销来源也不能作为迁入目标', async (context) => {
+  const f = await sources(context);
+  const old = await f.create('retired-origin', 'old');
+  const destination = await f.create('new-origin', 'other');
+  const assetId = old.targets[0].asset_id;
+  await f.sources.revokeDistribution(f.admin, old.id, { reason: '来源撤销' }, '"1"');
+  await f.hub.lifecycle.migrateSource(
+    f.admin,
+    assetId,
+    {
+      destination_source_id: destination.id,
+      destination_source_revision: destination.revision,
+      path: 'moved',
+      reason: '迁出已封禁来源',
+    },
+    '"1"',
+  );
+  const revoked = (await f.store.get('sources', old.id))!;
+  assert.equal(revoked.state, 'blocked');
+  assert(revoked.distribution_revoked_at);
+  await f.store.put('sources', { ...revoked, state: 'paused' });
+  await assert.rejects(
+    () =>
+      f.hub.lifecycle.migrateSource(
+        f.admin,
+        assetId,
+        {
+          destination_source_id: old.id,
+          destination_source_revision: revoked.revision,
+          path: 'returned',
+          reason: '尝试迁回',
+        },
+        '"2"',
+      ),
+    code('DESTINATION_SOURCE'),
+  );
+  assert.equal((await f.store.get('assets', assetId))?.source_id, destination.id);
+});
+
+test('Git 读取目标期间封禁会在扫描前拒绝，解封后同一固定提交可重新接收', async (context) => {
+  const f = await sources(context);
+  const source = await f.create('blocked-target', '.');
+  const assetId = source.targets[0].asset_id;
+  let blockOnRead = true;
+  context.mock.method(f.hub.git, 'snapshot', async () => ({
+    commit: 'a'.repeat(40),
+    read: async () => {
+      if (blockOnRead) {
+        blockOnRead = false;
+        await f.hub.lifecycle.updateState(
+          f.admin,
+          assetId,
+          { lifecycle: 'blocked', reason: '调查' },
+          '"1"',
+        );
+        return [];
+      }
+      return [{ path: 'SKILL.md', bytes: skillDocument('blocked-target'), executable: false }];
+    },
+    close: () => Promise.resolve(),
+  }));
+  const failed = await syncSource(f, source.id);
+  assert.equal(failed.result?.targets[0].error_code, 'ASSET_BLOCKED');
+  const [denied] = await f.store.where('intakes', 'asset_id', assetId);
+  assert.deepEqual(
+    denied.progress.map((step) => step.step),
+    ['fetching'],
+  );
+  await f.hub.lifecycle.updateState(
+    f.admin,
+    assetId,
+    { lifecycle: 'active', reason: '解封' },
+    '"2"',
+  );
+  assert.equal((await syncSource(f, source.id)).result?.targets[0].state, 'ready');
+});
+
+test('连续轮询封禁目标只保留一次拒绝，不误用旧成功或阻碍同批解封目标', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-01T00:00:00Z') });
+  const f = await sources(context);
+  const source = await f.sources.create(
+    f.admin,
+    {
+      repository_url: 'https://127.0.0.1/team/shared.git',
+      provider: 'generic-git',
+      branch: 'main',
+      owner_group_id: f.teamId,
+      targets: ['first-target', 'second-target'].map((slug) => ({
+        slug,
+        kind: 'skill',
+        path: slug,
+        category: 'uncategorized',
+        scenario_ids: [],
+        distribution: { mode: 'approved_audience', audience: ['group:' + f.teamId] },
+      })),
+    },
+    randomUUID(),
+  );
+  const [first, second] = source.targets;
+  const reads: string[] = [];
+  context.mock.method(f.hub.git, 'snapshot', async () => ({
+    commit: 'a'.repeat(40),
+    read: async (path: string) => {
+      reads.push(path);
+      return [{ path: 'SKILL.md', bytes: skillDocument(path), executable: false }];
+    },
+    close: () => Promise.resolve(),
+  }));
+  await f.hub.lifecycle.updateState(
+    f.admin,
+    second.asset_id,
+    { lifecycle: 'blocked', reason: '调查' },
+    '"1"',
+  );
+  const initial = await syncSource(f, source.id);
+  assert.equal(initial.result?.targets.find((t) => t.binding_id === first.id)?.state, 'ready');
+  await f.hub.lifecycle.updateState(
+    f.admin,
+    first.asset_id,
+    { lifecycle: 'blocked', reason: '调查' },
+    '"1"',
+  );
+  await f.hub.lifecycle.updateState(
+    f.admin,
+    second.asset_id,
+    { lifecycle: 'active', reason: '解封' },
+    '"2"',
+  );
+  for (let i = 0; i < 3; i++) {
+    context.mock.timers.tick(300_000);
+    await f.worker.tick();
+  }
+  const polls = (await f.store.where('jobs', 'aggregate_id', source.id)).filter(
+    (job) => job.kind === 'source_sync' && job.input.scheduled,
+  );
+  assert.equal(polls.length, 3);
+  const denied = (await f.store.where('intakes', 'asset_id', first.asset_id)).filter(
+    (intake) => intake.state === 'failed',
+  );
+  assert.equal(denied.length, 1);
+  assert.equal(denied[0].error_code, 'ASSET_BLOCKED');
+  for (const poll of polls) {
+    const target = poll.result?.targets.find((t) => t.binding_id === first.id);
+    assert.equal(target?.state, 'failed');
+    assert.equal(target?.error_code, 'ASSET_BLOCKED');
+    assert.equal(target?.intake_id, denied[0].id);
+    assert.equal(poll.result?.targets.find((t) => t.binding_id === second.id)?.state, 'ready');
+  }
+  assert.deepEqual(reads, [first.path, second.path]);
+});
+
+test('Git 独立重扫不随来源同步取消，重试仍扫描原提交复用的固定版本', async (context) => {
+  const f = await sources(context);
+  const source = await f.create('fixed-rescan', '.');
+  let commit = 'a'.repeat(40);
+  context.mock.method(f.hub.git, 'snapshot', async () => ({
+    commit,
+    read: async () => [
+      { path: 'SKILL.md', bytes: skillDocument('fixed-rescan'), executable: false },
+    ],
+    close: () => Promise.resolve(),
+  }));
+  const versionId = (await syncSource(f, source.id)).result?.targets[0].version_id;
+  assert(versionId);
+  commit = 'b'.repeat(40);
+  const later = await syncSource(f, source.id);
+  const target = later.result?.targets[0];
+  assert(target && target.version_id === versionId);
+  const rescan = await f.hub.intakes.rescan(f.admin, target.intake_id, randomUUID());
+  const pending = (await f.store.get('intakes', rescan.intake_id))!;
+  assert.equal(pending.source_sync_job_id, undefined);
+  const job = (await f.store.get('jobs', rescan.job_id))!;
+  await f.store.put('jobs', { ...job, run_after: Date.now() + 60000 });
+  // 旧数据可能同时记录了旧同步作业和独立重扫作业。
+  await f.store.put('intakes', { ...pending, source_sync_job_id: later.id });
+  await syncSource(f, source.id);
+  assert.equal((await f.store.get('intakes', pending.id))?.state, 'received');
+  await f.store.put('jobs', { ...job, attempt: 2 });
+  const outage = context.mock.method(f.blobs, 'read', async () => {
+    throw new HubError(503, 'BLOB_MISSING', '暂时无法读取', {}, true);
+  });
+  await f.worker.tick();
+  assert.equal((await f.store.get('intakes', pending.id))?.state, 'failed');
+  outage.mock.restore();
+  const receipt = await f.hub.intakes.retry(f.admin, pending.id);
+  const retry = await f.store.get('jobs', receipt.job_id);
+  assert(retry?.kind === 'rescan');
+  assert.equal(retry.input.version_id, versionId);
+  await f.worker.tick();
+  const result = await f.store.get('intakes', pending.id);
+  assert.equal(result?.state, 'ready');
+  assert.equal(result.version_id, versionId);
+  assert.equal((await f.store.all('versions')).length, 1);
+});
+
+test('Git 命令超时会关闭仍持有连接的 SSH helper', { timeout: 10000 }, async (context) => {
+  let connection: Socket | undefined;
+  const connected = deferred();
+  const closed = deferred();
+  const server = createServer((socket) => {
+    connection = socket;
+    socket.once('close', () => closed.resolve());
+    socket.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ECONNRESET') closed.reject(error);
+    });
+    socket.resume();
+    connected.resolve();
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  context.after(() => {
+    connection?.destroy();
+    server.close();
+  });
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  const git = new GitRepositoryAdapter(
+    { dataDir: tmpdir(), gitHosts: ['127.0.0.1'], privateGitHosts: ['127.0.0.1'] },
+    {
+      resolve: async () => ({
+        kind: 'ssh',
+        username: 'git',
+        auth_method: 'basic',
+        secret: 'fixture',
+        passphrase: '',
+        host_key: 'fixture',
+        revision: 1,
+      }),
+      currentRevision: async () => 1,
+    },
+  );
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const timeout = assert.rejects(
+    git.snapshot({
+      canonical_url: `ssh://git@127.0.0.1:${address.port}/fixture.git`,
+      branch: 'main',
+      credential_ref: 'fixture',
+    }),
+    code('GIT_TIMEOUT'),
+  );
+  await Promise.race([connected.promise, timeout]);
+  context.mock.timers.tick(45000);
+  await Promise.all([timeout, closed.promise]);
 });

@@ -60,6 +60,12 @@ export interface HubFeedbackRecordQuery {
   limit: number;
 }
 
+/** 游标是上页最后的事件序号，不是可见条目的偏移量。 */
+export interface HubFeedbackEventPage {
+  afterSequence: number;
+  limit: number;
+}
+
 /**
  * 持久化调用统一异步，嵌套操作共享同一事务。
  *
@@ -77,10 +83,12 @@ export interface RecordStore {
     id: string | null | undefined,
   ): Promise<RecordMap[K] | undefined>;
   all<K extends TableName>(table: K): Promise<RecordMap[K][]>;
+  hasUsers(): Promise<boolean>;
   /** 调度查询在数据库内筛选，历史任务正文不进入轮询路径。 */
   listRunningJobIds(now: number): Promise<string[]>;
   listReadyJobs(query: ReadyJobsQuery): Promise<RecordMap['jobs'][]>;
   listCancellationRequestedJobs(): Promise<RecordMap['jobs'][]>;
+  listAiExecutionJobs(executionId: string): Promise<RecordMap['jobs'][]>;
   listDueSources(now: number): Promise<GitSourceRecord[]>;
   /** 只读提示单例的调度列，不解析批次正文；单例不存在时返回 `undefined`。 */
   catalogPromptSchedule(): Promise<
@@ -98,10 +106,16 @@ export interface RecordStore {
   summarizeHubFeedbackForHandler(
     assigneeId: string,
   ): Promise<{ pending: number; awaiting_reply: number; assigned_to_me: number }>;
-  listHubFeedbackEvents(feedbackId: string, publicOnly: boolean): Promise<HubFeedbackEventRecord[]>;
+  listHubFeedbackEvents(
+    feedbackId: string,
+    publicOnly: boolean,
+    page?: HubFeedbackEventPage,
+  ): Promise<HubFeedbackEventRecord[]>;
+  /** eventIds 省略时读完整列表；null 成员只匹配首帖附件，空列表不匹配任何附件。 */
   listHubFeedbackAttachments(
     feedbackId: string,
     publicOnly: boolean,
+    eventIds?: readonly (string | null)[],
   ): Promise<HubFeedbackAttachmentRecord[]>;
   /** 编号与序列必须在写入该记录的同一事务内分配。 */
   nextHubFeedbackNumber(): Promise<number>;

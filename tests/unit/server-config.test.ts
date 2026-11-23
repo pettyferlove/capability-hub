@@ -20,6 +20,9 @@ test('配置错误在创建数据目录之前报错，校验不会产生半初�
     { CAPABILITY_HUB_WORKER: 'invalid' },
     { CAPABILITY_HUB_PUBLIC_URL: 'https://user:secret@example.test/path' },
     { CAPABILITY_HUB_PUBLIC_URL: 'ftp://192.168.1.20:4100' },
+    ...['true', '1', 'loopback', '10.0.0.0/8', 'proxy.example', '127.0.0.1,'].map((value) => ({
+      CAPABILITY_HUB_TRUSTED_PROXY_ADDRESSES: value,
+    })),
     {
       CAPABILITY_HUB_DATABASE_DRIVER: 'postgresql',
       CAPABILITY_HUB_DATABASE_URL: 'https://example.test/db',

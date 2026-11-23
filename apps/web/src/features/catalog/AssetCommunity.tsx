@@ -22,7 +22,7 @@ import { mutate } from '../../shared/api/client.js';
 import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { useHub } from '../../shared/context/HubContext.js';
-import { assetHref, loginHref, pageHref } from '../../shared/navigation/history-route.js';
+import { loginHref, pageHref } from '../../shared/navigation/history-route.js';
 
 /**
  * 推荐归属资源，通用提名固定到表单所示版本的发布记录。
@@ -39,6 +39,7 @@ export function AssetCommunity({ asset }: { asset: AssetResponse }) {
   const [error, setError] = useState('');
   useEffect(() => setCommunity(asset.community), [asset.community]);
   const general = asset.current_release.category === 'general';
+  const login = loginHref(window.location.pathname + window.location.search);
   async function recommend() {
     setBusy('recommend');
     setError('');
@@ -89,7 +90,7 @@ export function AssetCommunity({ asset }: { asset: AssetResponse }) {
             <span className={communityCountStyles}>{community.recommendation_count}</span>
           </button>
         ) : (
-          <a className={btnStyles} href={loginHref(assetHref(asset.slug))}>
+          <a className={btnStyles} href={login}>
             <ThumbsUp size={16} />
             登录后推荐<span className={communityCountStyles}>{community.recommendation_count}</span>
           </a>
@@ -119,7 +120,7 @@ export function AssetCommunity({ asset }: { asset: AssetResponse }) {
             提名为通用
           </button>
         ) : (
-          <a className={btnStyles} href={loginHref(assetHref(asset.slug))}>
+          <a className={btnStyles} href={login}>
             <Award size={16} />
             登录后提名
           </a>

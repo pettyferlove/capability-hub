@@ -12,7 +12,7 @@ import { AiError } from '../core/errors.js';
 import { type ExecutionScope } from '../execution/scope.js';
 import { type AiEventService } from '../execution/events.js';
 import { reserveModelCall, settleModelCall, withdrawModelCall } from '../execution/model-calls.js';
-import { ModelWireUsage, observeModelHttpError } from './provider-diagnostics.js';
+import { ModelSseFrames, ModelWireUsage, observeModelHttpError } from './provider-diagnostics.js';
 
 /**
  * 单次执行内的模型客户端：调用前在事务里预留 `ai_calls` 并扣减请求预算，用量在请求结束后
@@ -146,43 +146,50 @@ export class ManagedProvider {
         await response.body?.cancel();
         throw new AiError('AI_STREAM_INCOMPLETE', '模型端点未返回 SSE');
       }
-      const decoder = new TextDecoder();
-      let buffer = '';
+      const frames = new ModelSseFrames(wire, 262144);
       const reader = response.body.getReader();
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        void reader.cancel().catch(() => undefined);
+        reader.releaseLock();
+      };
+      let cancelled = false;
+      let settlement: Promise<void> | undefined;
+      const finish = (error?: AiError) => (settlement ??= settle(error));
       const body = new ReadableStream<Uint8Array>({
         pull: async (sink) => {
           try {
             const chunk = await reader.read();
-            if (chunk.done) {
-              buffer += decoder.decode();
-              if (buffer.trim()) wire.inspectSseFrame(buffer, elapsed());
-              if (!transport.terminal_received)
-                throw new AiError('AI_STREAM_INCOMPLETE', '模型流在终止帧之前结束', true);
-              await settle();
+            if (cancelled) return;
+            if (!chunk.done) transport.received_bytes += chunk.value.byteLength;
+            const bytes = chunk.done
+              ? frames.finish(elapsed())
+              : frames.take(chunk.value, elapsed());
+            if (transport.terminal_received) {
+              release();
+              await finish();
+              if (cancelled) return;
+              sink.enqueue(bytes);
               sink.close();
-              reader.releaseLock();
-              return;
-            }
-            transport.received_bytes += chunk.value.byteLength;
-            buffer += decoder.decode(chunk.value, { stream: true });
-            if (buffer.length > 262144)
-              throw new AiError('AI_STREAM_INCOMPLETE', '模型事件帧超过限制');
-            const frames = buffer.split(/\r?\n\r?\n/);
-            buffer = frames.pop() ?? '';
-            for (const frame of frames) wire.inspectSseFrame(frame, elapsed());
-            sink.enqueue(chunk.value);
+            } else sink.enqueue(bytes);
           } catch (error) {
+            if (cancelled) return;
+            release();
             const failure = error instanceof AiError ? error : connectionFailure('模型连接中断');
-            await settle(failure);
+            await finish(failure);
             this.failure ??= failure;
             controller.abort(failure);
-            await reader.cancel().catch(() => undefined);
             sink.error(failure);
           }
         },
         cancel: async () => {
-          await reader.cancel();
-          await settle(new AiError('AI_INTERRUPTED', '模型流已中断'));
+          cancelled = true;
+          release();
+          await finish(
+            transport.terminal_received ? undefined : new AiError('AI_INTERRUPTED', '模型流已中断'),
+          );
         },
       });
       return new Response(body, {

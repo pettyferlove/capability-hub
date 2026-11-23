@@ -9,7 +9,7 @@ import type {
 } from './commands.js';
 import type { IntakeRecord, VersionRecord } from '@capability-hub/domain/models';
 import { canonical, digest, utf8Compare } from '@capability-hub/domain/canonical';
-import { fail, notFound } from '@capability-hub/domain/errors';
+import { fail, HubError, notFound } from '@capability-hub/domain/errors';
 import { has } from '@capability-hub/domain/rbac';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -148,6 +148,31 @@ export class PublicationService {
     }
     return s;
   }
+  /** 历史版本可使用同一不可变版本的重扫结论；来源及授权仍取自原接收。 */
+  private async publicationScan(intake: IntakeRecord, versionId: string, allowRescan: boolean) {
+    const scan = allowRescan
+      ? (await this.context.store.where('scans', 'version_id', versionId))
+          .filter((s) => s.ruleset_version === contentScanRuleset)
+          .sort((a, b) => b.finished_at.localeCompare(a.finished_at) || b.id.localeCompare(a.id))[0]
+      : await this.context.store.get('scans', intake.scan_run_id);
+    if (
+      !scan ||
+      scan.version_id !== versionId ||
+      scan.state !== 'passed' ||
+      scan.ruleset_version !== contentScanRuleset
+    )
+      fail(409, 'SCAN_REQUIRED', '需要维护者按当前规则扫描通过');
+    return scan;
+  }
+  private async evidencePrincipal(id: string) {
+    try {
+      return await this.context.identity.principal(id);
+    } catch (error) {
+      if (error instanceof HubError && error.code === 'UNAUTHENTICATED')
+        fail(409, 'CONSENT_REVOKED', '提交者授权已失效');
+      throw error;
+    }
+  }
   /**
    * 发起待审申请：把同意凭证、扫描证据、来源修订号与 `rulesDigest` 冻结进同一记录，
    * 使审核期无需重新读取来源即可判定，且批准时能发现上下文漂移。
@@ -200,14 +225,7 @@ export class PublicationService {
           source: source.id,
           team: source.owner_group_id,
         });
-        const scan = await this.context.store.get('scans', intake.scan_run_id);
-        if (
-          !scan ||
-          scan.state !== 'passed' ||
-          scan.ruleset_version !== contentScanRuleset ||
-          scan.version_id !== v.id
-        )
-          fail(409, 'SCAN_REQUIRED', '需要有效扫描通过记录');
+        const scan = await this.publicationScan(intake, v.id, historical);
         if (
           (await this.context.store.all('requests')).some(
             (r) => r.asset_id === a.id && r.version_id === v.id && r.state === 'pending',
@@ -269,8 +287,8 @@ export class PublicationService {
     );
   }
   /**
-   * 把已发布版本提名为 `general` 候选：复用原申请的来源同意与扫描证据，仅在冻结记录里
-   * 追加 `nomination` 原文，避免提名绕过首次提交的授权链。
+   * 把已发布版本提名为 `general` 候选：复用原申请的来源同意与固定版本的当前扫描，
+   * 保留 `nomination` 原文，避免提名绕过首次提交的授权链。
    * 由 `IdempotencyService.execute` 包裹（route `nominations`，键取自 `Idempotency-Key`）。
    * 需能读取该版本；发布已不是资产当前发布、资产非 active → 409/`BASE_RELEASE_CHANGED`，
    * 已是 general → 409/`ALREADY_GENERAL`，该版本已有待审申请 → 409/`PENDING_EXISTS`，
@@ -302,9 +320,7 @@ export class PublicationService {
         const original = (await this.context.store.get('requests', release.request_id))!;
         const intake = (await this.context.store.get('intakes', original.source_intake_id))!;
         const source = await this.verifyEvidence(intake, version, original.historical);
-        const scan = await this.context.store.get('scans', intake.scan_run_id);
-        if (!scan || scan.state !== 'passed' || scan.ruleset_version !== contentScanRuleset)
-          fail(409, 'SCAN_REQUIRED', '需要维护者按当前规则重新扫描后再提名');
+        const scan = await this.publicationScan(intake, version.id, true);
         const frozen = {
           asset_id: asset.id,
           version_id: version.id,
@@ -416,7 +432,7 @@ export class PublicationService {
         const v = (await this.context.store.get('versions', r.version_id))!;
         const intake = (await this.context.store.get('intakes', r.source_intake_id))!;
         const source = await this.verifyEvidence(intake, v, r.historical);
-        const scan = (await this.context.store.get('scans', r.scan_run_id))!;
+        const scan = await this.context.store.get('scans', r.scan_run_id);
         if (
           a.current_release_id !== r.base_release_id ||
           a.revision !== r.asset_revision ||
@@ -427,18 +443,19 @@ export class PublicationService {
         if (
           a.lifecycle !== 'active' ||
           v.availability === 'revoked' ||
+          scan?.version_id !== v.id ||
           scan.state !== 'passed' ||
           scan.ruleset_version !== contentScanRuleset
         )
           fail(409, 'CONTENT_UNAVAILABLE', '内容或扫描已失效');
-        const submitter = await this.context.identity.principal(
+        const submitter = await this.evidencePrincipal(
           r.nomination ? r.source_consent.actor_id : r.submitted_by,
         );
-        if (r.nomination)
-          await this.assets.requireReadableVersion(
-            await this.context.identity.principal(r.submitted_by),
-            v.id,
-          );
+        if (
+          r.nomination &&
+          !(await this.assets.canRead(await this.evidencePrincipal(r.submitted_by), a, v))
+        )
+          fail(409, 'CONSENT_REVOKED', '提名者已不能读取该版本');
         if (
           !has(submitter, 'source:share', { source: source.id, team: source.owner_group_id }) ||
           !this.assets.canMaintain(submitter, a)

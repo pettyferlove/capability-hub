@@ -111,8 +111,7 @@ export type InstallationArgument = InstallationInput &
 /**
  * 一条可供选择的安装方式（远程 URL 或包管理器）。`kind` 决定读取哪组字段：
  * `remote` 用 `url`/`headers`，`package` 用 `registryType`/`identifier`/`version` 与启动参数；
- * `supported` 为 false 时仍要保留条目，让用户看到「为何不能选」；当前只有 transport 为 `streamable-http`
- * 的远程项、以及 `npm` 且版本为固定 semver 的包项会被置为 true。
+ * `supported` 为 false 时仍保留条目；包来源、摘要等无法由客户端配置表达时不生成命令。
  */
 export interface InstallationOption {
   option_id: string;
@@ -129,6 +128,28 @@ export interface InstallationOption {
   runtimeArguments?: InstallationArgument[];
   packageArguments?: InstallationArgument[];
   environmentVariables?: InputVariable[];
+}
+
+/** 历史选项可能未投影来源或校验和；按固定版本原始声明判断能否交给 npx。 */
+export function consumableInstallationOptions(
+  metadata: Pick<ContentMetadata, 'server_json' | 'installation_options'>,
+): InstallationOption[] {
+  const packages = metadata.server_json?.packages;
+  return (metadata.installation_options ?? []).map((option) => {
+    if (!option.supported || option.kind !== 'package') return option;
+    const index = /^package-([1-9]\d*)$/.exec(option.option_id)?.[1];
+    const raw: unknown = index && Array.isArray(packages) ? packages[Number(index) - 1] : null;
+    if (
+      !raw ||
+      typeof raw !== 'object' ||
+      'registryBaseUrl' in raw ||
+      'fileSha256' in raw ||
+      ('runtimeHint' in raw && raw.runtimeHint !== 'npx') ||
+      option.transport?.type !== 'stdio'
+    )
+      return { ...option, supported: false };
+    return option;
+  });
 }
 
 /**
@@ -149,7 +170,7 @@ export interface ContentInspection {
  * 规则集的版本标识，会写入发布请求与扫描记录。规则变化即换版本号，
  * 这样历史版本的「当时扫过什么」可复现，重新扫描也能判断是否需要。
  */
-export const contentScanRuleset = '2026-10-31.2';
+export const contentScanRuleset = '2026-11-23.1';
 
 /**
  * 资产类型：`skill` 是整包分发的文档与脚本，`mcp` 是单个 `server.json` 描述的服务器接入定义。

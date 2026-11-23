@@ -145,7 +145,7 @@ function mockApi(
       return Response.json(reply);
     }
     if (path === '/api/scenarios') return Response.json([]);
-    if (path.startsWith('/api/assets/keywords?'))
+    if (path.startsWith('/api/catalog/keywords?'))
       return Response.json({
         items: catalog.keywords.map((keyword) => ({ keyword, asset_count: 1, reason: 'popular' })),
       });

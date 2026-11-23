@@ -560,10 +560,10 @@ export const taskInputFieldStyles = cn(
 // 原生占位文字在打字提示期间变透明但保留，读屏与输入框高度仍以它为准。
 export const taskInputTypingStyles = '[&::placeholder]:text-transparent';
 
-// 输入框为空时按钮只会发送这句示例；悬停或键盘聚焦按钮时提高它的对比度，表明要发出的就是这句。
+// 悬停或键盘聚焦按钮时提高当前示例的对比度；保留空白，避免预览与提交内容不同。
 export const taskTypingStyles = cn(
   'pointer-events-none absolute inset-x-0 top-0 overflow-hidden py-[9px] text-[length:15px] leading-[22px]',
-  'text-ellipsis whitespace-nowrap text-quieter [transition:color_150ms_ease]',
+  'text-ellipsis whitespace-pre text-quieter [transition:color_150ms_ease]',
   'group-has-[[type=submit]:enabled:hover]/task-input:text-muted-ink',
   'group-has-[[type=submit]:enabled:focus-visible]/task-input:text-muted-ink',
 );

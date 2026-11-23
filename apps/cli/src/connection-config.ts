@@ -1,11 +1,11 @@
-import { constants } from 'node:fs';
-import { chmod, open, rename, rm } from 'node:fs/promises';
+import { constants, type BigIntStats } from 'node:fs';
+import { chmod, lstat, open, rename, rm } from 'node:fs/promises';
 import { dirname, resolve, join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { parse, parseTree, modify, applyEdits, type ParseError, type Node } from 'jsonc-parser';
-import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
+import { TomlError, parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import {
   agentClients,
   needsAssistantConfigFile,
@@ -27,6 +27,17 @@ export interface ConnectionConfigOptions {
   directory: string;
   configFile?: string;
   replace?: boolean;
+}
+
+function parseConfigToml(text: string) {
+  let location = '';
+  try {
+    return parseToml(text);
+  } catch (error) {
+    // 解析器异常包含配置原文，不能作为消息或 cause 进入诊断。
+    if (error instanceof TomlError) location = `（第 ${error.line} 行，第 ${error.column} 列）`;
+  }
+  throw new Error(`TOML 配置无效${location}，未修改文件`);
 }
 
 /**
@@ -61,7 +72,7 @@ export async function prepareConnectionConfig(options: ConnectionConfigOptions) 
   }
   target = resolve(target);
   await safeDirectory(dirname(target), false);
-  const original = await readConfig(target);
+  const original = (await readConfig(target))?.text ?? null;
   const generated = renderMcpClientConfiguration(
     client,
     'capability-hub',
@@ -91,7 +102,7 @@ export async function prepareConnectionConfig(options: ConnectionConfigOptions) 
   const errors: ParseError[] = [];
   const document: unknown = original
     ? client === 'codex'
-      ? parseToml(original)
+      ? parseConfigToml(original)
       : parse(original, errors, { allowTrailingComma: true })
     : {};
   if (errors.length || !document || typeof document !== 'object' || Array.isArray(document))
@@ -148,9 +159,10 @@ export async function prepareConnectionConfig(options: ConnectionConfigOptions) 
         ...object,
         [root]: { ...(container as Record<string, unknown>), 'capability-hub': desired },
       });
-      parseToml(text);
+      parseConfigToml(text);
     }
   }
+  if (Buffer.byteLength(text) > 1024 * 1024) throw new Error('合并后的配置不能超过 1 MiB');
   return {
     target,
     original,
@@ -159,20 +171,46 @@ export async function prepareConnectionConfig(options: ConnectionConfigOptions) 
   };
 }
 
-async function readConfig(path: string): Promise<string | null> {
+function sameFile(left: BigIntStats, right: BigIntStats) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+async function readConfig(path: string) {
   await safeDirectory(dirname(resolve(path)), false);
-  let file;
+  let expected;
   try {
-    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    expected = await lstat(path, { bigint: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   }
+  if (!expected.isFile()) throw new Error('配置必须是普通文件，不能为链接或特殊文件');
+  const file = await open(
+    path,
+    process.platform === 'win32'
+      ? constants.O_RDONLY
+      : constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  );
   try {
-    const stat = await file.stat();
-    if (!stat.isFile() || stat.size > 1024 * 1024)
-      throw new Error('配置必须是小于 1 MiB 的普通文件');
-    return await file.readFile('utf8');
+    const stat = await file.stat({ bigint: true });
+    if (!stat.isFile() || stat.size > 1024n * 1024n)
+      throw new Error('配置必须是不超过 1 MiB 的普通文件');
+    if (!sameFile(stat, expected)) throw new Error('配置在读取时已被替换，请重试');
+    const text = await file.readFile('utf8');
+    const current = await lstat(path, { bigint: true });
+    if (!current.isFile() || !sameFile(stat, current) || current.ctimeNs !== stat.ctimeNs)
+      throw new Error('配置在读取时已被修改，请重试');
+    return { text, stat };
+  } finally {
+    await file.close();
+  }
+}
+
+async function writeNewFile(path: string, text: string) {
+  const file = await open(path, 'wx', 0o600);
+  try {
+    await file.writeFile(text);
+    await file.sync();
   } finally {
     await file.close();
   }
@@ -181,43 +219,56 @@ async function readConfig(path: string): Promise<string | null> {
 /**
  * 提交阶段：加文件锁后重新读取目标，内容与准备时不一致即放弃（其他程序改过配置）。
  * 有原文时先写 0600 备份，再用临时文件 + rename 替换；写前再比对一次原文，
- * 期间被改动就保留最新文件并报错，返回值为备份路径（未覆盖时为空）。
+ * 凭据也在此锁内提交；失败时仅恢复仍是本次写入且未被改动的配置。
  */
 export async function writeConnectionConfig(
   prepared: Awaited<ReturnType<typeof prepareConnectionConfig>>,
+  commitCredentials?: () => Promise<void>,
 ) {
   const { target, original, text, backupDirectory } = prepared;
   return withFileLock(target + '.hub', async () => {
     await safeDirectory(dirname(target));
-    if ((await readConfig(target)) !== original)
+    if (((await readConfig(target))?.text ?? null) !== original)
       throw new Error('配置已被其他程序修改，请重新运行接入助手');
-    if (text === original) return;
+    if (text === original) {
+      await commitCredentials?.();
+      return;
+    }
     let backupPath: string | undefined;
     if (original !== null) {
       await safeDirectory(backupDirectory);
       await chmod(backupDirectory, 0o700);
       backupPath = join(backupDirectory, sha256(target) + '-' + randomUUID() + '.backup');
-      const backup = await open(backupPath, 'wx', 0o600);
-      try {
-        await backup.writeFile(original);
-        await backup.sync();
-      } finally {
-        await backup.close();
-      }
+      await writeNewFile(backupPath, original);
     }
     const temporary = target + '.hub-' + randomUUID();
     try {
-      const file = await open(temporary, 'wx', 0o600);
-      try {
-        await file.writeFile(text);
-        await file.sync();
-      } finally {
-        await file.close();
-      }
+      await writeNewFile(temporary, text);
+      const written = await lstat(temporary, { bigint: true });
       await safeDirectory(dirname(target), false);
-      if ((await readConfig(target)) !== original)
+      if (((await readConfig(target))?.text ?? null) !== original)
         throw new Error('配置在保存期间被其他程序修改，请重试；已保留最新文件');
       await rename(temporary, target);
+      try {
+        await commitCredentials?.();
+      } catch (error) {
+        await safeDirectory(dirname(target), false);
+        if (original !== null) await writeNewFile(temporary, original);
+        const current = await readConfig(target);
+        if (
+          !current ||
+          !sameFile(written, current.stat) ||
+          current.stat.mtimeNs !== written.mtimeNs ||
+          current.stat.mode !== written.mode ||
+          current.stat.uid !== written.uid ||
+          current.stat.gid !== written.gid ||
+          current.text !== text
+        )
+          throw new Error('凭据保存失败，配置已被其他程序修改，未回滚最新文件', { cause: error });
+        if (original === null) await rm(target);
+        else await rename(temporary, target);
+        throw error;
+      }
       return backupPath;
     } finally {
       await rm(temporary, { force: true });

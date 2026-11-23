@@ -54,6 +54,8 @@ export const executionPayloadSchema = z
     model_profile: id,
     model_digest: id,
     input: jsonSchema,
+    /** 缺失表示旧执行未登记工具依赖，不能解释为没有依赖。 */
+    evidence_refs: z.array(id).max(1000).optional(),
     result: jsonSchema.nullable(),
     revision: z.number().int().positive(),
     attempt: z.number().int().nonnegative(),

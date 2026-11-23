@@ -6,7 +6,7 @@ import { openRecordStore } from '@capability-hub/infrastructure/store';
 import { archive } from '@capability-hub/infrastructure/content';
 import { HubError } from '@capability-hub/domain/errors';
 import { createSqliteStore, deferred } from '../support/store.js';
-import { createTestHub } from '../support/application.js';
+import { createTestHub, receiveSkill } from '../support/application.js';
 import { skillDocument } from '../support/content.js';
 import { frameworkConfig } from '../support/ai-framework.js';
 import { fixture as providerFixture } from '../support/ai-provider.js';
@@ -454,4 +454,27 @@ test('来源配置变化使尚未提交的上传作业和接收同时取消，�
   assert(current?.finished_at);
   assert.equal((await fixture.store.all('jobs'))[0].state, 'cancelled');
   assert.deepEqual(await fixture.store.all('versions'), []);
+});
+
+test('接管已提交扫描结果的旧作业只结算租约，不重新扫描或改写待审证据', async (context) => {
+  const f = await createTestHub(context);
+  const intake = await receiveSkill(f);
+  const [job] = await f.store.where('jobs', 'aggregate_id', intake.id);
+  const ready = await f.store.get('intakes', intake.id);
+  await f.store.put('jobs', {
+    ...job,
+    state: 'running',
+    lease_owner: 'former-worker',
+    lease_until: Date.now() - 1,
+  });
+  context.mock.method(f.blobs, 'read', async () => {
+    throw new Error('对象存储暂时不可用');
+  });
+  await f.worker.tick();
+  assert.equal((await f.store.get('jobs', job.id))?.state, 'succeeded');
+  assert.deepEqual(await f.store.get('intakes', intake.id), ready);
+  assert.deepEqual(
+    (await f.store.all('scans')).map((s) => s.id),
+    [intake.scan_run_id],
+  );
 });

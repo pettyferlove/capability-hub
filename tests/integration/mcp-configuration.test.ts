@@ -56,7 +56,7 @@ async function shareKey(
           confirm_sharing: true,
         }),
       )
-      .attach('file', Buffer.from(JSON.stringify(descriptor)), 'server.json');
+      .attach('file', Buffer.from('\ufeff' + JSON.stringify(descriptor)), 'server.json');
   const receipt = await upload(secret).expect(202);
   assert.deepEqual((await upload(secret).expect(202)).body, receipt.body);
   await upload(randomUUID()).expect(409);
@@ -141,35 +141,46 @@ test('同时写进共享字段和描述文件的密钥在接收前被拒绝', as
   const descriptor = {
     name: 'local.capability-hub/example',
     version: '1.0.0',
-    description: '服务',
     remotes: [
       {
         type: 'streamable-http',
         url: 'https://example.test/mcp',
-        headers: [{ name: 'X-Api-Key', isSecret: true, default: secret }],
+        headers: [{ name: 'X-Api-Key', isSecret: true }],
       },
     ],
   };
-  const response = await owner
-    .post('/api/intakes')
-    .set('Idempotency-Key', randomUUID())
-    .field(
-      'metadata',
-      JSON.stringify({
-        target: 'new',
-        kind: 'mcp',
-        slug: 'example',
-        owner_group_id: f.teamId,
-        version_label: '1.0.0',
-        shared_mcp_key: secret,
-        confirm_sharing: true,
-      }),
-    )
-    .attach('file', Buffer.from(JSON.stringify(descriptor)), 'server.json')
-    .expect(422);
-  assert.equal(response.body.error.code, 'MCP_KEY_IN_DOCUMENT');
-  assert(!response.text.includes(secret));
+  const upload = (key: string, description: string) =>
+    owner
+      .post('/api/intakes')
+      .set('Idempotency-Key', randomUUID())
+      .field(
+        'metadata',
+        JSON.stringify({
+          target: 'new',
+          kind: 'mcp',
+          slug: 'example',
+          owner_group_id: f.teamId,
+          version_label: '1.0.0',
+          shared_mcp_key: key,
+          confirm_sharing: true,
+        }),
+      )
+      .attach(
+        'file',
+        Buffer.from(JSON.stringify({ ...descriptor, description }).replaceAll('-', '\\u002d')),
+        'server.json',
+      );
+  for (const [key, description] of [
+    [secret, secret],
+    [secret, `使用 ${secret} 获取服务`],
+    ['xyz', 'xyz'],
+  ]) {
+    const response = await upload(key, description).expect(422);
+    assert.equal(response.body.error.code, 'MCP_KEY_IN_DOCUMENT');
+    assert(!response.text.includes(key));
+  }
   assert.equal((await f.store.all('intakes')).length, 0);
+  await upload('a', '查询文档').expect(202);
 });
 
 for (const [authMode, header] of [
@@ -398,6 +409,7 @@ test('同名请求头只共享给同一资产和完整地址，其他安装项�
         .query({ installation_option_id: 'remote-' + (i + 1), client: 'codex' })
         .expect(200);
       assert.equal(reply.body.text.includes(secret), sameAsset && i === 0);
+      assert.equal(reply.body.scope, sameAsset && i === 0 ? 'user' : 'project');
       assert.equal(reply.body.required_variables.length, sameAsset && i === 0 ? 0 : 1);
     }
   }
@@ -485,7 +497,16 @@ test('维护者可轮换或移除绑定，过期修订、越权和未声明的�
     .set('If-Match', state.headers.etag)
     .send({ ...target, value: next })
     .expect(422);
-  assert((await owner.get(configPath).query(args).expect(200)).body.text.includes(secret));
+  const defaultConfig = await owner.get(configPath).query(args).expect(200);
+  assert(defaultConfig.body.text.includes(secret));
+  assert.equal(defaultConfig.body.scope, 'user');
+  assert.equal(defaultConfig.body.target_file, '~/.codex/config.toml');
+  const rejected = await owner
+    .get(configPath)
+    .query({ ...args, scope: 'project' })
+    .expect(422);
+  assert.equal(rejected.body.error.code, 'MCP_KEY_USER_SCOPE_REQUIRED');
+  assert(!rejected.text.includes(secret));
   await reader
     .put(path)
     .set('Idempotency-Key', randomUUID())
@@ -545,9 +566,20 @@ for (const entry of [
       slug,
       '1.0.0',
     );
+    const submitted =
+      'packages' in document
+        ? {
+            ...document,
+            packages: [
+              ...document.packages,
+              { ...document.packages[0], registryBaseUrl: 'https://example.test/registry' },
+              { ...document.packages[0], fileSha256: '0'.repeat(64) },
+            ],
+          }
+        : document;
     const receipt = await fixture.hub.intakes.receive(
       fixture.admin,
-      Buffer.from(JSON.stringify(document)),
+      Buffer.from(JSON.stringify(submitted)),
       'server.json',
       { target: 'new', kind: 'mcp', slug, owner_group_id: fixture.teamId, version_label: '1.0.0' },
       randomUUID(),
@@ -574,6 +606,21 @@ for (const entry of [
       randomUUID(),
     );
     const consumer = httpClient(fixture);
+    if ('packages' in document) {
+      const asset = await consumer.get('/api/assets/' + slug).expect(200);
+      assert.deepEqual(
+        asset.body.installation_options.map((option: { supported: boolean }) => option.supported),
+        [true, false, false],
+      );
+      for (const installation_option_id of ['package-2', 'package-3']) {
+        const denied: Response = await consumer
+          .get(`/api/versions/${intake.version_id}/mcp-config`)
+          .query({ installation_option_id, client: 'codex' })
+          .expect(422);
+        assert.equal(denied.body.error.code, 'UNSUPPORTED_INSTALLATION_OPTION');
+        assert(!Object.hasOwn(denied.body, 'config'));
+      }
+    }
     const token = await fixture.hub.tokens.issue(fixture.admin, {
       name: 'configuration-test',
       scope: 'hub:read',

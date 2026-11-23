@@ -1,3 +1,4 @@
+import { sha256 } from '@capability-hub/domain/canonical';
 import { fail } from '@capability-hub/domain/errors';
 import {
   hubFeedbackAttachmentName,
@@ -27,40 +28,46 @@ export function scanHubFeedbackText(
     });
 }
 
-export type HubFeedbackStoredUpload = Pick<
+/** 摘要用于绑定幂等请求，此时对象不一定已经写入。 */
+export type HubFeedbackCheckedUpload = Pick<
   HubFeedbackAttachmentRecord,
   'kind' | 'name' | 'media_type' | 'size' | 'width' | 'height'
 > & { sha256: string };
-
-type Inspected = Omit<HubFeedbackStoredUpload, 'sha256'>;
 
 function inspectUpload(
   { bytes, kind, name: input }: HubFeedbackUpload,
   part: number,
   scan: HubFeedbackSecretScanner,
-): Inspected {
+): HubFeedbackCheckedUpload {
   const name = hubFeedbackAttachmentName(input);
   scanHubFeedbackText(scan, name, { attachment: part });
   const { content, ...attachment } = inspectHubFeedbackAttachment(bytes, kind);
   if (content !== undefined) scanHubFeedbackText(scan, content, { attachment: part });
-  return { ...attachment, name, size: bytes.length };
+  return { ...attachment, name, size: bytes.length, sha256: sha256(bytes) };
 }
 
-export async function storeHubFeedbackUploads(
-  blobs: BlobStorage,
+/** 格式和凭据不依赖数据库状态，先检查整批附件再写对象。 */
+export function checkHubFeedbackUploads(
   scan: HubFeedbackSecretScanner,
   uploads: readonly HubFeedbackUpload[],
-): Promise<HubFeedbackStoredUpload[]> {
+): HubFeedbackCheckedUpload[] {
   if (
     uploads.length > 5 ||
     uploads.some((file) => file.bytes.length > 5 * mib) ||
     uploads.reduce((sum, file) => sum + file.bytes.length, 0) > 12 * mib
   )
     fail(413, 'UPLOAD_LIMIT', '单次最多上传 5 个附件，合计不得超过 12 MiB');
-  const checked = uploads.map((file, part) => inspectUpload(file, part, scan));
-  const result: HubFeedbackStoredUpload[] = [];
-  for (const [part, upload] of uploads.entries()) {
-    result.push({ ...checked[part], sha256: await blobs.put(upload.bytes) });
+  return uploads.map((file, part) => inspectUpload(file, part, scan));
+}
+
+/** 在准入与提交事务之间写入并核对摘要；并发拒绝后的无引用对象由停机维护回收。 */
+export async function persistHubFeedbackUploads(
+  blobs: BlobStorage,
+  uploads: readonly HubFeedbackUpload[],
+  checked: readonly HubFeedbackCheckedUpload[],
+) {
+  for (const [index, { bytes }] of uploads.entries()) {
+    if ((await blobs.put(bytes)) !== checked[index].sha256)
+      fail(503, 'BLOB_CORRUPT', '附件完整性校验失败');
   }
-  return result;
 }

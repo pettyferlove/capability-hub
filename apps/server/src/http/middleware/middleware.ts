@@ -49,6 +49,7 @@ export function configureHttp(
 ): void {
   app.disable('x-powered-by');
   app.set('query parser', 'simple');
+  app.set('trust proxy', config.trustedProxyAddresses);
   app.use(logs.http(config.requestLogging));
   app.use((_req, res, next) => {
     const started = performance.now();
@@ -101,8 +102,9 @@ export function configureHttp(
       res.set({
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers':
-          'Authorization, Content-Type, MCP-Protocol-Version, MCP-Session-Id',
+        'Access-Control-Allow-Headers': mcpBearer
+          ? 'Authorization, Content-Type, MCP-Protocol-Version, MCP-Session-Id, Mcp-Method, Mcp-Name'
+          : 'Authorization, Content-Type, MCP-Protocol-Version, MCP-Session-Id',
         'Access-Control-Expose-Headers': 'WWW-Authenticate, MCP-Session-Id',
       });
       if (req.method === 'OPTIONS') {

@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import { aiEventResponseSchema, aiStreamErrorResponseSchema } from '@capability-hub/contracts';
-import { AiError, terminalStatuses } from '@capability-hub/ai';
+import { AiError, terminalStatuses, type ExecutionRecord } from '@capability-hub/ai';
 import { fail, HubError } from '@capability-hub/domain/errors';
 import type { Request, Response } from 'express';
 import type { HttpContext } from '../context.js';
@@ -29,9 +29,19 @@ export async function streamAiEvents(
     .object({ cursor: z.string().max(500).optional() })
     .strict()
     .parse(req.query);
+  const authorize = async (execution: ExecutionRecord) => {
+    const session = await security.session(req);
+    if (
+      !session ||
+      session.id !== res.locals.session?.id ||
+      session.user_id !== res.locals.principal.id
+    )
+      fail(401, 'UNAUTHENTICATED', '请重新登录');
+    return await hub.ai.principal(res.locals.principal, execution, true);
+  };
   const initial = await runtime.store.tx(async () => {
     const view = await runtime.view(id);
-    const principal = await hub.ai.principal(res.locals.principal, view.execution, true);
+    const principal = await authorize(view.execution);
     return { view, principal };
   });
   const { principal } = initial;
@@ -86,11 +96,8 @@ export async function streamAiEvents(
     while (!controller.signal.aborted && Date.now() - started < 300000) {
       // 授权、资源证据和输出属于同一事务，不能在检查后读到新提交的派生内容。
       const { events, row, reset } = await runtime.store.tx(async () => {
-        const session = await security.session(req);
-        if (!session) fail(401, 'UNAUTHENTICATED', '请重新登录');
-        const current = await hub.identity.principal(session.user_id);
         const row = await runtime.get(id);
-        await hub.ai.principal(current, row, true);
+        await authorize(row);
         const events = await runtime.store.list('ai_events', {
           execution_id: id,
           lookup_key: `${id}:operator`,

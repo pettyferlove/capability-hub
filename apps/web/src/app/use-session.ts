@@ -16,7 +16,7 @@ export function useSession(refresh: number) {
     sessionGeneration.current++;
     authenticationRequest.current?.abort();
     setMe(null);
-    setCsrf('');
+    setCsrf('', true);
     setLoading(false);
   }, []);
   const load = useCallback(async () => {
@@ -24,6 +24,7 @@ export function useSession(refresh: number) {
     const controller = new AbortController();
     authenticationRequest.current = controller;
     const generation = ++sessionGeneration.current;
+    setCsrf('', true);
     setLoading(true);
     setError('');
     try {
@@ -87,8 +88,9 @@ export function useSession(refresh: number) {
     return () => controller.abort();
   }, [refresh, me?.id, clearSession]);
   const logout = useCallback(async () => {
+    const generation = sessionGeneration.current;
     await mutate('/auth/logout', {});
-    clearSession();
+    if (generation === sessionGeneration.current) clearSession();
   }, [clearSession]);
   return { me, initialized, setupRequired, ldapEnabled, loading, error, load, logout };
 }

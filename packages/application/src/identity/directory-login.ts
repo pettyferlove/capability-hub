@@ -16,7 +16,7 @@ export async function resolveDirectoryUser(
   const created = !user;
   if (!user) {
     // 初始化管理员必须由部署方创建，目录登录不能占用首次初始化入口。
-    if (!(await store.all('users')).length) return undefined;
+    if (!(await store.hasUsers())) return undefined;
     user = await store.insert('users', {
       id: randomUUID(),
       username,
@@ -54,9 +54,9 @@ export async function resolveDirectoryUser(
   }
   if (user.ldap_maintainer_binding_id) {
     const binding = await store.get('role_bindings', user.ldap_maintainer_binding_id);
-    if (binding && (!group?.active || binding.scope_id !== group.id)) {
+    if (binding && (!group || binding.scope_id !== group.id)) {
       await store.audit(user.id, 'identity.grant_removed', binding.id, 'ldap');
-      if (!group?.active) await store.remove('role_bindings', binding.id);
+      if (!group) await store.remove('role_bindings', binding.id);
       else {
         await store.put('role_bindings', { ...binding, scope_id: group.id });
         await store.audit(user.id, 'identity.role_granted', binding.id, 'ldap');
@@ -77,7 +77,9 @@ async function resolveDepartment(
   const collision = await store.find('groups', 'name', department.displayName);
   const name =
     collision && collision.id !== existing?.id
-      ? department.displayName.slice(0, 41) + ' · ' + department.entryUuid
+      ? department.displayName.slice(0, 41).replace(/[\ud800-\udbff]$/u, '') +
+        ' · ' +
+        department.entryUuid
       : department.displayName;
   if (existing) {
     if (existing.name === name) return existing;

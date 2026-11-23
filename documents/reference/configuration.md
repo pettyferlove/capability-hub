@@ -7,6 +7,7 @@
 | NODE_ENV                                      | production 启用生产约束                                              |
 | CAPABILITY_HUB_HOST / PORT                    | 127.0.0.1 / 4100；开发仅允许 loopback，端口 1–65535                  |
 | CAPABILITY_HUB_PUBLIC_URL                     | http://127.0.0.1:4100；生产必填 HTTP(S) 根地址，不含凭据、路径或查询 |
+| CAPABILITY_HUB_TRUSTED_PROXY_ADDRESSES        | 默认不信任转发头；代理 IPv4/IPv6 单地址以逗号分隔，不接受网段或跳数  |
 | CAPABILITY_HUB_CLI_REGISTRY                   | 空时直接 npm 安装；HTTP(S) 仓库可含路径，不含凭据、查询或片段        |
 | CAPABILITY_HUB_DATA_DIR                       | 源码默认 .data；Compose 将指定的宿主机目录挂载到 /app/data           |
 | CAPABILITY_HUB_WEB_DIR                        | 仓库 apps/web/dist；部署包 web                                       |
@@ -28,7 +29,7 @@
 
 布尔开关在环境变量中使用小写字符串 true/false，加载后转换为 boolean；未设置时使用默认值，空字符串、0/1 或其他值均报错。未知驱动或不合法配置立即失败。相对实例路径以工作区/部署包解析，不随进程工作目录变化。
 
-Compose 的宿主机监听地址和端口默认取 `CAPABILITY_HUB_HOST` 和 `PORT`，可用 `CAPABILITY_HUB_BIND_HOST` 和 `CAPABILITY_HUB_PORT` 分别覆盖。容器内监听 `0.0.0.0` 和 `PORT`。[容器部署](../operations/deployment.md#compose) 说明存储驱动与可选服务的组合。
+Compose 宿主监听地址和端口默认取 `CAPABILITY_HUB_HOST` 和 `PORT`，可用 `CAPABILITY_HUB_BIND_HOST`、`CAPABILITY_HUB_PORT` 覆盖。若需按代理后的来源限流，只登记能重写转发头或追加真实来源地址的受信代理。部署见[容器部署](../operations/deployment.md#compose)。
 
 ## LDAP 登录
 
@@ -36,7 +37,7 @@ Compose 的宿主机监听地址和端口默认取 `CAPABILITY_HUB_HOST` 和 `PO
 - `CAPABILITY_HUB_LDAP_DIRECTORY_TYPE` 默认 `ldap`，读取 `uid`、`cn`、`entryUUID`；微软 AD 设置为 `ad`，读取 `sAMAccountName`、`displayName`（缺失时用 `cn`）、二进制 `objectGUID`。登录页填写短账号名，不含域名。
 - `CAPABILITY_HUB_LDAP_BASE_DN` 限定用户及部门搜索范围。`CAPABILITY_HUB_LDAP_BIND_DN` 和 `CAPABILITY_HUB_LDAP_BIND_PASSWORD` 提供查询身份，AD 可填写 `账号@域名`；须能读取用户属性，以及 OU 的 `description`、`ou` 和唯一标识。登录名在子树内须唯一，用户绑定后须能按唯一标识读取本条目。
 - 每次成功登录按最近一层 OU 的 `entryUUID` / `objectGUID` 同步共享部门团队，名称优先取 `description`，否则取 `ou`，重名时附加目录标识；不越过搜索范围，也不全量导入部门。同步只调整目录部门归属，手工团队、已有个人团队及资源保留。目录部门名称和成员只读，团队启停仍由 Hub 管理。
-- `CAPABILITY_HUB_LDAP_DEFAULT_ROLES` 接受逗号分隔的内置角色键，默认 `maintainer,reader`，只在首次建号时授予。`maintainer` 限定到部门团队，缺少 OU 时不建团队或授予维护权；其余角色按平台范围授予。部门调动仅迁移仍存在的默认维护授权，已撤销的角色不补发，手工授权不变。配置在重启后生效。
+- `CAPABILITY_HUB_LDAP_DEFAULT_ROLES` 默认 `maintainer,reader`，只在首次建号时授予。`maintainer` 限于部门，缺少 OU 不授予；其他角色按平台范围授予。Hub 停用部门即暂停其自动维护权，调动仅迁移仍存在的自动授权；手工授权不变，已撤销的不补发。
 
 ## AI 配置
 

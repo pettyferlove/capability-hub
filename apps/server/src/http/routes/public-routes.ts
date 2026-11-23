@@ -9,7 +9,7 @@ import {
   hubShareInvitation,
   cliInstallationGuide,
 } from '@capability-hub/contracts';
-import { fail } from '@capability-hub/domain/errors';
+import { fail, HubError } from '@capability-hub/domain/errors';
 import { contentText } from '@capability-hub/domain/files';
 import { safePath } from '@capability-hub/domain/paths';
 import type { Express } from 'express';
@@ -153,7 +153,7 @@ export function registerPublicRoutes(app: Express, { hub, security }: HttpContex
   );
   app.get('/api/auth/status', async (_req, res) =>
     res.json({
-      initialized: (await store.all('users')).length > 0,
+      initialized: await store.hasUsers(),
       auth_provider: 'native-rbac',
       ldap_enabled: Boolean(config.ldap),
       oidc_enabled: false,
@@ -195,9 +195,30 @@ export function registerPublicRoutes(app: Express, { hub, security }: HttpContex
       }
     }),
   );
+  // 签发消耗持久化空间；进程总额度也限制本窗口的地址缓存大小，轮询不占签发名额。
+  const issuanceByAddress = new Map<string, number>();
+  let windowEnd = 0;
+  let issued = 0;
   app.post(
     '/auth/cli/request',
-    send(async (req) => await hub.cliLogin.request(cliLoginRequestSchema.parse(req.body))),
+    send(async (req, res) => {
+      const input = cliLoginRequestSchema.parse(req.body);
+      const now = Date.now();
+      if (now >= windowEnd) {
+        windowEnd = now + 60_000;
+        issued = 0;
+        issuanceByAddress.clear();
+      }
+      const address = req.ip ?? 'unknown';
+      const count = issuanceByAddress.get(address) ?? 0;
+      if (count >= 6 || issued >= 60) {
+        res.set('Retry-After', String(Math.ceil((windowEnd - now) / 1000)));
+        throw new HubError(429, 'CLI_LOGIN_RATE_LIMIT', '客户端授权申请过多，请稍后重试', {}, true);
+      }
+      issuanceByAddress.set(address, count + 1);
+      issued++;
+      return await hub.cliLogin.request(input);
+    }),
   );
   app.post(
     '/auth/cli/poll',

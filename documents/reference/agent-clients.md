@@ -46,11 +46,11 @@ capability-hub mcp-config example-service --version 1.0.0 --client opencode --op
 capability-hub add example-skill --version 1.0.0 --to .opencode/skills --dry-run --url https://hub.example.com
 ```
 
-示例资源名、版本与安装项需替换为实际发布内容。CLI 的配置 JSON/TOML 写到 stdout，目标位置、变量说明和客户端提示写到 stderr。CLI 默认生成项目配置，也可指定 `--scope user`；HTTP 与 Hub MCP 使用 `scope: "user"`。
+将示例替换为实际的发布版本和安装项。CLI 将 JSON/TOML 写到 stdout，目标位置和变量说明写到 stderr。普通配置默认项目级；含 Hub 共享密钥时默认用户级，显式请求项目级会被拒绝。CLI 通过 `--scope` 指定，HTTP/MCP 使用 `scope`。
 
 `get_mcp_config` 与 `activate_mcp` 的 `client` 接受表中标识。`install_skill` 的可选 `client` 决定 `suggested_directory` 和 `cli_command` 的 `--to`，缺省为 `.agents/skills` 父目录；实际位置由使用者确认。
 
-Hub 生成 Streamable HTTP 远程配置和固定版本 npm stdio 配置，不运行目标服务，不覆盖客户端已有设置。复杂 URL 模板、多变量 Header、环境变量模板、自定义运行时参数和可变包参数明确拒绝，不猜测参数。固定值中会被目标客户端展开的环境/文件表达式不直接透传；Pi 的命令求值同样拒绝。`runtime_client_verification` 始终为 `false`。
+Hub 生成 Streamable HTTP 或固定版本的 npm stdio 配置，不运行目标服务。清单指定仓库、文件 SHA-256 或 npx 以外的运行时，Hub 不生成无法遵守这些约束的命令。复杂模板、自定义运行时参数、可变包参数及不安全的客户端表达式同样拒绝。`runtime_client_verification` 始终为 `false`。
 
 ## 通过对话接入 Hub 自身
 
@@ -65,7 +65,7 @@ https://hub.example.com/INSTALL.md
 
 接入说明先验证并复用同一实例的可用通路：在目标 Agent 用 `search_skills` 验证 MCP，或用带 `--url` 的 `search --json` 验证 CLI。当次读取和贡献用 MCP，持久安装优先由 CLI 校验写入。未知客户端按自身 Streamable HTTP 与认证能力接入。
 
-接入说明和 MCP 工具发现均指向随附的 [use-capability-hub](../../skills/use-capability-hub/SKILL.md) 及参考资料。仅推荐 `active`、当前版本公开且完整清单与摘要均匹配的目录版本；否则按 `/INSTALL.md` 下载并校验随附完整包，目录查询失败也可安装。
+接入说明和 MCP 工具发现均指向随附的 [use-capability-hub](../../skills/use-capability-hub/SKILL.md)。当前公开且 `active` 的目录版本只有在完整清单和内容摘要均与随附文件一致时才获推荐；下载时校验所选版本自己的归档摘要。没有匹配版本时仍可按 `/INSTALL.md` 安装随附包。
 
 也可以把以下说明链接交给 Agent；链接无需登录即可读取，但不包含任何令牌，也不授予 MCP 或资源访问权限：
 

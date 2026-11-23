@@ -43,11 +43,11 @@ export function navigate(
   if (!target || target === host.location.pathname + host.location.search) return;
   const currentAsset = parseHistoryRoute(host.location.pathname).asset;
   const targetAsset = parseHistoryRoute(target.split('?')[0]).asset;
-  const background = targetAsset
-    ? currentAsset
+  const background = !targetAsset
+    ? undefined
+    : currentAsset
       ? assetBackground(host.history.state)
-      : host.location.pathname + host.location.search
-    : undefined;
+      : !options.replace && host.location.pathname + host.location.search;
   const state = background ? { asset_background: background } : null;
   if (options.replace || (currentAsset && targetAsset))
     host.history.replaceState(state, '', target);

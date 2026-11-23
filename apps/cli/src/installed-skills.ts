@@ -1,16 +1,11 @@
 import { lstat, readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import {
-  agentClients,
-  installSourceRecordSchema,
-  type InstallSourceRecord,
-} from '@capability-hub/contracts';
+import { agentClients, type InstallSourceRecord } from '@capability-hub/contracts';
 import { utf8Compare } from '@capability-hub/domain/canonical';
 import { HubError } from '@capability-hub/domain/errors';
 import { installSourceFile } from '@capability-hub/domain/paths';
 import { terminalText } from './api-client.js';
 import { printTable } from './cli-ui.js';
-import { hubUrl } from './credentials.js';
 import { safeDirectory } from './filesystem.js';
 import { localDiff, readSourceRecord } from './install.js';
 import { displayVersionLabel } from './skill-versions.js';
@@ -86,9 +81,7 @@ export async function installedSkills(directories: readonly string[]) {
       }
       if (!stat.isFile()) throw new Error(`来源记录不是普通文件：${source}`);
       try {
-        const receipt = installSourceRecordSchema.parse(await readSourceRecord(source));
-        receipt.hub_url = hubUrl(receipt.hub_url);
-        installs.push({ path, receipt });
+        installs.push({ path, receipt: await readSourceRecord(source) });
       } catch (error) {
         throw new Error(`来源记录无效：${source}`, { cause: error });
       }

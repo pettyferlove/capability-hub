@@ -78,11 +78,8 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     ]);
   }
 
-  function scopeOption() {
-    return new Option('--scope <SCOPE>', '配置范围（默认 project；向导中可选择）').choices([
-      'project',
-      'user',
-    ]);
+  function scopeOption(description = '配置范围（默认 project；向导中可选择）') {
+    return new Option('--scope <SCOPE>', description).choices(['project', 'user']);
   }
 
   function skillDirectoriesOption() {
@@ -108,6 +105,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     } catch (error) {
       if (
         path !== 'bridge' &&
+        !flags.dryRun &&
         !(error instanceof CliCancelled || error instanceof CommanderError)
       ) {
         const directory = flags.configDir ? resolve(flags.configDir) : defaultConfigDirectory();
@@ -261,7 +259,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     .argument('[name]', 'MCP 资源名称')
     .option('--version <VERSION>', '明确的资源版本；交互终端可选择')
     .addOption(clientOption())
-    .addOption(scopeOption())
+    .addOption(scopeOption('配置范围（省略时由 Hub 根据安装项选择）'))
     .option('--option <ID>', 'MCP 安装项标识')
     .action(async (name: string | undefined, _options: CliOptions, command: Command) =>
       execute(command, name === undefined ? [] : [name]),
@@ -283,6 +281,8 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
 
   const jsonOption = () => new Option('--json', '输出 JSON，便于脚本处理');
   const yesOption = () => new Option('--yes', '经用户确认后提交，无需再次询问');
+  const requestIdOption = () =>
+    new Option('--request-id <UUID>', '同一次写入的重试键；重新确认发送时请勿复用');
   const attachOption = () =>
     new Option('--attach <PATH>', '本地附件文件，最多指定 5 次').argParser(
       (path: string, paths: string[] = []) => {
@@ -339,6 +339,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     feedback,
   )
     .argument('<ref>', '反馈编号或 ID')
+    .option('--after <SEQUENCE>', '从上一页返回的事件序号之后继续查看')
     .addOption(jsonOption())
     .action(async (ref: string, _options: CliOptions, command: Command) => execute(command, [ref]));
 
@@ -352,6 +353,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     .addOption(new Option('--message <TEXT>', '留言内容').conflicts('messageFile'))
     .option('--message-file <PATH>', '从 UTF-8 普通文件或标准输入（-）读取留言')
     .addOption(attachOption())
+    .addOption(requestIdOption())
     .addOption(yesOption())
     .addOption(jsonOption())
     .action(async (ref: string, _options: CliOptions, command: Command) => execute(command, [ref]));
@@ -363,6 +365,7 @@ export async function runCli(arguments_: readonly string[] = process.argv.slice(
     feedback,
   )
     .argument('<ref>', '反馈编号或 ID')
+    .addOption(requestIdOption())
     .addOption(yesOption())
     .addOption(jsonOption())
     .action(async (ref: string, _options: CliOptions, command: Command) => execute(command, [ref]));

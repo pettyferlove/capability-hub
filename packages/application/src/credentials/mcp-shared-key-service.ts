@@ -1,4 +1,5 @@
 import type { InstallationOption, InputVariable } from '@capability-hub/domain/content';
+import { consumableInstallationOptions } from '@capability-hub/domain/content';
 import type {
   AssetRecord,
   IntakeRecord,
@@ -237,17 +238,23 @@ export class McpSharedKeyService {
     );
   }
 
-  async installation(p: Principal | null, versionId: string, optionId: string) {
+  async installation(
+    p: Principal | null,
+    versionId: string,
+    optionId: string,
+    scope?: 'project' | 'user',
+  ) {
     return this.context.store.tx(async () => {
       const actor = p && (await this.context.identity.principal(p.id));
       const version = await this.access.requireReadableVersion(actor, versionId);
       const asset = await this.access.getAsset(version.asset_id);
-      const option = version.metadata.installation_options?.find(
-        (item) => item.option_id === optionId,
-      );
+      const options = consumableInstallationOptions(version.metadata);
+      const option = options.find((item) => item.option_id === optionId);
       const keys = option ? sharedKeysForOption(asset, option) : [];
       if (keys.length && !actor)
         fail(401, 'MCP_KEY_LOGIN_REQUIRED', '请登录 Hub 后获取含共享密钥的安装配置');
+      if (keys.length && scope === 'project')
+        fail(422, 'MCP_KEY_USER_SCOPE_REQUIRED', '含共享密钥的配置只能保存到用户级配置');
       const sharedHeaders = new Map(
         keys.map((key) => {
           const secret = this.open(asset, key);
@@ -257,7 +264,7 @@ export class McpSharedKeyService {
           ] as const;
         }),
       );
-      return { version, asset, option, sharedHeaders };
+      return { version, asset, options, option, sharedHeaders };
     });
   }
 }

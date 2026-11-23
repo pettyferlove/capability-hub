@@ -351,7 +351,8 @@ function FeedbackThread({
       setReplacement((current) =>
         current && current.revision > updated.revision ? current : updated,
       );
-      if (comment && !handler) notifyHubFeedbackChanged({ kind: 'commented' });
+      if (handler) notifyHubFeedbackChanged({ kind: 'handled' });
+      else if (comment) notifyHubFeedbackChanged({ kind: 'commented' });
       onChanged();
       return true;
     } catch (error) {

@@ -83,7 +83,7 @@ export class LdapAuthenticator implements DirectoryAuthenticator {
             : commonName;
         return {
           entryUuid: identifier.entryUuid,
-          displayName: (typeof name === 'string' && name.trim().slice(0, 80)) || username,
+          displayName: (typeof name === 'string' && displayNamePrefix(name.trim())) || username,
           ...(department ? { department } : {}),
         };
       } catch (error) {
@@ -127,11 +127,15 @@ export class LdapAuthenticator implements DirectoryAuthenticator {
       return {
         entryUuid: directoryIdentifier(attributes[uuidAttribute.toLowerCase()], activeDirectory)
           .entryUuid,
-        displayName: displayName.slice(0, 80),
+        displayName: displayNamePrefix(displayName),
       };
     }
     return undefined;
   }
+}
+
+function displayNamePrefix(value: string): string {
+  return value.slice(0, 80).replace(/[\ud800-\udbff]$/u, '');
 }
 
 function directoryIdentifier(

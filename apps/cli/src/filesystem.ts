@@ -1,6 +1,6 @@
 import { fail } from '@capability-hub/domain/errors';
-import type { Stats } from 'node:fs';
-import { lstat, mkdir, readlink, realpath } from 'node:fs/promises';
+import { constants, type Stats } from 'node:fs';
+import { lstat, mkdir, open, readlink, realpath } from 'node:fs/promises';
 import { join, parse, resolve, sep } from 'node:path';
 
 /**
@@ -31,6 +31,52 @@ export async function safeDirectory(directory: string, create = true) {
     }
   }
   return create ? realpath(current) : current;
+}
+
+/** 路径可被外部进程替换；同时保存设备号和 inode，供提交及清理时核对。 */
+export interface DirectoryIdentity {
+  path: string;
+  dev: bigint;
+  ino: bigint;
+}
+
+/** 不跟随链接，记录实际被选中的目录而不是它的目标。 */
+export async function identifyDirectory(path: string): Promise<DirectoryIdentity> {
+  const stat = await lstat(path, { bigint: true });
+  if (!stat.isDirectory()) fail(422, 'INSTALL_PATH', `目标不是普通目录：${path}`);
+  return { path, dev: stat.dev, ino: stat.ino };
+}
+
+/** 部分卷在 rename 后重编目录号；先绑定打开的目录，搬移后可用同一描述符重新查询身份。 */
+export async function pinDirectory(expected: DirectoryIdentity) {
+  const handle = await open(
+    expected.path,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  ).catch((error: NodeJS.ErrnoException) => {
+    if (['EISDIR', 'EPERM', 'EACCES', 'EINVAL', 'ENOTSUP'].includes(error.code ?? '')) return null;
+    throw error;
+  });
+  if (!handle) return null;
+  try {
+    const stat = await handle.stat({ bigint: true });
+    if (!stat.isDirectory() || stat.dev !== expected.dev || stat.ino !== expected.ino)
+      fail(409, 'INSTALL_TARGET_CHANGED', `目录在操作期间发生变化：${expected.path}`);
+    return handle;
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
+
+/** 清理或提交前只接受该路径最后一次核验的目录。 */
+export async function assertSameDirectory(expected: DirectoryIdentity) {
+  const { path } = expected;
+  const stat = await lstat(path, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (!stat?.isDirectory() || stat.dev !== expected.dev || stat.ino !== expected.ino)
+    fail(409, 'INSTALL_TARGET_CHANGED', `目录在操作期间发生变化：${path}`);
 }
 
 /**

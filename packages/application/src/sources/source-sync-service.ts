@@ -17,6 +17,34 @@ const gitAuthenticationErrors = new Set([
   'SSH_CREDENTIAL_REQUIRED',
 ]);
 
+/** 只有由固定提交、目标配置及扫描规则决定的失败才是可复用证据。 */
+const contentFailures: Record<string, true> = {
+  TARGET_MISSING: true,
+  GIT_PATH_ENCODING: true,
+  GIT_TREE: true,
+  GIT_ENTRY_TYPE: true,
+  GIT_SIZE: true,
+  PACKAGE_LIMIT: true,
+  UNSAFE_PATH: true,
+  RESERVED_PATH: true,
+  PATH_COLLISION: true,
+  SKILL_SIZE: true,
+  SKILL_REQUIRED: true,
+  SKILL_FRONTMATTER: true,
+  SKILL_YAML: true,
+  SKILL_NAME: true,
+  SKILL_DESCRIPTION: true,
+  JSON_SIZE: true,
+  JSON_DEPTH: true,
+  JSON_INVALID: true,
+  JSON_DUPLICATE: true,
+  MCP_ROOT: true,
+  MCP_SCHEMA: true,
+  MCP_URL: true,
+  MCP_OPTIONS: true,
+  MUTABLE_VERSION: true,
+};
+
 /** 凭据状态决定本次读取是否有效，不能作为提交内容的失败证据复用。 */
 function invalidatesGitSnapshot(code: string | null | undefined) {
   return code === 'CREDENTIAL_CHANGED' || gitAuthenticationErrors.has(code ?? '');
@@ -46,6 +74,7 @@ export class SourceSyncService {
       for (const intake of await this.store.where('intakes', 'source_id', job.aggregate_id)) {
         if (
           !intake.source_sync_job_id ||
+          intake.rescan_of ||
           !['received', 'fetching', 'scanning'].includes(intake.state)
         )
           continue;
@@ -68,8 +97,8 @@ export class SourceSyncService {
   /**
    * 执行 `source_sync` 作业：固定 Git 提交与凭据修订后，对冻结时启用的每个目标
    * 生成接收证据。可安全重试——同提交、同来源 revision、同规则集（
-   * `contentScanRuleset`）的成功接收或确定的内容失败可复用（`reused: true`），不重复
-   * 生成版本。所有写入都经 {@link JobQueue.withLease} 在「租约校验 + 事务」内完成，
+   * `contentScanRuleset`）的成功接收或确定的内容失败可复用（`reused: true`）。封禁目标
+   * 不读取内容，只复用同一快照的封禁拒绝。所有写入都经 {@link JobQueue.withLease} 完成，
    * 租约丢失 → 409 `LEASE_LOST`。前置条件不满足 → 409 `SOURCE_CONFIG_CHANGED`
    * （来源暂停/封锁或 revision 与作业输入不符）或 409 `JOB_INPUT_INVALID`（缺
    * `requested_by`）；同步途中凭据 revision 与 snapshot 不一致 → 409
@@ -126,57 +155,69 @@ export class SourceSyncService {
       });
       const results: SyncTargetResult[] = [];
       for (const binding of frozen) {
-        await this.jobs.assertLease(job);
-        await checkCredential();
-        const a = await this.assets.getAsset(binding.asset_id);
-        const repeated = (await this.store.where('intakes', 'asset_id', a.id)).find(
-          (i) =>
-            i.binding_id === binding.id &&
-            i.source_revision === source.revision &&
-            i.origin_commit === commit &&
-            i.processing_ruleset === contentScanRuleset &&
-            ['ready', 'failed'].includes(i.state) &&
-            !invalidatesGitSnapshot(i.error_code) &&
-            !i.retryable,
-        );
-        if (repeated) {
+        const { intake, kind, reused } = await this.jobs.withLease(job, async () => {
+          await checkCredential();
+          const asset = await this.assets.getAsset(binding.asset_id);
+          const blocked = asset.lifecycle === 'blocked';
+          const repeated = (await this.store.where('intakes', 'asset_id', asset.id)).find(
+            (i) =>
+              i.binding_id === binding.id &&
+              i.source_revision === source.revision &&
+              i.origin_commit === commit &&
+              i.processing_ruleset === contentScanRuleset &&
+              (blocked
+                ? i.state === 'failed' && i.error_code === 'ASSET_BLOCKED'
+                : i.state === 'ready' ||
+                  (i.state === 'failed' &&
+                    !i.retryable &&
+                    Object.hasOwn(contentFailures, i.error_code ?? ''))),
+          );
+          if (repeated) return { intake: repeated, kind: asset.kind, reused: true };
+          const now = new Date().toISOString();
+          const created = await this.store.insert('intakes', {
+            id: randomUUID(),
+            source_id: source.id,
+            binding_id: binding.id,
+            source_sync_job_id: job.id,
+            asset_id: asset.id,
+            requested_by: job.input.requested_by,
+            origin_ref: source.branch,
+            origin_commit: commit,
+            origin_path: binding.path,
+            source_revision: source.revision,
+            source_generation: generation,
+            version_label: `git.${commit}.s${source.id}.r${source.revision}`,
+            state: blocked ? 'failed' : 'fetching',
+            phase: blocked ? '处理失败' : '读取固定提交',
+            progress: [{ step: blocked ? 'received' : 'fetching', started_at: now }],
+            processing_ruleset: contentScanRuleset,
+            created_at: now,
+            ...(blocked && {
+              error_code: 'ASSET_BLOCKED',
+              error_message: '资产已封禁',
+              retryable: false,
+              finished_at: now,
+            }),
+          });
+          return { intake: created, kind: asset.kind, reused: false };
+        });
+        if (reused || intake.state === 'failed') {
           results.push({
             id: binding.id,
             binding_id: binding.id,
-            intake_id: repeated.id,
-            state: repeated.state,
-            version_id: repeated.version_id,
-            error_code: repeated.error_code ?? null,
-            reused: true,
+            intake_id: intake.id,
+            state: intake.state,
+            version_id: intake.version_id,
+            error_code: intake.error_code ?? null,
+            ...(reused && { reused: true }),
           });
           continue;
         }
-        const intake = await this.jobs.withLease(
-          job,
-          async () =>
-            await this.store.insert('intakes', {
-              id: randomUUID(),
-              source_id: source.id,
-              binding_id: binding.id,
-              source_sync_job_id: job.id,
-              asset_id: a.id,
-              requested_by: job.input.requested_by,
-              origin_ref: source.branch,
-              origin_commit: commit,
-              origin_path: binding.path,
-              source_revision: source.revision,
-              source_generation: generation,
-              version_label: `git.${commit}.s${source.id}.r${source.revision}`,
-              state: 'fetching',
-              phase: '读取固定提交',
-              progress: [{ step: 'fetching', started_at: new Date().toISOString() }],
-              processing_ruleset: contentScanRuleset,
-              created_at: new Date().toISOString(),
-            }),
-        );
         try {
-          const files = await snapshot.read(binding.path, a.kind);
+          const files = await snapshot.read(binding.path, kind);
           await checkCredential();
+          if ((await this.assets.getAsset(binding.asset_id)).lifecycle === 'blocked')
+            fail(409, 'ASSET_BLOCKED', '资产已封禁');
           const result = await this.processor.process(intake, job, files, checkCredential);
           results.push({
             id: binding.id,

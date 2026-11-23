@@ -18,7 +18,7 @@ import {
   withdrawModelCall,
 } from './model-calls.js';
 
-/** 业务输入和结果只经回调传递；持久化的步骤只接受固定标识及调用诊断。 */
+/** 业务内容不落库；reserve 在调用账本的写事务内执行，只能核对本地授权和配额。 */
 export interface InlineExecution {
   call<S extends z.ZodType>(
     step: string,
@@ -149,9 +149,14 @@ export async function runInlineExecution<T>(
         if (trace) events.notifyTrace(trace);
       };
       activeCalls++;
+      const { reserve, release, ...request } = input;
+      let reserved = false;
       try {
         const result = await callShortModel({
-          ...input,
+          ...request,
+          release: () => {
+            if (reserved) release?.();
+          },
           signal: callSignal,
           profile,
           credentials,
@@ -165,7 +170,7 @@ export async function runInlineExecution<T>(
                   (await store.get('ai_executions', id)) ?? (await startExecution(id));
                 if (execution.status !== 'running') throw new ShortModelError('cancelled');
                 const event = await events.append(execution, 'step.started', { step_id: step });
-                return reserveModelCall(
+                const pending = await reserveModelCall(
                   store,
                   execution,
                   {
@@ -175,6 +180,12 @@ export async function runInlineExecution<T>(
                   },
                   config.max_requests,
                 );
+                // 宿主在同一写事务内授权实际出站内容；拒绝会回滚执行、步骤和调用预留。
+                await reserve?.();
+                reserved = true;
+                assertActive();
+                callSignal.throwIfAborted();
+                return pending;
               });
               started = Date.now();
               return {

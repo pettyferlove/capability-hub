@@ -14,7 +14,8 @@ export interface HubFeedbackFailure {
   seed: HubFeedbackSeed;
 }
 
-type HubFeedbackChange = { kind: 'submitted' | 'commented' } | { kind: 'read'; id: string };
+type HubFeedbackChange =
+  { kind: 'submitted' | 'commented' | 'handled' } | { kind: 'read'; id: string };
 
 declare global {
   interface WindowEventMap {
@@ -34,7 +35,7 @@ export function notifyHubFeedbackFailure(failure: HubFeedbackFailure): void {
     window.dispatchEvent(new CustomEvent('hub:feedback-failure', { detail: failure }));
 }
 
-/** 提交者更新后通知外壳更新未读数，不启用轮询。 */
+/** 反馈变更通知外壳更新摘要，不启用轮询。 */
 export function notifyHubFeedbackChanged(change: HubFeedbackChange): void {
   window.dispatchEvent(new CustomEvent('hub:feedback-changed', { detail: change }));
 }

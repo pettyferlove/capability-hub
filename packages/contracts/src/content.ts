@@ -127,7 +127,7 @@ export type InstallationArgument = InstallationInput &
 export interface InstallationOption {
   option_id: string;
   kind: 'remote' | 'package';
-  /** 当前实现是否支持该选项：远端仅 `streamable-http`，包仅 npm 且版本必须固定。 */
+  /** 配置生成能否采用此安装项；无法保留仓库来源或校验声明的包不可用。 */
   supported: boolean;
   type?: string;
   url?: string;

@@ -7,6 +7,7 @@ import type {
   VersionRecord,
 } from '@capability-hub/domain/models';
 import { filterAsync } from '@capability-hub/domain/async';
+import { consumableInstallationOptions } from '@capability-hub/domain/content';
 import { z } from 'zod';
 import { canonical, digest, sha256 } from '@capability-hub/domain/canonical';
 import { fail, notFound } from '@capability-hub/domain/errors';
@@ -81,7 +82,7 @@ export class CatalogService {
       content_digest: version.content_digest,
       artifact_digest: version.artifact_digest,
       files: version.manifest.files,
-      installation_options: (version.metadata.installation_options ?? []).map((option) =>
+      installation_options: consumableInstallationOptions(version.metadata).map((option) =>
         sharedKeysForOption(asset, option).length ? { ...option, has_shared_key: true } : option,
       ),
       metadata:

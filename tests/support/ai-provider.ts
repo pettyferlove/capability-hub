@@ -30,7 +30,7 @@ type FixtureReply = string | { text: string; stop: 'length' | 'content_filter' }
 export async function fixture(
   format: Format,
   mode: Mode = 'tools',
-  gated: boolean | 'before-headers' | 'before-output' = false,
+  gated: boolean | 'before-headers' | 'before-output' | 'after-terminal' = false,
   script?: {
     turns: { name: string; input: Record<string, unknown>; text?: string }[];
     text: FixtureReply;
@@ -177,7 +177,7 @@ export async function fixture(
         } else {
           chunk({ content: text.slice(0, 3) });
           firstDelta.resolve();
-          await release.promise;
+          if (gated !== 'after-terminal') await release.promise;
           if (mode === 'truncated') {
             res.end();
             return;
@@ -193,7 +193,7 @@ export async function fixture(
           choices: [],
           usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
         });
-        res.end('data: [DONE]\n\n');
+        res.write('data: [DONE]\n\n');
       } else {
         event(res, 'message_start', {
           message: {
@@ -251,7 +251,7 @@ export async function fixture(
             delta: { type: 'text_delta', text: text.slice(0, 3) },
           });
           firstDelta.resolve();
-          await release.promise;
+          if (gated !== 'after-terminal') await release.promise;
           if (mode === 'truncated') {
             res.end();
             return;
@@ -267,9 +267,10 @@ export async function fixture(
           usage: { output_tokens: 8 },
         });
         event(res, 'message_stop', {});
-        res.end();
       }
       if (!toolTurn) completed = true;
+      if (gated === 'after-terminal') await release.promise;
+      res.end();
     })().catch(() => res.destroy());
   });
   server.listen(0, '127.0.0.1');

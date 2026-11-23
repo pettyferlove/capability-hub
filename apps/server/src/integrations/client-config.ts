@@ -15,7 +15,7 @@ const input = z
     version_id: z.uuid(),
     installation_option_id: z.string().min(1),
     client: z.string().min(1).max(64),
-    scope: z.enum(['project', 'user']).default('project'),
+    scope: z.enum(['project', 'user']).optional(),
   })
   .strict();
 
@@ -37,16 +37,17 @@ export async function createClientConfiguration(
   const {
     version: v,
     asset: a,
+    options,
     option,
     sharedHeaders,
-  } = await hub.mcpKeys.installation(p, b.version_id, b.installation_option_id);
+  } = await hub.mcpKeys.installation(p, b.version_id, b.installation_option_id, b.scope);
   if (a.kind !== 'mcp') fail(422, 'NOT_MCP', '该版本不是 MCP');
   const parsedClient = agentClientSchema.safeParse(b.client);
   if (!parsedClient.success)
     fail(422, 'UNSUPPORTED_CLIENT', '该客户端尚未支持配置生成', {
       version_id: v.id,
       server_json: v.metadata.server_json,
-      installation_options: v.metadata.installation_options,
+      installation_options: options,
     });
   const client = parsedClient.data;
   if (!option || !option.supported)
@@ -170,12 +171,13 @@ export async function createClientConfiguration(
     )
   )
     fail(422, 'UNSUPPORTED_CLIENT_VALUE', 'Pi 的命令求值需要独立审阅，不能作为普通变量值生成');
+  const scope = b.scope ?? (sharedHeaders.size ? 'user' : 'project');
   return {
     version_id: v.id,
     installation_option_id: option.option_id,
     client: b.client,
-    scope: b.scope,
-    ...renderMcpClientConfiguration(client, a.slug, config, b.scope),
+    scope,
+    ...renderMcpClientConfiguration(client, a.slug, config, scope),
     required_variables,
     notes,
     runtime_client_verification: false as const,

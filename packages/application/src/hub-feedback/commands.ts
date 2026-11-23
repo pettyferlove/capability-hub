@@ -53,6 +53,7 @@ export type HubFeedbackRedactionCommand =
 export interface HubFeedbackMutation {
   key: string | undefined;
   etag: string | undefined;
+  receipt?: boolean;
 }
 
 export type HubFeedbackAccess = 'submitter' | 'handler';

@@ -59,6 +59,21 @@ export function collisionKey(path: string) {
   return path.normalize('NFC').toLocaleLowerCase('en-US').replace(/ß/g, 'ss');
 }
 
+/** 同一目录的所有子项必须使用相同拼写，否则在大小写不敏感的文件系统上会被合并。 */
+export function hasDirectoryCaseConflict(files: readonly { path: string }[]): boolean {
+  const directories = new Map<string, string>();
+  for (const { path } of files) {
+    for (let end = path.indexOf('/'); end !== -1; end = path.indexOf('/', end + 1)) {
+      const directory = path.slice(0, end);
+      const key = collisionKey(directory);
+      const existing = directories.get(key);
+      if (existing === undefined) directories.set(key, directory);
+      else if (existing !== directory) return true;
+    }
+  }
+  return false;
+}
+
 /** 安装来源记录的文件名，由安装器写在已安装 Skill 的根目录。 */
 export const installSourceFile = '.capability-hub-source';
 

@@ -77,7 +77,7 @@ async function inspectInstallation(
   if (detail && (detail.asset.asset_id !== asset_id || detail.asset.kind !== 'skill'))
     throw new Error('Hub 返回的资源与来源记录不一致');
   const asset = detail?.asset;
-  entry.slug ??= asset?.slug ?? null;
+  entry.slug = asset?.slug ?? entry.slug;
   if (!version || !asset || !detail)
     return {
       ...entry,
@@ -119,12 +119,15 @@ async function inspectInstallation(
       next_step: '先核对本地修改',
     };
   if (latest.version_id !== version_id) {
-    const preview = `capability-hub add ${asset.slug} --version ${shellArgument(latest.version_label)} --to ${shellArgument(dirname(path))} --url ${shellArgument(api.url)}${configDir ? ` --config-dir ${shellArgument(configDir)}` : ''} --dry-run`;
+    const next =
+      basename(path) === asset.slug
+        ? `capability-hub add ${asset.slug} --version ${shellArgument(latest.version_label)} --to ${shellArgument(dirname(path))} --url ${shellArgument(api.url)}${configDir ? ` --config-dir ${shellArgument(configDir)}` : ''} --dry-run`
+        : '此安装使用自定义目录名，请按原安装方式手动更新';
     return {
       ...entry,
       status: 'update_available',
       latest_release: latestRelease,
-      next_step: preview,
+      next_step: next,
     };
   }
   return { ...entry, status: 'current', latest_release: latestRelease };
@@ -180,7 +183,9 @@ export async function outdated(
         ],
         notes: [
           ...(entry.next_step ? [entry.next_step] : []),
-          ...(entry.status === 'update_available' ? ['确认后去掉 --dry-run 并加 --replace'] : []),
+          ...(entry.status === 'update_available' && entry.slug === basename(entry.path)
+            ? ['确认后去掉 --dry-run 并加 --replace']
+            : []),
         ],
       })),
     );

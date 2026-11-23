@@ -32,11 +32,6 @@ export const btnStyles = cn(
   '[&:not(:disabled):hover]:border-b-[color:var(--brand)]',
   '[&:not(:disabled):hover]:border-l-[color:var(--brand)]',
   '[&:not(:disabled):active]:[transform:scale(0.98)]',
-  "[[class~='group/source-actions']_>_&]:text-[length:11px]",
-  "[[class~='group/source-actions']_>_&]:pt-2 [[class~='group/source-actions']_>_&]:pr-[11px]",
-  "[[class~='group/source-actions']_>_&]:pb-2 [[class~='group/source-actions']_>_&]:pl-[11px]",
-  "[[class~='group/source-actions']_>_&]:min-h-8.5",
-  "max-[600px]:[[class~='group/source-actions']_&]:flex-1",
   "max-[600px]:[[class~='group/section-heading']_>_&]:text-[length:11px]",
   "max-[600px]:[[class~='group/section-heading']_>_&]:pt-2",
   "max-[600px]:[[class~='group/section-heading']_>_&]:pr-[11px]",
@@ -92,9 +87,6 @@ export const panelStyles = cn(
   'max-[760px]:pb-5 max-[760px]:pl-5 max-[760px]:[&_h2]:text-[length:17px]',
   "[&[class~='group/form-stack']_>_h2]:mb-0 [&[class~='group/form-stack']_>_h3]:mb-0",
 );
-
-export const dotgridStyles =
-  '[background-image:radial-gradient(var(--dot)_1px,_transparent_1.2px)] [background-size:18px_18px]';
 
 export const desktopOnlyStyles = 'max-[600px]:hidden';
 
@@ -182,23 +174,6 @@ export const countPillStyles = cn(
   'text-[length:12px] leading-[1.6] ml-2.5',
 );
 
-export const inlineIconStyles = 'inline-flex items-center gap-1.5';
-
-export const filterTabsStyles = cn(
-  'flex gap-[21px] [&_>_button]:flex [&_>_button]:items-center [&_>_button]:gap-[7px]',
-  '[&_>_button]:border-0 [&_>_button]:leading-5',
-  '[&_>_button]:[background:none] [&_>_button]:pt-3 [&_>_button]:pr-0 [&_>_button]:pb-3',
-  '[&_>_button]:pl-0 [&_>_button]:text-muted-ink [&_>_button]:text-[length:12px]',
-  "[&_>_button]:whitespace-nowrap [&_>_button[class~='group/selected']]:text-brand",
-  "[&_>_button[class~='group/selected']]:[box-shadow:inset_0_-2px_var(--brand)]",
-  "[&_>_button[class~='group/selected']]:font-semibold [&_>_button_>_span]:text-muted-ink",
-  '[&_>_button_>_span]:text-[length:11px] [&_>_button_>_span]:min-w-[15px] max-[600px]:gap-[19px]',
-  'max-[600px]:[&_>_button]:text-[length:12px] max-[600px]:[&_>_button]:pt-[11px]',
-  'max-[600px]:[&_>_button]:pr-0 max-[600px]:[&_>_button]:pb-[11px] max-[600px]:[&_>_button]:pl-0',
-  'group/filter-tabs [&_>_button:focus-visible]:[outline:2px_solid_var(--brand)]',
-  '[&_>_button:focus-visible]:[outline-offset:-2px]',
-);
-
 export const selectedStyles = 'group/selected';
 
 export const sheetScrollStyles = cn(
@@ -216,9 +191,6 @@ export const sectionHeadingStyles = cn(
 );
 
 export const tagRedStyles = 'bg-danger-soft text-danger';
-
-export const sourceActionsStyles =
-  'group/source-actions flex items-center gap-[9px] mt-5 flex-wrap max-[600px]:gap-2';
 
 export const formRowStyles = cn(
   "[&_input:not([type='checkbox'],_[type='radio'])]:w-full",

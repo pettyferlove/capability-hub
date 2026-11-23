@@ -190,7 +190,12 @@ export class OAuthService {
   }
   private async pending(id: string) {
     const request = await this.store.get('oauth_requests', id);
-    if (!request || request.status !== 'pending' || request.expires_at <= Date.now())
+    if (
+      !request ||
+      request.resource !== this.resource ||
+      request.status !== 'pending' ||
+      request.expires_at <= Date.now()
+    )
       throw invalidGrant();
     return request;
   }
@@ -252,6 +257,7 @@ export class OAuthService {
         const saved = await this.store.find('oauth_requests', 'code', sha256(request.code));
         if (
           !saved ||
+          saved.resource !== request.resource ||
           saved.client_id !== request.client_id ||
           saved.redirect_uri !== request.redirect_uri ||
           saved.challenge !== createHash('sha256').update(request.code_verifier).digest('base64url')
@@ -273,7 +279,7 @@ export class OAuthService {
           client_id: saved.client_id,
           name: client.name,
           scope: saved.scope,
-          resource: this.resource,
+          resource: saved.resource,
           created_at: Date.now(),
           last_used_at: null,
           revoked_at: null,
@@ -290,7 +296,12 @@ export class OAuthService {
       const credential = await this.store.get('oauth_credentials', sha256(request.refresh_token));
       if (!credential || credential.kind !== 'refresh') throw invalidGrant();
       const grant = await this.store.get('oauth_grants', credential.grant_id);
-      if (!grant || grant.client_id !== request.client_id || grant.revoked_at !== null)
+      if (
+        !grant ||
+        grant.resource !== request.resource ||
+        grant.client_id !== request.client_id ||
+        grant.revoked_at !== null
+      )
         throw invalidGrant();
       if (credential.consumed_at !== null) {
         await this.revokeGrant(grant.id);

@@ -143,7 +143,7 @@ export class OperationContext {
       inputSchema: schemas.input,
       outputSchema: schemas.output,
       execute: async (input) => {
-        await this.authorize('tool', definition.id);
+        this.signal.throwIfAborted();
         const parsedInput = definition.input.parse(input);
         const display = definition
           .display?.(parsedInput)
@@ -151,6 +151,14 @@ export class OperationContext {
           .slice(0, 200);
         const invocation = randomUUID();
         await this.scope.write(async (execution) => {
+          await this.dependencies.authorization.authorize(
+            this.ownerId,
+            'tool',
+            execution,
+            definition.id,
+          );
+          // 只有宿主核对旧执行的来源后，才能开始按新约定登记本次及后续的工具依赖。
+          execution.payload.evidence_refs ??= [];
           if (execution.payload.usage.tools >= this.config.max_tools)
             throw new AiError('AI_BUDGET_EXCEEDED', '工具调用次数已达到上限');
           execution.payload.usage.tools++;
@@ -184,6 +192,17 @@ export class OperationContext {
     });
     this.governedTools.add(tool);
     return tool;
+  }
+  /** 工具将实际用过的固定依据登记在执行上，成功返回前仍会按更新后的依赖重新授权。 */
+  async recordEvidence(reference: string) {
+    await this.scope.write(async (execution) => {
+      const refs = execution.payload.evidence_refs;
+      if (!refs) throw new AiError('AI_RECOVERY_UNCERTAIN', '工具证据来源不完整');
+      if (!refs.includes(reference)) {
+        refs.push(reference);
+        await this.scope.store.put('ai_executions', execution);
+      }
+    });
   }
   async agent(options: AgentInvocation): Promise<{ text: string }> {
     return this.invoke(options, (text) => ({ text }));

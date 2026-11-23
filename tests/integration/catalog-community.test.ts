@@ -10,9 +10,22 @@ import {
 } from '@capability-hub/application';
 import { HubError } from '@capability-hub/domain/errors';
 import { createTestHub, publishSkill, receiveSkill } from '../support/application.js';
+import type { KeywordSuggestionsResponse } from '@capability-hub/contracts/http';
+import { httpClient } from '../support/http.js';
 
 const code = (expected: string) => (error: unknown) =>
   error instanceof HubError && error.code === expected;
+
+test('名为 keywords 的已发布资源与目录关键词建议可分别读取', async (context) => {
+  const f = await createTestHub(context);
+  const { intake } = await publishSkill(f, { slug: 'keywords', appliesTo: { keywords: ['文档'] } });
+  const client = httpClient(f);
+  const asset = await client.get('/api/assets/keywords').expect(200);
+  assert.equal(asset.body.asset_id, intake.asset_id);
+  const suggestions = await client.get('/api/catalog/keywords').expect(200);
+  const { items } = suggestions.body as KeywordSuggestionsResponse;
+  assert(items.some((item) => item.keyword === '文档'));
+});
 
 test('无空格的中文需求命中可见发布，中英混排保留完整的技术名称', async (context) => {
   const f = await createTestHub(context);

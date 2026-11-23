@@ -59,6 +59,9 @@ test('官方 MCP 客户端完成协议发现，读取令牌只看到读取工具
   try {
     const tools = await client.listTools();
     assert.equal(tools.tools.length, 9);
+    const install = tools.tools.find((tool) => tool.name === 'install_skill');
+    assert.equal(install?.annotations?.readOnlyHint, false);
+    assert.equal(install?.annotations?.idempotentHint, false);
     for (const name of ['get_mcp_config', 'activate_mcp']) {
       const tool = tools.tools.find((item) => item.name === name)!;
       const properties = object(tool.inputSchema.properties);
@@ -146,6 +149,15 @@ test('官方 MCP 客户端完成协议发现，读取令牌只看到读取工具
       if (archive.complete) break;
     }
     assert.equal(digest(Buffer.concat(chunks)), expected);
+    const version = await fixture.store.get('versions', published.intake.version_id);
+    assert(version);
+    await fixture.blobs.remove(version.files.find((file) => file.path === 'SKILL.md')!.blob_ref);
+    const unavailable = await client.callTool({
+      name: 'load_skill',
+      arguments: { version_id: version.id },
+    });
+    assert.equal(unavailable.isError, true);
+    assert.equal((await fixture.store.where('audit', 'action', 'skill.loaded')).length, 1);
     await fixture.hub.tokens.revoke(
       fixture.admin.id,
       (await fixture.hub.tokens.list(fixture.admin.id)).find((entry) => entry.name === 'read')!.id,

@@ -54,7 +54,7 @@ export async function withMcpTools<T>(
         },
       }),
     );
-    const tools: ToolsInput = {};
+    const tools: ToolsInput = Object.create(null) as ToolsInput;
     let cursor: string | undefined;
     let pages = 0;
     do {
@@ -95,7 +95,7 @@ export async function withMcpTools<T>(
       }
       cursor = page.nextCursor;
     } while (cursor);
-    if (endpoint.read_only_tools.some((name) => !tools[name]))
+    if (endpoint.read_only_tools.some((name) => !Object.hasOwn(tools, name)))
       throw new AiError('AI_CONFIGURATION', '登记的 MCP 工具不存在');
     return await work(tools);
   } finally {

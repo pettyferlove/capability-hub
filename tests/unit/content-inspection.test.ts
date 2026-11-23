@@ -166,6 +166,25 @@ test('归档对文件顺序确定化并保留实际字节，解压会重新推�
   await assert.rejects(() => unzip(Buffer.from('not a ZIP')));
 });
 
+test('ZIP 的字节和摘要不依赖打包进程的时区', async (context) => {
+  const timezone = process.env.TZ;
+  context.after(() => {
+    if (timezone === undefined) delete process.env.TZ;
+    else process.env.TZ = timezone;
+  });
+  const files = [file('SKILL.md', skillDocument())];
+  process.env.TZ = 'UTC';
+  const utc = await archive(files);
+  process.env.TZ = 'Asia/Shanghai';
+  assert.deepEqual(await archive(files), utc);
+});
+
+test('上传与已发布归档仍使用同一解压后单文件上限', async () => {
+  const zip = await archive([file('large.bin', Buffer.alloc(10 * 1024 * 1024 + 1))]);
+  for (const source of ['upload', 'release'] as const)
+    await assert.rejects(unzip(zip, source), code('PACKAGE_LIMIT'));
+});
+
 test('合包压缩期间取消不再消费下一条目的字节，也不交付部分归档', async () => {
   const controller = new AbortController();
   const consumed = new Set<string>();

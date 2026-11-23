@@ -7,6 +7,20 @@ import { z } from 'zod';
 import { readSessionClient } from './session-client.js';
 import type { HubServices } from '../../bootstrap/hub-services.js';
 
+// 按已匹配的路由模板放行，不把资产下新增的管理读取自动归入消费权限。
+const catalogReadRoutes: Record<string, true> = {
+  '/api/catalog/keywords': true,
+  '/api/scenarios': true,
+  '/api/assets': true,
+  '/api/assets/:id': true,
+  '/api/assets/:id/versions': true,
+  '/api/assets/:id/versions/:versionId': true,
+  '/api/versions/:id/manifest': true,
+  '/api/versions/:id/files': true,
+  '/api/versions/:id/archive': true,
+  '/api/versions/:id/mcp-config': true,
+};
+
 const feedbackPath =
   /^\/api\/hub-feedback\/([\da-fA-F-]{1,36})(?:\/(comments|close|read)|\/attachments\/([\da-fA-F-]{36}))?$/;
 const feedbackUuid = z.regexes.uuid();
@@ -81,11 +95,14 @@ export class HttpSecurity {
         if (!r) fail(401, 'UNAUTHENTICATED', '连接已失效，请重新授权');
         if (connection && path !== '/mcp') fail(403, 'TOKEN_SCOPE', '此授权仅用于 Hub MCP');
         p = await this.hub.identity.principal(r.user_id);
+        const route = req.route as { path?: string } | undefined;
         const consumerRead =
-          ['GET', 'HEAD'].includes(req.method) &&
-          (path === '/api/me' || /^\/api\/(assets|versions|scenarios)(?:\/|$)/.test(path));
+          (req.method === 'GET' || req.method === 'HEAD') &&
+          (Object.hasOwn(catalogReadRoutes, route?.path ?? '') ||
+            path === '/api/me' ||
+            /^\/api\/versions\/[\da-fA-F-]{36}\/mcp-options$/.test(path));
         if (
-          path !== '/mcp' &&
+          !(path === '/mcp' && ['GET', 'POST', 'DELETE'].includes(req.method)) &&
           !(req.method === 'POST' && path === '/api/mcp-config') &&
           !(consumerRead || (!connection && personalFeedbackRequest(req.method, path)))
         )

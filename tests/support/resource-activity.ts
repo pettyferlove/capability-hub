@@ -6,7 +6,7 @@ import {
   resourceActivityResponseSchema,
 } from '@capability-hub/contracts';
 import { publishSkill, type TestHub } from './application.js';
-import { signIn } from './http.js';
+import { httpClient, signIn } from './http.js';
 
 /** 同一批发布、使用和反馈样本在两种数据库上核对北京时间窗口与归属。 */
 export async function assertResourceActivity(t: TestContext, f: TestHub) {
@@ -19,7 +19,14 @@ export async function assertResourceActivity(t: TestContext, f: TestHub) {
     version: '2.0.0',
     body: '更新的资源正文',
   });
-  await f.hub.content.getArchive(null, intake.version_id);
+  const client = httpClient(f);
+  const archive = `/api/versions/${intake.version_id}/archive`;
+  await client
+    .head(archive)
+    .expect(200)
+    .expect('Content-Type', /application\/zip/);
+  await client.head('/skills/trend-skill/2.0.0/download').expect(200);
+  await client.get(archive).expect(200);
   const input = assetFeedbackRequestSchema.parse({
     version_id: intake.version_id,
     idempotency_key: randomUUID(),

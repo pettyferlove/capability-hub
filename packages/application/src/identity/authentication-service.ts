@@ -31,7 +31,7 @@ export class AuthenticationService {
     const v = body;
     const password_hash = await this.passwords.hash(v.password);
     return await this.store.tx(async () => {
-      if ((await this.store.all('users')).length) fail(409, 'ALREADY_INITIALIZED', '系统已初始化');
+      if (await this.store.hasUsers()) fail(409, 'ALREADY_INITIALIZED', '系统已初始化');
       const u = await this.store.insert('users', {
         id: randomUUID(),
         username: v.username,

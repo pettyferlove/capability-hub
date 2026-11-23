@@ -50,7 +50,7 @@ export async function openPostgresDriver(options: PostgresOptions): Promise<Reco
     client.on('error', onError);
     try {
       const scoped = drizzle({ client, schema: pgSchema, logger: false });
-      return await scoped.transaction(work);
+      return await scoped.transaction(work, { isolationLevel: 'read committed' });
     } catch (error) {
       discard ||=
         error instanceof DrizzleQueryError && /^(begin|commit|rollback)\b/i.test(error.query);

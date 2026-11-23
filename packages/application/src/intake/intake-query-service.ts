@@ -1,4 +1,4 @@
-import { filterAsync, someAsync } from '@capability-hub/domain/async';
+import { filterAsync } from '@capability-hub/domain/async';
 import type { Policy } from '@capability-hub/domain/policy';
 import type { Principal } from '@capability-hub/domain/identity';
 import type { IntakeListQuery, IntakeStatus } from './commands.js';
@@ -157,18 +157,15 @@ export class IntakeQueryService {
       (left, right) =>
         right.created_at.localeCompare(left.created_at) || right.id.localeCompare(left.id),
     );
-    if (
-      intake.requested_by !== principal.id &&
-      !this.assets.canMaintain(principal, asset) &&
-      !(await someAsync(
-        requests,
-        async (request) =>
-          request.version_id === intake.version_id &&
-          (await this.assets.canReview(principal, request)),
-      ))
-    )
-      fail(403, 'FORBIDDEN', '无接收记录权限');
-    return { intake, asset, requests };
+    if (intake.requested_by === principal.id || this.assets.canMaintain(principal, asset))
+      return { intake, asset, publication: requests[0] ?? null };
+    for (const request of requests)
+      if (
+        request.version_id === intake.version_id &&
+        (await this.assets.canReview(principal, request))
+      )
+        return { intake, asset, publication: request };
+    fail(403, 'FORBIDDEN', '无接收记录权限');
   }
   /**
    * 读取接收的进度快照，供前端轮询。
@@ -198,7 +195,7 @@ export class IntakeQueryService {
    * `ruleset_current` 表示该扫描是否由当前 `contentScanRuleset` 得出。
    */
   async getDetail(principal: Principal, id: string) {
-    const { intake, asset, requests } = await this.visibleIntake(principal, id);
+    const { intake, asset, publication } = await this.visibleIntake(principal, id);
     const [version, binding, release, scan] = await Promise.all([
       this.context.store.get('versions', intake.version_id),
       this.context.store.get('bindings', intake.binding_id),
@@ -239,7 +236,7 @@ export class IntakeQueryService {
       retryable: !intake.binding_id && (intake.retryable ?? false),
       version: version ? toVersionSnapshot(version) : null,
       scan: scan ?? null,
-      publication: requests[0] ?? null,
+      publication,
       proposed_policy: policy,
       proposed_applies_to: { ...hints, ...(intake.keywords ? { keywords: intake.keywords } : {}) },
       proposed_requires_api_key: intake.requires_api_key ?? asset.requires_api_key === true,

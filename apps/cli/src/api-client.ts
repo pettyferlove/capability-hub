@@ -7,6 +7,7 @@ export interface HubApiRequestOptions {
   method?: string;
   idempotencyKey?: string;
   ifMatch?: string;
+  signal?: AbortSignal;
 }
 
 interface HubApiErrorOptions extends ErrorOptions {
@@ -75,7 +76,7 @@ export class HubApiClient {
         ...(options?.ifMatch === undefined ? {} : { 'If-Match': options.ifMatch }),
       },
       body: multipart ? body : JSON.stringify(body),
-      signal,
+      signal: options?.signal ? AbortSignal.any([signal, options.signal]) : signal,
     });
     observeCliResponse(this.url, response);
     if (!response.ok) {
@@ -148,6 +149,7 @@ export class HubApiClient {
   async archive(
     path: string,
     onProgress?: (received: number, total?: number) => void,
+    signal?: AbortSignal,
   ): Promise<Buffer> {
     const controller = new AbortController();
     let timer: NodeJS.Timeout | undefined;
@@ -160,7 +162,7 @@ export class HubApiClient {
     };
     arm();
     try {
-      const response = await this.request(path, undefined, controller.signal);
+      const response = await this.request(path, undefined, controller.signal, { signal });
       return await this.readBytes(response, 120 * 1024 * 1024, (received, total) => {
         arm();
         onProgress?.(received, total);

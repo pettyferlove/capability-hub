@@ -147,8 +147,10 @@ export async function authorizeConnection(
     const code = await ui.task(
       '等待浏览器授权',
       '浏览器授权已确认',
-      (update) =>
+      (update, signal) =>
         new Promise<string>((resolve, reject) => {
+          signal.throwIfAborted();
+          signal.addEventListener('abort', () => reject(signal.reason as Error), { once: true });
           callback = resolve;
           rejected = reject;
           timer = setTimeout(() => reject(new Error('授权等待超时，请重新运行 connect')), 600_000);

@@ -184,6 +184,10 @@ test('PostgreSQL 调度查询按数值时间、状态和取消标记筛选并稳
         { ...base, id: 'ai', kind: 'ai_execution', input: { execution_id: randomUUID() } },
       ];
       for (const job of jobs) await store.insert('jobs', job);
+      assert.deepEqual(
+        (await store.listAiExecutionJobs(base.aggregate_id)).map((job) => job.id),
+        ['ai'],
+      );
       assert.deepEqual(await store.listRunningJobIds(timestamp), ['cancel-running', 'live']);
       const query = { now: timestamp, limit: 20, excludeIds: [] };
       assert.deepEqual(
@@ -649,8 +653,10 @@ test('运维接口从 PostgreSQL 汇总执行与容量，从受限 MinIO 存储�
 test('PostgreSQL 并发提交平台反馈仍分配唯一编号，编号可用于读取原反馈', async (context) => {
   const database = await externalDatabase();
   try {
+    const url = new URL(database.url);
+    url.searchParams.set('options', '-c default_transaction_isolation=repeatable\\ read');
     const fixture = await createTestHub(context, {
-      database: { driver: 'postgresql', url: database.url, poolSize: 4 },
+      database: { driver: 'postgresql', url: url.toString(), poolSize: 4 },
     });
     try {
       const clients = await Promise.all(
@@ -678,6 +684,14 @@ test('PostgreSQL 并发提交平台反馈仍分配唯一编号，编号可用于
         numbers.toSorted((a, b) => a - b),
         [1, 2, 3],
       );
+      const page = { status: 'open' as const, page: 2, limit: 2 };
+      const second = await fixture.store.listHubFeedback(page);
+      assert.equal(second.total, 3);
+      assert.equal(second.items.length, 1);
+      assert.deepEqual(await fixture.store.listHubFeedback({ ...page, page: 3 }), {
+        items: [],
+        total: 3,
+      });
       for (const [index, response] of created.entries()) {
         const feedback: HubFeedbackDetailResponse = response.body;
         const found = await clients[index].get(`/api/hub-feedback/${feedback.number}`).expect(200);

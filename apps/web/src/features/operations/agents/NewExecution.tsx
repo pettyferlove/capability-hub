@@ -114,6 +114,7 @@ export function NewExecution({
     if (busy || !ready) return;
     setBusy(true);
     setError('');
+    const originPage = location.href;
     try {
       const result = aiExecutionResponseSchema.parse(
         await command('/api/ai/executions', {
@@ -122,7 +123,7 @@ export function NewExecution({
           input,
         }),
       );
-      onCreated(result.id);
+      if (form.current && location.href === originPage) onCreated(result.id);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '启动失败');
     } finally {

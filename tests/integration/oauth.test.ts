@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
+import { OAuthError, OAuthService } from '@capability-hub/application';
 import { sha256 } from '@capability-hub/domain/canonical';
 import { test } from 'node:test';
 import { createTestHub, type TestHub } from '../support/application.js';
@@ -171,6 +172,45 @@ test('OAuth 拒绝错误回调、PKCE、资源与客户端；授权码一次消�
   assert.equal(await fixture.hub.oauth.authenticate(issued.access_token as string), null);
 });
 
+test('更换公开地址不会消费旧目标的授权码或刷新令牌，原地址仍可兑换', async (context) => {
+  const fixture = await createTestHub(context);
+  const flow = await requestAuthorization(fixture);
+  const relocated = new OAuthService(
+    fixture.store,
+    fixture.hub.identity,
+    'https://new-hub.example',
+  );
+  const rejected = (error: unknown) =>
+    error instanceof OAuthError && error.code === 'invalid_grant';
+  await assert.rejects(() => relocated.describe(flow.id), rejected);
+  const decision = await fixture.hub.oauth.decide(fixture.admin, flow.id, true, false);
+  const input = {
+    grant_type: 'authorization_code',
+    client_id: flow.query.client_id,
+    code_verifier: flow.verifier,
+    redirect_uri: flow.query.redirect_uri,
+    code: new URL(decision.redirect_uri).searchParams.get('code'),
+    resource: flow.query.resource,
+  };
+  await assert.rejects(
+    () => relocated.exchange({ ...input, resource: relocated.resource }),
+    rejected,
+  );
+  const tokens = await fixture.hub.oauth.exchange(input);
+  const refresh = {
+    grant_type: 'refresh_token',
+    client_id: flow.query.client_id,
+    refresh_token: tokens.refresh_token,
+    resource: flow.query.resource,
+  };
+  await assert.rejects(
+    () => relocated.exchange({ ...refresh, resource: relocated.resource }),
+    rejected,
+  );
+  const rotated = await fixture.hub.oauth.exchange(refresh);
+  assert(await fixture.hub.oauth.authenticate(rotated.access_token));
+});
+
 test('刷新轮换保持授权范围，旧刷新令牌重放会撤销整个连接', async (context) => {
   const fixture = await createTestHub(context);
   const flow = await grant(fixture);
@@ -226,6 +266,15 @@ test('OAuth 跨源仅开放无 Cookie 的协议接口，停用账号后重新启
     .expect(204);
   assert.equal(cors.headers['access-control-allow-origin'], '*');
   assert.equal(cors.headers['access-control-allow-credentials'], undefined);
+  const mcp = await flow.http
+    .options('/mcp')
+    .set('Origin', 'https://client.example')
+    .set('Access-Control-Request-Headers', 'mcp-method,mcp-name')
+    .expect(204);
+  const allowed = String(mcp.headers['access-control-allow-headers']).toLowerCase().split(/,\s*/);
+  assert(allowed.includes('mcp-method') && allowed.includes('mcp-name'));
+  assert.equal(mcp.headers['access-control-allow-credentials'], undefined);
+  assert.doesNotMatch(String(cors.headers['access-control-allow-headers']), /mcp-method|mcp-name/i);
   await flow.http.get('/api/connections').set('Origin', 'https://client.example').expect(403);
   const current = (await fixture.store.get('users', fixture.reader.id))!;
   await fixture.hub.administration.updateUser(

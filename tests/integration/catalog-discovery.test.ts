@@ -1017,6 +1017,38 @@ test('发现入口和提问在读目录时解析会话，不使用等待派发�
   assert.equal(calls().length, 0);
 });
 
+test('选卡后出站预留前依据撤回，整批不送模也不产生发现执行', async (context) => {
+  const { fixture, calls } = await discoveryHub(context);
+  const source = await publish(fixture, 'catalog-boundary', '核对发布条件。', [
+    `group:${fixture.teamId}`,
+  ]);
+  await fixture.worker.waitForIdle();
+  const client = await signIn(fixture, 'reviewer');
+  const { viewer_key } = await entry(client);
+  const runtime = fixture.hub.ai.runtime;
+  const execute = runtime.runInline.bind(runtime);
+  context.mock.method(
+    runtime,
+    'runInline',
+    async (...args: Parameters<typeof execute>) => {
+      await fixture.hub.lifecycle.revokeVersion(fixture.admin, source.version_id, '停止分发');
+      return await execute(...args);
+    },
+    { times: 1 },
+  );
+  const error = await rejected(
+    client,
+    { action: 'message', expected_mode: 'dialogue', viewer_key, text: '怎么核对？' },
+    409,
+  );
+  assert.equal(error.code, 'DISCOVERY_BASIS_UNAVAILABLE');
+  assert.equal(calls().length, 0);
+  assert.deepEqual(
+    await runtime.store.list('ai_executions', { lookup_key: 'catalog-discovery', limit: 1 }),
+    [],
+  );
+});
+
 test('HTTP 会话读取期间客户端离开，不出站也不创建发现执行', { timeout: 15000 }, async (context) => {
   const stub = await serveModelStub(context, () => ({ json: openAiJson({ action: 'search' }) }));
   const profile = stub.profile('openai');

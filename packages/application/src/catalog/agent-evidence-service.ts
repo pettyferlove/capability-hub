@@ -1,3 +1,4 @@
+import { consumableInstallationOptions } from '@capability-hub/domain/content';
 import type { Principal } from '@capability-hub/domain/identity';
 import type { StoredFile } from '@capability-hub/domain/models';
 import { fail, notFound } from '@capability-hub/domain/errors';
@@ -261,7 +262,7 @@ export class AgentEvidenceService {
     const { asset, version } = await this.version(ownerId, id);
     if (asset.kind !== 'mcp') fail(422, 'NOT_MCP', '此资源不是 MCP');
     return {
-      installation_options: version.metadata.installation_options ?? [],
+      installation_options: consumableInstallationOptions(version.metadata),
       declared_tools: version.metadata.declared_tools ?? [],
       verification: '仅静态声明；未连接远端、运行安装命令或调用资源工具',
       schema_id: version.metadata.schema_id ?? null,

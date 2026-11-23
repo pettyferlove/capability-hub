@@ -47,6 +47,16 @@ const sharedKeyDocument = z.object({
   ]),
 });
 
+function containsSharedKey(node: unknown, key: string): boolean {
+  // 短值容易与 URL、字段名中的普通字符重合；整值匹配不设长度门槛。
+  if (typeof node === 'string') return node === key || (key.length >= 8 && node.includes(key));
+  if (Array.isArray(node)) return node.some((value: unknown) => containsSharedKey(value, key));
+  if (!node || typeof node !== 'object') return false;
+  return Object.entries(node).some(
+    ([name, value]) => containsSharedKey(name, key) || containsSharedKey(value, key),
+  );
+}
+
 /**
  * 上传与运营视图。`POST /api/intakes` 只接受一个 multipart 文件：multer 在内存中限制单文件
  * ≤20 MiB、字段数 1、字段 ≤16 KiB、part 数 2，`metadata` 再按契约 schema 校验；该接口与
@@ -76,8 +86,8 @@ export function registerIntakesRoutes(app: Express, context: HttpContext): void 
       } = uploadIntakeRequestSchema.parse(boundedJson(form.metadata));
       let sharedKey;
       if (value !== undefined) {
-        const document = boundedJson(req.file.buffer.toString());
-        if (JSON.stringify(document).includes(JSON.stringify(value)))
+        const document = boundedJson(req.file.buffer);
+        if (containsSharedKey(document, value))
           fail(422, 'MCP_KEY_IN_DOCUMENT', '请只在共享密钥字段中提交实际值');
         const parsed = sharedKeyDocument.safeParse(document);
         if (!parsed.success)

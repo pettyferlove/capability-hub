@@ -9,10 +9,10 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 | /api/auth/status、/auth/setup、/auth/login、/auth/logout | 初始化和浏览器认证                     |
 | /auth/cli/request、/auth/cli/poll、/api/cli/approve      | 浏览器批准 CLI                         |
 | /api/assets、/api/assets/:id/versions/:versionId         | 按受众发现与读取固定版本               |
-| /api/scenarios                                           | 当前可选的目录场景                     |
+| /api/scenarios、/api/catalog/keywords                    | 可选目录场景与可见发布的关键词建议     |
 | /api/catalog/discovery、/api/catalog/discovery/turn      | 首页对话式发现；匿名或浏览器会话       |
 | /api/ratings、/api/nominations                           | 按 asset_id 推荐、按 release_id 提名   |
-| /api/versions/:id/manifest、archive、files               | 已发布固定内容                         |
+| /api/versions/:id/manifest、archive、files               | 已发布固定内容；归档 HEAD 只读元数据   |
 | /api/install-tickets/:ticket、/archive                   | 清单与一次性归档；HEAD 归档返回 405    |
 | /skills/:slug/:version、/mcp-servers/:slug/:version      | 人可读公开资源地址，按匿名权限         |
 | /api/feedback、/api/assets/:id/feedback                  | 私有反馈提交、详情、处理与分页         |
@@ -88,7 +88,7 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 
 同一用户的幂等键永久绑定一次反馈：同内容重试返回已有记录的当前状态，不同内容返回 409。每用户每小时最多创建 20 条，重试不占额度；超限返回 429。提交、重试和读取均核验当前身份与版本受众。反馈默认只对提交者及资产维护者可见，提交者失去版本访问权后不能继续读取；维护者可从资产维护页处理封禁资源的反馈。审核权限不自动授予反馈读取权。
 
-网页与 MCP 复用同一用例。网页使用 POST `/api/feedback`（请求体携带上述幂等键）、GET `/api/feedback/:id`、GET `/api/assets/:id/feedback?page=1&limit=10&status=pending` 和 PATCH `/api/feedback/:id`。列表由服务端筛选与分页，limit 最大 50。HTTP 写入资源反馈要求浏览器会话与 CSRF；个人令牌只能通过贡献 MCP 工具上报资源反馈。
+网页通过 POST `/api/feedback` 提交（请求体带幂等键），通过 GET/PATCH `/api/feedback/:id` 读写详情，通过 GET `/api/assets/:id/feedback?page=1&limit=10&status=pending` 查列表（每页最多 50 条）。这些 HTTP 接口要求网页会话，写入另验 CSRF。个人令牌可通过贡献 MCP 工具上报，不能读取维护者的私有反馈列表。
 
 维护者可切换 pending、in_progress、resolved、declined；PATCH 携带 `revision`、`status`、`resolution`、可空的 `fixed_version_id`，旧修订返回 409。已解决和不采纳须填写说明，只有已解决可关联同资产修复版本；未对提交者开放的修复候选不暴露编号或版本名。回执链接为 `/asset/:slug?feedback=:id`；当前发布不可读而反馈版本可读时附 `version_id`。审计只存操作、目标版本和处理状态，不复制正文。
 
@@ -106,6 +106,8 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 | `POST /:id/close`、`POST /:id/read`                         | 关闭、标已读；已读不增加修订                 | —                                                                                                           |
 | `PATCH /:id`、`POST /:id/redactions`                        | —                                            | 状态或负责人变更；隐去描述或时间线正文                                                                      |
 | `GET /:id/attachments/:aid`、`DELETE /:id/attachments/:aid` | 下载可见附件；仅在未结束时移除本人上传的附件 | 下载或移除附件                                                                                              |
+
+详情默认包含完整时间线；`?view=timeline&after=0&limit=20` 只取一页可见事件，按 `next_after` 续读，首帖附件仅在第一页。`?view=receipt` 返回编号、状态、修订等回执，不传历史正文。
 
 列表默认未结束，最多每页 50 条。结束后留言不重开，但会计入待回复。转入待补充、已解决或不采纳须提供公开说明；不采纳须指定原因，重复须指定有效编号，该编号不向提交者显示。
 
@@ -136,7 +138,7 @@ Agent 必须取得用户本次或预先上报授权，仅提交脱敏的最小�
 
 `outdated` 输出表格或 JSON 数组；`list` 不联网，也不判断来源是否为当前 Hub，输出同样的来源字段，状态为 `unmodified`、`modified` 或 `unknown_source`。含 `SKILL.md` 但缺少来源记录的 Skill 报告 `unknown_source`（来源和版本字段为 `null`），与 `other_hub` 一样不查询远端。默认扫描跳过经过链接的预设目录并在 stderr 说明。Windows 不比较磁盘执行位，仍校验文件内容；只有换行符不同的文件标为「仅换行符不同」。`status` 只取优先级最高的一项，本地差异在任何状态下都写入 `differences`。`--exit-code` 在有更新的发布（含 `modified`）、`deprecated` 或 `unavailable` 时退出 2；`--fail-on-modified` 在存在本地差异时退出 3，优先于 2；未触发上述条件且检查成功时退出 0。
 
-`feedback new` 可传 `--title`、`--description` 或 `--description-file`、`--attach`、`--last-error`，也可用 `--no-diagnostics` 不带诊断。非交互写入须确认后带 `--yes`；`new --dry-run --json` 只预览，不发请求。成功返回反馈编号和详情地址。CLI 不把令牌或配置文件内容写入最近一次失败诊断；Hub 有请求编号时输出该编号。
+`feedback new` 支持 `--description-file`、`--attach`、`--last-error`、`--no-diagnostics`。`--dry-run --json` 只预览，不覆盖失败诊断；非交互写入须带 `--yes`。`show` 用 `--after` 续页；旧 Hub 只支持不超过 1 MiB 的完整详情。`reply`、`close` 结果不明时用原 `--request-id` 和相同输入重试。
 
 ## OAuth 与客户端连接
 

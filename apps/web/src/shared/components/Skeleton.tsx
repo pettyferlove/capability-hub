@@ -294,21 +294,6 @@ function FormPlaceholder({ fields, action = true }: { fields: number; action?: b
   );
 }
 
-/** 键值摘要占位（左标签、右取值）；`rows` 默认 5，宽度错位，用于状态面板类区块。 */
-export function SummarySkeleton({
-  label = '正在加载状态…',
-  rows = 5,
-}: {
-  label?: string;
-  rows?: number;
-}) {
-  return (
-    <SkeletonRegion label={label}>
-      <SummaryPlaceholder rows={rows} />
-    </SkeletonRegion>
-  );
-}
-
 /** 在已统一计时和播报的骨架区域内组合键值面板。 */
 export function SummaryPlaceholder({ rows, note = true }: { rows: number; note?: boolean }) {
   return (
