@@ -6,6 +6,7 @@ import { createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { SourceSyncService } from '@capability-hub/application';
 import type { GitRepository } from '@capability-hub/application/ports';
+import { canonical, digest } from '@capability-hub/domain/canonical';
 import { HubError } from '@capability-hub/domain/errors';
 import { archive } from '@capability-hub/infrastructure/content';
 import { GitRepositoryAdapter } from '@capability-hub/infrastructure/git';
@@ -14,6 +15,7 @@ import {
   publishSkill,
   submitPublication,
   testPassword,
+  type TestHub,
 } from '../support/application.js';
 import { skillDocument } from '../support/content.js';
 import { deferred } from '../support/store.js';
@@ -48,12 +50,21 @@ async function sources(context: TestContext) {
 const code = (expected: string) => (error: unknown) =>
   error instanceof HubError && error.code === expected;
 
-async function syncSource(fixture: Awaited<ReturnType<typeof sources>>, sourceId: string) {
+async function syncSource(fixture: TestHub, sourceId: string) {
   const { job_id } = await fixture.sources.sync(fixture.admin, sourceId, randomUUID());
   await fixture.worker.tick();
   const job = await fixture.store.get('jobs', job_id);
   assert(job?.kind === 'source_sync');
   return job;
+}
+
+async function syncedIntake(fixture: TestHub, sourceId: string) {
+  const target = (await syncSource(fixture, sourceId)).result?.targets[0];
+  assert.equal(target?.state, 'ready');
+  assert(target);
+  const detail = await fixture.hub.intakeQueries.getDetail(fixture.admin, target.intake_id);
+  assert(detail.version_id && detail.scan_run_id);
+  return { ...detail, version_id: detail.version_id, scan_run_id: detail.scan_run_id };
 }
 
 test('自动轮询只返回已到期且未暂停或撤销的 Git 来源', async (context) => {
@@ -640,6 +651,284 @@ test('Git 同提交同步不复用临时失败或过期扫描规则的接收证�
   assert.equal(reads, 3);
   assert.equal((await fixture.store.where('versions', 'asset_id', ready.asset_id)).length, 1);
   assert.equal((await fixture.store.all('scans')).length, 2);
+});
+
+test('Git 重验已发布的相同内容不产生待提交事项，内容或来源策略变化仍待提交', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-01T00:00:00Z') });
+  const f = await sources(context);
+  const slug = 'recheck-published';
+  const source = await f.create(slug, '.');
+  let commit = 'a'.repeat(40);
+  let text = '已发布的内容';
+  context.mock.method(f.hub.git, 'snapshot', async () => ({
+    commit,
+    read: async () => [{ path: 'SKILL.md', bytes: skillDocument(slug, text), executable: false }],
+    close: () => Promise.resolve(),
+  }));
+  const original = await syncedIntake(f, source.id);
+  const submitted = await submitPublication(f, original);
+  await f.hub.publications.decide(
+    f.reviewer,
+    submitted.id,
+    {
+      decision: 'approve',
+      comment: '核对原始版本',
+      policy_digest: submitted.policy_digest,
+      accepted_warnings: [],
+    },
+    '"1"',
+    randomUUID(),
+  );
+  const before = (await f.hub.assetManagement.list(f.admin)).items[0];
+  const record = await f.store.get('intakes', original.id);
+  const version = await f.store.get('versions', original.version_id);
+  const scan = await f.store.get('scans', original.scan_run_id);
+  assert(record && version && scan);
+  await f.store.put('intakes', { ...record, processing_ruleset: 'previous-rules' });
+  const duplicateVersionId = randomUUID();
+  const duplicateIntakeId = randomUUID();
+  const duplicateCommit = 'b'.repeat(40);
+  const duplicateLabel = `git.${duplicateCommit}.s${source.id}.r${source.revision}`;
+  await f.store.tx(async () => {
+    await f.store.insert('versions', {
+      ...version,
+      id: duplicateVersionId,
+      version_label: duplicateLabel,
+      origin_commit: duplicateCommit,
+      intake_id: duplicateIntakeId,
+      availability: 'unreleased',
+    });
+    const oldScan = await f.store.insert('scans', {
+      ...scan,
+      id: randomUUID(),
+      version_id: duplicateVersionId,
+      ruleset_version: 'previous-rules',
+    });
+    await f.store.insert('intakes', {
+      ...record,
+      id: duplicateIntakeId,
+      version_id: duplicateVersionId,
+      version_label: duplicateLabel,
+      origin_commit: duplicateCommit,
+      scan_run_id: oldScan.id,
+      processing_ruleset: oldScan.ruleset_version,
+      source_sync_job_id: undefined,
+      source_generation: null,
+    });
+  });
+  let latestRecheckId = '';
+
+  for (const sha of ['a', 'b']) {
+    context.mock.timers.tick(1000);
+    commit = sha.repeat(40);
+    const receipt = await syncedIntake(f, source.id);
+    assert.notEqual(receipt.scan_run_id, original.scan_run_id);
+    assert.equal(receipt.version_id, sha === 'a' ? original.version_id : duplicateVersionId);
+    assert.equal(receipt.current_release_id, before.current_release_id);
+    assert.equal(receipt.ruleset_current, true);
+    assert.equal(receipt.publication, null);
+    const ready = await f.hub.intakeQueries.list(f.admin, { state: 'ready' });
+    assert(!ready.items.some(({ id }) => id === receipt.id));
+    const unchanged = await f.hub.intakeQueries.list(f.admin, { state: 'unchanged' });
+    assert(unchanged.items.some(({ id }) => id === receipt.id));
+    assert.equal(receipt.matches_current_release, true);
+    const manageable = (await f.hub.assetManagement.list(f.admin)).items[0];
+    assert.equal(manageable.latest_intake?.state, 'unchanged');
+    assert.deepEqual(manageable.latest_activity, before.latest_activity);
+    assert.equal(manageable.needs_attention, false);
+    assert.deepEqual(await f.hub.publicationQueries.listRequests(f.reviewer), []);
+    latestRecheckId = receipt.id;
+  }
+
+  context.mock.timers.tick(1000);
+  const requested = await f.hub.intakes.rescan(f.admin, latestRecheckId, randomUUID());
+  await f.worker.tick();
+  const rescan = await f.hub.intakeQueries.getDetail(f.admin, requested.intake_id);
+  assert.equal(rescan.version_id, duplicateVersionId);
+  assert.equal(rescan.matches_current_release, true);
+  const manualActivity = (await f.hub.assetManagement.list(f.admin)).items[0];
+  assert.equal(manualActivity.latest_intake?.state, 'unchanged');
+  const lastSync = await f.store.get('intakes', latestRecheckId);
+  assert(lastSync);
+  await f.store.put('intakes', { ...lastSync, processing_ruleset: 'previous-rules' });
+  context.mock.timers.tick(1000);
+  const recheckedAfterRescan = await syncedIntake(f, source.id);
+  assert.notEqual(recheckedAfterRescan.id, lastSync.id);
+  assert.equal(recheckedAfterRescan.matches_current_release, true);
+  assert.deepEqual(
+    (await f.hub.assetManagement.list(f.admin)).items[0].latest_activity,
+    manualActivity.latest_activity,
+  );
+
+  context.mock.timers.tick(1000);
+  commit = 'c'.repeat(40);
+  text = '新的内容';
+  const changed = await syncedIntake(f, source.id);
+  assert.notEqual(changed.version_id, original.version_id);
+  assert.equal(changed.matches_current_release, false);
+  assert.equal((await f.hub.assetManagement.list(f.admin, { state: 'needs_attention' })).total, 1);
+  const changedRequest = await submitPublication(f, changed);
+  await f.hub.publications.decide(
+    f.reviewer,
+    changedRequest.id,
+    {
+      decision: 'approve',
+      comment: '核对有变更的新版本',
+      policy_digest: changedRequest.policy_digest,
+      accepted_warnings: [],
+    },
+    '"1"',
+    randomUUID(),
+  );
+  assert.equal(
+    (await f.hub.intakeQueries.getDetail(f.admin, latestRecheckId)).matches_current_release,
+    false,
+  );
+  const approvals = await f.hub.intakeQueries.list(f.admin, { state: 'approved' });
+  assert(approvals.items.some(({ id }) => id === original.id));
+
+  context.mock.timers.tick(1000);
+  await f.sources.patch(
+    f.admin,
+    source.id,
+    {
+      targets: [
+        {
+          binding_id: source.targets[0].id,
+          slug,
+          kind: 'skill',
+          path: '.',
+          category: 'uncategorized',
+          scenario_ids: [],
+          distribution: { mode: 'approved_audience', audience: ['organization'] },
+        },
+      ],
+    },
+    `"${source.revision}"`,
+  );
+  commit = 'd'.repeat(40);
+  const newPolicy = await syncedIntake(f, source.id);
+  assert.equal(newPolicy.version_id, changed.version_id);
+  assert.equal(newPolicy.matches_current_release, false);
+  const waiting = await f.hub.assetManagement.list(f.admin, { state: 'needs_attention' });
+  assert.equal(waiting.items[0]?.latest_intake?.id, newPolicy.id);
+  assert.equal(waiting.items[0].latest_intake?.state, 'ready');
+});
+
+test('Git 旧规则申请仅在成功重提时失效，并发重提只创建一份新申请', async (context) => {
+  const f = await sources(context);
+  const slug = 'recheck-pending';
+  const source = await f.create(slug, '.');
+  context.mock.method(f.hub.git, 'snapshot', async () => ({
+    commit: 'a'.repeat(40),
+    read: async () => [{ path: 'SKILL.md', bytes: skillDocument(slug), executable: false }],
+    close: () => Promise.resolve(),
+  }));
+  const original = await syncedIntake(f, source.id);
+  const sample = await submitPublication(f, original);
+  await f.hub.publications.cancel(f.admin, sample.id, { reason: '准备旧规则快照' }, '"1"');
+  const record = await f.store.get('intakes', original.id);
+  const scan = await f.store.get('scans', original.scan_run_id);
+  assert(record && scan);
+  const ruleset_version = 'previous-rules';
+  const oldScan = await f.store.insert('scans', { ...scan, id: randomUUID(), ruleset_version });
+  await f.store.put('intakes', {
+    ...record,
+    scan_run_id: oldScan.id,
+    processing_ruleset: ruleset_version,
+  });
+  const approval_policy_digest = digest(ruleset_version);
+  const frozen = {
+    ...(JSON.parse(sample.canonical_policy_json) as Record<string, unknown>),
+    scan_run_id: oldScan.id,
+    ruleset_version,
+    approval_policy_digest,
+  };
+  const canonical_policy_json = canonical(frozen);
+  const legacy = await f.store.insert('requests', {
+    ...sample,
+    id: randomUUID(),
+    scan_run_id: oldScan.id,
+    ruleset_version,
+    approval_policy_digest,
+    canonical_policy_json,
+    policy_digest: digest(canonical_policy_json),
+  });
+  const refreshed = await syncedIntake(f, source.id);
+  assert.equal(refreshed.version_id, original.version_id);
+  assert.equal((await f.hub.publicationQueries.getReview(f.reviewer, legacy.id)).can_decide, false);
+  await f.hub.administration.createScenario(f.admin, {
+    name: '已登记场景',
+    description: '已有用途',
+  });
+  const role = await f.hub.administration.createRole(f.admin, {
+    name: '仅维护资源',
+    permissions: ['asset:maintain'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'asset',
+    scope_id: refreshed.asset_id,
+  });
+  const admin = await f.hub.identity.principal(f.admin.id);
+  const reader = await f.hub.identity.principal(f.reader.id);
+  const authorized = { ...f, admin };
+  await assert.rejects(() => submitPublication(authorized, original), code('SCAN_REQUIRED'));
+  await assert.rejects(
+    () => submitPublication({ ...f, admin: reader }, refreshed),
+    code('FORBIDDEN'),
+  );
+  await assert.rejects(
+    () =>
+      f.hub.publications.submit(
+        admin,
+        {
+          ...refreshed.proposed_policy,
+          category: 'scenario',
+          proposed_scenarios: [{ name: '已登记场景', description: '冲突用途' }],
+          applies_to: {},
+          purpose: '核对新用途',
+          base_release_id: refreshed.current_release_id,
+          source_intake_id: refreshed.id,
+          version_id: refreshed.version_id,
+        },
+        randomUUID(),
+      ),
+    code('SCENARIO_CONFLICT'),
+  );
+  assert.deepEqual(await f.store.get('requests', legacy.id), legacy);
+  assert(
+    !(await f.store.where('audit', 'entity_id', legacy.id)).some(
+      ({ action }) => action === 'publication.stale',
+    ),
+  );
+
+  const attempts = await Promise.allSettled([
+    submitPublication(authorized, refreshed),
+    submitPublication(authorized, refreshed),
+  ]);
+  const accepted = attempts.filter((attempt) => attempt.status === 'fulfilled');
+  const rejected = attempts.filter((attempt) => attempt.status === 'rejected');
+  assert.equal(accepted.length, 1);
+  assert.equal(rejected.length, 1);
+  assert(code('PENDING_EXISTS')(rejected[0].reason));
+  const replacement = accepted[0].value;
+  assert.equal(replacement.scan_run_id, refreshed.scan_run_id);
+  assert.equal(replacement.state, 'pending');
+  const stale = await f.store.get('requests', legacy.id);
+  assert.equal(stale?.state, 'stale');
+  assert.equal(stale.stale_reason, 'SCAN_RULESET_CHANGED');
+  assert.equal(stale.policy_digest, legacy.policy_digest);
+  const events = await f.store.where('audit', 'entity_id', legacy.id);
+  assert.deepEqual(
+    events.filter(({ action }) => action === 'publication.stale').map(({ reason }) => reason),
+    ['SCAN_RULESET_CHANGED'],
+  );
+  assert.deepEqual(
+    (await f.hub.publicationQueries.listRequests(f.reviewer)).map(({ id }) => id),
+    [replacement.id],
+  );
 });
 
 test('仅有团队创建权限的用户收到来源回执，但不能独立读取配置', async (context) => {

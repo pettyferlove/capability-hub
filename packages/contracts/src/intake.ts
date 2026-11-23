@@ -46,6 +46,7 @@ export const intakeStatuses = [
   'ready',
   'pending',
   'approved',
+  'unchanged',
   'failed',
   'rejected',
   'stale',

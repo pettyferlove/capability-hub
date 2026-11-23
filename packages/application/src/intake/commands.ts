@@ -32,6 +32,7 @@ export type IntakeStatus =
   | 'ready'
   | 'pending'
   | 'approved'
+  | 'unchanged'
   | 'failed'
   | 'rejected'
   | 'stale'

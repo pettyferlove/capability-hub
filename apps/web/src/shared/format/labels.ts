@@ -32,6 +32,7 @@ export const stateLabel = (v: string) =>
     cancelled: '已撤回',
     pending: '待审核',
     approved: '已通过',
+    unchanged: '与当前发布一致',
     unreleased: '未发布',
     released: '已发布',
     revoked: '已撤销',

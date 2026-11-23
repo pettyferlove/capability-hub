@@ -7,7 +7,11 @@ import type {
   PublicationDecisionCommand,
   NominateAssetCommand,
 } from './commands.js';
-import type { IntakeRecord, VersionRecord } from '@capability-hub/domain/models';
+import type {
+  IntakeRecord,
+  PublicationRequestRecord,
+  VersionRecord,
+} from '@capability-hub/domain/models';
 import { canonical, digest, utf8Compare } from '@capability-hub/domain/canonical';
 import { fail, HubError, notFound } from '@capability-hub/domain/errors';
 import { has } from '@capability-hub/domain/rbac';
@@ -182,6 +186,7 @@ export class PublicationService {
    * 会抛 422/`NOT_SKILL`（只有 Skill 能声明 `requires_api_key`）、`INVALID_POLICY` 系列，
    * 409/`UNAVAILABLE`、`BASE_RELEASE_CHANGED`、`SCAN_REQUIRED`、`PENDING_EXISTS`、
    * `SOURCE_BLOCKED`、`INTAKE_MISMATCH`，并要求 `source:share`（source + owner 团队作用域）。
+   * 用当前扫描重提时，同版本的旧规则申请转为失效，不覆盖仍适用当前规则的待审申请。
    * 成功时写 `publication.submitted` 审计。
    * @param key - 幂等键，缺失或超长时由幂等层抛 400/`IDEMPOTENCY_REQUIRED`。
    * @param historical - 历史导入标记，同时落入申请记录并放宽证据复核。
@@ -226,12 +231,11 @@ export class PublicationService {
           team: source.owner_group_id,
         });
         const scan = await this.publicationScan(intake, v.id, historical);
-        if (
-          (await this.context.store.all('requests')).some(
-            (r) => r.asset_id === a.id && r.version_id === v.id && r.state === 'pending',
-          )
-        )
+        const requests = await this.context.store.where('requests', 'version_id', v.id);
+        if (requests.some((r) => r.state === 'pending' && r.ruleset_version === contentScanRuleset))
           fail(409, 'PENDING_EXISTS', '该版本已有待审申请');
+        for (const request of requests)
+          if (request.state === 'pending') await this.markStale(request, 'SCAN_RULESET_CHANGED');
         const consent = {
           actor_id: principal.id,
           confirmed_at: now(),
@@ -562,22 +566,23 @@ export class PublicationService {
     });
   }
 
+  private async markStale(request: PublicationRequestRecord, reason: string) {
+    await this.context.store.put('requests', {
+      ...request,
+      state: 'stale',
+      stale_reason: reason,
+      revision: request.revision + 1,
+    });
+    await this.context.store.audit('system', 'publication.stale', request.id, reason);
+  }
+
   /**
    * 把该资产所有 `pending` 申请批量置为 `stale` 并记录原因码，防止资产已变更后仍被批准。
    * 不做授权判断、不自己开事务：资产生命周期、版本撤销与来源变更等副作用在各自事务内调用，
    * 原因码是调用方给出的常量（如 `ASSET_LIFECYCLE_CHANGED`、`SOURCE_MIGRATED`）。
    */
   async invalidatePending(assetId: string, reason: string) {
-    for (const r of (await this.context.store.all('requests')).filter(
-      (r) => r.asset_id === assetId && r.state === 'pending',
-    )) {
-      await this.context.store.put('requests', {
-        ...r,
-        state: 'stale',
-        stale_reason: reason,
-        revision: r.revision + 1,
-      });
-      await this.context.store.audit('system', 'publication.stale', r.id, reason);
-    }
+    for (const request of await this.context.store.where('requests', 'asset_id', assetId))
+      if (request.state === 'pending') await this.markStale(request, reason);
   }
 }

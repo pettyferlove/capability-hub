@@ -8,6 +8,7 @@ import type { AssetAccessService } from './asset-access-service.js';
 import { toVersionSnapshot } from './catalog-mapper.js';
 import type { KeywordOptionsQuery, ManagementAssetListQuery } from './queries.js';
 import type { PublicationQueryService } from '../publication/publication-query-service.js';
+import { matchesCurrentRelease } from '../intake/intake-mapper.js';
 
 const activityLabels: Record<string, string> = {
   'publication.submitted': '提交审核',
@@ -145,20 +146,26 @@ export class AssetManagementQueryService {
             };
             if (canMaintain) {
               const chronological = [...intakes].reverse();
+              let previousGitSync: IntakeRecord | undefined;
               for (const [index, intake] of chronological.entries()) {
                 const previous = chronological[index - 1];
-                // 相同内容、规则与来源配置的成功 Git 轮询不构成新的维护动态。
+                const gitSync = !!intake.binding_id && !intake.rescan_of;
+                // 主动重扫不替代上一次 Git 同步的基线，也不沿用前一接收的申请。
                 const unchanged =
-                  intake.binding_id &&
-                  !intake.rescan_of &&
+                  gitSync &&
                   intake.state === 'ready' &&
-                  previous?.state === 'ready' &&
-                  intake.source_id === previous.source_id &&
-                  intake.binding_id === previous.binding_id &&
-                  intake.content_digest === previous.content_digest &&
-                  intake.source_revision === previous.source_revision &&
-                  intake.processing_ruleset === previous.processing_ruleset;
-                if (!unchanged) candidateIntakeIds.clear();
+                  previousGitSync?.state === 'ready' &&
+                  intake.source_id === previousGitSync.source_id &&
+                  intake.binding_id === previousGitSync.binding_id &&
+                  intake.content_digest === previousGitSync.content_digest &&
+                  intake.source_revision === previousGitSync.source_revision;
+                if (
+                  !unchanged ||
+                  previous !== previousGitSync ||
+                  intake.processing_ruleset !== previous?.processing_ruleset
+                )
+                  candidateIntakeIds.clear();
+                if (gitSync) previousGitSync = intake;
                 candidateIntakeIds.add(intake.id);
                 if (unchanged) continue;
                 updateLatestActivity(
@@ -197,8 +204,17 @@ export class AssetManagementQueryService {
               .sort(
                 (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
               )[0];
+            const publishedSnapshot =
+              matchesCurrentRelease(latest, release) &&
+              (!latestRequest ||
+                (latestRequest.state === 'approved' &&
+                  latestRequest.source_intake_id !== latest?.id));
             const latestState =
-              latest?.state === 'ready' ? (latestRequest?.state ?? latest.state) : latest?.state;
+              latest?.state === 'ready'
+                ? publishedSnapshot
+                  ? 'unchanged'
+                  : (latestRequest?.state ?? latest.state)
+                : latest?.state;
             const pending = await Promise.all(
               requests
                 .filter((request) => request.state === 'pending')
@@ -215,8 +231,10 @@ export class AssetManagementQueryService {
               ['ready', 'rejected', 'stale'].includes(latestState ?? '') ||
               pending.some((request) => request.id === latestRequest?.id && !request.context_valid);
             const latestVersion = await this.context.store.get('versions', latest?.version_id);
-            const alreadyPublished =
+            const repeatedUpload =
               latest?.state === 'ready' &&
+              !latest.binding_id &&
+              !latest.origin_commit &&
               release?.version_id === latest.version_id &&
               !latestRequest;
             const needsAttention =
@@ -225,7 +243,7 @@ export class AssetManagementQueryService {
               source.state !== 'blocked' &&
               !source.distribution_revoked_at &&
               latest?.source_id === asset.source_id &&
-              !alreadyPublished &&
+              !repeatedUpload &&
               (latestState === 'failed'
                 ? source.kind === 'upload' ||
                   has(principal, 'source:manage', this.access.assetContext(asset))

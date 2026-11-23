@@ -56,6 +56,8 @@ export interface IntakeResponse extends IntakeDetails {
   asset_owner_group_id: string;
   current_release_id: string | null;
   current_version: ManagementAssetResponse['current_version'];
+  /** 本次接收与当前发布的内容及来源修订一致。 */
+  matches_current_release: boolean;
   asset_lifecycle: ManagementAssetResponse['lifecycle'];
   asset_lifecycle_reason: string;
   can_maintain: boolean;

@@ -1,4 +1,4 @@
-import type { IntakeRecord } from '@capability-hub/domain/models';
+import type { IntakeRecord, ReleaseRecord } from '@capability-hub/domain/models';
 
 /**
  * 把接收记录投影成对外的详情字段白名单：只逐项挑出可公开的字段，
@@ -36,4 +36,19 @@ export function toIntakeDetails(intake: IntakeRecord) {
     error_message: intake.error_message,
     retryable: intake.retryable,
   };
+}
+
+/** Git 同步与其固定快照重扫只在内容及来源修订都未变时沿用当前发布。 */
+export function matchesCurrentRelease(
+  intake: IntakeRecord | undefined,
+  release: ReleaseRecord | undefined,
+) {
+  return (
+    intake?.state === 'ready' &&
+    (!!intake.binding_id || (!!intake.rescan_of && !!intake.origin_commit)) &&
+    !!release &&
+    intake.source_id === release.policy_source_id &&
+    intake.source_revision === release.source_revision &&
+    intake.content_digest === release.source_consent.content_digest
+  );
 }

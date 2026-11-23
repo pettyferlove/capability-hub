@@ -2,12 +2,12 @@ import { filterAsync } from '@capability-hub/domain/async';
 import type { Policy } from '@capability-hub/domain/policy';
 import type { Principal } from '@capability-hub/domain/identity';
 import type { IntakeListQuery, IntakeStatus } from './commands.js';
-import type { IntakeRecord } from '@capability-hub/domain/models';
+import type { IntakeRecord, ReleaseRecord } from '@capability-hub/domain/models';
 import { contentScanRuleset } from '@capability-hub/domain/content';
 import { fail, notFound } from '@capability-hub/domain/errors';
 import { has } from '@capability-hub/domain/rbac';
 import { toVersionSnapshot } from '../catalog/catalog-mapper.js';
-import { toIntakeDetails } from './intake-mapper.js';
+import { matchesCurrentRelease, toIntakeDetails } from './intake-mapper.js';
 import { createVersionPlan } from './version-plan.js';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from '../catalog/asset-access-service.js';
@@ -82,10 +82,26 @@ export class IntakeQueryService {
         if (!latestPublications.has(request.source_intake_id))
           latestPublications.set(request.source_intake_id, request.state);
       }
+      const currentReleases = new Map<string, Promise<ReleaseRecord | undefined>>();
       const rows = (
         await Promise.all(
           permitted.map(async (r) => {
             const asset = await this.assets.getAsset(r.asset_id);
+            let status: IntakeStatus;
+            if (asset.lifecycle !== 'active') status = asset.lifecycle;
+            else if (r.state === 'ready') {
+              status = latestPublications.get(r.id) ?? 'ready';
+              const releaseId = asset.current_release_id;
+              if (status === 'ready' && releaseId && (r.binding_id || r.origin_commit)) {
+                let release = currentReleases.get(releaseId);
+                if (!release) {
+                  release = this.context.store.get('releases', releaseId);
+                  currentReleases.set(releaseId, release);
+                }
+                if (matchesCurrentRelease(r, await release)) status = 'unchanged';
+              }
+            } else if (r.state === 'failed' || r.state === 'cancelled') status = r.state;
+            else status = 'processing';
             return {
               id: r.id,
               asset_id: asset.id,
@@ -93,14 +109,7 @@ export class IntakeQueryService {
               kind: asset.kind,
               version_label: r.version_label,
               created_at: r.created_at,
-              status:
-                asset.lifecycle !== 'active'
-                  ? asset.lifecycle
-                  : r.state === 'failed' || r.state === 'cancelled'
-                    ? r.state
-                    : r.state === 'ready'
-                      ? (latestPublications.get(r.id) ?? 'ready')
-                      : 'processing',
+              status,
               phase: r.phase,
               source_kind:
                 (await this.context.store.get('sources', r.source_id))?.kind === 'git'
@@ -233,6 +242,7 @@ export class IntakeQueryService {
             content_digest: currentVersion.content_digest,
           }
         : null,
+      matches_current_release: matchesCurrentRelease(intake, release),
       asset_lifecycle: asset.lifecycle,
       asset_lifecycle_reason: asset.deprecation_reason ?? '',
       can_maintain: canMaintain,

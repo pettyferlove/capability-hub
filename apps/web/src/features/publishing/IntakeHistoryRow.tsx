@@ -26,7 +26,7 @@ import {
   Ban,
 } from '../../shared/icons/lucide.js';
 import { Glyph } from '../../shared/components/Glyph.js';
-import { dateLabel } from '../../shared/format/labels.js';
+import { dateLabel, stateLabel } from '../../shared/format/labels.js';
 import { isGeneratedGitVersion } from '../../shared/format/version-label.js';
 
 /** 接收记录列表与状态筛选共用的中文文案，键为接口返回的 `status` 原值，缺键即视为未知状态。 */
@@ -35,6 +35,7 @@ export const statusLabels: Record<string, string> = {
   ready: '待提交审核',
   pending: '待审核',
   approved: '已审核发布',
+  unchanged: stateLabel('unchanged'),
   failed: '处理失败',
   rejected: '已退回',
   stale: '已失效',
@@ -62,7 +63,7 @@ export function IntakeHistoryRow({
     ? LoaderCircle
     : error
       ? AlertCircle
-      : item.status === 'approved'
+      : item.status === 'approved' || item.status === 'unchanged'
         ? CheckCircle2
         : ['stale', 'cancelled', 'deprecated', 'blocked'].includes(item.status)
           ? Ban

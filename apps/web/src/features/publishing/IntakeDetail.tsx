@@ -163,7 +163,8 @@ export function IntakeDetail({
     suggestion?.versionId === i.version_id && suggestion?.digest === i.content_digest
       ? suggestion
       : undefined;
-  const published = i.publication?.state === 'approved' && !reapplying;
+  const matchesRelease = !i.publication && i.matches_current_release;
+  const published = (i.publication?.state === 'approved' || matchesRelease) && !reapplying;
   const editable =
     i.can_maintain &&
     !inactive &&
@@ -475,7 +476,11 @@ export function IntakeDetail({
       {error && <Message error>{error}</Message>}
       {!inactive && ['ready', 'failed'].includes(i.state) && i.version && !i.ruleset_current && (
         <Message>
-          <p>扫描规则已更新，需重新扫描此固定快照后再提交，无需重新上传。</p>
+          <p>
+            {published
+              ? '如需重新申请分发，请先按最新规则重扫此固定快照。'
+              : '扫描规则已更新，需重新扫描此固定快照后再提交，无需重新上传。'}
+          </p>
           {i.can_rescan ? (
             <button
               className={textBtnStyles}
@@ -585,7 +590,7 @@ export function IntakeDetail({
         {i.state !== 'ready' && <Message>完成资源校验后即可填写发布申请。</Message>}
         {!inactive &&
           i.state === 'ready' &&
-          (i.ruleset_current || i.publication?.state === 'approved') &&
+          (i.ruleset_current || published) &&
           (submitted || i.publication?.state === 'pending' ? (
             i.publication?.state === 'pending' ? (
               <SubmittedFields publication={i.publication} />
@@ -595,8 +600,12 @@ export function IntakeDetail({
           ) : published ? (
             <div className={intakePublishedStyles}>
               <ShieldCheck size={27} />
-              <h4>此快照已审核发布</h4>
-              <p>调整分类或分发范围时，需要创建新的审核申请。</p>
+              <h4>{matchesRelease ? '本次校验无需重新审核' : '此快照已审核发布'}</h4>
+              <p>
+                {matchesRelease
+                  ? '校验结果已保留，当前发布不变。'
+                  : '调整分类或分发范围时，需要创建新的审核申请。'}
+              </p>
               {i.can_view_catalog ? (
                 <a className={cn(btnStyles, btnPrimaryStyles)} href={assetHref(i.asset_slug)}>
                   查看目录详情

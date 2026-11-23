@@ -48,6 +48,7 @@ export const intakeStatusIcons = {
   ready: Send,
   pending: Clock3,
   approved: CheckCheck,
+  unchanged: ShieldCheck,
   failed: CircleX,
   rejected: RotateCcw,
   stale: TimerOff,
