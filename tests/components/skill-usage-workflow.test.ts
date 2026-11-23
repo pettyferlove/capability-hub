@@ -17,6 +17,7 @@ import ManagementPanel from '../../apps/web/src/features/catalog/ManagementPanel
 import { cells, Glyph } from '../../apps/web/src/shared/components/Glyph.js';
 import { VersionComparison } from '../../apps/web/src/shared/components/VersionComparison.js';
 import { UploadPanel } from '../../apps/web/src/features/publishing/UploadPanel.js';
+import ReviewPage from '../../apps/web/src/features/review/ReviewPage.js';
 import { ReviewDetail } from '../../apps/web/src/features/review/ReviewDetail.js';
 import { FileWorkbench } from '../../apps/web/src/features/review/FileWorkbench.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
@@ -32,13 +33,18 @@ import { deferred } from '../support/store.js';
 
 afterEach(cleanup);
 
-function page(child: ReactNode, refresh = 0, groups = [{ id: 'team', name: '工程团队' }]) {
+function page(
+  child: ReactNode,
+  refresh = 0,
+  groups = [{ id: 'team', name: '工程团队' }],
+  userId = 'user',
+) {
   return createElement(
     HubCtx.Provider,
     {
       value: {
         me: {
-          id: 'user',
+          id: userId,
           username: 'owner',
           auth_provider: 'local',
           display_name: '维护者',
@@ -244,6 +250,122 @@ test('新 MCP 的团队 Bearer Token 仅在确认领取范围后随接收请求�
   assert.equal(posted.length, 1);
   assert.equal(posted[0].shared_mcp_key, token);
   assert.equal(posted[0].confirm_sharing, true);
+});
+
+test('提交者可撤回已失效的未分类申请，接手的维护者能回到原接收', async (context) => {
+  const url = location.href;
+  const state: unknown = history.state;
+  context.after(() => history.replaceState(state, '', url));
+  const f = await createTestHub(context);
+  const intake = await receiveSkill(f);
+  const submitted = await submitPublication(f, intake);
+  await publishSkill(f, { assetId: intake.asset_id, version: '2.0.0' });
+  const role = await f.store.find('roles', 'key', 'maintainer');
+  assert(role);
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'asset',
+    scope_id: intake.asset_id,
+  });
+  const maintainer = await f.hub.identity.principal(f.reader.id);
+  let viewer = f.admin;
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    if (path.startsWith('/api/management/versions/')) return new Response('Skill 使用说明');
+    if (path.startsWith('/api/publication-requests?state='))
+      return Response.json({
+        items: await f.hub.publicationQueries.listRequests(viewer, path.split('=')[1]),
+      });
+    assert.equal(path, `/api/publication-requests/${submitted.id}/cancel`);
+    assert.equal(options.method, 'POST');
+    return Response.json(
+      await f.hub.publications.cancel(
+        f.admin,
+        submitted.id,
+        JSON.parse(String(options.body)),
+        new Headers(options.headers).get('If-Match') ?? undefined,
+      ),
+    );
+  });
+  const user = userEvent.setup();
+  const pending = `?request=${submitted.id}`;
+  history.replaceState(null, '', '/review' + pending);
+  const view = render(
+    page(createElement(ReviewPage, { query: pending }), 0, undefined, f.admin.id),
+  );
+  await screen.findByText('申请的审核依据已失效');
+  await user.click(screen.getByRole('button', { name: '撤回申请' }));
+  const cancelled = `?state=cancelled&request=${submitted.id}`;
+  await waitFor(() => assert.equal(location.search, cancelled));
+  view.unmount();
+  viewer = maintainer;
+  render(page(createElement(ReviewPage, { query: cancelled }), 0, undefined, maintainer.id));
+  await screen.findByText('此申请已撤回');
+  assert.equal(screen.queryByRole('button', { name: '撤回申请' }), null);
+  assert.equal(
+    screen.getByRole('link', { name: '查看原接收记录' }).getAttribute('href'),
+    '/publish?intake=' + intake.id,
+  );
+});
+
+test('接收详情默认打开发布申请时也能重扫旧规则下的固定快照', async (context) => {
+  const f = await createTestHub(context);
+  const intake = await receiveSkill(f);
+  const scan = await f.store.get('scans', intake.scan_run_id);
+  const record = await f.store.get('intakes', intake.id);
+  assert(scan && record);
+  const previous = await f.store.insert('scans', {
+    ...scan,
+    id: randomUUID(),
+    ruleset_version: 'previous-rules',
+  });
+  await f.store.put('intakes', { ...record, scan_run_id: previous.id });
+  const role = await f.hub.administration.createRole(f.admin, {
+    name: '只维护不共享',
+    permissions: ['asset:maintain'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reader.id,
+    role_id: role.id,
+    scope_type: 'asset',
+    scope_id: intake.asset_id,
+  });
+  const maintainer = await f.hub.identity.principal(f.reader.id);
+  const actor = await f.hub.identity.principal(f.admin.id);
+  const detail = await f.hub.intakeQueries.getDetail(actor, intake.id);
+  const readOnly = await f.hub.intakeQueries.getDetail(maintainer, intake.id);
+  context.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
+    assert.equal(path, `/api/intakes/${intake.id}/rescan`);
+    const key = new Headers(options.headers).get('Idempotency-Key') ?? undefined;
+    return Response.json(await f.hub.intakes.rescan(actor, intake.id, key));
+  });
+  const user = userEvent.setup();
+  const view = render(page(createElement(IntakeDetail, { intake: readOnly })));
+  assert.equal(screen.queryByRole('button', { name: '重新扫描固定快照' }), null);
+  let selected = '';
+  view.rerender(
+    page(
+      createElement(IntakeDetail, {
+        intake: detail,
+        onSelect: (id) => {
+          selected = id;
+        },
+      }),
+    ),
+  );
+  await user.click(screen.getByRole('button', { name: '重新扫描固定快照' }));
+
+  const rescan = await waitFor(async () => {
+    const record = await f.store.get('intakes', selected);
+    assert(record, screen.queryByRole('alert')?.textContent ?? '重扫后未打开新接收记录');
+    assert.equal(record.rescan_of, intake.id);
+    return record;
+  });
+  await f.worker.tick();
+  const rescanned = await f.hub.intakeQueries.getDetail(f.admin, rescan.id);
+  assert.equal(rescanned.version_id, intake.version_id);
+  assert.equal(rescanned.content_digest, intake.content_digest);
+  assert.equal(rescanned.ruleset_current, true);
 });
 
 test('审核详情可重复定位 Skill 文件，未声明不推断无需认证', async (context) => {

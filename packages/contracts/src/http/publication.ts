@@ -67,6 +67,7 @@ export interface ChangeFileResponse {
 /**
  * 审核详情：在申请之上补充候选版本、当前发布、扫描与文件 diff。
  * `context_valid` 表示提交时的上下文（资产与来源修订、扫描规则集、生命周期）是否仍一致；
+ * `ruleset_current` 单独标识扫描证据是否来自当前规则集；`can_maintain` 对应所申请的资产。
  * `can_decide` 额外要求申请待审、非本人提交或本人授权，并且具备对应范围的审查权限。
  * `can_use_review_agent` 允许独立审核者读取已有简报；生成新简报还要求 `can_decide`。
  * `can_audit_version` 对应决定抽屉中的版本审计，要求独立审核及目标资产范围的 AI 执行权。
@@ -88,6 +89,8 @@ export type ReviewResponse = PublicationRequestResponse & {
   scan?: ScanResponse;
   submitter?: string;
   context_valid: boolean;
+  ruleset_current: boolean;
+  can_maintain: boolean;
   can_decide: boolean;
   can_audit_version: boolean;
   can_use_review_agent: boolean;

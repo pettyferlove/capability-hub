@@ -59,6 +59,8 @@ export interface IntakeResponse extends IntakeDetails {
   asset_lifecycle: ManagementAssetResponse['lifecycle'];
   asset_lifecycle_reason: string;
   can_maintain: boolean;
+  /** 固定内容存在，且调用者有资产维护和原来源共享权限。 */
+  can_rescan: boolean;
   can_view_catalog: boolean;
   version?: VersionSnapshotResponse | null;
   scan?: ScanResponse | null;

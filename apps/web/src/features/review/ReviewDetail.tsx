@@ -91,6 +91,8 @@ import { Message } from '../../shared/components/Message.js';
 import { Submit } from '../../shared/components/Submit.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { categoryLabel, dateLabel, stateLabel } from '../../shared/format/labels.js';
+import { pageHref } from '../../shared/navigation/history-route.js';
+import { navigate } from '../../shared/navigation/history-navigation.js';
 import { FileWorkbench } from './FileWorkbench.js';
 import type { ChangeFile, ReviewFileFocus } from './types.js';
 import { shortVersion } from '../../shared/format/version-label.js';
@@ -165,19 +167,26 @@ export function ReviewDetail({
   const widened = change === 'expanded';
   const requiredReview = reviewScope(r, r.asset.owner_group_id);
   const warningMissing = important.some((f) => f.severity === 'warning' && !warnings[f.id]?.trim());
+  const submittedHere = r.submitted_by === me?.id;
+  const selfReview = submittedHere || (r.nomination && r.source_consent.actor_id === me?.id);
+  const needsResubmission = r.state === 'pending' && !r.context_valid;
+  const canOpenIntake = r.can_maintain && !r.nomination;
   async function withdrawRequest() {
     setBusy(true);
     setError('');
+    const from = location.href;
     try {
       await mutate(
         `/api/publication-requests/${r.id}/cancel`,
         {
-          reason: r.nomination ? '提名者主动撤回通用提名' : '维护者撤回场景发布申请',
+          reason: r.nomination ? '提名者主动撤回通用提名' : '提交者主动撤回发布申请',
         },
         'POST',
         r.revision,
       );
       reload();
+      if (location.href === from)
+        navigate(pageHref('review', { state: 'cancelled', request: r.id }), { replace: true });
     } catch (error) {
       setError(error instanceof Error ? error.message : '撤回失败，请刷新后重试');
     } finally {
@@ -293,9 +302,15 @@ export function ReviewDetail({
             </button>
           )}
           <span className={cn(tagStyles, r.state === 'approved' ? tagTealStyles : '')}>
-            {stateLabel(r.state)}
+            {needsResubmission ? '需重新提交' : stateLabel(r.state)}
           </span>
         </div>
+        {canOpenIntake && (r.state === 'cancelled' || r.state === 'stale') && (
+          <a className={textBtnStyles} href={pageHref('publish', { intake: r.source_intake_id })}>
+            查看原接收记录
+            <ArrowRight size={14} />
+          </a>
+        )}
         <VersionComparison
           kind={r.asset.kind}
           previous={
@@ -788,22 +803,35 @@ export function ReviewDetail({
             <LockKeyhole size={17} />
             <div>
               <strong>
-                {r.submitted_by === me?.id || (r.nomination && r.source_consent.actor_id === me?.id)
-                  ? '等待另一位审核者'
-                  : '当前申请仅可查看'}
+                {needsResubmission
+                  ? '申请的审核依据已失效'
+                  : selfReview
+                    ? '等待另一位审核者'
+                    : '当前申请仅可查看'}
               </strong>
               <p>
-                {r.submitted_by === me?.id || (r.nomination && r.source_consent.actor_id === me?.id)
-                  ? '这是你的提交，平台要求独立人工审核。'
-                  : r.context_valid === false
-                    ? '内容、来源或策略上下文已变化，请刷新并重新提交申请。'
+                {needsResubmission
+                  ? r.scan && r.ruleset_current === false
+                    ? '扫描规则已更新，不能用旧扫描继续审核。'
+                    : '内容、来源或发布基线已变化，不能继续审核。'
+                  : selfReview
+                    ? '这是你的提交，平台要求独立人工审核。'
                     : reviewScopeNotices[
                         requiredReview.kind === 'platform'
                           ? requiredReview.reasons[0]
                           : requiredReview.kind
                       ]}
               </p>
-              {(r.nomination || r.category === 'scenario') && r.submitted_by === me?.id && (
+              {needsResubmission && (
+                <p>
+                  {submittedHere && canOpenIntake
+                    ? '请撤回旧申请，再从原接收记录核对后重新提交。'
+                    : submittedHere
+                      ? '你可以撤回；需要重新校验时请联系资产维护者。'
+                      : '请由提交者处理旧申请。'}
+                </p>
+              )}
+              {submittedHere && (
                 <button
                   type="button"
                   className={textBtnStyles}

@@ -56,6 +56,7 @@ export class PublicationQueryService {
       !source.distribution_revoked_at &&
       a.lifecycle !== 'blocked' &&
       v.availability !== 'revoked';
+    const rulesetCurrent = scan?.ruleset_version === contentScanRuleset;
     const contextValid =
       a.current_release_id === request.base_release_id &&
       a.revision === request.asset_revision &&
@@ -63,7 +64,7 @@ export class PublicationQueryService {
       available &&
       a.lifecycle === 'active' &&
       scan?.state === 'passed' &&
-      scan?.ruleset_version === contentScanRuleset;
+      rulesetCurrent;
     const canDecide = request.state === 'pending' && independent && contextValid;
     const assetAi = has(principal, 'ai:execute', this.assets.assetContext(a));
     return {
@@ -72,6 +73,7 @@ export class PublicationQueryService {
       scan,
       canReview,
       contextValid,
+      rulesetCurrent,
       canDecide,
       canAuditVersion: canDecide && assetAi,
       canUseReviewAgent:
@@ -116,13 +118,19 @@ export class PublicationQueryService {
   }
 
   private async describe(principal: Principal, request: PublicationRequestRecord) {
-    const { a, v, scan, canReview, contextValid, canDecide, canAuditVersion, canUseReviewAgent } =
-      await this.reviewContext(principal, request);
-    if (
-      !canReview &&
-      request.submitted_by !== principal.id &&
-      !this.assets.canMaintain(principal, a)
-    )
+    const {
+      a,
+      v,
+      scan,
+      canReview,
+      contextValid,
+      rulesetCurrent,
+      canDecide,
+      canAuditVersion,
+      canUseReviewAgent,
+    } = await this.reviewContext(principal, request);
+    const canMaintain = this.assets.canMaintain(principal, a);
+    if (!canReview && request.submitted_by !== principal.id && !canMaintain)
       fail(403, 'FORBIDDEN', '无审核权限');
     const current = await this.context.store.get('releases', request.base_release_id ?? '');
     const previous = current ? await this.context.store.get('versions', current.version_id) : null;
@@ -150,6 +158,8 @@ export class PublicationQueryService {
       scan,
       submitter: (await this.context.store.get('users', request.submitted_by))?.display_name,
       context_valid: contextValid,
+      ruleset_current: rulesetCurrent,
+      can_maintain: canMaintain,
       can_decide: canDecide,
       can_audit_version: canAuditVersion,
       can_use_review_agent: canUseReviewAgent,

@@ -473,6 +473,38 @@ export function IntakeDetail({
         </Submit>
       )}
       {error && <Message error>{error}</Message>}
+      {!inactive && ['ready', 'failed'].includes(i.state) && i.version && !i.ruleset_current && (
+        <Message>
+          <p>扫描规则已更新，需重新扫描此固定快照后再提交，无需重新上传。</p>
+          {i.can_rescan ? (
+            <button
+              className={textBtnStyles}
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                setError('');
+                try {
+                  const result = await mutate<{ intake_id: string }>(
+                    '/api/intakes/' + i.id + '/rescan',
+                    {},
+                  );
+                  onSelect?.(result.intake_id);
+                  reload();
+                } catch (e) {
+                  setError(errorMessage(e));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              重新扫描固定快照
+            </button>
+          ) : (
+            <p>当前不能重扫，请联系资产维护者核对来源状态与共享权限。</p>
+          )}
+        </Message>
+      )}
       {i.version && (
         <PageTabs
           label="校验与发布步骤"
@@ -541,33 +573,6 @@ export function IntakeDetail({
               <code>{i.version.content_digest}</code>
             </div>
           </details>
-        )}
-        {!inactive && ['ready', 'failed'].includes(i.state) && i.version && !i.ruleset_current && (
-          <Message>
-            扫描规则已更新；重新申请分发前请先按最新规则扫描此固定内容。
-            <button
-              className={textBtnStyles}
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                setError('');
-                try {
-                  const result = await mutate<{ intake_id: string }>(
-                    '/api/intakes/' + i.id + '/rescan',
-                    {},
-                  );
-                  onSelect?.(result.intake_id);
-                  reload();
-                } catch (e) {
-                  setError(errorMessage(e));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              重新扫描固定快照
-            </button>
-          </Message>
         )}
       </div>
       <div

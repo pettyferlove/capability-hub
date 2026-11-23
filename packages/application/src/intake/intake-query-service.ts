@@ -196,11 +196,15 @@ export class IntakeQueryService {
    */
   async getDetail(principal: Principal, id: string) {
     const { intake, asset, publication } = await this.visibleIntake(principal, id);
-    const [version, binding, release, scan] = await Promise.all([
+    const canMaintain = this.assets.canMaintain(principal, asset);
+    const [version, binding, release, scan, source] = await Promise.all([
       this.context.store.get('versions', intake.version_id),
       this.context.store.get('bindings', intake.binding_id),
       this.context.store.get('releases', asset.current_release_id),
       this.context.store.get('scans', intake.scan_run_id),
+      canMaintain && (intake.version_id || intake.payload_ref)
+        ? this.context.store.get('sources', intake.source_id)
+        : undefined,
     ]);
     const currentVersion = release
       ? await this.context.store.get('versions', release.version_id)
@@ -231,7 +235,12 @@ export class IntakeQueryService {
         : null,
       asset_lifecycle: asset.lifecycle,
       asset_lifecycle_reason: asset.deprecation_reason ?? '',
-      can_maintain: this.assets.canMaintain(principal, asset),
+      can_maintain: canMaintain,
+      can_rescan:
+        !!source &&
+        !source.distribution_revoked_at &&
+        source.state !== 'blocked' &&
+        has(principal, 'source:share', { source: source.id, team: source.owner_group_id }),
       can_view_catalog: await this.assets.canViewCatalog(principal, asset),
       retryable: !intake.binding_id && (intake.retryable ?? false),
       version: version ? toVersionSnapshot(version) : null,
