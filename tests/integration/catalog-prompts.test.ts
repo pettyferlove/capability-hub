@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import { aiConfigurationSchema } from '@capability-hub/ai';
+import { aiConfigurationSchema, type ModelProfile } from '@capability-hub/ai';
 import {
   aiExecutionDiagnosticsResponseSchema,
   aiExecutionLedgerResponseSchema,
@@ -39,7 +39,10 @@ function messageOf(request: StubRequest) {
 }
 
 /** 生成阶段返回四条候选；预检只让「接口回归测试」落到本批有发布证据的版本。 */
-async function promptHub(context: TestContext, maxRequests?: number, activeTimeout?: number) {
+async function promptHub(
+  context: TestContext,
+  options: { maxRequests?: number; activeTimeout?: number; profile?: Partial<ModelProfile> } = {},
+) {
   const calls: string[] = [];
   const stub = await serveModelStub(context, (request) => {
     if ((request.body as { stream?: boolean } | null)?.stream) return { status: 500, json: {} };
@@ -59,13 +62,13 @@ async function promptHub(context: TestContext, maxRequests?: number, activeTimeo
       }),
     };
   });
-  const profile = stub.profile('openai');
+  const profile = stub.profile('openai', options.profile);
   const fixture = await createTestHub(context, {
     ai: aiConfigurationSchema.parse({
       profiles: [profile],
       default_profile: profile.id,
-      max_requests: maxRequests,
-      active_timeout_ms: activeTimeout,
+      max_requests: options.maxRequests,
+      active_timeout_ms: options.activeTimeout,
     }),
   });
   await publishSkill(fixture, {
@@ -167,6 +170,68 @@ test('开场提示先过安全门槛再预检：索取凭据、外部命令与�
   assert(tokens);
   assert.deepEqual([tokens.requests, tokens.input_tokens, tokens.output_tokens], [3, 33, 21]);
   assert.equal(usage.by_user.find((item) => item.id === 'system')?.label, '系统任务');
+});
+
+test('开场生成和预检使用档案输出限额；小档案截断时不发布也不重发', async (context) => {
+  for (const limit of [16_384, 768]) {
+    const { fixture, stub } = await promptHub(context, {
+      profile: { max_output_tokens: limit, request_timeout_ms: 120_000 },
+    });
+    const sentLimits: number[] = [];
+    stub.setHandler((request) => {
+      const { body } = request;
+      assert(body && typeof body === 'object' && 'max_tokens' in body);
+      const limit = body.max_tokens;
+      assert(typeof limit === 'number');
+      sentLimits.push(limit);
+      if (limit < 5120) {
+        const json = openAiJson('', { input: 1013, output: limit, reasoning: limit });
+        json.choices[0].finish_reason = 'length';
+        return { json };
+      }
+      const input = messageOf(request);
+      const result = input.resources
+        ? { prompts: [generation.prompts[0]] }
+        : {
+            action: 'search',
+            patch: {},
+            picks: [
+              {
+                ref: input.catalog?.find((card) => card.slug === 'http-regression-kit')?.ref,
+                fit: 'direct',
+                reason: '适用于接口回归',
+                quote: '对关键 HTTP 接口做回归测试。',
+              },
+            ],
+          };
+      return { json: openAiJson(result, { input: 1013, output: 5120, reasoning: 5000 }) };
+    });
+    const job = await claimPromptJob(fixture);
+    await fixture.hub.prompts.process(job, new AbortController().signal);
+    const enough = limit >= 5120;
+    assert.equal((await fixture.store.get('jobs', job.id))?.state, enough ? 'succeeded' : 'failed');
+    const visible = await fixture.store.tx(() => fixture.hub.prompts.visiblePrompts(null));
+    assert.deepEqual(
+      visible.map((item) => item.text),
+      enough ? [generation.prompts[0].text] : [],
+    );
+    assert.deepEqual(sentLimits, enough ? [limit, limit] : [limit]);
+    const [run] = await fixture.hub.ai.runtime.store.list('ai_executions', {
+      lookup_key: 'catalog-prompts',
+      limit: 1,
+    });
+    const calls = await fixture.hub.ai.runtime.store.list('ai_calls', {
+      execution_id: run.id,
+      limit: 3,
+    });
+    assert.deepEqual(
+      calls.map(({ payload }) => [
+        payload.diagnostics.max_output_tokens,
+        payload.diagnostics.request_timeout_ms,
+      ]),
+      sentLimits.map((value) => [value, 120_000]),
+    );
+  }
 });
 
 test('预检只接受前台能交付的固定版本，不以空选择或与受众冲突的摘录批准提示', async (context) => {
@@ -333,6 +398,81 @@ test('长中文简介按序列化字节分批，来源不丢失，下一次刷�
   assert.equal(stub.requests.length, after);
 });
 
+test('50 个 Skill 跨窗口刷新：已预检批次保留，后续批次不能重置窗口额度', async (context) => {
+  const stub = await serveModelStub(context);
+  const profile = stub.profile('openai');
+  const fixture = await createTestHub(context, {
+    ai: aiConfigurationSchema.parse({
+      profiles: [profile],
+      default_profile: profile.id,
+      max_requests: 7,
+    }),
+  });
+  const versions = new Set<string>();
+  for (let index = 0; index < 50; index++) {
+    const { intake } = await publishSkill(fixture, { slug: `workflow-${index}` });
+    versions.add(intake.version_id);
+  }
+  await fixture.worker.waitForIdle();
+  const window = 6 * 3600_000;
+  const start = Math.floor(Date.now() / window) * window;
+  context.mock.timers.enable({ apis: ['Date'], now: start + 60_000 });
+  stub.setHandler((request) => {
+    context.mock.timers.tick(8000);
+    const input = messageOf(request);
+    return {
+      json: openAiJson(
+        input.resources
+          ? { prompts: [{ label: '工程实践', text: '团队有哪些工程实践？' }] }
+          : {
+              action: 'search',
+              patch: {},
+              picks: [
+                {
+                  ref: input.catalog?.[0].ref,
+                  fit: 'direct',
+                  reason: '给出工程实践',
+                  quote: '团队工程实践',
+                },
+              ],
+            },
+      ),
+    };
+  });
+
+  const first = await claimPromptJob(fixture);
+  await fixture.hub.prompts.process(first, new AbortController().signal);
+  assert.equal(
+    (await fixture.store.get('jobs', first.id))?.last_error_code,
+    'PROMPT_BUDGET_EXCEEDED',
+  );
+  const saved = (await fixture.store.get('catalog_prompts', 'catalog-prompts'))!;
+  assert.deepEqual(
+    saved.batches.map((batch) => batch.sources.length),
+    [12, 12, 12],
+  );
+  assert(saved.batches.every((batch) => batch.prompts.length === 1));
+  assert.equal(saved.next_refresh_at, start + window);
+
+  context.mock.timers.setTime(saved.next_refresh_at);
+  await fixture.hub.prompts.schedule();
+  const next = await fixture.hub.jobs.claim('prompt-test', ['catalog_prompt_refresh']);
+  assert(next?.kind === 'catalog_prompt_refresh');
+  const offset = stub.requests.length;
+  await fixture.hub.prompts.process(next, new AbortController().signal);
+  assert.equal((await fixture.store.get('jobs', next.id))?.state, 'succeeded');
+  const batches = (await fixture.store.get('catalog_prompts', 'catalog-prompts'))!.batches;
+  assert.deepEqual(
+    new Set(batches.flatMap((batch) => batch.sources.map((source) => source.version_id))),
+    versions,
+  );
+  assert(saved.batches.every((old) => batches.some((batch) => batch.id === old.id)));
+  assert.deepEqual(
+    stub.requests.slice(offset).flatMap((req) => messageOf(req).resources?.length ?? []),
+    [12, 2],
+  );
+});
+
 test('前一窗口才入队的作业晚领取时不发请求，不占用当前窗口', async (context) => {
   const { fixture, calls } = await promptHub(context);
   const window = 6 * 3600_000;
@@ -385,20 +525,21 @@ test('首次预占尚未提交时跨过 UTC 窗口，不产生出站或执行记
 });
 
 test('提交提示时到达内联或窗口时限，执行与作业均不成功且未发布新提示', async (context) => {
-  for (const [name, activeTimeout, elapsed] of [
-    ['内联执行', 10_000, 10_000],
-    ['提示窗口', 60_000, 45_000],
+  for (const [name, activeTimeout, untilBoundary] of [
+    ['内联执行', 10_000, 60_000],
+    ['UTC 窗口', 60_000, 10_000],
   ] as const)
     await context.test(name, async (t) => {
-      const { fixture } = await promptHub(t, undefined, activeTimeout);
-      const time = Math.floor(Date.now() / 21_600_000) * 21_600_000 + 60_000;
-      t.mock.timers.enable({ apis: ['Date'], now: time });
+      const { fixture } = await promptHub(t, { activeTimeout });
+      const window = 6 * 3600_000;
+      const end = (Math.floor(Date.now() / window) + 1) * window;
+      t.mock.timers.enable({ apis: ['Date'], now: end - untilBoundary });
       const job = await claimPromptJob(fixture);
       const put = fixture.store.put.bind(fixture.store);
       t.mock.method(fixture.store, 'put', (async (table, row) => {
         const result = await put(table, row);
         if (table === 'jobs' && row.id === job.id && 'state' in row && row.state === 'succeeded')
-          t.mock.timers.tick(elapsed);
+          t.mock.timers.tick(10_000);
         return result;
       }) satisfies typeof fixture.store.put);
       await fixture.hub.prompts.process(job, new AbortController().signal);
@@ -447,7 +588,7 @@ test('预检失败保留生成阶段的已确认 Token，不再发起模型请�
 });
 
 test('提示刷新耗尽统一模型预算时立即结束作业，不把未出站的预检计作请求', async (context) => {
-  const { fixture, calls } = await promptHub(context, 1);
+  const { fixture, calls } = await promptHub(context, { maxRequests: 1 });
   const job = await claimPromptJob(fixture);
   await fixture.hub.prompts.process(job, new AbortController().signal);
   const terminal = await fixture.store.get('jobs', job.id);

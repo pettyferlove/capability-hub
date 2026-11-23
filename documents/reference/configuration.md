@@ -50,9 +50,9 @@ HUB_AI_PRIMARY_KEY=<实际凭据>
 
 `format` 选协议，`credential_ref` 引用密钥环境变量，`default_profile` 引用已有模型配置 ID。重启后生效，旧执行仍校验原模型摘要。预算和 MCP 白名单见 [AI 框架](../design/ai-framework.md)。
 
-配置 `default_profile` 即启用首页对话，无需额外 AI 角色；未配置时仅匹配关键词。模型出站请求限 32 KiB、响应限 512 KiB（非浏览器请求体上限）。每次提问最多 4096 个输出 token、60 秒；每次生成或预检提示最多 1024 个、20 秒。输出含推理，均不超过模型档案限额。
+配置 `default_profile` 即启用首页对话，无需额外 AI 角色；未配置时仅匹配关键词。模型出站请求限 32 KiB、响应限 512 KiB。开场提示生成和预检使用档案的 `max_output_tokens`（含推理）和 `request_timeout_ms`；前台提问另限 4096 token、60 秒。
 
-提问每轮至多一次出站，每分钟每主体 8 次、每进程 30 次，最多 3 个在途。启用 Worker 后按 UTC 六小时窗口刷新提示，每窗限 4 批、20 次出站、45 秒。生成时发送同受众发布的类型、简介、标签和场景；预检发送候选问题及本批卡片。提问发送问题、沿用的对话条件与可见卡片；卡片含引用号、slug、类型、分类、场景、标签和简介开头。提供方须获准处理这些数据，包括受限发布。
+启用 Worker 后按 UTC 六小时窗口刷新：同受众每批至多 12 项，每窗最多 4 批、`min(20, max_requests)` 次出站，共用 `active_timeout_ms` 与 `execution_timeout_ms` 中较短的时限，不跨窗。成功批次可复用，后续失败不撤回。生成发送类型、简介、标签和场景；预检发送候选问题及本批卡片。前台每轮最多一次出站，每分钟每主体 8 次、每进程 30 次，最多 3 个在途；发送问题、对话条件与可见卡片（引用号、slug、类型、分类、场景、标签及简介开头）。提供方须获准处理这些数据，包括受限发布。
 
 两种协议均支持 `request_headers`。值可为非敏感的单行 ASCII 字符串，或 `{"from":"execution_id","prefix":"ses_"}`（前缀可省略，续跑保留同一执行 ID）。头名不区分大小写，不可重复或覆盖鉴权、Host、报文传输等保留头。[OpenCode Go](https://opencode.ai/docs/console/go/#where-can-i-use-it) 用固定 `User-Agent: capability-hub` 和动态 `x-opencode-session`。
 

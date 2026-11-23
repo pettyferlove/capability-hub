@@ -493,10 +493,7 @@ export class DiscoveryService {
             instructions: discoveryInstructions,
             input,
             schema: discoveryDecisionSchema,
-            limits: {
-              maxOutputTokens: profile.max_output_tokens,
-              timeoutMs: profile.request_timeout_ms,
-            },
+            limits: { maxOutputTokens: 4096, timeoutMs: 60_000 },
             reserve: async () => {
               await authorizeInput();
               release = this.limiter.acquire(

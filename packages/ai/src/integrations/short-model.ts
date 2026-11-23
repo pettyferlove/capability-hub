@@ -75,7 +75,7 @@ export class ShortModelError extends AiError {
   }
 }
 
-/** 单次调用的预算；实际出站时仍受短调用硬上限和模型档案约束。 */
+/** 单次调用的预算；调用方只能收紧模型档案限额及请求、响应的字节上限。 */
 export interface ShortModelLimits {
   maxRequestBytes: number;
   maxResponseBytes: number;
@@ -123,7 +123,7 @@ export interface ShortModelResult<T> {
   duration_ms: number;
 }
 
-/** 不显式申请输出和时限时使用小预算；显式值也不能突破模型档案或短调用硬上限。 */
+/** 未指定更小的限额时，输出和请求时限沿用模型档案。 */
 export function shortModelLimits(
   profile: ModelProfile,
   overrides: Partial<ShortModelLimits> = {},
@@ -131,8 +131,8 @@ export function shortModelLimits(
   return {
     maxRequestBytes: Math.min(32768, overrides.maxRequestBytes ?? Infinity),
     maxResponseBytes: Math.min(524288, overrides.maxResponseBytes ?? Infinity),
-    maxOutputTokens: Math.min(profile.max_output_tokens, overrides.maxOutputTokens ?? 1024, 4096),
-    timeoutMs: Math.min(profile.request_timeout_ms, overrides.timeoutMs ?? 20000, 60000),
+    maxOutputTokens: Math.min(profile.max_output_tokens, overrides.maxOutputTokens ?? Infinity),
+    timeoutMs: Math.min(profile.request_timeout_ms, overrides.timeoutMs ?? Infinity),
   };
 }
 

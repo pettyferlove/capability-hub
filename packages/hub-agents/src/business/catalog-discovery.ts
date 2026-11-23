@@ -27,7 +27,7 @@ export const catalogDiscoveryOperation = {
   description: '根据访问者可读的发布理解问题，并核对推荐的固定版本。',
 };
 
-/** 同一次提示刷新内的生成与预检共用执行，分别结算模型调用。 */
+/** 同批提示的生成与预检共用执行，分别结算模型调用。 */
 export const catalogPromptsOperation = {
   ...inlineDiscovery,
   id: 'catalog-prompts',
