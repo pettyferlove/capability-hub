@@ -73,11 +73,11 @@ export const assetContentPanelStyles = cn(
 );
 
 export const markdownStyles = cn(
-  'min-w-0 text-base leading-[1.75] text-ink [overflow-wrap:anywhere]',
-  '[&_>_div_>_*+*]:mt-4',
-  '[&_p]:text-pretty [&_>_div_>_:is(h2,h3,h4,h5,h6):not(:first-child)]:mt-8',
+  'min-w-0 text-[length:14px] leading-[1.7] text-ink [overflow-wrap:anywhere]',
+  '[&_>_div_>_*+*]:mt-3',
+  '[&_p]:text-pretty [&_>_div_>_:is(h2,h3,h4,h5,h6):not(:first-child)]:mt-6',
   '[&_:is(h1,h2,h3,h4,h5,h6)]:font-semibold [&_:is(h1,h2,h3,h4,h5,h6)]:leading-tight',
-  '[&_h1]:text-3xl max-[600px]:[&_h1]:text-2xl [&_h2]:text-2xl [&_h3]:text-xl',
+  '[&_h1]:text-[length:18px] [&_h2]:text-[length:16px] [&_h3]:text-[length:15px]',
   '[&_h2]:border-b [&_h2]:border-line [&_h2]:pb-2',
   '[&_ul]:list-disc [&_ol]:list-decimal [&_:is(ul,ol)]:ps-6 [&_li+li]:mt-1',
   '[&_li_:is(ul,ol)]:mt-1 [&_li_p+p]:mt-2 [&_li.task-list-item]:list-none [&_li.task-list-item_input]:me-1',
@@ -157,8 +157,8 @@ export const detailDescriptionWrapStyles = cn(
 );
 
 export const detailDescriptionStyles = cn(
-  'text-[length:15px] text-muted-ink leading-[1.9] mt-[21px] mr-0 mb-[15px] ml-0',
-  "max-[600px]:text-[length:12px] [&[class~='group/collapsed']]:[display:-webkit-box]",
+  'text-[length:13px] text-muted-ink leading-[1.7] mt-[21px] mr-0 mb-[15px] ml-0',
+  "[&[class~='group/collapsed']]:[display:-webkit-box]",
   "[&[class~='group/collapsed']]:[-webkit-line-clamp:4]",
   "[&[class~='group/collapsed']]:[-webkit-box-orient:vertical]",
   "[&[class~='group/collapsed']]:overflow-hidden",
