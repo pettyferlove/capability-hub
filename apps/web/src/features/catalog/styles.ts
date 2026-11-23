@@ -201,9 +201,9 @@ export const feedbackFormStyles = cn(
 export const managementTableStyles = cn(
   '[&_table]:min-w-288 [&_table]:border-separate [&_table]:border-spacing-0 [&_td]:py-4',
   "[&_[class~='group/table-wrap']>table]:table-fixed",
-  '[&_th:nth-child(2)]:w-44 [&_th:nth-child(3)]:w-42 [&_th:nth-child(4)]:w-[16%] [&_th:nth-child(5)]:w-36',
+  '[&_th:nth-child(2)]:w-36 [&_th:nth-child(3)]:w-38 [&_th:nth-child(4)]:w-[16%] [&_th:nth-child(5)]:w-36',
   '[&_small]:block [&_small]:text-muted-ink [&_small]:text-caption',
-  "[&_[class~='group/table-wrap']]:max-h-none [&_[class~='group/table-wrap']]:[--management-actions-width:256px]",
+  "[&_[class~='group/table-wrap']]:max-h-none [&_[class~='group/table-wrap']]:[--management-actions-width:320px]",
   "min-[760px]:[&_[class~='group/table-wrap']]:scroll-pe-[calc(var(--management-actions-width)_+_1rem)]",
   'min-[760px]:[&_th:last-child]:w-(--management-actions-width)',
   'min-[760px]:[&_:is(th,td):last-child]:sticky min-[760px]:[&_:is(th,td):last-child]:end-0 min-[760px]:[&_:is(th,td):last-child]:border-s',
@@ -231,9 +231,8 @@ export const managementTableStyles = cn(
 );
 
 export const managementActionsStyles = cn(
-  'flex flex-wrap items-center gap-x-2 gap-y-1 [&>button]:min-h-8 [&>a]:min-h-8',
-  '[&>button]:px-3 [&>button]:py-1.5 [&>a]:py-1.5',
-  'pointer-coarse:[&>button]:min-h-11 pointer-coarse:[&>a]:min-h-11',
+  'flex flex-wrap items-center gap-x-2 gap-y-1 [&>*]:min-h-8 [&>*]:gap-1.5 [&>*]:px-2.5 [&>*]:py-1.5',
+  'max-[360px]:gap-x-1 max-[360px]:[&>*]:px-1.5 pointer-coarse:[&>*]:min-h-11',
 );
 
 export const managementStatusStyles = cn(

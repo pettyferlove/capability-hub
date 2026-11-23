@@ -55,6 +55,7 @@ import {
   ShieldCheck,
   UploadCloud,
   GitBranch,
+  FileText,
   Trash2,
   CircleDashed,
   CircleHelp,
@@ -426,8 +427,9 @@ export default function ManagementPanel() {
                             管理
                           </button>
                           {a.can_view_catalog && (
-                            <a className={textBtnStyles} href={assetHref(a.slug)}>
-                              查看详情 <ArrowRight size={13} />
+                            <a className={btnStyles} href={assetHref(a.slug)}>
+                              <FileText size={14} aria-hidden="true" />
+                              查看详情
                             </a>
                           )}
                         </div>
