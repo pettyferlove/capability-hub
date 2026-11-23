@@ -226,9 +226,9 @@ export default function DiscoverPage() {
                 </span>
               </p>
               <h1 className={heroTitleStyles}>
-                <BlurText text="团队沉淀的能力" delay={0.05} />
+                <BlurText text="别人做过的，不用再做一遍" delay={0.05} />
                 <BlurText
-                  text="说出要做的事，一句话就能找到"
+                  text="描述你的需求，找到现成能用的"
                   delay={0.3}
                   className={heroTitleSubStyles}
                   pieceClassName={heroTitleAccentStyles}
