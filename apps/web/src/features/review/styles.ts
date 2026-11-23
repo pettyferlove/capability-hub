@@ -23,7 +23,7 @@ export const reviewTreeFolderStyles = cn(
 );
 
 export const reviewFileWorkbenchStyles =
-  'bg-paper border border-solid border-[color:var(--line)] rounded-[12px] overflow-hidden min-w-0';
+  'bg-paper border border-solid border-[color:var(--line)] rounded-[12px] overflow-clip min-w-0';
 
 export const reviewFileToolbarStyles = cn(
   'group/review-file-toolbar flex items-center justify-between gap-3 pt-[13px] pr-4 pb-[13px] pl-4',
@@ -44,17 +44,21 @@ export const reviewFileToolbarStyles = cn(
 );
 
 export const reviewFileSplitStyles = cn(
-  'grid grid-cols-[230px_minmax(0,_1fr)] h-127.5 max-h-[65vh] min-h-87.5',
+  'grid grid-cols-[230px_minmax(0,_1fr)] min-h-87.5',
   'min-[1300px]:grid-cols-[240px_minmax(0,_1fr)] max-[1050px]:grid-cols-[185px_minmax(0,_1fr)]',
-  'max-[800px]:grid-cols-[210px_minmax(0,_1fr)] max-[600px]:grid-cols-[1fr] max-[600px]:h-auto',
-  'max-[600px]:max-h-[none] max-[600px]:min-h-0',
+  'max-[800px]:grid-cols-[210px_minmax(0,_1fr)] max-[600px]:grid-cols-[1fr] max-[600px]:min-h-0',
 );
 
 export const reviewFileExplorerStyles = cn(
-  'min-w-0 border-r [border-right-style:solid] border-r-[color:var(--line)] flex flex-col',
-  '[background:color-mix(in_srgb,_var(--page),_var(--paper)_50%)] overflow-hidden',
+  'min-w-0 border-r [border-right-style:solid] border-r-[color:var(--line)]',
+  '[background:color-mix(in_srgb,_var(--page),_var(--paper)_50%)]',
   'max-[600px]:border-r-0 max-[600px]:border-b max-[600px]:[border-bottom-style:solid] max-[600px]:border-b-[color:var(--line)]',
-  'max-[600px]:max-h-[205px]',
+);
+
+/** 正文随页面滚动时目录停在顶栏下；底部让出审核决定栏的高度。 */
+export const reviewFileExplorerPaneStyles = cn(
+  'flex flex-col min-[601px]:sticky min-[601px]:top-[101px]',
+  'min-[601px]:max-h-[calc(100dvh_-_211px)] max-[600px]:max-h-[205px]',
 );
 
 export const fileExplorerSearchStyles = cn(
@@ -66,7 +70,7 @@ export const fileExplorerSearchStyles = cn(
 );
 
 export const reviewFileTreeStyles = cn(
-  'overflow-auto flex-1 min-h-0 pt-[7px] pr-0 pb-[7px] pl-0 [overscroll-behavior:contain]',
+  'overflow-auto flex-1 min-h-0 pt-[7px] pr-0 pb-[7px] pl-0',
   '[scrollbar-width:thin] max-[600px]:max-h-35 max-[600px]:min-h-[65px] max-[600px]:[flex:auto]',
 );
 
@@ -86,10 +90,7 @@ export const modifiedStyles = 'text-warning';
 
 export const removedStyles = 'group/removed text-danger';
 
-export const reviewFileViewerStyles = cn(
-  'min-w-0 min-h-0 flex flex-col overflow-hidden max-[600px]:h-95 max-[600px]:max-h-[55vh]',
-  'max-[600px]:min-h-65',
-);
+export const reviewFileViewerStyles = 'min-w-0 flex flex-col max-[600px]:min-h-65';
 
 export const fileViewerTitleStyles = cn(
   'scroll-mt-25 outline-none data-[highlighted=true]:bg-brand-soft',
@@ -138,8 +139,8 @@ export const filePreviewUnavailableStyles = cn(
 );
 
 export const reviewCodeScrollStyles = cn(
-  'group/review-code-scroll flex-1 min-h-0 overflow-auto font-mono bg-paper',
-  '[overscroll-behavior:contain] [scrollbar-width:thin]',
+  'group/review-code-scroll flex-auto overflow-x-auto font-mono bg-paper',
+  '[scrollbar-width:thin]',
 );
 
 export const wrapLinesStyles = 'group/wrap-lines';
@@ -303,7 +304,7 @@ export const reviewRiskStatusStyles = cn(
 );
 
 export const reviewRiskItemsStyles =
-  'border-t [border-top-style:solid] border-t-[color:var(--line)] max-h-52.5 overflow-auto max-[600px]:max-h-65';
+  'border-t [border-top-style:solid] border-t-[color:var(--line)]';
 
 export const reviewRiskItemStyles = cn(
   'group/review-risk-item flex gap-3 pt-3 pr-4 pb-3 pl-4 border-b [border-bottom-style:solid] border-b-[color:var(--line)]',
@@ -338,7 +339,7 @@ export const scanInformationalStyles = cn(
   '[&_>_summary]:items-center [&_>_summary]:gap-1.5 [&_>_summary]:pt-[11px] [&_>_summary]:pr-[17px]',
   '[&_>_summary]:pb-[11px] [&_>_summary]:pl-[17px] [&_>_summary]:cursor-pointer',
   '[&_>_summary]:[list-style:none] [&_>_summary::-webkit-details-marker]:hidden',
-  '[&_>_summary_>_svg:last-child]:ml-auto [&_>_div]:max-h-50 [&_>_div]:overflow-auto [&_>_div]:pt-0',
+  '[&_>_summary_>_svg:last-child]:ml-auto [&_>_div]:pt-0',
   '[&_>_div]:pr-[17px] [&_>_div]:pb-3 [&_>_div]:pl-[17px] [&_p]:flex [&_p]:flex-col [&_p]:gap-1',
   '[&_p]:pt-[9px] [&_p]:pr-0 [&_p]:pb-[9px] [&_p]:pl-0 [&_p]:border-t [&_p]:[border-top-style:solid] [&_p]:border-t-[color:var(--line)]',
   '[&_p]:leading-[1.6] [&_code]:text-[length:9px] [&_code]:[overflow-wrap:anywhere]',
@@ -526,20 +527,20 @@ export const reviewWorkspaceStyles = cn(
 );
 
 export const reviewInboxStyles = cn(
-  'sticky top-[101px] bg-paper border border-solid border-[color:var(--line)] rounded-[13px] overflow-hidden',
-  'max-[800px]:static',
+  'sticky top-[101px] flex flex-col bg-paper border border-solid border-[color:var(--line)] rounded-[13px] overflow-hidden',
+  'max-h-[var(--review-inbox-height,calc(100dvh_-_121px))] max-[800px]:static max-[800px]:max-h-none',
 );
 
 export const inboxCaptionStyles = cn(
-  'flex justify-between pt-3.5 pr-4 pb-3.5 pl-4 text-[length:11px] text-muted-ink',
+  'flex shrink-0 justify-between pt-3.5 pr-4 pb-3.5 pl-4 text-[length:11px] text-muted-ink',
   'border-b [border-bottom-style:solid] border-b-[color:var(--line)] [&_>_span:last-child]:bg-page',
   '[&_>_span:last-child]:min-w-4.5 [&_>_span:last-child]:text-center',
   '[&_>_span:last-child]:rounded-[4px] [&_>_span:last-child]:text-[length:11px] max-[800px]:hidden',
 );
 
 export const inboxItemsStyles = cn(
-  'group/inbox-items max-h-[calc(100vh_-_270px)] overflow-y-auto pt-[7px] pr-[7px] pb-[7px] pl-[7px]',
-  '[overscroll-behavior:contain] [scrollbar-width:thin] [&_>_button]:w-full',
+  'group/inbox-items min-h-0 flex-1 overflow-y-auto pt-[7px] pr-[7px] pb-[7px] pl-[7px]',
+  '[scrollbar-width:thin] [&_>_button]:w-full',
   '[&_>_button]:border [&_>_button]:border-solid [&_>_button]:border-transparent [&_>_button]:rounded-[9px]',
   '[&_>_button]:bg-transparent [&_>_button]:text-ink [&_>_button]:text-left [&_>_button]:pt-[13px]',
   '[&_>_button]:pr-[11px] [&_>_button]:pb-[13px] [&_>_button]:pl-[11px] [&_>_button]:flex',
@@ -554,7 +555,7 @@ export const inboxItemsStyles = cn(
   '[&_>_button:focus-visible]:[outline:2px_solid_var(--brand)]',
   '[&_>_button:focus-visible]:[outline-offset:-2px] max-[800px]:grid',
   'max-[800px]:[grid-auto-flow:column] max-[800px]:[grid-auto-columns:220px]',
-  'max-[800px]:max-h-[none] max-[800px]:overflow-x-auto max-[800px]:[&_>_button]:mt-0',
+  'max-[800px]:overflow-x-auto max-[800px]:[&_>_button]:mt-0',
   'max-[800px]:[&_>_button]:mr-0 max-[800px]:[&_>_button]:mb-0 max-[800px]:[&_>_button]:ml-0',
   'max-[800px]:[&:has(>_button:only-child)]:grid-cols-[minmax(0,_1fr)]',
   'max-[800px]:[&:has(>_button:only-child)]:[grid-auto-columns:auto]',
@@ -617,10 +618,12 @@ export const inboxFootStyles = cn(
 );
 
 export const inboxGuidanceStyles = cn(
-  'flex items-start gap-[7px] border-t [border-top-style:solid] border-t-[color:var(--line)] pt-3.5 pr-3.5 pb-3.5 pl-3.5',
+  'flex shrink-0 items-start gap-[7px] border-t [border-top-style:solid] border-t-[color:var(--line)] pt-3.5 pr-3.5 pb-3.5 pl-3.5',
   'text-[length:11px] leading-[1.8] text-muted-ink [&_svg]:shrink-0 [&_svg]:mt-0.5',
   'max-[800px]:hidden',
 );
 
-export const reviewStageStyles =
-  'min-w-0 flex flex-col gap-[var(--space-4)] max-[600px]:gap-[13px]';
+export const reviewStageStyles = cn(
+  'min-w-0 flex flex-col gap-[var(--space-4)] scroll-mt-[101px]',
+  'max-[600px]:gap-[13px] max-[600px]:scroll-mt-[139px]',
+);

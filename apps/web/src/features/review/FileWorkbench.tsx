@@ -11,6 +11,7 @@ import {
   reviewFileToolbarStyles,
   reviewFileSplitStyles,
   reviewFileExplorerStyles,
+  reviewFileExplorerPaneStyles,
   fileExplorerSearchStyles,
   reviewFileTreeStyles,
   fileTreeEmptyStyles,
@@ -242,7 +243,16 @@ export function FileWorkbench({
         title={node.path}
         aria-label={'查看文件 ' + node.path}
         aria-current={path === node.path ? 'true' : undefined}
-        onClick={() => setPath(node.path)}
+        onClick={() => {
+          setPath(node.path);
+          // 在长文件中部换文件时，把新文件开头带回顶栏下方；开头仍可见就不移动页面。
+          const title = previewTitleRef.current;
+          if (
+            title &&
+            title.getBoundingClientRect().top < parseFloat(getComputedStyle(title).scrollMarginTop)
+          )
+            title.scrollIntoView({ block: 'start' });
+        }}
       >
         <FileText size={13} />
         <span>{node.name}</span>
@@ -338,39 +348,41 @@ export function FileWorkbench({
       </div>
       <div className={reviewFileSplitStyles}>
         <aside className={reviewFileExplorerStyles}>
-          <div className={fileExplorerSearchStyles}>
-            <Search size={14} />
-            <input
-              aria-label="搜索变更文件"
-              placeholder="查找路径或文件名…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div className={reviewFileTreeStyles} ref={treeRef} aria-label="变更文件目录">
-            {nodes.length ? (
-              nodes.map((node) => tree(node))
-            ) : (
-              <div className={fileTreeEmptyStyles}>
-                {search ? '没有匹配的文件' : '内容没有变化，本次主要审查分发策略。'}
-                {filter === 'changed' && !search && (
-                  <button className={textBtnStyles} onClick={() => setFilter('all')}>
-                    查看内容快照
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-          <div className={fileTreeLegendStyles}>
-            <span>
-              <i className={addedStyles}>A</i>新增
-            </span>
-            <span>
-              <i className={modifiedStyles}>M</i>修改
-            </span>
-            <span>
-              <i className={removedStyles}>D</i>删除
-            </span>
+          <div className={reviewFileExplorerPaneStyles}>
+            <div className={fileExplorerSearchStyles}>
+              <Search size={14} />
+              <input
+                aria-label="搜索变更文件"
+                placeholder="查找路径或文件名…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className={reviewFileTreeStyles} ref={treeRef} aria-label="变更文件目录">
+              {nodes.length ? (
+                nodes.map((node) => tree(node))
+              ) : (
+                <div className={fileTreeEmptyStyles}>
+                  {search ? '没有匹配的文件' : '内容没有变化，本次主要审查分发策略。'}
+                  {filter === 'changed' && !search && (
+                    <button className={textBtnStyles} onClick={() => setFilter('all')}>
+                      查看内容快照
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className={fileTreeLegendStyles}>
+              <span>
+                <i className={addedStyles}>A</i>新增
+              </span>
+              <span>
+                <i className={modifiedStyles}>M</i>修改
+              </span>
+              <span>
+                <i className={removedStyles}>D</i>删除
+              </span>
+            </div>
           </div>
         </aside>
         <div className={reviewFileViewerStyles}>

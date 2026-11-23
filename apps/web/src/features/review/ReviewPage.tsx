@@ -2,6 +2,7 @@
  * 发布审核工作台：按状态拉取 `/api/publication-requests?state=`，左侧队列、右侧详情。
  * 选中项由 URL 的 `state`/`request` 决定，非法状态回落到 `pending`（见 `reviewLocation`）。
  */
+import { useLayoutEffect, useRef, useState } from 'react';
 import { shortVersion } from '../../shared/format/version-label.js';
 import { Glyph } from '../../shared/components/Glyph.js';
 import {
@@ -44,6 +45,10 @@ import { ReviewDetail } from './ReviewDetail.js';
 import { ReviewStatusTabs } from './ReviewStatusTabs.js';
 import type { ChangeFile } from './types.js';
 
+/** 队列底边与视口保持的间距，与顶栏下方留白一致。 */
+const inboxBottomGap = 20;
+const inboxMinHeight = 240;
+
 /**
  * 队列与详情共用一份数据：URL 指向的申请不在当前状态列表里时回落第一条。
  * 切状态保留上一份数据（`keepPreviousData`）以免闪空，期间状态条只显示占位而不是旧计数。
@@ -56,6 +61,50 @@ export default function ReviewPage({ query = location.search }: { query?: string
   }>('/api/publication-requests?state=' + state, refresh, { keepPreviousData: true });
   const items = data?.items ?? [];
   const active = items.find((r) => r.id === selected) ?? items[0];
+  const [inbox, setInbox] = useState<HTMLElement | null>(null);
+  const [stage, setStage] = useState<HTMLDivElement | null>(null);
+  const shown = useRef(active?.id);
+  // 粘性队列只占详情列在视口中露出的高度：页首不被视口截断，页底也不会被推到顶栏下。
+  useLayoutEffect(() => {
+    if (!inbox || !stage) return;
+    let frame = 0;
+    const fit = () => {
+      frame = 0;
+      const style = getComputedStyle(inbox);
+      if (style.position !== 'sticky') {
+        inbox.style.removeProperty('--review-inbox-height');
+        return;
+      }
+      const bounds = stage.getBoundingClientRect();
+      const top = Math.max(parseFloat(style.top), bounds.top);
+      const bottom = Math.min(window.innerHeight - inboxBottomGap, bounds.bottom);
+      inbox.style.setProperty(
+        '--review-inbox-height',
+        `${Math.max(bottom - top, inboxMinHeight)}px`,
+      );
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(fit);
+    };
+    fit();
+    const observer = new ResizeObserver(schedule);
+    observer.observe(stage);
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+    };
+  }, [inbox, stage]);
+  // 换到另一份申请时从它的开头读起；详情开头仍可见就不移动页面。
+  useLayoutEffect(() => {
+    if (!stage || shown.current === active?.id) return;
+    shown.current = active?.id;
+    if (stage.getBoundingClientRect().top < parseFloat(getComputedStyle(stage).scrollMarginTop))
+      stage.scrollIntoView({ block: 'start' });
+  }, [stage, active?.id]);
   return (
     <div className={reviewPageStyles}>
       <PageHead
@@ -99,7 +148,7 @@ export default function ReviewPage({ query = location.search }: { query?: string
           </Empty>
         ) : (
           <div className={reviewWorkspaceStyles} aria-busy={loading}>
-            <aside className={reviewInboxStyles}>
+            <aside ref={setInbox} className={reviewInboxStyles}>
               <div className={inboxCaptionStyles}>
                 <span>{state === 'pending' ? '待处理申请' : '审核记录'}</span>
                 <span>{items.length}</span>
@@ -137,19 +186,20 @@ export default function ReviewPage({ query = location.search }: { query?: string
                         size={36}
                         diffWith={r.current?.content_digest}
                       />
-                      <strong className="break-all">{r.asset.slug}</strong>
+                      <strong>{r.asset.slug}</strong>
                     </div>
                     <div className={inboxMetadataStyles}>
                       <span
-                        className={cn(inboxVersionStyles, 'min-w-0 break-all')}
+                        className={cn(inboxVersionStyles, 'min-w-0 [overflow-wrap:anywhere]')}
                         title={[r.current?.version_label, r.candidate.version_label]
                           .filter(Boolean)
                           .join(' → ')}
                       >
+                        {/* 版本号内部不断行，窄栏只在箭头处换行。 */}
                         {r.current?.version_label
-                          ? `${shortVersion(r.current.version_label)} → `
+                          ? `${shortVersion(r.current.version_label).replaceAll(' ', '\u00a0')} → `
                           : '首次发布 · '}
-                        {shortVersion(r.candidate.version_label)}
+                        {shortVersion(r.candidate.version_label).replaceAll(' ', '\u00a0')}
                       </span>
                       {r.asset.kind === 'skill' && r.requires_api_key && <ApiKeyBadge />}
                       {r.nomination && (
@@ -171,7 +221,7 @@ export default function ReviewPage({ query = location.search }: { query?: string
                 <span>只展示与你的审核或维护范围相关的申请。</span>
               </div>
             </aside>
-            <div className={reviewStageStyles}>
+            <div ref={setStage} className={reviewStageStyles}>
               {active && (
                 <ReviewDetail key={active.id} request={active} autoStartBrief={!isPreviousData} />
               )}
