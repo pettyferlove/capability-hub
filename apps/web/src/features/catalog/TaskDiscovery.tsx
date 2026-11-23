@@ -633,7 +633,15 @@ export function TaskPanel({
       <div ref={body} className={taskPanelBodyStyles}>
         <div className={taskColumnStyles}>
           <div className={queryStripStyles}>
-            <p className={queryStripTextStyles}>{question || '正在理解你的问题…'}</p>
+            <motion.p
+              key={question}
+              className={queryStripTextStyles}
+              initial={busy && task && state.asking && !reduceMotion ? { opacity: 0, y: 8 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, ease: panelEase }}
+            >
+              {question || '正在理解你的问题…'}
+            </motion.p>
             <button
               type="button"
               className={queryEditStyles}
@@ -783,10 +791,10 @@ export function TaskPanel({
                 <input
                   id={followId}
                   ref={followInput}
-                  value={follow}
+                  value={busy && state.asking ? '' : follow}
                   readOnly={busy}
                   onChange={(event) => onFollowChange(event.target.value)}
-                  placeholder="补充条件，或问问某个资源"
+                  placeholder={busy ? '等待本轮结果…' : '补充条件，或问问某个资源'}
                   maxLength={500}
                   className={followUpFieldStyles}
                 />

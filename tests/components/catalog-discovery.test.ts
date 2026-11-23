@@ -495,6 +495,8 @@ test('同名方向按所选序号展开；追问期间旧条件不抢占请求�
   await user.type(screen.getByRole('textbox', { name: '继续追问' }), '何时使用？');
   await user.click(screen.getByRole('button', { name: '追问' }));
   await screen.findByRole('button', { name: '停止' });
+  assert.equal(screen.getByRole<HTMLInputElement>('textbox', { name: '继续追问' }).value, '');
+  assert(screen.getByText('何时使用？'));
   assert(skill.closest('[inert]'));
   // jsdom 不实现 inert 的命中测试，直接派发事件也不应越过提交点。
   fireEvent.click(skill);
