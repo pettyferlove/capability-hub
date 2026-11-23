@@ -62,6 +62,7 @@ import {
   resultsNoteStyles,
   resultsSortStyles,
   resultSideStyles,
+  resultSkeletonBlockStyles,
   resultSkeletonLinesStyles,
   resultSkeletonStyles,
   resultVisibilityStyles,
@@ -97,12 +98,12 @@ import {
   taskTypingCursorStyles,
   taskTypingStyles,
   thinkingDotStyles,
+  thinkingFeedbackStyles,
   thinkingStyles,
   thinkingTextStyles,
 } from './styles.js';
 import { TaskConditions } from './TaskConditions.js';
 import { DiscoverySkillActions } from './DiscoverySkillActions.js';
-import { BlurText } from '../../shared/components/react-bits/BlurText.js';
 import { TextType } from '../../shared/components/react-bits/TextType.js';
 
 const placeholder = '你想完成什么？不确定从哪开始，也可以直接问';
@@ -117,8 +118,6 @@ const draftCountAt = draftLimit - 100;
 // 打字提示只在宽屏显示，与样式断点一致。
 const wideQuery = '(min-width: 601px)';
 const panelEase = [0.22, 1, 0.36, 1] as const;
-// 回应逐词显现，长回应也在约 0.7 秒内铺开。
-const replyReveal = { stagger: 0.02, spread: 0.7, distance: 5 } as const;
 
 function subscribeWide(onChange: () => void) {
   const media = window.matchMedia(wideQuery);
@@ -425,13 +424,7 @@ function Judgment({ item }: { item: DiscoveryResultResponse }) {
 /** 一条固定版本结果；「查看接入方式」直接打开该版本的安装页。 */
 function ResultCard({ item, index }: { item: DiscoveryResultResponse; index?: number }) {
   return (
-    <motion.article
-      className={resultCardStyles}
-      aria-label={item.slug}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ ...contentTransition, duration: 0.32, delay: Math.min(index ?? 0, 6) * 0.05 }}
-    >
+    <article className={resultCardStyles} aria-label={item.slug}>
       <span className={resultGlyphStyles} aria-hidden="true">
         {item.kind === 'mcp' ? <Plug size={16} /> : <Blocks size={16} />}
       </span>
@@ -470,7 +463,7 @@ function ResultCard({ item, index }: { item: DiscoveryResultResponse; index?: nu
           <ArrowRight size={11} aria-hidden="true" />
         </a>
       </div>
-    </motion.article>
+    </article>
   );
 }
 
@@ -484,12 +477,7 @@ function Directions({
   return (
     <ul className="flex flex-col gap-2">
       {directions.map((direction, index) => (
-        <motion.li
-          key={index}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ ...contentTransition, duration: 0.32, delay: Math.min(index, 6) * 0.06 }}
-        >
+        <li key={index}>
           <button type="button" className={directionStyles} onClick={() => onPick(direction)}>
             <span className={directionIndexStyles} aria-hidden="true">
               {index + 1}
@@ -500,7 +488,7 @@ function Directions({
               <span className={directionExampleStyles}>依据：{direction.example.slug}</span>
             </span>
           </button>
-        </motion.li>
+        </li>
       ))}
     </ul>
   );
@@ -538,7 +526,12 @@ function ThinkingSteps({ progress }: { progress: DiscoveryProgress }) {
       </p>
       <ol className={thinkingStepListStyles}>
         {steps.map((step) => (
-          <li key={step.key} data-state={step.state} className={thinkingStepStyles}>
+          <li
+            key={step.key}
+            data-state={step.state}
+            aria-current={step.state === 'active' ? 'step' : undefined}
+            className={thinkingStepStyles}
+          >
             <span className={thinkingStepMarkStyles} aria-hidden="true">
               {step.state === 'done' && <Check size={10} />}
             </span>
@@ -584,6 +577,7 @@ export function TaskPanel({
 }) {
   const { task, status, error, notice, follow, criteria, draft } = state;
   const busy = status === 'thinking';
+  const answered = status === 'idle' && task?.action === 'message' && !error && !notice;
   const present = useIsPresent();
   const followId = useId();
   const { canContinue } = state;
@@ -652,7 +646,7 @@ export function TaskPanel({
             </button>
           </div>
           {busy && (
-            <>
+            <div className={thinkingFeedbackStyles}>
               {state.progress ? (
                 <ThinkingSteps progress={state.progress} />
               ) : (
@@ -665,19 +659,40 @@ export function TaskPanel({
                 <div className="flex flex-col gap-2.5" aria-hidden="true">
                   {['38%', '30%'].map((width) => (
                     <span key={width} className={resultSkeletonStyles}>
-                      <SkeletonBlock shape="rect" width={34} height={34} />
+                      <SkeletonBlock
+                        shape="rect"
+                        width={34}
+                        height={34}
+                        className={resultSkeletonBlockStyles}
+                      />
                       <span className={resultSkeletonLinesStyles}>
-                        <SkeletonBlock width={width} height={12} />
-                        <SkeletonBlock width="22%" height={9} />
-                        <SkeletonBlock width="76%" height={10} />
+                        <SkeletonBlock
+                          width={width}
+                          height={12}
+                          className={resultSkeletonBlockStyles}
+                        />
+                        <SkeletonBlock
+                          width="22%"
+                          height={9}
+                          className={resultSkeletonBlockStyles}
+                        />
+                        <SkeletonBlock
+                          width="76%"
+                          height={10}
+                          className={resultSkeletonBlockStyles}
+                        />
                       </span>
                     </span>
                   ))}
                 </div>
               )}
-            </>
+            </div>
           )}
-          <div className={cn(taskBodyStyles, busy && taskBodyStaleStyles)} inert={busy}>
+          <div
+            className={cn(taskBodyStyles, busy && taskBodyStaleStyles)}
+            data-answered={answered || undefined}
+            inert={busy}
+          >
             {!!notice && !busy && (
               <p className={taskStateStyles} role="status">
                 {notice}
@@ -700,7 +715,7 @@ export function TaskPanel({
               <>
                 {task.reply && (
                   <p className={answerStyles} aria-live="polite">
-                    <BlurText key={task.reply} text={task.reply} {...replyReveal} />
+                    {task.reply}
                   </p>
                 )}
                 {task.kind === 'guide' && !!task.items.length && (

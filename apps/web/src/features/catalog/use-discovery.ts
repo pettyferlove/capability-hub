@@ -29,6 +29,8 @@ export interface DiscoveryTask {
   total: number;
   /** 产生这一轮的问题原文，显示在结果面板顶部。 */
   question: string;
+  /** 区分提问结果与筛选、选方向得到的列表，后两者不重播回答入场。 */
+  action: Request['action'];
 }
 
 /** 首帧抵达前处于 start；卡片数量在随后的起草与核对阶段保留。 */
@@ -371,6 +373,7 @@ function toTask(
       reference: null,
       total: response.total,
       question,
+      action: request.action,
     };
   return {
     kind: response.type,
@@ -385,5 +388,6 @@ function toTask(
     reference: response.type === 'reference' ? response.item : null,
     total: response.type === 'matches' ? response.total : 0,
     question,
+    action: request.action,
   };
 }

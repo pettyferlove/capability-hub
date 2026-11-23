@@ -78,12 +78,29 @@
   }
 }
 
-@keyframes skeleton-sweep {
+@property --discovery-glow {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.24;
+}
+
+@keyframes discovery-breathe {
   from {
-    transform: translateX(-100%);
+    --discovery-glow: 0.24;
   }
   to {
-    transform: translateX(100%);
+    --discovery-glow: 1;
+  }
+}
+
+@keyframes discovery-answer-in {
+  from {
+    opacity: 0.76;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 

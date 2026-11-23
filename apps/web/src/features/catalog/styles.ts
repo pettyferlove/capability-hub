@@ -922,14 +922,13 @@ export const resultCardStyles = cn(
   'hover:border-[color:var(--brand-line)] hover:[box-shadow:var(--shadow-card)] motion-safe:hover:-translate-y-px',
 );
 
-// 骨架卡上周期扫过一道品牌色微光，表示仍在查找；减少动态效果时只留骨架。
 export const resultSkeletonStyles = cn(
-  'relative flex items-start gap-3 overflow-hidden rounded-[13px] border border-solid',
+  'flex items-start gap-3 rounded-[13px] border border-solid',
   'border-[color:var(--stroke-card)] bg-surface-card/50 p-[13px]',
-  "after:pointer-events-none after:absolute after:inset-0 after:content-[''] motion-reduce:after:hidden forced-colors:after:hidden",
-  'after:[background:linear-gradient(100deg,transparent_30%,color-mix(in_srgb,var(--brand)_8%,transparent)_50%,transparent_70%)]',
-  'after:[animation:skeleton-sweep_1.5s_ease-in-out_infinite]',
 );
+
+export const resultSkeletonBlockStyles =
+  '[animation:none] [background:color-mix(in_srgb,var(--brand)_calc(16%*var(--discovery-glow)),var(--line))]';
 
 export const resultSkeletonLinesStyles = 'flex min-w-0 flex-1 flex-col gap-2.5 pt-1';
 
@@ -1056,24 +1055,30 @@ export const stopButtonStyles = cn(
   'hover:bg-brand-tint',
 );
 
+// 同一等待区只在祖先上播放一次呼吸；换步骤或更新字数时，圆点和骨架仍沿用同一相位。
+export const thinkingFeedbackStyles = cn(
+  'flex flex-col gap-3 motion-safe:[animation:discovery-breathe_1.25s_ease-in-out_infinite_alternate]',
+  '[--discovery-halo:0_0_0_calc(4.1px*var(--discovery-glow))_color-mix(in_srgb,var(--brand)_calc(9%_+_17%*var(--discovery-glow)),transparent)]',
+  'forced-colors:[animation:none]',
+);
+
+const thinkingBubbleGlowStyles =
+  'motion-safe:[box-shadow:0_0_calc(4px_+_8.5px*var(--discovery-glow))_color-mix(in_srgb,var(--brand)_calc(13%*var(--discovery-glow)),transparent)] forced-colors:[box-shadow:none]';
+
 export const thinkingStyles = cn(
+  thinkingBubbleGlowStyles,
   'flex w-fit items-center gap-2.5 rounded-[14px] rounded-tl-[5px] border border-solid border-[color:var(--stroke-card)]',
   'bg-surface-bubble/65 px-3.5 py-2.5 text-[length:12px] text-muted-ink',
 );
 
-export const thinkingDotStyles = cn(
-  "relative size-2 shrink-0 rounded-full bg-brand after:absolute after:inset-0 after:rounded-full after:content-['']",
-  'after:bg-brand motion-safe:after:animate-ping',
-);
+export const thinkingDotStyles =
+  'size-2 shrink-0 rounded-full bg-brand [box-shadow:var(--discovery-halo)]';
 
-// 文字底色与静止时相同，扫光只在允许动态效果时循环。
-export const thinkingTextStyles = cn(
-  'bg-clip-text text-transparent [background-size:250%_100%] [background-position:100%_50%]',
-  '[background-image:linear-gradient(110deg,var(--muted-ink)_40%,var(--ink)_50%,var(--muted-ink)_60%)]',
-  'motion-safe:[animation:react-bits-shine_1.8s_linear_infinite] forced-colors:bg-none forced-colors:text-ink',
-);
+export const thinkingTextStyles =
+  'font-semibold text-brand motion-reduce:underline forced-colors:underline';
 
 export const thinkingStepsStyles = cn(
+  thinkingBubbleGlowStyles,
   'w-fit rounded-[14px] rounded-tl-[5px] border border-solid border-[color:var(--stroke-card)]',
   'bg-surface-bubble/65 px-3.5 py-3',
 );
@@ -1085,16 +1090,19 @@ export const thinkingStepStyles = cn(
   '[transition:color_200ms_ease] data-[state=active]:text-ink data-[state=done]:text-muted-ink',
 );
 
-// 完成为对勾，进行中为跳动的实心点，未开始为空心圈。
+// 对勾、实心点和空心圈分别表示已完成、进行中和待处理，不依赖动画区分。
 export const thinkingStepMarkStyles = cn(
   'relative grid size-4 shrink-0 place-items-center rounded-full border border-solid border-[color:var(--stroke-card)]',
   "after:absolute after:inset-[3px] after:rounded-full after:content-['']",
   'group-data-[state=done]/step:border-transparent group-data-[state=done]/step:bg-brand-tint',
   'group-data-[state=done]/step:text-brand group-data-[state=active]/step:border-[color:var(--brand)]',
-  'group-data-[state=active]/step:after:bg-brand motion-safe:group-data-[state=active]/step:after:animate-pulse',
+  'group-data-[state=active]/step:after:bg-brand group-data-[state=active]/step:[box-shadow:var(--discovery-halo)]',
 );
 
-export const taskBodyStyles = 'flex flex-col gap-2.5 [transition:opacity_200ms_ease]';
+export const taskBodyStyles = cn(
+  'flex flex-col gap-2.5 [transition:opacity_200ms_ease] data-[answered]:transition-none',
+  'motion-safe:data-[answered]:[animation:discovery-answer-in_260ms_ease-out]',
+);
 
 export const taskBodyStaleStyles = 'opacity-45';
 
