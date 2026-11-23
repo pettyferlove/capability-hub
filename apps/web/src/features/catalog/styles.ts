@@ -166,6 +166,15 @@ export const detailDescriptionStyles = cn(
 
 export const collapsedStyles = 'group/collapsed';
 
+export const detailScenariosStyles = cn(
+  'mt-4 grid gap-2 [overflow-wrap:anywhere]',
+  '[&>h3]:text-caption [&>h3]:font-medium [&>h3]:text-muted-ink',
+  '[&_dl]:grid [&_dl]:gap-2 [&_dl>div]:border-s [&_dl>div]:border-brand-line [&_dl>div]:ps-3',
+  '[&_dt]:text-body [&_dt]:font-medium [&_dt]:text-ink',
+  '[&_dd]:whitespace-pre-line [&_dd]:text-caption [&_dd]:text-muted-ink',
+  '[&>p]:text-caption [&>p]:text-muted-ink',
+);
+
 export const detailMetaStyles = cn(
   'grid grid-cols-[repeat(3,_1fr)] gap-3 mt-[23px] mr-0 mb-[23px] ml-0 pt-4.5 pr-0 pb-4.5 pl-0',
   'border-t [border-top-style:solid] border-t-[color:var(--line)] border-b [border-bottom-style:solid] border-b-[color:var(--line)]',
@@ -755,23 +764,23 @@ export const directoryGridStyles = cn(
 );
 
 export const directoryCardStyles = cn(
-  'group/card relative flex min-w-0 flex-col gap-[13px] rounded-[16px] p-[17px] [&>p]:mb-auto',
-  'min-h-[244px]',
+  'group/card relative flex h-full min-w-0 flex-col gap-2.5 rounded-[16px] p-4',
   'border border-solid border-[color:var(--stroke-card)] bg-paper text-ink',
   '[box-shadow:var(--shadow-card)] [transition:border-color_180ms_ease,box-shadow_180ms_ease,translate_180ms_ease]',
   'hover:border-[color:var(--brand-line)] hover:[box-shadow:var(--shadow-panel)]',
   'focus-visible:border-[color:var(--brand)] focus-visible:[outline:2px_solid_var(--brand)]',
   'focus-visible:[outline-offset:2px] motion-safe:hover:-translate-y-0.5',
-  'motion-reduce:transition-none max-[600px]:p-4',
-  '[&_h3]:line-clamp-1 [&_h3]:font-mono [&_h3]:text-[length:12.5px] [&_h3]:font-semibold [&_h3]:text-ink',
-  '[&>p]:line-clamp-3 [&>p]:text-[length:11.5px] [&>p]:leading-5 [&>p]:text-muted-ink',
+  'motion-reduce:transition-none',
+  '[&_h3]:line-clamp-2 [&_h3]:[overflow-wrap:anywhere] [&_h3]:font-mono [&_h3]:text-[length:13px] [&_h3]:leading-[18px]',
+  '[&_h3]:font-semibold [&_h3]:text-ink',
+  '[&>p]:line-clamp-3 [&>p]:text-body [&>p]:leading-[19px] [&>p]:text-muted-ink',
   '[&>p]:[overflow-wrap:anywhere]',
 );
 
-export const cardTopStyles = 'flex items-start gap-[11px]';
+export const cardTopStyles = 'flex items-start gap-2.5';
 
 export const cardGlyphStyles = cn(
-  'grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-brand-tint text-brand',
+  'grid size-9 shrink-0 place-items-center rounded-[9px] bg-brand-tint text-brand',
   'outline outline-1 -outline-offset-[0.5px] outline-[color:var(--brand-line)]',
   'group-[.mcp]/card:bg-[color:var(--success-soft)] group-[.mcp]/card:text-success',
   'group-[.mcp]/card:outline-[color:color-mix(in_srgb,var(--success)_30%,transparent)]',
@@ -779,40 +788,49 @@ export const cardGlyphStyles = cn(
 
 export const cardTitleColStyles = 'flex min-w-0 flex-1 flex-col gap-1';
 
-export const cardMetaStyles = 'flex flex-wrap items-center gap-1.5';
+export const cardMetaStyles = 'flex min-w-0 items-center gap-2';
 
 export const cardTypeChipStyles = cn(
-  'rounded-[4px] bg-brand-tint px-[5px] py-px font-mono text-[length:8.5px] tracking-[0.6px]',
+  'shrink-0 rounded-[4px] bg-brand-tint px-1.5 py-0.5 font-mono text-[length:9px] tracking-[0.6px]',
   'leading-none text-brand',
 );
 
 export const cardTypeChipMcpStyles = cn(
-  'rounded-[4px] bg-[color:var(--success-soft)] px-[5px] py-px font-mono text-[length:8.5px]',
+  'shrink-0 rounded-[4px] bg-success-soft px-1.5 py-0.5 font-mono text-[length:9px]',
   'leading-none tracking-[0.6px] text-success',
 );
 
-export const cardScopeStyles = 'text-[length:10.5px] leading-none text-quieter';
+export const cardScopeStyles =
+  'min-w-0 truncate text-caption leading-4 tabular-nums text-muted-ink';
+
+export const cardScenarioStyles = cn(
+  'flex min-w-0 items-baseline gap-2 border-s-2 border-brand-line ps-2.5',
+  'text-caption leading-4 text-muted-ink',
+);
 
 export const cardOpenIconStyles =
-  'mt-0.5 shrink-0 text-quieter [transition:color_150ms_ease] group-hover/card:text-brand';
+  'mt-0.5 shrink-0 text-muted-ink [transition:color_150ms_ease] group-hover/card:text-brand';
 
-export const cardTagRowStyles = 'flex flex-wrap items-center gap-1.5';
+export const cardBottomStyles = 'mt-auto grid min-w-0 gap-2.5';
+
+export const cardTagRowStyles = cn(
+  'flex min-w-0 flex-wrap items-center gap-1.5 [&>span]:min-w-0 [&>span]:max-w-full',
+  '[&>span]:rounded-md [&>span]:px-2 [&>span]:py-0.5 [&>span]:text-caption [&>span]:leading-4',
+);
 
 export const cardFeatureTagStyles = cn(
-  'inline-flex items-center gap-1 rounded-[6px] px-[7px] py-[3px] text-[length:10px]',
-  'bg-[color:color-mix(in_srgb,var(--warning)_12%,transparent)] text-warning',
+  'inline-flex items-center gap-1 bg-warning-soft text-warning [&>svg]:shrink-0',
   'outline outline-1 -outline-offset-[0.5px] outline-[color:color-mix(in_srgb,var(--warning)_26%,transparent)]',
 );
 
-export const cardTagStyles =
-  'rounded-[6px] bg-surface-chip px-[7px] py-[3px] text-[length:10px] text-muted-ink';
+export const cardTagStyles = 'truncate bg-surface-chip text-muted-ink';
 
 export const cardFootStyles = cn(
-  'flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-solid',
-  'border-t-[color:var(--stroke-card)] pt-2.5 text-[length:10.5px] leading-none text-quieter',
+  'grid grid-cols-2 items-center gap-2 border-t border-solid border-t-[color:var(--stroke-card)]',
+  'pt-2.5 text-caption leading-4 text-muted-ink',
 );
 
-export const cardFootItemStyles = 'inline-flex min-w-0 items-center gap-1.5';
+export const cardFootItemStyles = 'inline-flex min-w-0 items-center gap-1.5 [&>svg]:shrink-0';
 
 export const paginationStyles = 'flex flex-wrap justify-center gap-3 pt-1';
 

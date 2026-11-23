@@ -10,7 +10,12 @@ import {
 } from '@capability-hub/application';
 import { HubError } from '@capability-hub/domain/errors';
 import { createTestHub, publishSkill, receiveSkill } from '../support/application.js';
-import type { KeywordSuggestionsResponse } from '@capability-hub/contracts/http';
+import type {
+  AssetResponse,
+  AssetVersionResponse,
+  KeywordSuggestionsResponse,
+  SearchResultResponse,
+} from '@capability-hub/contracts/http';
 import { httpClient } from '../support/http.js';
 
 const code = (expected: string) => (error: unknown) =>
@@ -168,6 +173,99 @@ test('目录方向用当前可选场景，多个场景时不覆盖用户已选�
     assert.equal(direction.label, expected.name);
     assert.deepEqual(direction.patch, { scenario_id: expected.id });
   }
+});
+
+test('未筛选的目录与固定版详情按各自可读发布显示启用场景', async (context) => {
+  const f = await createTestHub(context);
+  const admin = f.hub.administration;
+  const historic = await admin.createScenario(f.admin, {
+    name: '旧版回退',
+    description: '核对回退基线。',
+  });
+  const alias = await admin.createScenario(f.admin, { name: '旧切换流程' });
+  const secondAlias = await admin.createScenario(f.admin, { name: '旧对账场景' });
+  const target = await admin.createScenario(f.admin, {
+    name: '数据迁移',
+    description: '核对旧库与新库。',
+  });
+  const active = await admin.createScenario(f.admin, { name: '上线审批' });
+  const disabled = await admin.createScenario(f.admin, { name: '已下线流程' });
+  const restricted = await admin.createScenario(f.admin, { name: '团队专用场景' });
+  const publish = async (
+    options: Parameters<typeof receiveSkill>[1],
+    scenarioIds: string[],
+    audience = ['public'],
+  ) => {
+    const intake = await receiveSkill(f, options);
+    const asset = await f.hub.assetAccess.getAsset(intake.asset_id);
+    const request = await f.hub.publications.submit(
+      f.admin,
+      {
+        source_intake_id: intake.id,
+        version_id: intake.version_id,
+        base_release_id: asset.current_release_id,
+        category: 'scenario',
+        scenario_ids: scenarioIds,
+        distribution: { mode: 'approved_audience', audience },
+        applies_to: {},
+        purpose: '供对应场景复用',
+      },
+      randomUUID(),
+    );
+    await f.hub.publications.decide(
+      f.reviewer,
+      request.id,
+      {
+        decision: 'approve',
+        policy_digest: request.policy_digest,
+        comment: '',
+        accepted_warnings: [],
+      },
+      `"${request.revision}"`,
+      randomUUID(),
+    );
+    return intake;
+  };
+  const old = await publish({ slug: 'cutover-kit' }, [historic.id]);
+  const currentIds = [alias.id, secondAlias.id, active.id, disabled.id];
+  await publish(
+    { slug: 'cutover-kit', assetId: old.asset_id, version: '2.0.0', body: '新版切换准备。' },
+    currentIds,
+  );
+  await publish({ slug: 'team-kit' }, [restricted.id], [`group:${f.teamId}`]);
+  for (const { id } of [alias, secondAlias])
+    await admin.updateScenario(
+      f.admin,
+      id,
+      { action: 'merge', target_id: target.id },
+      '"1"',
+      randomUUID(),
+    );
+  await admin.updateScenario(f.admin, disabled.id, { action: 'disable' }, '"1"', randomUUID());
+
+  const client = httpClient(f);
+  const { items } = (await client.get('/api/assets').expect(200)).body as SearchResultResponse;
+  assert.deepEqual(
+    items.map(({ slug }) => slug),
+    ['cutover-kit'],
+  );
+  const summaries = [target, active].map(({ id, name }) => ({ id, name }));
+  assert.deepEqual(new Set(items[0].current_release.scenarios), new Set(summaries));
+  for (const query of ['', '?latest_readable=1']) {
+    const current = (await client.get('/api/assets/cutover-kit' + query).expect(200))
+      .body as AssetResponse;
+    assert.deepEqual(new Set(current.current_release.scenario_ids), new Set(currentIds));
+    assert.deepEqual(
+      new Set(current.current_release.scenarios),
+      new Set([target, active].map(({ id, name, description }) => ({ id, name, description }))),
+    );
+  }
+  const fixed = (await client.get(`/api/assets/cutover-kit/versions/${old.version_id}`).expect(200))
+    .body as AssetVersionResponse;
+  assert.deepEqual(fixed.release.scenarios, [
+    { id: historic.id, name: historic.name, description: historic.description },
+  ]);
+  await client.get('/api/assets/team-kit').expect(404);
 });
 
 test('目录游标绑定查询、身份和目录版本，权限收窄后旧游标与推荐均不能继续使用', async (context) => {

@@ -34,21 +34,13 @@ export class CatalogService {
     private readonly community: AssetCommunityService,
     private readonly cursors: CatalogCursorCodec,
   ) {}
-  /**
-   * 把已解析的发布三元组投影为对外目录视图（详情、搜索结果共用同一形状）。
-   *
-   * 调用方必须先完成可见性判定（{@link CatalogService.visibleCatalog} 或
-   * `requirePublishedAsset`）；本方法不再做受众校验，只计算操作能力：
-   * `can_download` 恒为 true，`can_submit`/`can_lifecycle` 分别对应
-   * `asset:maintain` 与 `asset:lifecycle`，`can_revoke` 只看全局 `version:revoke`。
-   * `replacement_asset_id` 只在替代资源对当前主体也可读时给出，避免泄露不可见
-   * 资源的 id；`revision` 原样返回供后续写操作做乐观并发。
-   */
-  async describeAsset(
+  /** 调用方须在同一事务内核对发布受众；场景信息随该次发布读取，不用于权限判定。 */
+  private async describeAsset(
     asset: AssetRecord,
     version: VersionRecord,
     release: ReleaseRecord,
     p: Principal | null,
+    scenarios?: CatalogScenario[],
   ) {
     const s = (await this.context.store.get('sources', release.policy_source_id))!;
     const group = await this.context.store.get('groups', asset.owner_group_id);
@@ -74,6 +66,7 @@ export class CatalogService {
         version_label: version.version_label,
         category: release.category,
         scenario_ids: release.scenario_ids,
+        scenarios: scenarios ?? (await this.describeReleaseScenarios(release)),
         distribution: release.distribution,
         published_at: release.published_at,
         has_scripts: version.metadata.has_scripts ?? false,
@@ -103,6 +96,13 @@ export class CatalogService {
       community: await this.community.summary(asset.id, release.id, p),
       revision: asset.revision,
     };
+  }
+  private async describeReleaseScenarios(release: ReleaseRecord) {
+    if (!release.scenario_ids.length) return [];
+    const scenarios = new Map(
+      (await this.context.store.all('scenarios')).map((scenario) => [scenario.id, scenario]),
+    );
+    return activeScenarios(scenariosOf(release, scenarios), scenarios, true);
   }
   /**
    * 构建与主体无关的候选集，并按 `store.revision()` 记忆化。
@@ -145,6 +145,7 @@ export class CatalogService {
         resolved,
         scenarioIds: new Set(releaseScenarios.map((scenario) => scenario.id)),
         scenarios: releaseScenarios,
+        displayScenarios: activeScenarios(releaseScenarios, scenarios),
         tags,
         normalizedTags: [...tags, ...releaseScenarios.map((scenario) => scenario.name)].map((t) =>
           t.normalize('NFKC').toLowerCase(),
@@ -354,6 +355,7 @@ export class CatalogService {
         asset: a,
         version: v,
         release: r,
+        displayScenarios: row.displayScenarios,
         score,
         match_reasons: [...new Set(reasons)],
       });
@@ -400,7 +402,13 @@ export class CatalogService {
     return {
       items: await Promise.all(
         results.slice(offset, offset + q.limit).map(async (row) => ({
-          ...(await this.describeAsset(row.asset, row.version, row.release, p)),
+          ...(await this.describeAsset(
+            row.asset,
+            row.version,
+            row.release,
+            p,
+            row.displayScenarios,
+          )),
           score: row.score,
           match_reasons: row.match_reasons,
         })),
@@ -413,19 +421,20 @@ export class CatalogService {
   /**
    * 详情先用 id 或 slug 解析（{@link AssetAccessService.getAsset}），再做可读性校验，
    * 所以不可见与不存在对外都是 404，不泄露资源是否存在。没有当前发布的资源同样 404。
-   * 结果与搜索结果条目同形，但不带 `score`/`match_reasons`。
+   * 场景带定义说明，不带 `score`/`match_reasons`。
    * 显式查询最新可读发布时可退到历史，不改变发布指针。
    */
   async getDetail(p: Principal | null, id: string, latestReadable = false) {
-    if (latestReadable)
-      return this.context.store.tx(async () => {
+    return this.context.store.tx(async () => {
+      if (latestReadable) {
         const asset = await this.access.getAsset(id);
         const latest = await this.access.latestReadablePublication(p, asset);
         if (!latest) notFound();
         return await this.describeAsset(asset, latest.version, latest.release, p);
-      });
-    const { asset, version, release } = await this.access.requirePublishedAsset(p, id);
-    return await this.describeAsset(asset, version, release, p);
+      }
+      const { asset, version, release } = await this.access.requirePublishedAsset(p, id);
+      return await this.describeAsset(asset, version, release, p);
+    });
   }
 
   /** 固定版本仍须同时满足当前与历史发布受众；维护权限不能用于读取未发布内容。 */
@@ -517,6 +526,28 @@ export function scenariosOf(release: ReleaseRecord, scenarios: Map<string, Scena
   return [...ids].map((id) => ({ id, name: scenarios.get(id)?.name ?? '' }));
 }
 
+interface CatalogScenario {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+function activeScenarios(
+  references: CatalogEntry['scenarios'],
+  scenarios: Map<string, ScenarioRecord>,
+  includeDescription = false,
+): CatalogScenario[] {
+  const active: CatalogScenario[] = [];
+  for (const reference of references) {
+    const scenario = scenarios.get(reference.id);
+    if (scenario?.active)
+      active.push(
+        includeDescription ? { ...reference, description: scenario.description } : reference,
+      );
+  }
+  return active.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+}
+
 /** 目录候选：当前发布与该版本最近发布都已通过可分发校验，受众按主体另行过滤。 */
 export interface CatalogEntry {
   asset: AssetRecord;
@@ -525,6 +556,7 @@ export interface CatalogEntry {
   resolved: ReleaseRecord;
   scenarioIds: Set<string>;
   scenarios: { id: string; name: string }[];
+  displayScenarios: { id: string; name: string }[];
   tags: string[];
   normalizedTags: string[];
   description: string;
@@ -533,6 +565,7 @@ interface CatalogMatch {
   asset: AssetRecord;
   version: VersionRecord;
   release: ReleaseRecord;
+  displayScenarios: CatalogEntry['displayScenarios'];
   score: number;
   match_reasons: string[];
 }

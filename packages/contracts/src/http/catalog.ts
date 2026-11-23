@@ -26,6 +26,8 @@ export interface AssetResponse {
     version_label: string;
     category: Policy['category'];
     scenario_ids: string[];
+    /** 可展示的启用场景；列表仅带名称，详情另带定义说明。不改变发布原始引用。 */
+    scenarios: { id: string; name: string; description?: string }[];
     distribution: Policy['distribution'];
     published_at: string;
     has_scripts: boolean;

@@ -29,7 +29,7 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 
 需要修订的修改携带 If-Match，幂等用例携带 Idempotency-Key。Cookie 写入还需 CSRF。
 
-资产详情与版本历史接受 `latest_readable=1`，当前发布撤回时仍可读符合当前及历史受众的发布，不改写指针。`GET /api/assets/:id/versions/:versionId` 按 UUID 读固定版，返回 `release`、`latest_release`、`is_latest`、`public_readable`；`current_readable` 单独表示当前指针是否可读。目标版本撤回、不可读或不属于该资产均返回 404，不回落到其他版本。
+资产详情与版本历史可用 `latest_readable=1` 读取符合当前及历史受众的发布，不改指针。`GET /api/assets/:id/versions/:versionId` 按 UUID 读固定版，返回 `release`、`latest_release`、`is_latest`、`public_readable`；`current_readable` 表示当前指针是否可读。撤回、不可读或版本不属该资产时返回 404，不回退。列表的 `current_release.scenarios` 仅含启用场景 ID 和名称；当前及固定版详情的发布对象另含场景说明。
 
 `GET /api/catalog/skill-bundle` 以重复的 `version_id` 指定 1–8 个不同的版本 UUID，按匿名或浏览器会话权限交付 ZIP（`<slug>/原路径`）。每个 Skill 只能选一个可读版本，任一项不可交付则整批失败。未压缩内容合计超过 100 MiB 需分批（413）；每实例同时最多 2 个合包请求，超出返回 429，`HEAD` 返回 405。
 

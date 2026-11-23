@@ -47,12 +47,14 @@ import { SpotlightCard } from '../../shared/components/react-bits/SpotlightCard.
 import { useDiscovery } from './use-discovery.js';
 import { TaskComposer, TaskPanel } from './TaskDiscovery.js';
 import {
+  cardBottomStyles,
   cardFeatureTagStyles,
   cardFootItemStyles,
   cardFootStyles,
   cardGlyphStyles,
   cardMetaStyles,
   cardOpenIconStyles,
+  cardScenarioStyles,
   cardScopeStyles,
   cardTagRowStyles,
   cardTagStyles,
@@ -517,6 +519,8 @@ const CapabilityTicker = memo(function CapabilityTicker({ assets }: { assets: As
 
 function AssetCard({ asset }: { asset: AssetResponse }) {
   const release = asset.current_release;
+  const scenarioNames =
+    release.category === 'scenario' ? release.scenarios.map(({ name }) => name).join('、') : null;
   const version = release.version_label;
   const isGit = isGeneratedGitVersion(version);
   const audience = release.distribution.audience;
@@ -527,6 +531,7 @@ function AssetCard({ asset }: { asset: AssetResponse }) {
       ? LockKeyhole
       : UsersRound;
   const ownerOnly = audience.length === 1 && audience[0] === `group:${asset.owner.id}`;
+  const needsKey = asset.kind === 'skill' && asset.requires_api_key;
   const keywords = [
     ...new Set([
       ...(asset.applies_to.languages ?? []),
@@ -541,7 +546,7 @@ function AssetCard({ asset }: { asset: AssetResponse }) {
     >
       <div className={cardTopStyles}>
         <span className={cardGlyphStyles} aria-hidden="true">
-          <Glyph seed={asset.content_digest} kind={asset.kind} size={17} />
+          <Glyph seed={asset.content_digest} kind={asset.kind} size={18} />
         </span>
         <div className={cardTitleColStyles}>
           <h3 title={asset.slug}>{asset.slug}</h3>
@@ -550,38 +555,56 @@ function AssetCard({ asset }: { asset: AssetResponse }) {
               {asset.kind === 'skill' ? 'SKILL' : 'MCP'}
             </span>
             <span className={cardScopeStyles}>
-              {categoryLabel(release.category)} ·{' '}
+              {scenarioNames === null && `${categoryLabel(release.category)} · `}
               <VersionLabel value={isGit ? version : `v${version}`} />
             </span>
           </div>
         </div>
         <ArrowUpRight size={14} className={cardOpenIconStyles} aria-hidden="true" />
       </div>
+      {scenarioNames !== null && (
+        <div className={cardScenarioStyles}>
+          <span className="shrink-0">适用场景</span>
+          <span
+            className={cn('truncate', scenarioNames && 'font-medium text-ink')}
+            title={scenarioNames || undefined}
+          >
+            {scenarioNames || '暂无启用场景'}
+          </span>
+        </div>
+      )}
       <p title={asset.description}>{asset.description}</p>
-      <div className={cardTagRowStyles}>
-        {release.has_scripts && (
-          <span className={cardFeatureTagStyles}>
-            <FileCode size={10} aria-hidden="true" />
-            含脚本
-          </span>
+      <div className={cardBottomStyles}>
+        {(release.has_scripts || needsKey || keywords.length > 0) && (
+          <div className={cardTagRowStyles}>
+            {release.has_scripts && (
+              <span className={cardFeatureTagStyles}>
+                <FileCode size={11} aria-hidden="true" />
+                含脚本
+              </span>
+            )}
+            {needsKey && <ApiKeyBadge />}
+            {keywords.map((keyword) => (
+              <span className={cardTagStyles} key={keyword} title={keyword}>
+                {keyword}
+              </span>
+            ))}
+          </div>
         )}
-        {asset.kind === 'skill' && asset.requires_api_key && <ApiKeyBadge />}
-        {keywords.map((keyword) => (
-          <span className={cardTagStyles} key={keyword}>
-            {keyword}
+        <div className={cardFootStyles}>
+          <span className={cardFootItemStyles} title={asset.owner.name}>
+            <Building2 size={11} aria-hidden="true" />
+            <span className="truncate">{asset.owner.name}</span>
           </span>
-        ))}
-      </div>
-      <div className={cardFootStyles}>
-        <span className={cardFootItemStyles} title={asset.owner.name}>
-          <Building2 size={11} aria-hidden="true" />
-          <span className="truncate">{asset.owner.name}</span>
-        </span>
-        <span className={cardFootItemStyles} title={'可见范围：' + release.visibility_label}>
-          <AudienceIcon size={11} aria-hidden="true" />
-          <span className="sr-only">可见范围：</span>
-          <span className="truncate">{ownerOnly ? '团队可见' : release.visibility_label}</span>
-        </span>
+          <span
+            className={cn(cardFootItemStyles, 'max-w-full justify-self-end')}
+            title={'可见范围：' + release.visibility_label}
+          >
+            <AudienceIcon size={11} aria-hidden="true" />
+            <span className="sr-only">可见范围：</span>
+            <span className="truncate">{ownerOnly ? '团队可见' : release.visibility_label}</span>
+          </span>
+        </div>
       </div>
     </SpotlightCard>
   );

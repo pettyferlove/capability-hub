@@ -14,6 +14,7 @@ import {
   detailDescriptionStyles,
   collapsedStyles,
   detailMetaStyles,
+  detailScenariosStyles,
   managementToolsStyles,
 } from './styles.js';
 import {
@@ -29,7 +30,7 @@ import { cn } from '../../shared/styles/cn.js';
 import { errorMessage } from '../../shared/api/error-message.js';
 import type { AssetResponse, AssetVersionResponse } from '@capability-hub/contracts/http';
 import { ShieldCheck } from '../../shared/icons/lucide.js';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { mutate } from '../../shared/api/client.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { ErrorState } from '../../shared/components/ErrorState.js';
@@ -81,6 +82,7 @@ export default function AssetSheet({
   const view = versionId
     ? fixed.data && fixedAssetView(fixed.data)
     : current.data && currentAssetView(current.data);
+  const scenariosHeading = useId();
   const [expandedDescription, setExpandedDescription] = useState(false),
     [errorAction, setErrorAction] = useState(''),
     [busy, setBusy] = useState(false);
@@ -175,7 +177,9 @@ export default function AssetSheet({
           <ShieldCheck size={12} />
           已审核
         </span>
-        <span className={tagStyles}>{categoryLabel(release.category)}</span>
+        {release.category !== 'scenario' && (
+          <span className={tagStyles}>{categoryLabel(release.category)}</span>
+        )}
         <span className={tagStyles}>{release.visibility_label}</span>
         {(a.applies_to.keywords ?? []).map((keyword) => (
           <span className={tagStyles} key={keyword}>
@@ -185,6 +189,23 @@ export default function AssetSheet({
         {release.has_scripts && <ScriptBadge />}
         {a.kind === 'skill' && a.requires_api_key && <ApiKeyBadge />}
       </div>
+      {release.category === 'scenario' && (
+        <section className={detailScenariosStyles} aria-labelledby={scenariosHeading}>
+          <h3 id={scenariosHeading}>适用场景</h3>
+          {release.scenarios.length ? (
+            <dl>
+              {release.scenarios.map(({ id, name, description }) => (
+                <div key={id}>
+                  <dt>{name}</dt>
+                  <dd>{description}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p>暂无启用场景</p>
+          )}
+        </section>
+      )}
       {a.lifecycle === 'deprecated' && <Message>已弃用：{a.deprecation_reason}</Message>}
       <div className={detailMetaStyles}>
         <span>

@@ -224,6 +224,7 @@ function release(versionId: string, label: string): AssetRelease {
     version_label: label,
     category: 'general',
     scenario_ids: [],
+    scenarios: [],
     distribution: { mode: 'approved_audience', audience: ['public'] },
     published_at: '2026-11-01T00:00:00.000Z',
     has_scripts: false,
