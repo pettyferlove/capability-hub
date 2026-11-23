@@ -1,6 +1,7 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import type { ToolsInput } from '@mastra/core/agent';
 import { z } from 'zod';
+import packageJson from '../../package.json' with { type: 'json' };
 import type { McpEndpoint } from '../core/config.js';
 import type { CredentialResolver } from '../core/ports.js';
 import type { OperationContext } from '../operations/context.js';
@@ -27,7 +28,7 @@ export async function withMcpTools<T>(
 ): Promise<T> {
   await context.authorize('tool', `mcp:${endpoint.id}`);
   const url = new URL(endpoint.url);
-  const client = new Client({ name: 'capability-hub-ai', version: '0.1.0' });
+  const client = new Client({ name: 'capability-hub-ai', version: packageJson.version });
   try {
     await client.connect(
       new StreamableHTTPClientTransport(url, {
