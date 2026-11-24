@@ -542,7 +542,7 @@ test('平台维护者不能发起平台级 Agent 任务，平台检查授权只�
     (await client.get(catalogPath).query({ view: 'registered' }).expect(200)).body,
   );
   assert(catalog.operations.every((item) => item.execution_mode === 'inline'));
-  for (const id of ['catalog-discovery', 'catalog-prompts'])
+  for (const id of ['catalog-discovery', 'catalog-prompts', 'resource-evaluation'])
     assert(catalog.operations.some((item) => item.id === id));
   await client.get('/api/admin/operations/agents/executions').expect(200);
   const row = await hub.hub.ai.runtime.submit(admin.id, 'assistant', { prompt: 'test' });
@@ -559,7 +559,7 @@ test('自动 Agent 不能手动提交，本人也只能凭平台检查权查看�
   const admin = await signIn(f);
   const reviewer = await signIn(f, f.reviewer.username);
   const ledger = '/api/admin/operations/agents/executions';
-  for (const operation_id of ['catalog-discovery', 'catalog-prompts'])
+  for (const operation_id of ['catalog-discovery', 'catalog-prompts', 'resource-evaluation'])
     await admin
       .post('/api/ai/executions')
       .set('Idempotency-Key', operation_id)
@@ -653,7 +653,7 @@ test('AI 引用资源撤销后详情、列表与事件均不能继续披露派�
     if (prior === undefined) delete process.env.AI_FIXTURE_KEY;
     else process.env.AI_FIXTURE_KEY = prior;
   });
-  const hub = await createTestHub(t, { ai: config(provider.url) });
+  const hub = await createTestHub(t, { ai: config(provider.url), evaluationDailyRequests: 0 });
   const publication = await publishSkill(hub);
   const client = await signIn(hub);
   const row = await hub.hub.ai.runtime.submit(hub.admin.id, 'assistant', {

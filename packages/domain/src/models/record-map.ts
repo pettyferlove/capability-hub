@@ -32,6 +32,7 @@ import type {
   HubFeedbackEventRecord,
   HubFeedbackAttachmentRecord,
 } from './hub-feedback.js';
+import type { ResourceEvaluationRecord, EvaluationScheduleRecord } from './evaluation.js';
 import type { CatalogPromptStateRecord } from './catalog-prompt.js';
 
 /**
@@ -71,6 +72,8 @@ export interface RecordMap {
   hub_feedback: HubFeedbackRecord;
   hub_feedback_events: HubFeedbackEventRecord;
   hub_feedback_attachments: HubFeedbackAttachmentRecord;
+  resource_evaluations: ResourceEvaluationRecord;
+  evaluation_schedule: EvaluationScheduleRecord;
   catalog_prompts: CatalogPromptStateRecord;
 }
 

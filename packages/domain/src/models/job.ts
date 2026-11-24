@@ -6,6 +6,7 @@ import type { IntakeState } from './intake.js';
  * 因此同一作业重试时看到的是入队那一刻的参数，而不是最新配置。
  */
 export interface JobInputMap {
+  resource_evaluation: { evaluation_id: string; stage: string };
   ai_execution: { execution_id: string };
   intake: Record<string, never>;
   rescan: { version_id: string };
@@ -45,6 +46,8 @@ interface JobBase {
   run_after: EpochMilliseconds;
   /** 租约代次，每次领取 `+1`；写回结果前必须与当前值一致，否则 409 `LEASE_LOST`。 */
   lease_epoch: number;
+  /** 评测重领时记录该阶段旧租约累计派发数，预算只扣除本租约已派发的部分。 */
+  evaluation_lease?: { epoch: number; prior_requests: number };
   /** 租约到期时刻 epoch 毫秒，领取时设为「当前 + 60 秒」；超时可被其他 worker 抢占。 */
   lease_until: EpochMilliseconds;
   /** 当前持有租约的 worker 标识，与 `lease_epoch` 一起校验归属。 */

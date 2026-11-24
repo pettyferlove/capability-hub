@@ -1,7 +1,7 @@
 import { hubPageFor, type HubPage } from '@capability-hub/contracts/web-pages';
 
 /** 详情抽屉可由链接直接打开的页签；其余页签只在抽屉内切换，不进入地址。 */
-export type AssetDrawerTab = 'installation' | 'feedback';
+export type AssetDrawerTab = 'installation' | 'feedback' | 'evaluation';
 
 /**
  * 详情抽屉参数，只取自当前地址；背景页的查询串不参与，避免把背景的 `tab` 等误认为抽屉参数。
@@ -42,7 +42,10 @@ function assetDrawer(slug: string, query: string): AssetDrawer {
     drawer.invalid = 'version';
   else if (versions.length) drawer.versionId = versions[0];
   if (feedback.length === 1 && feedback[0]) drawer.feedbackId = feedback[0];
-  if (tabs.length > 1 || (tabs.length && tabs[0] !== 'installation' && tabs[0] !== 'feedback'))
+  if (
+    tabs.length > 1 ||
+    (tabs.length && !['installation', 'feedback', 'evaluation'].includes(tabs[0]))
+  )
     drawer.invalid ??= 'tab';
   else if (tabs.length) drawer.tab = tabs[0] as AssetDrawerTab;
   else if (drawer.feedbackId) drawer.tab = 'feedback';

@@ -25,6 +25,11 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./evaluation": {
+      "development": "./src/evaluation.ts",
+      "types": "./dist/evaluation.d.ts",
+      "default": "./dist/evaluation.js"
+    },
     "./canonical": {
       "development": "./src/canonical.ts",
       "types": "./dist/canonical.d.ts",

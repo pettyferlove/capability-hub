@@ -14,7 +14,10 @@
 | CAPABILITY_HUB_INSTANCE_SECRET                | 64 位十六进制；生产必须明确设置，开发可生成私有 instance.key         |
 | CAPABILITY_HUB_SETUP_TOKEN                    | 生产首次初始化需要，未配置不能初始化                                 |
 | CAPABILITY_HUB_WORKER                         | true；false 关闭内嵌 Worker                                          |
-| CAPABILITY_HUB_WORKER_CONCURRENCY             | 默认 5，可设 1–5 的整数。AI、接收、重扫和 Git 同步共用此上限         |
+| CAPABILITY_HUB_WORKER_CONCURRENCY             | 默认 5，可设 1–5 的整数。所有 Worker 作业共用此上限                  |
+| CAPABILITY_HUB_EVALUATION_CONCURRENCY         | 默认 1，整数范围为 1 到 max(1, Worker 并发 − 1)                      |
+| CAPABILITY_HUB_EVALUATION_DAILY_REQUESTS      | 默认 0，仅做结构检查。启用模型评测须显式设置 UTC 每日调用上限        |
+| CAPABILITY_HUB_EVALUATION_BACKFILL            | 默认 false，按近 30 天使用次数回填当前 Skill 发布                    |
 | CAPABILITY_HUB_GIT_HOSTS                      | github.com,gitlab.com，规范域名/IP 列表                              |
 | CAPABILITY_HUB_PRIVATE_GIT_HOSTS              | 空；必须为 Git 允许列表子集                                          |
 | CAPABILITY_HUB_LOG_LEVEL                      | info，允许 trace/debug/info/warn/error/fatal/silent                  |
@@ -26,6 +29,8 @@
 | CAPABILITY_HUB_MINIO_ENDPOINT                 | MinIO 模式必需，HTTP(S) 根地址                                       |
 | CAPABILITY_HUB_MINIO_ACCESS_KEY / SECRET_KEY  | 非空应用身份，不使用管理身份                                         |
 | CAPABILITY_HUB_MINIO_BUCKET / REGION / PREFIX | capability-hub / us-east-1 / blobs/；桶必须预先存在且私有            |
+
+全新完整评测在已配置默认模型且当前 UTC 窗口至少剩余 33 次调用额度时启动。提供方会收到候选或受限 Skill 的内容，以及同一受众等级可读的干扰项名称与描述，须获准处理这些数据。
 
 布尔开关在环境变量中使用小写字符串 true/false，加载后转换为 boolean；未设置时使用默认值，空字符串、0/1 或其他值均报错。未知驱动或不合法配置立即失败。相对实例路径以工作区/部署包解析，不随进程工作目录变化。
 

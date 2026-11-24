@@ -1,4 +1,7 @@
 import {
+  EvaluationService,
+  EvaluationPool,
+  EvaluationQueries,
   AssetAccessService,
   AgentEvidenceService,
   AssetFeedbackService,
@@ -36,7 +39,9 @@ import type { BlobStorage } from '@capability-hub/application/ports';
 import type { RecordStore } from '@capability-hub/application/ports';
 import { archive } from '@capability-hub/infrastructure/content/zip-archive';
 import { GitRepositoryAdapter } from '@capability-hub/infrastructure/git';
-import { scanIsolated } from '@capability-hub/infrastructure/scanning';
+import { contentScanRuleset } from '@capability-hub/domain/content';
+import { evaluationModel, EvaluationRunner } from '../evaluation/evaluation-runner.js';
+import { analyzeSkillIsolated, scanIsolated } from '@capability-hub/infrastructure/scanning';
 import { secretFindings } from '@capability-hub/infrastructure/content/secret-detection';
 import {
   ScryptPasswordHasher,
@@ -65,6 +70,9 @@ export class HubServices {
   readonly installTickets: InstallTicketService;
   readonly community: AssetCommunityService;
   readonly idempotency: IdempotencyService;
+  readonly evaluations: EvaluationService;
+  readonly evaluationQueries: EvaluationQueries;
+  readonly evaluationRunner: EvaluationRunner;
   readonly jobs: JobQueue;
   readonly intakes: IntakeService;
   readonly intakeQueries: IntakeQueryService;
@@ -152,7 +160,7 @@ export class HubServices {
       this.idempotency,
       new AesCredentialCipher(config.secret, 'mcp-header-v1'),
     );
-    this.jobs = new JobQueue(store, config.workerConcurrency);
+    this.jobs = new JobQueue(store, config.workerConcurrency, config.evaluationConcurrency);
     this.ai = new HubAiServices(
       this.identity,
       store,
@@ -162,6 +170,23 @@ export class HubServices {
       config,
       new AgentEvidenceService(context, this.assetAccess, this.feedback),
       this.publicationQueries,
+    );
+    this.evaluations = new EvaluationService(
+      store,
+      this.jobs,
+      config,
+      () => evaluationModel(config, this.ai.runtime),
+      this.assetAccess,
+      this.idempotency,
+    );
+    this.evaluationQueries = new EvaluationQueries(store, this.assetAccess, this.evaluations);
+    this.evaluationRunner = new EvaluationRunner(
+      store,
+      blobs,
+      this.evaluations,
+      analyzeSkillIsolated,
+      this.ai.runtime,
+      new EvaluationPool(store, this.catalog),
     );
     const catalogDiscovery = new CatalogDiscoveryService(context, this.assetAccess, this.catalog);
     this.prompts = new CatalogPromptService(
@@ -190,6 +215,7 @@ export class HubServices {
       scanIsolated,
       async (requestedBy, versionId) => {
         await this.ai.autoSubmit(requestedBy, 'resource-audit', versionId);
+        await this.evaluations.request(versionId, contentScanRuleset);
       },
     );
     this.intakes = new IntakeService(
@@ -205,6 +231,8 @@ export class HubServices {
       this.assetAccess,
       this.idempotency,
       this.mcpKeys,
+      (request) => this.evaluations.requestPublication('submission', request),
+      (request) => this.evaluations.requestPublication('release', request),
     );
     this.lifecycle = new AssetLifecycleService(
       context,

@@ -35,7 +35,7 @@
     "db:generate": "pnpm db:generate:sqlite && pnpm db:generate:postgresql",
     "db:check": "node --conditions=development --import tsx scripts/checks/check-database.mjs",
     "db:migrate": "node --conditions=development --env-file-if-exists=.env --import tsx scripts/operations/migrate.ts",
-    "test:ai:live": "node --conditions=development --env-file-if-exists=.env --import ./scripts/testing/register-test-runtime.mjs --test tests/live/ai-models.test.ts"
+    "test:ai:live": "node scripts/testing/run-tests.mjs live"
   },
   "devDependencies": {
     "@capability-hub/ai": "workspace:*",

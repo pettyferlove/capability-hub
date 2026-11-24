@@ -5,3 +5,4 @@ export type * from './git-repository.js';
 export type * from './intake-scanner.js';
 export type * from './catalog-cursor.js';
 export type * from './hub-feedback-secret-scanner.js';
+export type * from './skill-static-analyzer.js';

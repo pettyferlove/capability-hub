@@ -843,6 +843,52 @@ export const hub_feedback_attachments = sqliteTable(
 );
 
 /** 后台开场提示的单例状态；不安装版本触发器，刷新它不让缓存失效。 */
+
+/** 空评测器摘要也参与在途去重，终态冻结由迁移触发器守卫。 */
+export const resource_evaluations = sqliteTable(
+  'resource_evaluations',
+  {
+    id: text('id').primaryKey().notNull(),
+    data: text('data', { mode: 'json' }).$type<RecordMap['resource_evaluations']>().notNull(),
+    asset_id: feedbackText('asset_id').notNull(),
+    version_id: feedbackText('version_id').notNull(),
+    state: feedbackText('state').notNull(),
+    priority: feedbackInteger('priority').notNull(),
+    requested_at: feedbackText('requested_at').notNull(),
+    rubric_version: feedbackText('rubric_version').notNull(),
+    subject_digest: feedbackText('subject_digest').notNull(),
+    evaluator_digest: feedbackText('evaluator_digest'),
+  },
+  (t): SQLiteTableExtraConfigValue[] => [
+    check('resource_evaluations_data_check', feedbackDataCheck),
+    foreignKey({ columns: [t.asset_id], foreignColumns: [assets.id] }),
+    foreignKey({ columns: [t.version_id], foreignColumns: [versions.id] }),
+    index('evaluations_queue').on(t.state, sql`priority DESC`, t.requested_at, t.id),
+    index('evaluations_version').on(t.version_id, t.rubric_version),
+    index('evaluations_reuse')
+      .on(t.subject_digest, t.rubric_version)
+      .where(sql`state in ('succeeded', 'partial')`),
+    uniqueIndex('evaluations_active_subject')
+      .on(t.version_id, t.subject_digest, t.rubric_version, sql`coalesce(evaluator_digest, '')`)
+      .where(sql`state in ('queued','running')`),
+  ],
+);
+
+/** 调度单例与目录游标独立，写入不递增目录修订。 */
+export const evaluation_schedule = sqliteTable(
+  'evaluation_schedule',
+  {
+    id: text('id').primaryKey().notNull(),
+    data: text('data', { mode: 'json' }).$type<RecordMap['evaluation_schedule']>().notNull(),
+    window_start: feedbackInteger('window_start').notNull(),
+    reserved: feedbackInteger('reserved').notNull(),
+  },
+  (): SQLiteTableExtraConfigValue[] => [
+    check('evaluation_schedule_data_check', feedbackDataCheck),
+    check('evaluation_schedule_singleton', sql`id = 'resource-evaluations'`),
+  ],
+);
+
 export const catalog_prompts = sqliteTable(
   'catalog_prompts',
   {

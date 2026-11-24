@@ -1,5 +1,6 @@
 export type * from './http/identity.js';
 export type * from './http/catalog.js';
+export type * from './http/evaluation.js';
 export type * from './http/intake.js';
 export type * from './http/source.js';
 export type * from './http/publication.js';

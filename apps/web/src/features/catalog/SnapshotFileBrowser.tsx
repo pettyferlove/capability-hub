@@ -23,6 +23,7 @@ import { ErrorState } from '../../shared/components/ErrorState.js';
 import { Message } from '../../shared/components/Message.js';
 import { markdownBody, scrollMarkdownAnchor } from '../../shared/components/SafeMarkdown.js';
 import { CodeSkeleton } from '../../shared/components/Skeleton.js';
+import { SnapshotSource } from '../../shared/components/SnapshotSource.js';
 import { bytesLabel } from '../../shared/format/labels.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { SnapshotMarkdown } from './SnapshotMarkdown.js';
@@ -37,6 +38,7 @@ export function SnapshotFileBrowser({
   view,
   path,
   anchor,
+  line,
   active,
   mode,
   onModeChange,
@@ -45,6 +47,7 @@ export function SnapshotFileBrowser({
   view: AssetView;
   path: string;
   anchor?: string;
+  line?: number;
   active: boolean;
   mode: 'read' | 'source';
   onModeChange: (mode: 'read' | 'source') => void;
@@ -194,7 +197,11 @@ export function SnapshotFileBrowser({
               onOpen={onOpen}
             />
           ) : (
-            <pre className={detailFileSourceStyles}>{preview.text}</pre>
+            <SnapshotSource
+              className={detailFileSourceStyles}
+              text={preview.text ?? ''}
+              line={line}
+            />
           )}
         </div>
         <div className={detailFileProofStyles}>

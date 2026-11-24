@@ -13,7 +13,8 @@
   "dependencies": {
     "@capability-hub/ai": "workspace:*",
     "zod": "catalog:",
-    "@capability-hub/application": "workspace:*"
+    "@capability-hub/application": "workspace:*",
+    "@capability-hub/domain": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

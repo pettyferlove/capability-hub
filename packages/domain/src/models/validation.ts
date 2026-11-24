@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  resourceEvaluationSchema,
+  evaluationScheduleSchema,
+  parseStoredEvaluation,
+} from './evaluation.js';
 import { isCatalogPromptText } from './catalog-prompt.js';
 import type { RecordMap, TableName } from './record-map.js';
 
@@ -544,7 +549,15 @@ const schemas = {
     published_by: id,
     published_at: date,
   }),
+  resource_evaluations: resourceEvaluationSchema,
+  evaluation_schedule: evaluationScheduleSchema,
   jobs: z.discriminatedUnion('kind', [
+    z.strictObject({
+      ...jobBase,
+      kind: z.literal('resource_evaluation'),
+      input: z.strictObject({ evaluation_id: id, stage: id }),
+      evaluation_lease: z.strictObject({ epoch: revision, prior_requests: integer }).optional(),
+    }),
     z.strictObject({
       ...jobBase,
       kind: z.literal('ai_execution'),
@@ -774,4 +787,11 @@ const schemas = {
  */
 export function parseRecord<K extends TableName>(table: K, value: unknown): RecordMap[K] {
   return schemas[table].parse(value) as RecordMap[K];
+}
+
+/** SQLite 行和历史备份共享旧版评测证据的读取规则，新写入始终使用严格校验。 */
+export function parseStoredRecord<K extends TableName>(table: K, value: unknown): RecordMap[K] {
+  return table === 'resource_evaluations'
+    ? (parseStoredEvaluation(value) as RecordMap[K])
+    : parseRecord(table, value);
 }

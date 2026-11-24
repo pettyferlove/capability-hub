@@ -63,6 +63,9 @@ const configSchema = z
     gitHosts: z.array(z.string()),
     privateGitHosts: z.array(z.string()),
     worker: z.boolean(),
+    evaluationConcurrency: z.number().int().min(1),
+    evaluationDailyRequests: z.int().nonnegative(),
+    evaluationBackfill: z.boolean(),
     workerConcurrency: z.number().int().min(1).max(JobQueue.maxConcurrency),
     requestLogging: z.boolean(),
     setupToken: z.string().optional(),
@@ -93,6 +96,8 @@ function hostList(values: string[]): string[] {
 }
 
 function validate(config: ServerConfig): void {
+  if (config.evaluationConcurrency > Math.max(1, config.workerConcurrency - 1))
+    throw new Error('评测并发不能超过 max(1, Worker 并发 − 1)');
   if (config.production && !config.secret)
     throw new Error('生产环境必须设置 64 位十六进制 CAPABILITY_HUB_INSTANCE_SECRET');
   if (!config.production && !['127.0.0.1', '::1', 'localhost'].includes(config.host))
@@ -264,6 +269,9 @@ export function loadServerConfig(
     logLevel: environment.CAPABILITY_HUB_LOG_LEVEL ?? 'info',
     setupToken: environment.CAPABILITY_HUB_SETUP_TOKEN,
     worker: overrides.worker ?? flag(environment, 'CAPABILITY_HUB_WORKER', true),
+    evaluationConcurrency: Number(environment.CAPABILITY_HUB_EVALUATION_CONCURRENCY ?? 1),
+    evaluationDailyRequests: Number(environment.CAPABILITY_HUB_EVALUATION_DAILY_REQUESTS ?? 0),
+    evaluationBackfill: flag(environment, 'CAPABILITY_HUB_EVALUATION_BACKFILL', false),
     workerConcurrency: Number(
       environment.CAPABILITY_HUB_WORKER_CONCURRENCY ?? JobQueue.maxConcurrency,
     ),

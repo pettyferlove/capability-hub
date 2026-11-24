@@ -2,14 +2,16 @@ import '../support/dom.js';
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { createElement, useState, type ReactNode } from 'react';
-import { cleanup, render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
+import type { EvaluationResponse } from '@capability-hub/contracts';
 import type {
   AssetResponse,
   AssetVersionResponse,
   ClientConfigurationResponse,
   MeResponse,
 } from '@capability-hub/contracts/http';
+import { deferred } from '../support/store.js';
 import { useAppRoute } from '../../apps/web/src/app/use-app-route.js';
 import AssetSheet from '../../apps/web/src/features/catalog/AssetSheet.js';
 import type { AssetDetail, AssetRelease } from '../../apps/web/src/features/catalog/asset-view.js';
@@ -108,6 +110,15 @@ test('直接详情链接与不可信来源状态均使用发现页，关闭不�
 const oldVersion = '11111111-1111-4111-8111-111111111111';
 const newVersion = '22222222-2222-4222-8222-222222222222';
 const fixedHref = `/asset/example?version_id=${oldVersion}&tab=installation`;
+const noEvaluation: EvaluationResponse = {
+  current_rubric_version: '2026-11-24.3',
+  updating: false,
+  comparison_status: 'none',
+  can_view_details: false,
+  can_request: false,
+  evaluation: null,
+  baseline: null,
+};
 
 test('替换登录页返回固定版本，关闭抽屉不会回到同一资源', () => {
   history.replaceState(null, '', fixedHref);
@@ -340,12 +351,151 @@ test('固定版的服务错误保留实际原因和重试，不误报为访问�
   assert.equal(screen.queryByRole('link', { name: '登录后重试' }), null);
 });
 
+test('匿名打开旧版评测深链接时等待该版结果，紧凑入口返回同一版评测', async (context) => {
+  const proceed = deferred();
+  let unavailable = true;
+  const asset = { ...fixedVersion('skill'), public_readable: true };
+  const unexpected: string[] = [];
+  const evaluation: EvaluationResponse = {
+    ...noEvaluation,
+    evaluation: {
+      id: 'old-result',
+      version_id: oldVersion,
+      version_label: asset.release.version_label,
+      rubric_version: noEvaluation.current_rubric_version,
+      scan_ruleset: '2026-11-12.1',
+      comparable_key: 'sha256:' + 'd'.repeat(64),
+      state: 'succeeded',
+      evaluated_at: '2026-11-12T00:00:00.000Z',
+      limitations: ['static_only'],
+      dimensions: [
+        {
+          id: 'structure',
+          label: '结构规范',
+          status: 'scored',
+          score: 81,
+          band: 'good',
+          confidence: 'high',
+          checks: [],
+        },
+      ],
+    },
+  };
+  context.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === `/api/assets/example/versions/${oldVersion}`) return Response.json(asset);
+    if (path === `/api/versions/${oldVersion}/files?path=SKILL.md`)
+      return new Response('# 固定版本使用说明');
+    if (path === '/api/assets/example/versions?latest_readable=1') return Response.json([]);
+    if (path === `/api/assets/${asset.asset_id}/versions/${oldVersion}/evaluation`) {
+      await proceed.promise;
+      if (unavailable)
+        return Response.json(
+          { error: { code: 'BUSY', message: '评测暂时不可用' } },
+          { status: 503 },
+        );
+      return Response.json(evaluation);
+    }
+    unexpected.push(path);
+    return new Response(null, { status: 404 });
+  });
+  const route = parseHistoryRoute('/asset/example', `?version_id=${oldVersion}&tab=evaluation`);
+  assert(route.drawer);
+  function assertFixedScore() {
+    const list = within(screen.getByRole('list', { name: '评测维度' }));
+    const row = list.getByText('结构规范').closest('li');
+    assert(row);
+    assert(within(row).getByText('81'));
+    assert(!within(row).queryByRole('button'));
+  }
+  render(page(sheet(route.drawer), null));
+  await screen.findByText(/正在加载质量评测/);
+  assert(!screen.queryByRole('tabpanel', { name: '内容说明' }));
+  assert(screen.getByRole('tab', { name: '内容说明' }));
+  assert(screen.getByRole('link', { name: '下载固定版本' }));
+  await act(async () => proceed.resolve());
+  const panel = await screen.findByRole('tabpanel', { name: '质量评测' });
+  assert(await within(panel).findByText('评测暂时不可用'));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('tab', { name: '内容说明' }));
+  assert(await screen.findByRole('heading', { name: '固定版本使用说明' }));
+  await user.click(screen.getByRole('button', { name: '返回上一步' }));
+  unavailable = false;
+  await user.click(screen.getByRole('button', { name: '重新加载' }));
+  await screen.findByText(/扫描规则 2026-11-12\.1/);
+  await screen.findByRole('tab', { name: '质量评测', selected: true });
+  assertFixedScore();
+  await user.click(screen.getByRole('tab', { name: '内容说明' }));
+  await screen.findByRole('heading', { name: '固定版本使用说明' });
+  await user.click(screen.getByRole('button', { name: '质量评测' }));
+  assert(screen.getByRole('tab', { name: '质量评测', selected: true }));
+  assertFixedScore();
+  assert.deepEqual(unexpected, []);
+});
+
+test('首轮评测进行中且手动额度已用完，资源详情仍保留评测入口和进度', async (t) => {
+  const asset = fixedVersion('skill');
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === `/api/assets/example/versions/${oldVersion}`) return Response.json(asset);
+    if (path === `/api/versions/${oldVersion}/files?path=SKILL.md`) return new Response('# 说明');
+    if (path === '/api/assets/example/versions?latest_readable=1') return Response.json([]);
+    if (path === `/api/assets/${asset.asset_id}/versions/${oldVersion}/evaluation`)
+      return Response.json({
+        ...noEvaluation,
+        can_view_details: true,
+        updating: true,
+        latest_attempt_id: 'first',
+      });
+    if (path === `/api/management/versions/${oldVersion}/evaluations`)
+      return Response.json({
+        items: [],
+        current_rubric_version: noEvaluation.current_rubric_version,
+        model_enabled: true,
+        can_request: false,
+        next_window_at: null,
+      });
+    assert.fail('Unexpected fetch: ' + path);
+  });
+  render(page(sheet({ slug: 'example', versionId: oldVersion, tab: 'evaluation' })));
+  assert(await screen.findByText('正在更新'));
+  assert(screen.getByRole('tab', { name: '质量评测', selected: true }));
+  assert(screen.getByRole('button', { name: '质量评测' }));
+  assert(!screen.queryByText('尚未评测'));
+  assert(!screen.queryByRole('button', { name: '评测此版本' }));
+});
+
+test('文件阅读历史在前进和后退时恢复每个 Markdown 位置的阅读方式', async (t) => {
+  const asset = fixedVersion('skill');
+  asset.files.push({ ...asset.files[0], path: 'guide.md' });
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === `/api/assets/example/versions/${oldVersion}`) return Response.json(asset);
+    if (path === `/api/versions/${oldVersion}/files?path=SKILL.md`) return new Response('# 主文档');
+    if (path === `/api/versions/${oldVersion}/files?path=guide.md`)
+      return new Response('# 使用指南');
+    if (path === '/api/assets/example/versions?latest_readable=1') return Response.json([]);
+    if (path === `/api/assets/${asset.asset_id}/versions/${oldVersion}/evaluation`)
+      return Response.json(noEvaluation);
+    assert.fail('Unexpected fetch: ' + path);
+  });
+  const user = userEvent.setup();
+  render(page(sheet({ slug: 'example', versionId: oldVersion })));
+  await user.click(await screen.findByRole('tab', { name: /文件清单/ }));
+  assert(await screen.findByRole('heading', { name: '主文档' }));
+  await user.click(screen.getByRole('button', { name: '预览文件 guide.md' }));
+  await user.click(screen.getByRole('button', { name: '源码' }));
+  await user.click(screen.getByRole('button', { name: '返回上一步' }));
+  assert(await screen.findByRole('heading', { name: '主文档' }));
+  await user.click(screen.getByRole('button', { name: '前进一步' }));
+  assert.equal(screen.getByRole('button', { name: '源码' }).getAttribute('aria-pressed'), 'true');
+});
+
 test('较旧的固定版本保留自身标签、文件与安装命令，并提供最新版本入口', async (context) => {
   const requested: string[] = [];
   const asset = fixedVersion('skill');
   context.mock.method(globalThis, 'fetch', async (path: string) => {
     requested.push(path);
     if (path === `/api/assets/example/versions/${oldVersion}`) return Response.json(asset);
+    if (path === `/api/assets/${asset.asset_id}/versions/${oldVersion}/evaluation`)
+      return Response.json(noEvaluation);
     if (path === `/api/versions/${oldVersion}/files?path=SKILL.md`)
       return new Response('---\nname: example\n---\n旧版说明');
     if (path === `/api/assets/${asset.asset_id}/feedback?page=1&limit=10`)
@@ -388,6 +538,8 @@ test('较旧的固定版本保留自身标签、文件与安装命令，并提�
   );
   assert.equal(screen.queryByText('资产维护与分发控制'), null);
   assert.equal(screen.queryByRole('region', { name: '资源推荐与通用提名' }), null);
+  assert(!screen.queryByRole('tab', { name: '质量评测' }));
+  assert(!screen.queryByRole('button', { name: '质量评测' }));
 
   await user.click(screen.getByRole('tab', { name: '使用与安装' }));
   assert.equal(screen.queryByRole('region', { name: '公开资源对话安装' }), null);

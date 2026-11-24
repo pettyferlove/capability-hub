@@ -95,12 +95,24 @@ export class HubWorker {
     } catch (err) {
       this.hub.logs.logger.error({ event: 'catalog_prompts.schedule_failed', err });
     }
+    try {
+      await this.hub.evaluations.schedule();
+    } catch (err) {
+      this.hub.logs.logger.error({ event: 'evaluations.schedule_failed', err });
+    }
     if (this.stopped) return;
-    const jobs = await this.hub.jobs.claimBatch(this.id, { activeIds: [...this.active.keys()] });
+    const jobs = await this.hub.jobs.claimBatch(this.id, {
+      activeIds: [...this.active.keys()],
+      activeEvaluationIds: [...this.active.values()]
+        .filter(({ job }) => job.kind === 'resource_evaluation')
+        .map(({ job }) => job.id),
+    });
     for (const job of jobs) {
       // AI 与首页提示作业可被中止，各自写终态；内容作业沿用通用成功与退避重试。
       const controller =
-        job.kind === 'ai_execution' || job.kind === 'catalog_prompt_refresh'
+        job.kind === 'ai_execution' ||
+        job.kind === 'catalog_prompt_refresh' ||
+        job.kind === 'resource_evaluation'
           ? new AbortController()
           : undefined;
       if (this.stopped) controller?.abort(new AiError('AI_INTERRUPTED', '服务正在关闭'));
@@ -120,7 +132,7 @@ export class HubWorker {
             )
           : job.kind === 'catalog_prompt_refresh'
             ? this.leased(job, controller!, (signal) => this.hub.prompts.process(job, signal))
-            : this.runContent(job)
+            : this.runContent(job, controller)
       ).finally(() => {
         this.active.delete(job.id);
       });
@@ -193,6 +205,10 @@ export class HubWorker {
     await this.hub.jobs.cancelRequested(async (job) => {
       // AI 执行由运行时的中止路径收敛；其余作业在这里进入取消终态并让出活动指针。
       if (job.kind === 'ai_execution') return;
+      if (job.kind === 'resource_evaluation') {
+        await this.hub.evaluations.stages.settleProblem(job, 'cancelled', 'JOB_CANCELLED');
+        return;
+      }
       const intakes =
         job.kind === 'source_sync'
           ? await this.hub.store.where('intakes', 'source_sync_job_id', job.id)
@@ -248,7 +264,8 @@ export class HubWorker {
       });
     }
   }
-  private async processContent(job: JobRecord) {
+  private async processContent(job: JobRecord, signal?: AbortSignal) {
+    if (job.kind === 'resource_evaluation') return this.hub.evaluationRunner.process(job, signal);
     let terminal: Pick<JobRecord, 'state' | 'last_error_code' | 'error_message'> = {
       state: 'succeeded',
     };
@@ -291,7 +308,7 @@ export class HubWorker {
     });
     return terminal.state;
   }
-  private async runContent(job: JobRecord) {
+  private async runContent(job: JobRecord, controller?: AbortController) {
     let heartbeat: ReturnType<typeof setTimeout> | undefined;
     let renewal = Promise.resolve();
     let finishing = false;
@@ -311,9 +328,14 @@ export class HubWorker {
             try {
               if (!(await this.hub.jobs.renew(job))) {
                 keep = false;
+                controller?.abort(new AiError('AI_LEASE_LOST', '评测租约已失效'));
                 await this.cancelRequestedJobs();
               }
             } catch (err) {
+              if (controller) {
+                keep = false;
+                controller.abort(new AiError('AI_LEASE_LOST', '无法确认评测租约'));
+              }
               this.hub.logs.logger.error({
                 event: 'worker.heartbeat_failed',
                 worker_id: this.id,
@@ -327,7 +349,7 @@ export class HubWorker {
         heartbeat.unref();
       };
       scheduleRenewal();
-      const state = await this.processContent(job);
+      const state = await this.processContent(job, controller?.signal);
       this.hub.logs.logger.info({
         event: 'job.' + state,
         job_id: job.id,
@@ -357,6 +379,12 @@ export class HubWorker {
             lease_until: 0,
             ...(!retry ? { finished_at: new Date().toISOString() } : {}),
           });
+          if (job.kind === 'resource_evaluation' && !retry)
+            await this.hub.evaluations.stages.settleProblem(
+              job,
+              cancelled ? 'cancelled' : 'failed',
+              error.code,
+            );
           if (['intake', 'rescan'].includes(job.kind)) {
             const intake = await this.hub.store.get('intakes', job.aggregate_id);
             if (intake && intake.state !== 'ready')

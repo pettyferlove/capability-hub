@@ -30,7 +30,7 @@ import { parseDocument } from 'yaml';
 import { boundedJson } from './json.js';
 import { normalizeSkill } from './zip-archive.js';
 import { secretFindings, variableReference } from './secret-detection.js';
-import { localReference, markdownReferences } from './markdown-references.js';
+import { markdownReferences, resolveMarkdownReference } from './markdown-references.js';
 
 const MiB = 1024 * 1024;
 
@@ -255,46 +255,12 @@ export function inspect(
       if (text === null) continue;
       for (const reference of markdownReferences(text)) {
         if (findingsTruncated) break;
-        let relative: string | null;
-        try {
-          relative = localReference(reference.url);
-        } catch {
-          add('BROKEN_REFERENCE', 'warning', file.path, reference.line, '无效链接编码');
+        const resolved = resolveMarkdownReference(file.path, reference.url);
+        if ('rule' in resolved) {
+          add(resolved.rule, 'warning', file.path, reference.line, resolved.message);
           continue;
         }
-        if (relative === null || relative === '') continue;
-        if (relative.startsWith('/') || relative.includes('\\')) {
-          add(
-            'REFERENCE_ESCAPE',
-            'warning',
-            file.path,
-            reference.line,
-            '链接指向包外路径，接收者可能无法访问；请核对用途。',
-          );
-          continue;
-        }
-        const base = file.path.split('/').slice(0, -1);
-        let escaped = false;
-        for (const part of relative.split('/')) {
-          if (part === '..') {
-            if (!base.length) {
-              escaped = true;
-              break;
-            }
-            base.pop();
-          } else if (part && part !== '.') base.push(part);
-        }
-        if (escaped) {
-          add(
-            'REFERENCE_ESCAPE',
-            'warning',
-            file.path,
-            reference.line,
-            '链接引用包外文件，接收者可能无法访问；请核对用途。',
-          );
-          continue;
-        }
-        const target = base.join('/');
+        const { target } = resolved;
         if (target && !files.some((f) => f.path === target || f.path.startsWith(target + '/')))
           add(
             'MISSING_REFERENCE',

@@ -57,6 +57,7 @@ import { intakeLabel } from './intake-label.js';
 import { IntakeProgress } from './IntakeProgress.js';
 import type { IntakeConnection } from './use-intake-detail.js';
 import { IntakeScan } from './IntakeScan.js';
+import { IntakeEvaluation } from './IntakeEvaluation.js';
 import { KeywordField } from '../../shared/components/KeywordField.js';
 import { SkillApiKeyField } from '../../shared/components/SkillApiKeyField.js';
 
@@ -559,6 +560,9 @@ export function IntakeDetail({
           </section>
         )}
         {i.scan && <IntakeScan scan={i.scan} />}
+        {section === 'evidence' && i.can_maintain && i.version?.manifest.kind === 'skill' && (
+          <IntakeEvaluation key={i.version.id} version={i.version} refresh={refresh} />
+        )}
         {i.version && (
           <details className={intakeSnapshotStyles}>
             <summary>

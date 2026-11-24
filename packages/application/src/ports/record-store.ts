@@ -19,7 +19,14 @@ export interface ReadyJobsQuery {
   limit: number;
   excludeIds: readonly string[];
   kinds?: readonly JobKind[];
+  excludeKind?: JobKind;
 }
+
+/** 排队顺序先按优先级降序，同级按登记时间与主键升序。 */
+export type EvaluationQueueCursor = Pick<
+  RecordMap['resource_evaluations'],
+  'priority' | 'requested_at' | 'id'
+>;
 
 /** 北京时间的日桶只返回计数，审计明细和反馈正文留在各自读取边界内。 */
 export interface ResourceActivityBucket {
@@ -85,8 +92,30 @@ export interface RecordStore {
   all<K extends TableName>(table: K): Promise<RecordMap[K][]>;
   hasUsers(): Promise<boolean>;
   /** 调度查询在数据库内筛选，历史任务正文不进入轮询路径。 */
-  listRunningJobIds(now: number): Promise<string[]>;
+  listRunningJobIds(now: number, kind?: JobKind): Promise<string[]>;
   listReadyJobs(query: ReadyJobsQuery): Promise<RecordMap['jobs'][]>;
+  /** `staticOnly` 只列无评测器摘要、零模型调用的结构规范评测。 */
+  listQueuedEvaluations(
+    limit: number,
+    excludeSubjects?: readonly string[],
+    after?: EvaluationQueueCursor,
+    staticOnly?: boolean,
+  ): Promise<RecordMap['resource_evaluations'][]>;
+  listRunningEvaluationSubjects(): Promise<string[]>;
+  listVersionEvaluations(versionId: string): Promise<RecordMap['resource_evaluations'][]>;
+  listRunningEvaluations(): Promise<RecordMap['resource_evaluations'][]>;
+  countManualEvaluations(assetId: string, since: string): Promise<number>;
+  nextEvaluationBackfill(
+    rubric: string,
+    evaluator: string | null,
+    since: string,
+  ): Promise<string | undefined>;
+  reusableEvaluation(
+    subjectDigest: string,
+    rubric: string,
+    evaluator: string | null,
+  ): Promise<RecordMap['resource_evaluations'] | undefined>;
+  evaluationSchedule(): Promise<RecordMap['evaluation_schedule'] | undefined>;
   listCancellationRequestedJobs(): Promise<RecordMap['jobs'][]>;
   listAiExecutionJobs(executionId: string): Promise<RecordMap['jobs'][]>;
   listDueSources(now: number): Promise<GitSourceRecord[]>;

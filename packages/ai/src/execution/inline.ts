@@ -20,6 +20,8 @@ import {
 
 /** 业务内容不落库；reserve 在调用账本的写事务内执行，只能核对本地授权和配额。 */
 export interface InlineExecution {
+  /** 执行记录在首次出站预留时分配，可在宿主的预留事务中关联业务阶段。 */
+  readonly executionId?: string;
   call<S extends z.ZodType>(
     step: string,
     input: Omit<ShortModelCall<S>, 'profile' | 'credentials' | 'observer'>,
@@ -124,6 +126,9 @@ export async function runInlineExecution<T>(
     assertWithinDeadline();
   };
   const run: InlineExecution = {
+    get executionId() {
+      return executionId;
+    },
     async call(step, input) {
       assertActive();
       if (!/^[a-z][a-z0-9-]{0,63}$/.test(step))

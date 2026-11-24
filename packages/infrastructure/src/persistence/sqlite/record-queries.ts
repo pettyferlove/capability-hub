@@ -1,4 +1,5 @@
 import type {
+  EvaluationQueueCursor,
   HubFeedbackEventPage,
   HubFeedbackRecordQuery,
   ReadyJobsQuery,
@@ -6,8 +7,10 @@ import type {
 } from '@capability-hub/application/ports';
 import {
   parseRecord,
+  parseStoredRecord,
   catalogPromptStateId,
   type GitSourceRecord,
+  type JobKind,
   type RecordMap,
   type TableName,
 } from '@capability-hub/domain/models';
@@ -21,13 +24,16 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lt,
   lte,
   not,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { RecordQueries } from '../record-driver.js';
+import { evaluationBackfillCandidates } from '../evaluation-backfill-query.js';
 import { resourceActivityQuery } from '../resource-activity-query.js';
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy';
 import { sqliteRevision, type sqliteSchema, sqliteTableFor } from './record-schema.js';
@@ -35,6 +41,7 @@ import {
   audit,
   bindings,
   catalog_prompts,
+  resource_evaluations,
   hub_feedback,
   hub_feedback_attachments,
   hub_feedback_events,
@@ -72,12 +79,12 @@ export class SqliteQueries implements RecordQueries {
       .from(relation)
       .where(eq(relation.id, id ?? ''))
       .limit(1);
-    return rows[0] ? parseRecord(table, rows[0].data) : undefined;
+    return rows[0] ? parseStoredRecord(table, rows[0].data) : undefined;
   }
   async all<K extends TableName>(table: K): Promise<RecordMap[K][]> {
     const relation = sqliteTableFor(table);
     const rows = await this.db.select({ data: relation.data }).from(relation).orderBy(relation.id);
-    return rows.map((row) => parseRecord(table, row.data));
+    return rows.map((row) => parseStoredRecord(table, row.data));
   }
   async hasUsers(): Promise<boolean> {
     const rows = await this.db
@@ -86,12 +93,16 @@ export class SqliteQueries implements RecordQueries {
       .limit(1);
     return rows.length > 0;
   }
-  async listRunningJobIds(now: number): Promise<string[]> {
+  async listRunningJobIds(now: number, kind?: JobKind): Promise<string[]> {
     const rows = await this.db
       .select({ id: jobs.id })
       .from(jobs)
       .where(
-        and(eq(jobs.state, 'running'), gt(sql`json_extract(${jobs.data}, '$.lease_until')`, now)),
+        and(
+          eq(jobs.state, 'running'),
+          gt(sql`json_extract(${jobs.data}, '$.lease_until')`, now),
+          kind ? eq(sql`json_extract(${jobs.data}, '$.kind')`, kind) : undefined,
+        ),
       );
     return rows.map((row) => row.id);
   }
@@ -111,6 +122,9 @@ export class SqliteQueries implements RecordQueries {
           ),
           eq(sql`json_extract(${jobs.data}, '$.cancel_requested')`, 0),
           query.excludeIds.length ? not(inArray(jobs.id, query.excludeIds)) : undefined,
+          query.excludeKind
+            ? not(eq(sql`json_extract(${jobs.data}, '$.kind')`, query.excludeKind))
+            : undefined,
           query.kinds ? inArray(sql`json_extract(${jobs.data}, '$.kind')`, query.kinds) : undefined,
         ),
       )
@@ -142,6 +156,106 @@ export class SqliteQueries implements RecordQueries {
         ),
       );
     return rows.map(({ data }) => parseRecord('jobs', data));
+  }
+  async listQueuedEvaluations(
+    limit: number,
+    excludeSubjects: readonly string[] = [],
+    after?: EvaluationQueueCursor,
+    staticOnly = false,
+  ) {
+    if (limit <= 0) return [];
+    const t = resource_evaluations;
+    const page = (position: SQL | undefined, size: number) =>
+      this.db
+        .select({ data: t.data })
+        .from(t)
+        .where(
+          and(
+            eq(t.state, 'queued'),
+            position,
+            staticOnly ? isNull(t.evaluator_digest) : undefined,
+            excludeSubjects.length ? not(inArray(t.subject_digest, excludeSubjects)) : undefined,
+          ),
+        )
+        .orderBy(desc(t.priority), t.requested_at, t.id)
+        .limit(size);
+    // 分开查询同级尾部与更低优先级，让队列索引直接定位游标。
+    const rows = await page(
+      after
+        ? and(
+            eq(t.priority, after.priority),
+            sql`(${t.requested_at}, ${t.id}) > (${after.requested_at}, ${after.id})`,
+          )
+        : undefined,
+      limit,
+    );
+    if (after && rows.length < limit)
+      rows.push(...(await page(lt(t.priority, after.priority), limit - rows.length)));
+    return rows.map(({ data }) => parseStoredRecord('resource_evaluations', data));
+  }
+  async listRunningEvaluationSubjects() {
+    const t = resource_evaluations;
+    const rows = await this.db
+      .select({ subject: t.subject_digest })
+      .from(t)
+      .where(eq(t.state, 'running'));
+    return rows.map(({ subject }) => subject);
+  }
+  async listRunningEvaluations() {
+    const t = resource_evaluations;
+    const rows = await this.db.select({ data: t.data }).from(t).where(eq(t.state, 'running'));
+    return rows.map(({ data }) => parseStoredRecord('resource_evaluations', data));
+  }
+  async listVersionEvaluations(versionId: string) {
+    const t = resource_evaluations;
+    const rows = await this.db
+      .select({ data: t.data })
+      .from(t)
+      .where(eq(t.version_id, versionId))
+      .orderBy(desc(t.requested_at), desc(t.id));
+    return rows.map(({ data }) => parseStoredRecord('resource_evaluations', data));
+  }
+  async countManualEvaluations(assetId: string, since: string) {
+    const [row] = await this.db
+      .select({ total: count() })
+      .from(audit)
+      .where(
+        and(
+          gte(audit.occurred_at, since),
+          sql`(${audit.data} ->> 'action') = 'evaluation.requested' and (${audit.data} -> 'metadata' ->> 'asset_id') = ${assetId}`,
+        ),
+      );
+    return row.total;
+  }
+  async nextEvaluationBackfill(rubric: string, evaluator: string | null, since: string) {
+    const [row] = await this.db
+      .select({ id: sql<string>`candidate.release_id` })
+      .from(evaluationBackfillCandidates(rubric, evaluator, since));
+    return row?.id;
+  }
+  async reusableEvaluation(subjectDigest: string, rubric: string, evaluator: string | null) {
+    const t = resource_evaluations;
+    const [row] = await this.db
+      .select({ data: t.data })
+      .from(t)
+      .where(
+        and(
+          eq(t.subject_digest, subjectDigest),
+          eq(t.rubric_version, rubric),
+          sql`${t.state} in ('succeeded', 'partial')`,
+          evaluator === null ? isNull(t.evaluator_digest) : eq(t.evaluator_digest, evaluator),
+        ),
+      )
+      .orderBy(
+        desc(t.state),
+        // 部分完成的结果优先取已成功阶段最多的一条，避免重跑已恢复的阶段。
+        sql`case when ${t.state} = 'partial' then (select count(*) from json_each(${t.data}, '$.stages') where json_extract(value, '$.state') = 'succeeded') end desc`,
+        sql`case when ${t.state} = 'partial' then ${t.requested_at} end desc`,
+        t.requested_at,
+        t.id,
+      )
+      .limit(1);
+    return row && parseStoredRecord('resource_evaluations', row.data);
   }
   async catalogPromptSchedule() {
     const [row] = await this.db
@@ -426,7 +540,7 @@ export class SqliteQueries implements RecordQueries {
       .from(relation)
       .where(sql`json_extract(${relation.data}, ${'$.' + key}) = ${value}`)
       .orderBy(relation.id);
-    return rows.map((row) => parseRecord(table, row.data));
+    return rows.map((row) => parseStoredRecord(table, row.data));
   }
   async insert<K extends TableName>(table: K, record: RecordMap[K]): Promise<RecordMap[K]> {
     const value = parseRecord(table, record);

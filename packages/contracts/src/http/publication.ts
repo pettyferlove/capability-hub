@@ -91,6 +91,7 @@ export type ReviewResponse = PublicationRequestResponse & {
   context_valid: boolean;
   ruleset_current: boolean;
   can_maintain: boolean;
+  can_read_evaluation: boolean;
   can_decide: boolean;
   can_audit_version: boolean;
   can_use_review_agent: boolean;

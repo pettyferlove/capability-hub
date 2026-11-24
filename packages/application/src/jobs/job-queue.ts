@@ -16,6 +16,7 @@ export class JobQueue {
   constructor(
     private readonly store: RecordStore,
     private readonly concurrency: number = JobQueue.maxConcurrency,
+    private readonly evaluationConcurrency = 1,
   ) {}
   /**
    * 插入一条 `queued` 作业，`run_after` 即当前时间，无租约（`lease_epoch` 为 0）。
@@ -55,9 +56,15 @@ export class JobQueue {
     worker: string,
     {
       activeIds = [],
+      activeEvaluationIds = [],
       kinds,
       limit = this.concurrency,
-    }: { activeIds?: readonly string[]; kinds?: readonly JobKind[]; limit?: number } = {},
+    }: {
+      activeIds?: readonly string[];
+      activeEvaluationIds?: readonly string[];
+      kinds?: readonly JobKind[];
+      limit?: number;
+    } = {},
   ): Promise<JobRecord[]> {
     if (activeIds.length >= this.concurrency) return [];
     return await this.store.tx(async () => {
@@ -67,12 +74,32 @@ export class JobQueue {
       for (const id of await this.store.listRunningJobIds(timestamp)) occupied.add(id);
       const slots = Math.min(limit, this.concurrency - occupied.size);
       if (slots <= 0) return [];
-      const ready = await this.store.listReadyJobs({
+      const query = {
         now: timestamp,
         limit: slots,
         excludeIds: [...occupied],
         kinds,
-      });
+      };
+      let ready = await this.store.listReadyJobs(query);
+      if (ready.some((job) => job.kind === 'resource_evaluation')) {
+        // 恢复备份或调低并发后，已排入的阶段也必须遵守当前租约上限。
+        const running = await this.store.listRunningJobIds(timestamp, 'resource_evaluation');
+        const available =
+          this.evaluationConcurrency - new Set([...running, ...activeEvaluationIds]).size;
+        let evaluations = 0;
+        const permitted = ready.filter(
+          (job) => job.kind !== 'resource_evaluation' || ++evaluations <= available,
+        );
+        if (permitted.length < ready.length) {
+          const others = await this.store.listReadyJobs({
+            ...query,
+            limit: slots - permitted.length,
+            excludeIds: [...occupied, ...permitted.map((job) => job.id)],
+            excludeKind: 'resource_evaluation',
+          });
+          ready = [...permitted, ...others];
+        }
+      }
       const claimed: JobRecord[] = [];
       for (const job of ready)
         claimed.push(

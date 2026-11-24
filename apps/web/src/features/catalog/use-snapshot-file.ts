@@ -48,12 +48,17 @@ export function snapshotFileView(
   };
 }
 
-/** 抽屉内按固定版本和路径缓存，重新校验同一文件时保留正文。 */
-export function useSnapshotFile(version: string, path: string | null, refresh: number) {
+/** 管理与发布视图的缓存彼此独立；候选文件刷新时重新确认读取权限后再显示正文。 */
+export function useSnapshotFile(
+  version: string,
+  path: string | null,
+  refresh: number,
+  management = false,
+) {
   const [cache, setCache] = useState<SnapshotFile[]>([]);
   const [request, setRequest] = useState<SnapshotRequest>();
   const [attempt, setAttempt] = useState(0);
-  const key = path === null ? '' : `${version}:${path}`;
+  const key = path === null ? '' : `${management ? 'candidate' : 'release'}:${version}:${path}`;
   const cached = cache.find((entry) => entry.key === key);
   useEffect(() => {
     if (!path || cached?.refresh === refresh) return;
@@ -61,7 +66,7 @@ export function useSnapshotFile(version: string, path: string | null, refresh: n
     // 保证旧文件的迟到响应不会覆盖新文件的正文或错误。
     const controller = new AbortController();
     setRequest({ key, refresh, attempt });
-    fileText(version, path, false, controller.signal)
+    fileText(version, path, management, controller.signal)
       .then((text) => {
         if (controller.signal.aborted) return;
         // 只保留最近 8 个文件正文，避免长时间浏览时缓存无界增长。
@@ -82,9 +87,15 @@ export function useSnapshotFile(version: string, path: string | null, refresh: n
         });
       });
     return () => controller.abort();
-  }, [version, path, key, refresh, cached, attempt]);
+  }, [version, path, key, refresh, cached, attempt, management]);
   return {
-    ...snapshotFileView(key, refresh, attempt, cache, request),
+    ...snapshotFileView(
+      key,
+      refresh,
+      attempt,
+      management && cached?.refresh !== refresh ? [] : cache,
+      request,
+    ),
     retry: () => setAttempt((value) => value + 1),
   };
 }

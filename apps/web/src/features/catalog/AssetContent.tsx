@@ -1,5 +1,5 @@
 /**
- * 资产详情的主体内容：概览、文件清单、使用与安装、版本历史、问题与建议五个互斥视图。
+ * 资产详情的主体内容，Skill 的质量评测与文件清单使用同一发布快照。
  * 依赖 `GET /api/assets/{slug}/versions` 与 {@link useSnapshotFile} 读取视图展示的发布文件；
  * 历史位置由 {@link detailNavigation} 维护，滚动位置与焦点在切换时按 key 恢复。
  */
@@ -40,6 +40,7 @@ import {
   Terminal,
 } from '../../shared/icons/lucide.js';
 import { useId, useLayoutEffect, useReducer, useRef, useState } from 'react';
+import { Button } from 'react-aria-components';
 import { useQuery } from '../../shared/api/use-query.js';
 import { CodeBlock } from '../../shared/components/CodeBlock.js';
 import { Empty } from '../../shared/components/Empty.js';
@@ -51,6 +52,11 @@ import { CodeSkeleton, ListSkeleton } from '../../shared/components/Skeleton.js'
 import { useHub } from '../../shared/context/HubContext.js';
 import { bytesLabel, dateLabel, stateLabel } from '../../shared/format/labels.js';
 import { AssetCommunity } from './AssetCommunity.js';
+import {
+  EvaluationGlyph,
+  EvaluationPanel,
+  usePublishedEvaluation,
+} from '../evaluation/EvaluationPanel.js';
 import { ResourceInstallation } from './ResourceInstallation.js';
 import { SnapshotFileBrowser } from './SnapshotFileBrowser.js';
 import { SnapshotMarkdown } from './SnapshotMarkdown.js';
@@ -81,6 +87,20 @@ export function AssetContent({ view: assetView, tab }: { view: AssetView; tab?: 
   const { asset, release } = assetView;
   const entry = asset.kind === 'skill' ? 'SKILL.md' : 'server.json';
   const versionId = release.version_id;
+  const published = usePublishedEvaluation(
+    asset.kind === 'skill' ? asset.asset_id : null,
+    versionId,
+    refresh,
+  );
+  const evaluation =
+    asset.kind === 'skill' &&
+    published.data &&
+    (published.data.evaluation !== null ||
+      published.data.can_request ||
+      (published.data.can_view_details &&
+        (published.data.updating || published.data.latest_attempt_id)))
+      ? published.data
+      : undefined;
   const hasReadme = asset.kind === 'skill' && asset.files.some((file) => file.path === 'README.md');
   const readme = useSnapshotFile(versionId, hasReadme ? 'README.md' : null, refresh);
   const readmeBody = readme.text === undefined ? undefined : markdownBody(readme.text);
@@ -99,10 +119,18 @@ export function AssetContent({ view: assetView, tab }: { view: AssetView; tab?: 
     entries: [{ tab: tab ?? 'overview', path: entry }],
     index: 0,
   });
-  const view = navigation.entries[navigation.index];
+  const selected = navigation.entries[navigation.index];
+  const visitedEvaluation = navigation.entries.some((location) => location.tab === 'evaluation');
+  const awaitingEvaluation =
+    asset.kind === 'skill' && !published.data && (published.loading || !!published.error);
+  const view: DetailLocation =
+    selected.tab === 'evaluation' && !evaluation && !awaitingEvaluation
+      ? { tab: 'overview', path: entry }
+      : selected;
   const currentFile = view.tab === 'overview' ? overviewPath : view.path;
   const [lastFile, setLastFile] = useState(entry);
   const [mode, setMode] = useState<'read' | 'source'>('read');
+  const fileModes = useRef(new WeakMap<DetailLocation, typeof mode>());
   const contentStart = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const positions = useRef(new Map<string, number>());
@@ -111,14 +139,22 @@ export function AssetContent({ view: assetView, tab }: { view: AssetView; tab?: 
   const id = useId();
   const tabs: { id: DetailTab; label: string }[] = [
     { id: 'overview', label: '内容说明' },
+    ...(evaluation || (visitedEvaluation && awaitingEvaluation)
+      ? [{ id: 'evaluation' as const, label: '质量评测' }]
+      : []),
     { id: 'files', label: `文件清单 ${asset.files.length}` },
     { id: 'installation', label: '使用与安装' },
     { id: 'versions', label: '版本历史' },
     { id: 'feedback', label: '问题与建议' },
   ];
+  const readingLabel =
+    view.tab === 'overview' || view.tab === 'files'
+      ? currentFile
+      : tabs.find((item) => item.id === view.tab)?.label;
   function remember(focus = false, scroll: 'restore' | 'start' = 'restore') {
     const scroller = contentStart.current?.closest<HTMLElement>(detailScrollSelector);
     if (scroller) positions.current.set(detailLocationKey(view), scroller.scrollTop);
+    if (view.tab === 'files') fileModes.current.set(view, mode);
     pendingScroll.current = scroll;
     pendingFocus.current = focus;
   }
@@ -140,11 +176,18 @@ export function AssetContent({ view: assetView, tab }: { view: AssetView; tab?: 
       tab === 'files' ? 'start' : 'restore',
     );
   }
-  function openFile(path: string, anchor?: string) {
+  function openFile(path: string, anchor?: string, line?: number) {
     if (!asset.files.some((file) => file.path === path)) return;
     setLastFile(path);
-    setMode('read');
-    open({ tab: 'files', path, anchor }, true, 'start');
+    setMode(line ? 'source' : 'read');
+    open({ tab: 'files', path, anchor, line }, true, 'start');
+  }
+  function move(direction: 'back' | 'forward') {
+    const target = navigation.entries[navigation.index + (direction === 'back' ? -1 : 1)];
+    remember(true);
+    if (target?.tab === 'files')
+      setMode(target.line ? 'source' : (fileModes.current.get(target) ?? 'read'));
+    dispatch({ type: direction });
   }
   useLayoutEffect(() => {
     const scroll = pendingScroll.current;
@@ -180,6 +223,15 @@ export function AssetContent({ view: assetView, tab }: { view: AssetView; tab?: 
           <MessageSquare size={16} />
           问题与建议
         </button>
+        {evaluation && (
+          <Button
+            className={btnStyles}
+            onPress={() => open({ tab: 'evaluation', path: entry }, true, 'start')}
+          >
+            <EvaluationGlyph evaluation={evaluation.evaluation} />
+            质量评测
+          </Button>
+        )}
         <span className={subtleStyles}>
           {asset.files.length} 个文件 ·{' '}
           {bytesLabel(asset.files.reduce((size, file) => size + file.size, 0))}
@@ -206,10 +258,7 @@ export function AssetContent({ view: assetView, tab }: { view: AssetView; tab?: 
             className={iconBtnStyles}
             aria-label="返回上一步"
             disabled={navigation.index === 0}
-            onClick={() => {
-              remember(true);
-              dispatch({ type: 'back' });
-            }}
+            onClick={() => move('back')}
           >
             <ArrowLeft size={16} />
           </button>
@@ -218,21 +267,12 @@ export function AssetContent({ view: assetView, tab }: { view: AssetView; tab?: 
             className={iconBtnStyles}
             aria-label="前进一步"
             disabled={navigation.index === navigation.entries.length - 1}
-            onClick={() => {
-              remember(true);
-              dispatch({ type: 'forward' });
-            }}
+            onClick={() => move('forward')}
           >
             <ArrowRight size={16} />
           </button>
-          <span className={detailCurrentFileStyles} title={currentFile}>
-            {view.tab === 'overview' || view.tab === 'files'
-              ? currentFile
-              : view.tab === 'installation'
-                ? '使用与安装'
-                : view.tab === 'feedback'
-                  ? '问题与建议'
-                  : '版本历史'}
+          <span className={detailCurrentFileStyles} title={readingLabel}>
+            {readingLabel}
           </span>
           {view.tab === 'overview' && showReadme && (
             <button type="button" className={textBtnStyles} onClick={() => openFile(entry)}>
@@ -291,12 +331,34 @@ export function AssetContent({ view: assetView, tab }: { view: AssetView; tab?: 
             <CodeBlock title="server.json" code={overview.text ?? ''} />
           )}
         </div>
+        <div hidden={view.tab !== 'evaluation'}>
+          {view.tab === 'evaluation' &&
+            (published.error ? (
+              <ErrorState
+                message={published.error}
+                {...published.errorProps}
+                retry={published.retry}
+              />
+            ) : (
+              !evaluation && <ListSkeleton label="正在加载质量评测…" rows={3} />
+            ))}
+          {evaluation && visitedEvaluation && (
+            <EvaluationPanel
+              kind="asset"
+              versionId={versionId}
+              published={evaluation}
+              refresh={refresh}
+              onEvidence={(path, line) => openFile(path, undefined, line)}
+            />
+          )}
+        </div>
         <div hidden={view.tab !== 'files'}>
           <SnapshotFileBrowser
             view={assetView}
             active={view.tab === 'files'}
             path={view.tab === 'files' ? view.path : lastFile}
             anchor={view.tab === 'files' ? view.anchor : undefined}
+            line={view.tab === 'files' ? view.line : undefined}
             mode={mode}
             onModeChange={setMode}
             onOpen={openFile}

@@ -9,6 +9,10 @@ import {
   registerCatalogRoutes,
   registerProtectedCatalogRoutes,
 } from './http/routes/catalog-routes.js';
+import {
+  registerEvaluationRoutes,
+  registerManagementEvaluationRoutes,
+} from './http/routes/evaluation-routes.js';
 import { registerDiscoveryRoutes } from './http/routes/discovery-routes.js';
 import { registerErrorHandler } from './http/middleware/error-handler.js';
 import { registerIdentityRoutes } from './http/routes/identity-routes.js';
@@ -74,6 +78,7 @@ export async function createApp(
     registerOAuthRoutes(app, context);
     registerPublicRoutes(app, context);
     registerCatalogRoutes(app, context);
+    registerEvaluationRoutes(app, context);
     registerDiscoveryRoutes(app, context);
     registerInstallationRoutes(app, context);
     // 仅消费读取允许匿名访问，管理和所有 API 写入均要求身份。
@@ -85,6 +90,7 @@ export async function createApp(
     registerIdentityRoutes(app, context);
     registerOperationsRoutes(app, context);
     registerProtectedCatalogRoutes(app, context);
+    registerManagementEvaluationRoutes(app, context);
     registerHubFeedbackRoutes(app, context);
     registerSourcesRoutes(app, context);
     registerIntakesRoutes(app, context);

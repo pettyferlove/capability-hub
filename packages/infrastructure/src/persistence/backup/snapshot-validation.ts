@@ -1,4 +1,4 @@
-import { parseRecord } from '@capability-hub/domain/models';
+import { parseStoredRecord } from '@capability-hub/domain/models';
 import type { StoreSnapshot } from './store-snapshot.js';
 import { tables } from '../tables.js';
 import { aiTables, parseAiRecord } from '@capability-hub/ai/records';
@@ -7,7 +7,7 @@ import { aiTables, parseAiRecord } from '@capability-hub/ai/records';
  * 严格校验备份负载的形状后返回强类型快照，不做任何补全或字段丢弃。
  *
  * 要求表的集合与当前代码中的 {@link tables} + {@link aiTables} **完全一致**：多表、少表都会拒绝，
- * 因此跨版本备份不能直接恢复，必须先由升级路径转换。每行经 `parseRecord`/`parseAiRecord`
+ * 因此跨版本备份不能直接恢复，必须先由升级路径转换。每行经 `parseStoredRecord`/`parseAiRecord`
  * 逐字段校验，同表内 `id` 重复即报错。失败统一抛普通 `Error`（备份导入的错误码不含 HTTP 语义）。
  */
 export function parseSnapshot(value: unknown): StoreSnapshot {
@@ -21,7 +21,7 @@ export function parseSnapshot(value: unknown): StoreSnapshot {
   const entries: [string, unknown][] = tables.map((table) => {
     const rows = (value as Record<string, unknown>)[table];
     if (!Array.isArray(rows)) throw new Error('备份记录格式无效');
-    const parsed = (rows as unknown[]).map((row) => parseRecord(table, row));
+    const parsed = (rows as unknown[]).map((row) => parseStoredRecord(table, row));
     if (new Set(parsed.map((row) => row.id)).size !== parsed.length)
       throw new Error('备份包含重复记录');
     return [table, parsed];

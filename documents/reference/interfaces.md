@@ -54,6 +54,14 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 
 Skill 的上传与提交审核请求均可携带布尔字段 `requires_api_key`；MCP 不接受此字段。接收详情返回 `proposed_requires_api_key`，提交时可明确修正，省略时沿用本次接收声明或资产当前声明。审核申请将其纳入 `canonical_policy_json` 与 `policy_digest`，审核响应和发布记录保留提交时的值；通过后将该声明用于资产标签。已有资产上传新版本不会提前修改当前目录标签。
 
+`GET /api/assets/:id/versions/:versionId/evaluation` 按固定发布的受众和冻结声明取结果，支持匿名访问与个人只读令牌。无结果时 `evaluation` 为 null。已有结果可在更新期间继续展示，附扫描规则版本 `scan_ruleset`。能查看证据的会话可获得匹配的尝试 `latest_attempt_id`，等待额度时还会返回 `next_window_at`。上一发布可读且双方使用同一现行标准与评测器时返回 `baseline`。版本不可读返回 404。
+
+`GET /api/management/versions/:versionId/evaluations` 返回 `items` 历史列表、阶段进度、失败原因和逐项依据。资产维护者可读全部版本，审核者可读其审核范围内申请对应的候选版本，已发布版本还须可读。维护与审核响应均说明模型是否启用、能否手动发起及等待额度的下一窗口。
+
+`GET /api/publication-requests/:id/evaluation` 向审核者和资产维护者返回候选评测及申请提交时冻结的发布基线。标准和评测器一致、双方置信度均为中或高时，维度下降至少 10 分列为回归。混淆对象名称按读者当前权限裁剪。
+
+`POST /api/management/versions/:versionId/evaluations` 要求资产维护与 AI 执行权限、幂等键及会话 CSRF。传 `publication_request_id` 时按该申请的固定版本与冻结声明登记。新登记的记录返回 202，包括从其他版本复制全部或部分结果的记录；同一版本已有相同主体的评测时返回 200。每个资产每 UTC 日合计最多受理三次手动请求，复用结果也计次；同一用户在 24 小时幂等有效期内重放同一请求只计一次。超限返回 429，MCP 返回 422，撤销或封禁返回 409。
+
 ## Hub MCP
 
 服务器通过官方 SDK 在同一 `/mcp` 入口支持现代 `2026-07-28` 协议及使用 `initialize` 握手的 `2025-03-26`、`2025-06-18`、`2025-11-25` Streamable HTTP 客户端。握手协议采用无会话模式，各版本共用工具定义、令牌作用域与逐请求身份校验。MCP 标准协议兼容不属于项目旧数据或旧业务接口的兼容；不通过伪造版本 Header 转换协议，也不提供旧式 HTTP+SSE 独立端点。

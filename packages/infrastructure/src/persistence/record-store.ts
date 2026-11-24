@@ -1,6 +1,7 @@
 import { auditDefinitions } from '@capability-hub/domain/audit';
-import type { RecordMap, TableName } from '@capability-hub/domain/models';
+import type { JobKind, RecordMap, TableName } from '@capability-hub/domain/models';
 import type {
+  EvaluationQueueCursor,
   HubFeedbackEventPage,
   HubFeedbackRecordQuery,
   ReadyJobsQuery,
@@ -43,11 +44,42 @@ class DrizzleStore implements RecordStore {
   hasUsers() {
     return this.execute((queries) => queries.hasUsers());
   }
-  listRunningJobIds(now: number) {
-    return this.execute((queries) => queries.listRunningJobIds(now));
+  listRunningJobIds(now: number, kind?: JobKind) {
+    return this.execute((queries) => queries.listRunningJobIds(now, kind));
   }
   listReadyJobs(query: ReadyJobsQuery) {
     return this.execute((queries) => queries.listReadyJobs(query));
+  }
+  listQueuedEvaluations(
+    limit: number,
+    excludeSubjects?: readonly string[],
+    after?: EvaluationQueueCursor,
+    staticOnly?: boolean,
+  ) {
+    return this.execute((queries) =>
+      queries.listQueuedEvaluations(limit, excludeSubjects, after, staticOnly),
+    );
+  }
+  listRunningEvaluationSubjects() {
+    return this.execute((queries) => queries.listRunningEvaluationSubjects());
+  }
+  listRunningEvaluations() {
+    return this.execute((queries) => queries.listRunningEvaluations());
+  }
+  countManualEvaluations(assetId: string, since: string) {
+    return this.execute((queries) => queries.countManualEvaluations(assetId, since));
+  }
+  nextEvaluationBackfill(rubric: string, evaluator: string | null, since: string) {
+    return this.execute((queries) => queries.nextEvaluationBackfill(rubric, evaluator, since));
+  }
+  listVersionEvaluations(versionId: string) {
+    return this.execute((queries) => queries.listVersionEvaluations(versionId));
+  }
+  reusableEvaluation(subjectDigest: string, rubric: string, evaluator: string | null) {
+    return this.execute((queries) => queries.reusableEvaluation(subjectDigest, rubric, evaluator));
+  }
+  evaluationSchedule() {
+    return this.get('evaluation_schedule', 'resource-evaluations');
   }
   listCancellationRequestedJobs() {
     return this.execute((queries) => queries.listCancellationRequestedJobs());

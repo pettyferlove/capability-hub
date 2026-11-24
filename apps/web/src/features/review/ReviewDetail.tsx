@@ -3,6 +3,8 @@
  * 决定与撤回都提交到 `/api/publication-requests/:id/{decision,cancel}`，携带 `revision`。
  */
 import { ReviewAuditEvidence, type ReviewAuditAdvice } from './ReviewAuditEvidence.js';
+import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
+import { EvaluationPanel } from '../evaluation/EvaluationPanel.js';
 import { PublicationReviewAssistant } from './PublicationReviewAssistant.js';
 import { ReviewEvidenceChecklist } from './ReviewEvidenceChecklist.js';
 import { Glyph } from '../../shared/components/Glyph.js';
@@ -131,7 +133,7 @@ export function ReviewDetail({
   autoStartBrief?: boolean;
   onApproved?: (request: ReviewResponse) => void;
 }) {
-  const { reload, me } = useHub();
+  const { reload, refresh, me } = useHub();
   const [draft, setDraft] = useState<{ comment: string; advice?: ReviewAuditAdvice }>({
       comment: '',
     }),
@@ -558,6 +560,35 @@ export function ReviewDetail({
               </div>
             )}
           </section>
+          {r.asset.kind === 'skill' && r.can_read_evaluation && (
+            <Disclosure className={reviewRiskPanelStyles}>
+              {({ isExpanded }) => (
+                <>
+                  <Heading level={3}>
+                    <Button
+                      slot="trigger"
+                      className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-label font-semibold text-ink hover:bg-brand-veil focus-visible:-outline-offset-2"
+                    >
+                      质量评测（参考）
+                      <ChevronDown size={16} className={isExpanded ? 'rotate-180' : undefined} />
+                    </Button>
+                  </Heading>
+                  <DisclosurePanel>
+                    {isExpanded && (
+                      <EvaluationPanel
+                        key={r.version_id}
+                        kind="review"
+                        requestId={r.id}
+                        versionId={r.version_id}
+                        refresh={refresh}
+                        onEvidence={(path, line) => setFileFocus({ path, start: line, end: line })}
+                      />
+                    )}
+                  </DisclosurePanel>
+                </>
+              )}
+            </Disclosure>
+          )}
           <FileWorkbench request={r} focus={fileFocus} />
           {infos.length > 0 && (
             <details className={scanInformationalStyles}>

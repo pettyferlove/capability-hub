@@ -15,6 +15,7 @@ const catalogReadRoutes: Record<string, true> = {
   '/api/assets/:id': true,
   '/api/assets/:id/versions': true,
   '/api/assets/:id/versions/:versionId': true,
+  '/api/assets/:id/versions/:versionId/evaluation': true,
   '/api/versions/:id/manifest': true,
   '/api/versions/:id/files': true,
   '/api/versions/:id/archive': true,

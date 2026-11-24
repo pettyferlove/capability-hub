@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { Client } from 'pg';
 import { sha256 } from '@capability-hub/domain/canonical';
 import { openRecordStore, snapshotStore, restoreStore } from '@capability-hub/infrastructure/store';
 import { JobQueue } from '@capability-hub/application';
@@ -23,6 +24,123 @@ import { assertResourceActivity } from '../support/resource-activity.js';
 import { assertScenarioDeletionReferences } from '../support/scenario-deletion.js';
 import { assertSingleInstallRedemption } from '../support/install-tickets.js';
 import { serveTestHub } from '../support/server.js';
+
+test('PostgreSQL 通过评测生成列调度，同一空摘要仅允许一条在途评测', async (context) => {
+  const database = await externalDatabase();
+  try {
+    const f = await createTestHub(context, {
+      database: { driver: 'postgresql', url: database.url, poolSize: 2 },
+    });
+    const sql = new Client({ connectionString: database.url });
+    try {
+      await sql.connect();
+      const intake = await receiveSkill(f);
+      const [original] = await f.store.listVersionEvaluations(intake.version_id);
+      const revision = await f.store.revision();
+      const urgent = await f.store.insert('resource_evaluations', {
+        ...original,
+        id: randomUUID(),
+        priority: 100,
+        scope: 'full',
+        trigger: 'submission',
+        audience_class: 'signed_in',
+        requires_api_key: false,
+        evaluator_digest: 'sha256:' + sha256('model'),
+        subject_digest: 'sha256:' + sha256('subject'),
+      });
+      const { rows } = await sql.query(
+        'SELECT asset_id, version_id, state, priority, requested_at, rubric_version, subject_digest, evaluator_digest FROM resource_evaluations WHERE id = $1',
+        [original.id],
+      );
+      assert.deepEqual(rows[0], {
+        asset_id: intake.asset_id,
+        version_id: intake.version_id,
+        state: 'queued',
+        priority: 0,
+        requested_at: original.requested_at,
+        rubric_version: original.rubric_version,
+        subject_digest: original.subject_digest,
+        evaluator_digest: null,
+      });
+      assert.deepEqual(
+        (await f.store.listQueuedEvaluations(1)).map((row) => row.id),
+        [urgent.id],
+      );
+      const duplicateId = randomUUID();
+      await assert.rejects(
+        sql.query('INSERT INTO resource_evaluations(id,data) VALUES ($1,$2)', [
+          duplicateId,
+          { ...original, id: duplicateId },
+        ]),
+        { code: '23505' },
+      );
+      await f.store.put('resource_evaluations', { ...original, state: 'failed' });
+      await assert.rejects(
+        sql.query('UPDATE resource_evaluations SET data = data WHERE id = $1', [original.id]),
+        { code: '23514' },
+      );
+      const replacement = await f.store.insert('resource_evaluations', {
+        ...original,
+        id: randomUUID(),
+      });
+      assert.deepEqual(
+        (await f.store.listQueuedEvaluations(10)).map((row) => row.id),
+        [urgent.id, replacement.id],
+      );
+      assert.deepEqual(
+        (await f.store.listQueuedEvaluations(1, [], urgent)).map((row) => row.id),
+        [replacement.id],
+      );
+      const id = randomUUID();
+      await assert.rejects(
+        sql.query('INSERT INTO resource_evaluations(id,data) VALUES ($1,$2)', [
+          id,
+          { ...original, id, version_id: randomUUID() },
+        ]),
+        { code: '23503' },
+      );
+      await f.store.insert('evaluation_schedule', {
+        id: 'resource-evaluations',
+        window_start: Date.now(),
+        reserved: 0,
+        updated_at: new Date().toISOString(),
+      });
+      assert.equal(await f.store.revision(), revision);
+    } finally {
+      await sql.end();
+      await f.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
+
+test('PostgreSQL 按近期使用量选当前发布回填，手动次数限定为目标资产', async (context) => {
+  const database = await externalDatabase();
+  try {
+    const f = await createTestHub(context, {
+      database: { driver: 'postgresql', url: database.url, poolSize: 2 },
+    });
+    try {
+      const first = await publishSkill(f, { slug: 'first-skill' });
+      const second = await publishSkill(f, { slug: 'second-skill' });
+      await f.store.audit(f.admin.id, 'skill.loaded', second.intake.version_id);
+      const since = new Date(Date.now() - 86400000).toISOString();
+      const asset = await f.hub.assetAccess.getAsset(second.intake.asset_id);
+      assert.equal(
+        await f.store.nextEvaluationBackfill('new-rubric', 'sha256:' + 'a'.repeat(64), since),
+        asset.current_release_id,
+      );
+      await f.hub.evaluations.manual(f.admin, second.intake.version_id, randomUUID());
+      assert.equal(await f.store.countManualEvaluations(first.intake.asset_id, since), 0);
+      assert.equal(await f.store.countManualEvaluations(second.intake.asset_id, since), 1);
+    } finally {
+      await f.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
 
 test('PostgreSQL 维护列表按业务事件更新顺序，读取操作不覆盖最近变动', async (context) => {
   const database = await externalDatabase();

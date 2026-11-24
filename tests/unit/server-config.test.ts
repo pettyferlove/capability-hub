@@ -43,6 +43,18 @@ test('空模型目录可以启动，但不能把不存在的默认模型当成�
   assert.equal(loadServerConfig(overrides, environment).ai.default_profile, '');
 });
 
+test('模型评测日额度须显式开启，空值与缺省均关闭模型阶段', async (context) => {
+  const dataDir = await directory(context);
+  for (const [raw, expected] of [
+    [undefined, 0],
+    ['', 0],
+    ['66', 66],
+  ] as const) {
+    const config = loadServerConfig({ dataDir }, { CAPABILITY_HUB_EVALUATION_DAILY_REQUESTS: raw });
+    assert.equal(config.evaluationDailyRequests, expected);
+  }
+});
+
 test('CLI 仓库保留路径且允许不配置，带凭据或非下载地址在初始化前被拒绝', async (context) => {
   const dataDir = await directory(context);
   for (const value of [undefined, ''])

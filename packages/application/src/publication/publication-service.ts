@@ -38,6 +38,8 @@ export class PublicationService {
     private readonly assets: AssetAccessService,
     private readonly idempotency: IdempotencyService,
     private readonly mcpKeys: McpSharedKeyService,
+    private readonly onSubmitted?: (request: PublicationRequestRecord) => Promise<void>,
+    private readonly onApproved?: (request: PublicationRequestRecord) => Promise<void>,
   ) {}
   /**
    * 提交与批准共用的策略自洽校验，只读不写；任一规则不满足即抛 422 并中止后续冻结。
@@ -286,6 +288,7 @@ export class PublicationService {
           request.id,
           b.purpose,
         );
+        await this.onSubmitted?.(request);
         return request;
       },
     );
@@ -532,6 +535,7 @@ export class PublicationService {
         await this.context.store.audit(p.id, 'publication.approved', id, b.comment, {
           release_id: release.id,
         });
+        await this.onApproved?.(result);
         return result;
       },
     );

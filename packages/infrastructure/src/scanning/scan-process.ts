@@ -1,12 +1,18 @@
 import { archive, inspect, unzip } from '../content.js';
 import { HubError } from '@capability-hub/domain/errors';
-import type { ScanInput } from '@capability-hub/application/ports';
+import { analyzeSkillStructure } from '../content/skill-static-analyzer.js';
+import type { ScanRequest } from './scan-messages.js';
 
-process.once('message', (input: ScanInput) => {
+process.once('message', (input: ScanRequest) => {
   void scan(input);
 });
-async function scan(input: ScanInput): Promise<void> {
+async function scan(input: ScanRequest): Promise<void> {
   try {
+    if (input.kind === 'structure') {
+      const result = analyzeSkillStructure(input.files);
+      process.send?.({ ok: true, result }, () => process.disconnect());
+      return;
+    }
     const files =
       input.files ??
       (input.kind === 'skill'
@@ -14,7 +20,7 @@ async function scan(input: ScanInput): Promise<void> {
         : [{ path: 'server.json', bytes: input.bytes, executable: false }]);
     const inspected = inspect(input.kind, files, input.slug);
     const zip = await archive(inspected.files);
-    process.send?.({ ok: true, inspected, zip }, () => process.disconnect());
+    process.send?.({ ok: true, result: { inspected, zip } }, () => process.disconnect());
   } catch (e) {
     const err =
       e instanceof HubError

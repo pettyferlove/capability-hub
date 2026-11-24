@@ -489,6 +489,9 @@ importers:
       '@capability-hub/application':
         specifier: workspace:*
         version: link:../application
+      '@capability-hub/domain':
+        specifier: workspace:*
+        version: link:../domain
       zod:
         specifier: 'catalog:'
         version: 4.6.7

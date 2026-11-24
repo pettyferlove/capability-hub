@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { aiConfigurationSchema } from '@capability-hub/ai';
 import { archive } from '@capability-hub/infrastructure/content';
 import { createApp } from '@capability-hub/server';
 import { loadServerConfig, type ServerConfig } from '@capability-hub/server/config';
@@ -43,6 +44,7 @@ export async function createTestApplication(
     database: { driver: 'sqlite' },
     objectStorage: { driver: 'filesystem' },
     ...overrides,
+    ai: overrides.ai ?? aiConfigurationSchema.parse({}),
   });
   const runtime = await createApp(config, logger);
   context.after(async () => {

@@ -2,8 +2,8 @@ import { loadServerConfig } from '@capability-hub/server/config';
 import { closeStorage, openStorage } from '@capability-hub/server/storage';
 import { createLogger } from '@capability-hub/logging/server';
 
-/** 备份清单的格式版本；第 2 版起提示表也是完整快照的必需表。 */
-export const backupFormatVersion = 2;
+/** 格式 3 的完整快照包含资源评测记录与额度调度表。 */
+export const backupFormatVersion = 3;
 
 /**
  * 运维脚本的最小运行时：只开存储、不开 HTTP、强制 `worker: false`，避免一次性脚本与本机

@@ -45,6 +45,8 @@ const restoreOrder: readonly TableName[] = [
   'hub_feedback_events',
   'hub_feedback_attachments',
   'catalog_prompts',
+  'resource_evaluations',
+  'evaluation_schedule',
 ];
 
 /**

@@ -143,7 +143,7 @@ export function FileWorkbench({
       return result;
     });
     // 等待文件选择和 Tab 切换提交后，再把视线与键盘焦点带到预览标题。
-    const frame = requestAnimationFrame(() => {
+    const frame = window.requestAnimationFrame(() => {
       const title = previewTitleRef.current;
       if (!title) return;
       if (focus?.start && evidenceLine.current) return;
@@ -156,7 +156,7 @@ export function FileWorkbench({
     });
     const timer = setTimeout(() => setHighlightedPath(''), 1800);
     return () => {
-      cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(frame);
       clearTimeout(timer);
     };
   }, [focus]);
@@ -318,7 +318,7 @@ export function FileWorkbench({
     mode === 'diff' && lines
       ? lines
       : currentText
-          .split('\n')
+          .split(/\r\n?|\n/)
           .map((text, i) => ({ text, before: '', after: String(i + 1), kind: 'context' }));
   const overflow = previewLines.length > 800;
   const focusStart = focus?.path === path && mode === 'source' ? focus.start : undefined;

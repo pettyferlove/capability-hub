@@ -64,6 +64,20 @@
       "when": 1795268880549,
       "tag": "0008_ai_execution_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795489731829,
+      "tag": "0009_resource_evaluations",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795509842270,
+      "tag": "0010_evaluation_partial_reuse",
+      "breakpoints": true
     }
   ]
 }

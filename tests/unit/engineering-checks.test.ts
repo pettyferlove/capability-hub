@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { copyFile, mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
+import { promisify } from 'node:util';
 import { checkArchitecture } from '../../scripts/checks/check-architecture.js';
 import { checkDocumentation } from '../../scripts/checks/lib/documentation.js';
 
@@ -10,6 +12,30 @@ async function put(root: string, path: string, text: string) {
   await mkdir(dirname(join(root, path)), { recursive: true });
   await writeFile(join(root, path), text);
 }
+
+test('真实模型测试入口会同时执行默认套件和追加的文件', async (context) => {
+  const root = await mkdtemp(join(tmpdir(), 'hub-live-runner-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const runner = 'scripts/testing/run-tests.mjs';
+  await put(root, 'scripts/testing/register-test-runtime.mjs', '');
+  await copyFile(new URL('../../' + runner, import.meta.url), join(root, runner));
+  const extra = 'tests/extra.test.mjs';
+  for (const [file, name] of [
+    ['tests/live/ai-models.test.ts', 'models'],
+    [extra, 'extra'],
+  ]) {
+    await put(
+      root,
+      file,
+      `import { appendFileSync } from 'node:fs'; appendFileSync('ran', '${name}\\n');`,
+    );
+  }
+  await promisify(execFile)(process.execPath, [runner, 'live', extra], { cwd: root, env: {} });
+  assert.deepEqual((await readFile(join(root, 'ran'), 'utf8')).trim().split('\n').sort(), [
+    'extra',
+    'models',
+  ]);
+});
 
 test('文档检查忽略代码示例，检查参考链接与编码错误并限制仓库边界', async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'hub-doc-check-'));

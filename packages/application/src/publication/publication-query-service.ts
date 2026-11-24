@@ -160,6 +160,11 @@ export class PublicationQueryService {
       context_valid: contextValid,
       ruleset_current: rulesetCurrent,
       can_maintain: canMaintain,
+      can_read_evaluation:
+        a.kind === 'skill' &&
+        (canMaintain ||
+          (canReview &&
+            (v.availability === 'unreleased' || (await this.assets.canRead(principal, a, v))))),
       can_decide: canDecide,
       can_audit_version: canAuditVersion,
       can_use_review_agent: canUseReviewAgent,

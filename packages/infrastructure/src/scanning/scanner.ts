@@ -1,27 +1,25 @@
-import type { ContentInspection } from '@capability-hub/domain/content';
-import type { ScanInput } from '@capability-hub/application/ports';
+import type { EvaluationDimensionResult } from '@capability-hub/domain/models';
+import type { SkillStaticAnalyzer, ScanInput } from '@capability-hub/application/ports';
 import { HubError } from '@capability-hub/domain/errors';
 import { fork } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ScanResponse } from './scan-messages.js';
+import type { ScanResponse, ScanRequest, IntakeScanResult } from './scan-messages.js';
 
 /**
- * 在隔离子进程里执行内容审查与打包，宿主进程不直接解析不可信上传内容。
+ * 在隔离子进程里执行接收扫描或结构评测，宿主进程不直接解析不可信上传内容。
  *
  * 隔离手段：`fork` 的子进程堆上限 384 MiB、`cwd` 指向新建临时目录、环境变量只剩 `PATH`、
  * 三个标准流全部丢弃，只走 IPC（advanced 序列化以传 Buffer）。输入经 IPC 传入，
- * 输出只有审查结果与 ZIP。单次 30 秒超时（504 `SCAN_TIMEOUT`，可重试）；子进程提前退出或
+ * 接收返回审查结果与 ZIP，评测只返回维度结果。单次 30 秒超时（504 `SCAN_TIMEOUT`，可重试）；子进程提前退出或
  * IPC 失败按 503 `SCANNER_FAILED` / `SCANNER_UNAVAILABLE` 处理，均标记可重试。
  *
  * 无论成功失败，子进程都会被 SIGKILL 并等待 `close` 后再删临时目录，不留残留进程或文件。
  * 子进程报出的 {@link HubError} 原样透传错误码与 `retryable`，宿主不重新解释。
  */
-export async function scanIsolated(
-  input: ScanInput,
-): Promise<{ inspected: ContentInspection; zip: Buffer }> {
+async function runIsolated<T>(input: ScanRequest): Promise<T> {
   const directory = await mkdtemp(join(tmpdir(), 'capability-scan-'));
   let exited: Promise<void> | undefined;
   try {
@@ -62,10 +60,10 @@ export async function scanIsolated(
           ),
         30000,
       );
-      child.once('message', (result: ScanResponse) =>
+      child.once('message', (result: ScanResponse<T>) =>
         finish(() =>
           result.ok
-            ? resolve({ inspected: result.inspected, zip: result.zip })
+            ? resolve(result.result)
             : reject(
                 new HubError(
                   result.error.status,
@@ -96,3 +94,12 @@ export async function scanIsolated(
     await rm(directory, { recursive: true, force: true });
   }
 }
+
+/** 接收检查在受限堆子进程解包并返回规范化归档。 */
+export function scanIsolated(input: ScanInput) {
+  return runIsolated<IntakeScanResult>(input);
+}
+
+/** 结构评测独占解析进程，超时或异常退出不会阻塞宿主续租。 */
+export const analyzeSkillIsolated: SkillStaticAnalyzer = (files) =>
+  runIsolated<EvaluationDimensionResult>({ kind: 'structure', files });

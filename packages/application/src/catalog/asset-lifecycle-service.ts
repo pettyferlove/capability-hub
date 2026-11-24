@@ -170,6 +170,11 @@ export class AssetLifecycleService {
     for (const candidate of version
       ? [version]
       : await this.context.store.where('versions', 'asset_id', assetId)) {
+      for (const evaluation of await this.context.store.listVersionEvaluations(candidate.id)) {
+        for (const job of await this.context.store.where('jobs', 'aggregate_id', evaluation.id))
+          await this.context.store.remove('jobs', job.id);
+        await this.context.store.remove('resource_evaluations', evaluation.id);
+      }
       for (const scan of await this.context.store.where('scans', 'version_id', candidate.id))
         await this.context.store.remove('scans', scan.id);
       await this.context.store.remove('versions', candidate.id);

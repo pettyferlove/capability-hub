@@ -4,4 +4,9 @@ export { MinioBlobStore } from './content/minio-blob-store.js';
 export { inspect } from './content/inspection.js';
 export { boundedJson } from './content/json.js';
 export { archive, normalizeSkill, unzip } from './content/zip-archive.js';
-export { markdownReferences, localReference } from './content/markdown-references.js';
+export {
+  markdownReferences,
+  localReference,
+  resolveMarkdownReference,
+} from './content/markdown-references.js';
+export { analyzeSkillStructure } from './content/skill-static-analyzer.js';

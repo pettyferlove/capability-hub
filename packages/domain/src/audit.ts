@@ -144,6 +144,7 @@ export const auditDefinitions: Record<string, AuditDefinition> = {
   'content.management_read': { label: '审查内容快照', category: 'content', subject: 'version' },
   'asset.management_versions': { label: '查看维护版本', category: 'content', subject: 'asset' },
   'content.download': { label: '下载资源', category: 'content', subject: 'version' },
+  'evaluation.requested': { label: '请求资源评测', category: 'content', subject: 'version' },
   'skill.loaded': { label: '加载 Skill', category: 'content', subject: 'version' },
   'skill.installation_prepared': {
     label: '获取 Skill 安装包',

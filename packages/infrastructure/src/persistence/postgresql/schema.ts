@@ -778,6 +778,54 @@ export const hub_feedback_attachments = pgTable(
 );
 
 /** 后台开场提示的单例状态；不安装版本触发器，刷新它不让缓存失效。 */
+
+/** 空评测器摘要也参与在途去重，终态冻结由迁移触发器守卫。 */
+export const resource_evaluations = pgTable(
+  'resource_evaluations',
+  {
+    id: text('id').primaryKey().notNull(),
+    data: jsonb('data').$type<RecordMap['resource_evaluations']>().notNull(),
+    asset_id: feedbackText('asset_id').notNull(),
+    version_id: feedbackText('version_id').notNull(),
+    state: feedbackText('state').notNull(),
+    priority: feedbackInteger('priority').notNull(),
+    requested_at: feedbackText('requested_at').notNull(),
+    rubric_version: feedbackText('rubric_version').notNull(),
+    subject_digest: feedbackText('subject_digest').notNull(),
+    evaluator_digest: feedbackText('evaluator_digest'),
+  },
+  (t): PgTableExtraConfigValue[] => [
+    check('resource_evaluations_data_check', feedbackDataCheck),
+    foreignKey({ columns: [t.asset_id], foreignColumns: [assets.id] }),
+    foreignKey({ columns: [t.version_id], foreignColumns: [versions.id] }),
+    index('evaluations_queue').on(t.state, t.priority.desc(), t.requested_at, t.id),
+    index('evaluations_version').on(t.version_id, t.rubric_version),
+    index('evaluations_reuse')
+      .on(t.subject_digest, t.rubric_version)
+      .where(sql`state in ('succeeded', 'partial')`),
+    uniqueIndex('evaluations_active_subject')
+      .on(t.version_id, t.subject_digest, t.rubric_version, sql`coalesce(evaluator_digest, '')`)
+      .where(sql`state in ('queued','running')`),
+  ],
+);
+
+/** 调度单例与目录游标独立，写入不递增目录修订。 */
+export const evaluation_schedule = pgTable(
+  'evaluation_schedule',
+  {
+    id: text('id').primaryKey().notNull(),
+    data: jsonb('data').$type<RecordMap['evaluation_schedule']>().notNull(),
+    window_start: bigint('window_start', { mode: 'number' })
+      .generatedAlwaysAs(sql`((data ->> 'window_start')::bigint)`)
+      .notNull(),
+    reserved: feedbackInteger('reserved').notNull(),
+  },
+  (): PgTableExtraConfigValue[] => [
+    check('evaluation_schedule_data_check', feedbackDataCheck),
+    check('evaluation_schedule_singleton', sql`id = 'resource-evaluations'`),
+  ],
+);
+
 export const catalog_prompts = pgTable(
   'catalog_prompts',
   {

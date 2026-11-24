@@ -12,7 +12,7 @@ if (
   !manifest ||
   typeof manifest !== 'object' ||
   !('schema' in manifest) ||
-  (manifest.schema !== 1 && manifest.schema !== backupFormatVersion) ||
+  (manifest.schema !== 1 && manifest.schema !== 2 && manifest.schema !== backupFormatVersion) ||
   !('records_sha256' in manifest)
 )
   throw new Error('备份清单无效');
@@ -21,10 +21,18 @@ const records = await readFile(join(source, 'records.json'));
 if (sha256(records) !== manifest.records_sha256) throw new Error('备份记录摘要不匹配');
 
 const data: unknown = JSON.parse(records.toString());
-// 只有旧清单允许缺少当时不存在的提示表，其他表和对象仍需完整通过校验。
+// 仅旧格式允许补齐当时尚不存在的派生表。
 const snapshot = parseSnapshot(
-  manifest.schema === 1 && data !== null && typeof data === 'object' && !Array.isArray(data)
-    ? { catalog_prompts: [], ...data }
+  manifest.schema < backupFormatVersion &&
+    data !== null &&
+    typeof data === 'object' &&
+    !Array.isArray(data)
+    ? {
+        ...(manifest.schema === 1 ? { catalog_prompts: [] } : {}),
+        resource_evaluations: [],
+        evaluation_schedule: [],
+        ...data,
+      }
     : data,
 );
 const runtime = await openOperations();

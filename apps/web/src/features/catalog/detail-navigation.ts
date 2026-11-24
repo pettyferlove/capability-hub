@@ -1,5 +1,6 @@
-/** 详情面板的五个互斥视图，同一时刻只挂载其中一个。 */
-export type DetailTab = 'overview' | 'files' | 'installation' | 'versions' | 'feedback';
+/** 文件与评测页签共享抽屉的阅读历史，始终绑定同一发布版本。 */
+export type DetailTab =
+  'overview' | 'evaluation' | 'files' | 'installation' | 'versions' | 'feedback';
 
 /** 面板内的一次历史位置；`path` 只在 `files` 视图下决定预览哪个文件。 */
 export interface DetailLocation {
@@ -7,6 +8,8 @@ export interface DetailLocation {
   path: string;
   /** 文件预览内的 Markdown 标题锚点，滚动恢复时据此定位。 */
   anchor?: string;
+  /** 评测引用的原文件行号，从 1 开始。 */
+  line?: number;
 }
 
 /** 浏览器式历史栈；`index` 恒落在 `entries` 的合法下标内。 */
@@ -21,7 +24,7 @@ export type DetailNavigationAction =
 
 /** 位置判重与滚动位置缓存的键；缺省锚点与空串等价。 */
 export function detailLocationKey(location: DetailLocation) {
-  return `${location.tab}:${location.path}#${location.anchor ?? ''}`;
+  return JSON.stringify([location.tab, location.path, location.anchor ?? '', location.line]);
 }
 
 /**
