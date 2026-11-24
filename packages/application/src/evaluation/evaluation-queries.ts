@@ -20,7 +20,7 @@ import type {
 import type { AssetAccessService } from '../catalog/asset-access-service.js';
 import type { RecordStore } from '../ports/index.js';
 import type { EvaluationService } from './evaluation-service.js';
-import { dayMs, utcWindow } from './evaluation-stages.js';
+import { dayMs, pendingCalls, utcWindow } from './evaluation-stages.js';
 
 type Evaluation = ResourceEvaluationRecord;
 type Declaration = Pick<PublicationRequestRecord, 'distribution' | 'requires_api_key'>;
@@ -199,6 +199,7 @@ export class EvaluationQueries {
     asset: AssetRecord,
     version: VersionRecord,
     waiting: Evaluation[] = [],
+    frozen?: Declaration,
   ) {
     const evaluator = this.evaluations.evaluatorDigest;
     const permitted =
@@ -217,13 +218,24 @@ export class EvaluationQueries {
             row.scope === 'full',
         )
       : [];
-    const queued = inFlight.some((row) => row.state === 'queued');
+    const pending = inFlight.find((row) => row.state === 'queued');
+    // 当日手动次数已用完时，额度窗口不是阻止发起的原因。
+    const requestable = permitted && (await this.evaluations.hasManualQuota(asset.id));
     const window =
-      evaluator && (permitted || queued)
-        ? await this.evaluations.admissionWindow(evaluator)
+      evaluator && requestable
+        ? await this.evaluations.admissionWindow(
+            evaluator,
+            await this.evaluations.manualCost(version, frozen),
+          )
         : 'unavailable';
     const next = utcWindow() + dayMs;
-    let delayed = queued && window === 'next_window';
+    // 手动发起与排队中的评测都按各自待补调用数判断是否要等下一额度窗口，界面据此说明原因。
+    let delayed =
+      window === 'next_window' ||
+      (!!evaluator &&
+        !!pending &&
+        (await this.evaluations.admissionWindow(evaluator, pendingCalls(pending))) ===
+          'next_window');
     if (!delayed) {
       for (const row of inFlight) {
         if (!row.active_job_id) continue;
@@ -242,8 +254,7 @@ export class EvaluationQueries {
     return {
       current_rubric_version: evaluationRubricVersion,
       model_enabled: !!evaluator,
-      can_request:
-        permitted && window === 'available' && (await this.evaluations.hasManualQuota(asset.id)),
+      can_request: requestable && window === 'available',
       next_window_at: delayed ? new Date(next).toISOString() : null,
     };
   }
@@ -391,6 +402,7 @@ export class EvaluationQueries {
         asset,
         version,
         candidateRow ? [candidateRow] : [],
+        request,
       );
       const results: VersionResult[] = [];
       if (candidateRow) results.push({ row: candidateRow, version });

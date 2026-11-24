@@ -130,15 +130,53 @@ export class EvaluationService {
     );
   }
 
-  /** 界面准入复用调度的整次成本，运行中已占用的当日预算不能再次承诺。 */
-  async admissionWindow(evaluator: string): Promise<'available' | 'next_window' | 'unavailable'> {
-    if (this.settings.evaluationDailyRequests < fullCost) return 'unavailable';
+  /**
+   * 手动请求实际需要的模型调用数，与登记时的复用规则一致：已成功的同主体评测不再出站，
+   * 运行中的调用已计入当日预算，排队中的评测与可沿用的部分结果只计未完成阶段。
+   */
+  async manualCost(version: VersionRecord, frozen?: Declaration) {
+    const evaluator = this.model();
+    if (!evaluator) return fullCost;
+    const subject = digest(
+      canonical({
+        content_digest: version.content_digest,
+        ...(await this.declaration(version, frozen)),
+      }),
+    );
+    const existing = (await this.store.listVersionEvaluations(version.id)).find(
+      (row) =>
+        row.subject_digest === subject &&
+        row.rubric_version === evaluationRubricVersion &&
+        row.evaluator_digest === evaluator.digest &&
+        ['queued', 'running', 'succeeded'].includes(row.state),
+    );
+    if (existing) return existing.state === 'queued' ? pendingCalls(existing) : 0;
+    const source = await this.store.reusableEvaluation(
+      subject,
+      evaluationRubricVersion,
+      evaluator.digest,
+    );
+    if (!source) return fullCost;
+    if (source.state === 'succeeded') return 0;
+    const stages = Object.keys(evaluationStageRequests).map((id) => ({
+      id,
+      state: 'pending' as const,
+    }));
+    return pendingCalls(reuseResult({ ...source, stages }, source));
+  }
+
+  /** 准入按本次请求实际待补的调用数计算，运行中已占用的当日预算不能再次承诺。 */
+  async admissionWindow(
+    evaluator: string,
+    cost = fullCost,
+  ): Promise<'available' | 'next_window' | 'unavailable'> {
+    if (this.settings.evaluationDailyRequests < cost) return 'unavailable';
     let budget = await this.stages.remaining();
-    if (budget < fullCost) return 'next_window';
+    if (budget < cost) return 'next_window';
     for (const row of await this.store.listRunningEvaluations()) {
       if (row.evaluator_digest !== evaluator || (await this.stages.unavailable(row))) continue;
       budget -= committedCalls(row, await this.store.get('jobs', row.active_job_id));
-      if (budget < fullCost) return 'next_window';
+      if (budget < cost) return 'next_window';
     }
     return 'available';
   }
@@ -367,7 +405,7 @@ export class EvaluationService {
         if (job?.state !== 'queued' || job.run_after <= Date.now()) slots--;
         budget -= committedCalls(row, job);
       }
-      // 无法启动完整评测时轮转检查，防止排在长队后面的撤销和零调用复用饿死。
+      // 剩余预算不够一整轮时轮转检查，防止排在长队后面的撤销和零调用复用饿死。
       const constrained = slots <= 0 || budget < fullCost;
       const limit = constrained ? 8 : slots;
       const queued = await this.store.listQueuedEvaluations(
@@ -400,7 +438,7 @@ export class EvaluationService {
         }
         // 轮转游标只负责取消和复用；实际启动按队首优先级，避免低优先级越过尚未轮到的记录。
         if (constrained || row.state === 'succeeded' || subjects.has(row.subject_digest)) continue;
-        if (slots <= 0 || (row.scope === 'full' && budget < fullCost)) continue;
+        if (slots <= 0 || (row.scope === 'full' && budget < pendingCalls(row))) continue;
         row = copyStructure(row, await this.store.listVersionEvaluations(row.version_id));
         subjects.add(row.subject_digest);
         slots--;
@@ -408,20 +446,20 @@ export class EvaluationService {
         await this.stages.advance(row);
       }
       if (!constrained || slots <= 0) return;
-      for (let row of await this.store.listQueuedEvaluations(
-        slots,
-        [...subjects],
-        undefined,
-        true,
-      )) {
+      // 队首中待补调用装得下剩余预算的记录照常启动：结构规范为零调用，部分结果只补跑失败阶段。
+      for (let row of await this.store.listQueuedEvaluations(8, [...subjects])) {
+        if (slots <= 0) break;
         const reason = await this.stages.unavailable(row);
         if (reason) {
           await this.stages.cancel(row, reason);
           continue;
         }
-        if (subjects.has(row.subject_digest)) continue;
+        const cost = row.scope === 'full' ? pendingCalls(row) : 0;
+        if (subjects.has(row.subject_digest) || cost > budget) continue;
         row = copyStructure(row, await this.store.listVersionEvaluations(row.version_id));
         subjects.add(row.subject_digest);
+        slots--;
+        budget -= cost;
         await this.stages.advance(row);
       }
     });

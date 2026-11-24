@@ -161,7 +161,6 @@ export class SqliteQueries implements RecordQueries {
     limit: number,
     excludeSubjects: readonly string[] = [],
     after?: EvaluationQueueCursor,
-    staticOnly = false,
   ) {
     if (limit <= 0) return [];
     const t = resource_evaluations;
@@ -173,7 +172,6 @@ export class SqliteQueries implements RecordQueries {
           and(
             eq(t.state, 'queued'),
             position,
-            staticOnly ? isNull(t.evaluator_digest) : undefined,
             excludeSubjects.length ? not(inArray(t.subject_digest, excludeSubjects)) : undefined,
           ),
         )

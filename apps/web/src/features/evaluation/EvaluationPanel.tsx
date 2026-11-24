@@ -330,7 +330,7 @@ function RunState({ run, nextWindow }: { run?: EvaluationDetail; nextWindow?: st
       )}
       {nextWindow && (
         <p>
-          下一额度窗口{' '}
+          {pending ? '等待额度' : '今日模型额度不足以完成此次评测'}，下一额度窗口{' '}
           <time dateTime={nextWindow}>
             {nextWindow.slice(0, 10)} {nextWindow.slice(11, 16)} UTC
           </time>

@@ -94,12 +94,10 @@ export interface RecordStore {
   /** 调度查询在数据库内筛选，历史任务正文不进入轮询路径。 */
   listRunningJobIds(now: number, kind?: JobKind): Promise<string[]>;
   listReadyJobs(query: ReadyJobsQuery): Promise<RecordMap['jobs'][]>;
-  /** `staticOnly` 只列无评测器摘要、零模型调用的结构规范评测。 */
   listQueuedEvaluations(
     limit: number,
     excludeSubjects?: readonly string[],
     after?: EvaluationQueueCursor,
-    staticOnly?: boolean,
   ): Promise<RecordMap['resource_evaluations'][]>;
   listRunningEvaluationSubjects(): Promise<string[]>;
   listVersionEvaluations(versionId: string): Promise<RecordMap['resource_evaluations'][]>;

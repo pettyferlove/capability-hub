@@ -54,11 +54,8 @@ class DrizzleStore implements RecordStore {
     limit: number,
     excludeSubjects?: readonly string[],
     after?: EvaluationQueueCursor,
-    staticOnly?: boolean,
   ) {
-    return this.execute((queries) =>
-      queries.listQueuedEvaluations(limit, excludeSubjects, after, staticOnly),
-    );
+    return this.execute((queries) => queries.listQueuedEvaluations(limit, excludeSubjects, after));
   }
   listRunningEvaluationSubjects() {
     return this.execute((queries) => queries.listRunningEvaluationSubjects());

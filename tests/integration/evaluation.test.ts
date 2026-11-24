@@ -1369,7 +1369,8 @@ test('首轮评测耗尽手动次数后仍向获授权会话展示匹配发布�
   assert.equal(waiting.evaluation, null);
   assert.equal(waiting.updating, false);
   assert.equal(waiting.latest_attempt_id, undefined);
-  assert.equal(waiting.next_window_at, undefined);
+  assert.equal(waiting.can_request, false);
+  assert.equal(waiting.next_window_at, '2026-11-25T00:00:00.000Z');
   await f.store.put('evaluation_schedule', { ...quota, reserved: 0 });
   const attempt = await f.hub.evaluations.manual(f.admin, intake.version_id, 'first');
   for (const key of ['second', 'last'])
@@ -1429,6 +1430,37 @@ test('供应方错误或非法输出保留结构分，只能手动重跑失败�
   assert.equal(second.stages.at(-1)?.failure_code, 'AI_OUTPUT_INVALID');
   assert.equal(second.state, 'partial');
   assert.equal((await f.store.evaluationSchedule())?.reserved, 34);
+});
+
+test('当日余额不足一整轮但够补跑失败阶段时，仍可手动重试并立即调度', async (t) => {
+  freezeUtcDay(t);
+  const { f, stub } = await evaluationHub(t, { transparency: () => ({ status: 503, json: {} }) });
+  const intake = await receiveSkill(f);
+  await f.hub.evaluationRunner.process(await claimEvaluation(f));
+  await submitPublication(f, intake);
+  await f.hub.evaluationRunner.process(await claimStage(f, 'transparency'));
+  const owner = await signIn(f);
+  const historyUrl = '/api/management/versions/' + intake.version_id + '/evaluations';
+  const window = (await f.store.evaluationSchedule())!;
+  await f.store.put('evaluation_schedule', { ...window, reserved: 300 });
+  const exhausted = managementEvaluationsResponseSchema.parse(
+    (await owner.get(historyUrl).expect(200)).body,
+  );
+  assert.equal(exhausted.can_request, false);
+  assert.equal(exhausted.next_window_at, '2026-11-25T00:00:00.000Z');
+  await f.store.put('evaluation_schedule', { ...window, reserved: 299 });
+  const enough = managementEvaluationsResponseSchema.parse(
+    (await owner.get(historyUrl).expect(200)).body,
+  );
+  assert.equal(enough.can_request, true);
+  assert.equal(enough.next_window_at, null);
+  stub.setHandler(evaluationModelHandler());
+  await f.hub.evaluations.manual(f.admin, intake.version_id, randomUUID());
+  const retry = await claimEvaluation(f);
+  assert.equal(retry.input.stage, 'transparency');
+  await f.hub.evaluationRunner.process(retry);
+  assert.equal((await f.store.get('resource_evaluations', retry.aggregate_id))?.state, 'succeeded');
+  assert.equal((await f.store.evaluationSchedule())?.reserved, 300);
 });
 
 test('同主体的另一版本在排队前后均能沿用部分结果，只派发未完成阶段', async (t) => {
