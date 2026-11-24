@@ -57,7 +57,7 @@ cycles, and `web/src/shared` → `web/src/features` imports are rejected.
 - **Concurrency safety:** mutating commands use `Idempotency-Key` plus `ETag`/`If-Match` revision
   checks (`withRevision`, `packages/application/src/shared/revision.ts`); conflicts are 409/412/428,
   never silent last-write-wins.
-- **Worker:** one HubWorker claims ready AI and content jobs every second. They share 1–5 slots
+- **Worker:** one HubWorker claims ready AI and content jobs every second. They share 1–100 slots
   (`CAPABILITY_HUB_WORKER_CONCURRENCY`, default 5) and renew leases every 20s. Content jobs retain
   backoff `[30s,120s,600s]` and max 3 attempts. AI supports durable resume without automatic
   provider-failure retries. See [AI framework](documents/design/ai-framework.md).

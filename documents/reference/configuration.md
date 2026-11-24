@@ -14,7 +14,7 @@
 | CAPABILITY_HUB_INSTANCE_SECRET                | 64 位十六进制；生产必须明确设置，开发可生成私有 instance.key         |
 | CAPABILITY_HUB_SETUP_TOKEN                    | 生产首次初始化需要，未配置不能初始化                                 |
 | CAPABILITY_HUB_WORKER                         | true；false 关闭内嵌 Worker                                          |
-| CAPABILITY_HUB_WORKER_CONCURRENCY             | 默认 5，可设 1–5 的整数。所有 Worker 作业共用此上限                  |
+| CAPABILITY_HUB_WORKER_CONCURRENCY             | 默认 5，可设 1–100 的整数。所有 Worker 作业共用此上限                |
 | CAPABILITY_HUB_EVALUATION_CONCURRENCY         | 默认 1，整数范围为 1 到 max(1, Worker 并发 − 1)                      |
 | CAPABILITY_HUB_EVALUATION_DAILY_REQUESTS      | 默认 0，仅做结构检查。启用模型评测须显式设置 UTC 每日调用上限        |
 | CAPABILITY_HUB_EVALUATION_BACKFILL            | 默认 false，按近 30 天使用次数回填当前 Skill 发布                    |

@@ -273,7 +273,7 @@ export function loadServerConfig(
     evaluationDailyRequests: Number(environment.CAPABILITY_HUB_EVALUATION_DAILY_REQUESTS ?? 0),
     evaluationBackfill: flag(environment, 'CAPABILITY_HUB_EVALUATION_BACKFILL', false),
     workerConcurrency: Number(
-      environment.CAPABILITY_HUB_WORKER_CONCURRENCY ?? JobQueue.maxConcurrency,
+      environment.CAPABILITY_HUB_WORKER_CONCURRENCY ?? JobQueue.defaultConcurrency,
     ),
     requestLogging:
       overrides.requestLogging ?? flag(environment, 'CAPABILITY_HUB_REQUEST_LOGS', true),

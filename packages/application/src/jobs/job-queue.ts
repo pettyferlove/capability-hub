@@ -12,10 +12,11 @@ const now = () => new Date().toISOString();
 
 /** 使用租约代次约束结果提交，过期执行者不能写回结果。 */
 export class JobQueue {
-  static readonly maxConcurrency = 5;
+  static readonly maxConcurrency = 100;
+  static readonly defaultConcurrency = 5;
   constructor(
     private readonly store: RecordStore,
-    private readonly concurrency: number = JobQueue.maxConcurrency,
+    private readonly concurrency: number = JobQueue.defaultConcurrency,
     private readonly evaluationConcurrency = 1,
   ) {}
   /**
