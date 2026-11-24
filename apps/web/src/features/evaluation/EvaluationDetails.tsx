@@ -1,5 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import { Button } from 'react-aria-components';
+import { radarRevealDelay } from '../../shared/components/RadarChart.js';
 import { ChevronRight } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import {
@@ -12,15 +13,19 @@ import {
   type EvaluationDetail,
 } from './evaluation-view.js';
 import {
+  evaluationChevronStyles,
   evaluationDetailsStyles,
   evaluationDisclosureStyles,
   evaluationLinkStyles,
   evaluationNoteStyles,
+  evaluationRevealStyles,
   evaluationRowStyles,
+  evaluationScoreStyles,
 } from './styles.js';
 
 type Evidence = EvaluationDetail['dimensions'][number]['checks'][number]['evidence'][number];
 type Jump = (path: string, line?: number) => void;
+type Highlight = (id: string | null) => void;
 
 function EvidenceLinks({ evidence, onEvidence }: { evidence: Evidence[]; onEvidence?: Jump }) {
   if (!evidence.length) return null;
@@ -63,9 +68,13 @@ function Fold({ title, children }: { title: string; children: ReactNode }) {
         onPress={() => setOpen(!open)}
       >
         {title}
-        <ChevronRight size={15} className={open ? 'rotate-90' : ''} aria-hidden="true" />
+        <ChevronRight
+          size={15}
+          className={cn(evaluationChevronStyles, open && 'rotate-90')}
+          aria-hidden="true"
+        />
       </Button>
-      <div id={id} hidden={!open} className="px-2 pt-1 pb-2">
+      <div id={id} hidden={!open} className={cn('px-2 pt-1 pb-2', evaluationRevealStyles)}>
         {open && children}
       </div>
     </section>
@@ -76,12 +85,16 @@ function DimensionRow({
   data,
   detail,
   previous,
+  order,
   onEvidence,
+  onHighlight,
 }: {
   data: Evaluation['dimensions'][number];
   detail?: EvaluationDetail['dimensions'][number];
   previous?: number | null;
+  order: number;
   onEvidence?: Jump;
+  onHighlight?: Highlight;
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -129,7 +142,11 @@ function DimensionRow({
           </span>
         )}
       </span>
-      <span className="shrink-0 text-right">
+      <span
+        key={data.score === null ? 'status' : 'score'}
+        className={evaluationScoreStyles}
+        style={{ animationDelay: radarRevealDelay(order) }}
+      >
         {data.score !== null ? (
           <span className="block text-section font-semibold leading-tight tabular-nums">
             {data.score}
@@ -153,7 +170,13 @@ function DimensionRow({
     </>
   );
   return (
-    <li className="min-w-0 border-b border-line last:border-0">
+    <li
+      className="min-w-0 border-b border-line last:border-0"
+      onPointerEnter={(event) => event.pointerType === 'mouse' && onHighlight?.(data.id)}
+      onPointerLeave={() => onHighlight?.(null)}
+      onFocus={() => onHighlight?.(data.id)}
+      onBlur={() => onHighlight?.(null)}
+    >
       {expandable ? (
         <Button
           className={evaluationRowStyles}
@@ -164,7 +187,7 @@ function DimensionRow({
           {heading}
           <ChevronRight
             size={14}
-            className={cn('shrink-0 text-muted-ink', open && 'rotate-90')}
+            className={cn(evaluationChevronStyles, 'text-muted-ink', open && 'rotate-90')}
             aria-hidden="true"
           />
         </Button>
@@ -174,7 +197,12 @@ function DimensionRow({
       {expandable && (
         <div id={id} hidden={!open}>
           {open && (
-            <div className="mx-2 mb-2.5 mt-1 space-y-2 border-s-2 border-line py-1 ps-3 text-label [overflow-wrap:anywhere]">
+            <div
+              className={cn(
+                'mx-2 mb-2.5 mt-1 space-y-2 border-s-2 border-line py-1 ps-3 text-label [overflow-wrap:anywhere]',
+                evaluationRevealStyles,
+              )}
+            >
               {detail?.summary && <p>{detail.summary}</p>}
               {detail?.failure_code && (
                 <p className={evaluationNoteStyles}>{failureLabel(detail.failure_code)}</p>
@@ -237,16 +265,19 @@ export function DimensionList({
   detail,
   previous,
   onEvidence,
+  onHighlight,
 }: {
   data: Evaluation;
   detail?: EvaluationDetail;
   previous?: ReadonlyMap<string, number | null>;
   onEvidence?: Jump;
+  onHighlight?: Highlight;
 }) {
-  const rows = evaluationDimensions(data).map((dimension) => ({
+  const rows = evaluationDimensions(data).map((dimension, order) => ({
     data: dimension,
     detail: detail?.dimensions.find((item) => item.id === dimension.id),
     previous: previous?.get(dimension.id),
+    order,
   }));
   const pending = rows.filter(
     (row) =>
@@ -266,7 +297,12 @@ export function DimensionList({
       {rows
         .filter((row) => !pending.includes(row))
         .map((row) => (
-          <DimensionRow key={row.data.id} {...row} onEvidence={onEvidence} />
+          <DimensionRow
+            key={row.data.id}
+            {...row}
+            onEvidence={onEvidence}
+            onHighlight={onHighlight}
+          />
         ))}
       {pending.length > 0 && (
         <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-2 py-2.5 text-caption text-muted-ink">

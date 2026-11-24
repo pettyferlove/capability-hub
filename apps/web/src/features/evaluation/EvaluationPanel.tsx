@@ -39,6 +39,10 @@ import {
   evaluationNoteStyles,
   evaluationPanelStyles,
   evaluationPopoverStyles,
+  evaluationRevealStyles,
+  evaluationStageActiveStyles,
+  evaluationStageFillStyles,
+  evaluationStageStyles,
 } from './styles.js';
 
 interface PanelCommon {
@@ -204,6 +208,7 @@ function Results({
   onEvidence?: PanelCommon['onEvidence'];
 }) {
   const [compare, setCompare] = useState(true);
+  const [highlight, setHighlight] = useState<string | null>(null);
   const dimensions = evaluationDimensions(data);
   const scored = dimensions.flatMap((d) =>
     d.score === null ? [] : [{ label: d.label, score: d.score }],
@@ -235,6 +240,7 @@ function Results({
             <RadarChart
               axes={chartAxes(data)}
               baseline={previous && dimensions.map((d) => previous.get(d.id) ?? null)}
+              highlight={highlight ? dimensions.findIndex((d) => d.id === highlight) : null}
             />
           </div>
           <figcaption>
@@ -271,7 +277,13 @@ function Results({
           </figcaption>
         </figure>
       )}
-      <DimensionList data={data} detail={detail} previous={previous} onEvidence={onEvidence} />
+      <DimensionList
+        data={data}
+        detail={detail}
+        previous={previous}
+        onEvidence={onEvidence}
+        onHighlight={scored.length >= 3 ? setHighlight : undefined}
+      />
       {scored.length < 3 && compareButton}
     </div>
   );
@@ -290,6 +302,8 @@ function RunState({ run, nextWindow }: { run?: EvaluationDetail; nextWindow?: st
     return null;
   const stages = run?.stages ?? [];
   const completed = stages.filter((stage) => stage.state !== 'pending').length;
+  const current =
+    run?.state === 'running' ? stages.find((stage) => stage.state === 'pending') : undefined;
   return (
     <div className="space-y-2 text-label">
       {pending && (
@@ -319,10 +333,17 @@ function RunState({ run, nextWindow }: { run?: EvaluationDetail; nextWindow?: st
                   key={stage.id}
                   aria-hidden="true"
                   className={cn(
-                    'min-w-0 flex-1 rounded-full',
-                    stage.state === 'pending' ? 'bg-line' : 'bg-brand',
+                    evaluationStageStyles,
+                    stage === current && evaluationStageActiveStyles,
                   )}
-                />
+                >
+                  <span
+                    className={cn(
+                      evaluationStageFillStyles,
+                      stage.state === 'pending' && 'scale-x-0',
+                    )}
+                  />
+                </span>
               ))}
             </div>
           )}
@@ -572,7 +593,7 @@ function PanelBody(props: PanelProps) {
         )}
       </header>
       {notice && (
-        <p role="status" className={evaluationNoteStyles}>
+        <p role="status" className={cn(evaluationNoteStyles, evaluationRevealStyles)}>
           {notice}
         </p>
       )}
