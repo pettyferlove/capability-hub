@@ -17,6 +17,7 @@ function exchangeData(row: AiRecordMap['ai_exchanges']) {
   });
 }
 
+/** 正文的存储编码不属于调用契约；还原请求和响应后，与普通记录使用同一套校验。 */
 export function readAiRecord<K extends AiTable>(table: K, data: AiRecordMap[AiTable]) {
   const payload = data.payload;
   if (table === 'ai_exchanges' && 'body_json' in payload && typeof payload.body_json === 'string') {
@@ -53,8 +54,10 @@ export async function retainExchange(
   await execute(sql`release savepoint retain_exchange`);
 }
 
+/** Worker 以满批作为可能仍有积压的信号，下轮继续清理而不进入冷却。 */
 export const exchangePurgeBatchSize = 500;
 
+/** 截止时刻本身已到期；关闭留存时传 null，整批删除不受采集时刻限制。 */
 export function expiredExchangeIds(through: number | null) {
   return sql`id in (select id from ai_exchanges where status = 'stored'
     ${through === null ? sql`` : sql`and position <= ${through}`}

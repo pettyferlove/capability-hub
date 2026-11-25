@@ -1,5 +1,6 @@
 import type { Json } from '../core/records.js';
 
+/** 端点返回的 JSON 对象只提供字段入口；字段值仍由各协议分别核验。 */
 export function wireObject(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
