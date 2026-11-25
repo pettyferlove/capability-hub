@@ -85,7 +85,7 @@ const detailedDimension = publicDimension.extend({
 const verdictEvidence = z.strictObject({
   passed: z.boolean(),
   valid: z.boolean(),
-  quote: z.string().max(200),
+  quote: z.string().max(320),
 });
 
 const stage = z.strictObject({

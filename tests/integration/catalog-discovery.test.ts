@@ -702,6 +702,63 @@ test('选方向直接列出模型为该方向挑出的版本，不再出站；�
   assert.equal(otherDirection.code, 'DISCOVERY_BASIS_UNAVAILABLE');
 });
 
+test('超长摘抄不作为方向或追问的证据，其他判断不受影响', async (context) => {
+  const { fixture, decisions, calls } = await discoveryHub(context);
+  const kit = await publish(fixture, 'http-regression-kit', regression);
+  const notes = await publish(fixture, 'release-notes', releaseNotes);
+  await fixture.worker.waitForIdle();
+  const client = httpClient(fixture);
+  const { viewer_key } = await entry(client);
+  const base = { expected_mode: 'dialogue', viewer_key };
+  // 压缩空白后会匹配简介里的短摘录，但应在压缩前拒绝超长输入。
+  const oversized = { 'http-regression-kit': `对关键 HTTP${' '.repeat(120)}接口做回归测试` };
+  decisions.push((input) => ({
+    action: 'guide',
+    directions: [
+      {
+        label: '检查发版风险',
+        intent: '核对接口与发版记录',
+        patch: {},
+        picks: picks(input, ['http-regression-kit', 'release-notes'], { ...quotes, ...oversized }),
+      },
+      {
+        label: '整理发布记录',
+        intent: '核对本次发版的变更',
+        patch: {},
+        picks: picks(input, ['release-notes'], quotes),
+      },
+    ],
+  }));
+  const guide = await turn(client, { ...base, action: 'message', text: '怎么核对发版？' }, 'guide');
+  const expanded = await turn(
+    client,
+    { ...base, action: 'direction', index: 1, context: guide.context },
+    'matches',
+  );
+  assert.deepEqual(
+    expanded.items.map(({ version_id, judgment }) => [version_id, judgment?.quote]),
+    [
+      [kit.version_id, null],
+      [notes.version_id, quotes['release-notes']],
+    ],
+  );
+  assert.equal(calls().length, 1);
+
+  decisions.push((input) => ({
+    action: 'refer',
+    index: 1,
+    picks: picks(input, ['http-regression-kit'], oversized),
+  }));
+  const referenced = await turn(
+    client,
+    { ...base, action: 'message', text: '第一个适合我吗', context: expanded.context },
+    'reference',
+  );
+  assert.equal(referenced.item?.version_id, kit.version_id);
+  assert.equal(referenced.item?.judgment?.quote, null);
+  assert.equal(calls().length, 2);
+});
+
 test('可见发布放不下时先送字面最相关的卡片，请求体不超过短调用上限', async (context) => {
   const { fixture, decisions, calls } = await discoveryHub(context);
   const filler = '整理团队内部的工作流程与协作规范，'.repeat(12);
@@ -1245,6 +1302,7 @@ test('格式错误只出站一次；超出每主体额度时不再出站，独�
     { action: 'search', patch: { requirement: ['鉴权测试'] } },
     { action: 'guide', directions: [{ label: '方向', intent: '核查', patch: {}, pick: [] }] },
     { action: 'search', patch: { requirements: ['ﬃ'.repeat(22)] } },
+    { action: 'search', picks: [{ ref: 'r1', fit: 'direct', reason: '符合需求', quote: 120 }] },
   ];
   for (const [index, decision] of invalid.entries()) {
     decisions.push(decision);

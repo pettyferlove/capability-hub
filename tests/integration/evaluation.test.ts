@@ -1198,6 +1198,113 @@ test('作者用例优先，不能纸面核对的断言、越界行号与引用�
   assert.equal(judgment.without_skill.passed, true);
 });
 
+test('盲评按单侧保留完整的限长引文，不采信超限、伪造或未送出的内容', async (t) => {
+  freezeUtcDay(t);
+  const longer = '依据'.repeat(100) + '。';
+  const atLimit = '𠮷'.repeat(320);
+  const overLimit = '证'.repeat(321);
+  const forged = '𠮷'.repeat(203) + '伪造尾部';
+  const notSent = '仅在未截断交付物中的结论';
+  const { f, stub } = await evaluationHub(t, {
+    'task-without': () => ({
+      json: openAiJson({ output: `简要    步骤\n${longer}\n${'基'.repeat(7600)}` }),
+    }),
+    'task-with': () => ({
+      json: openAiJson({
+        output: `详尽    步骤\n${atLimit}\n${overLimit}\n${'材'.repeat(7000)}\n${notSent}`,
+      }),
+    }),
+    'task-judge': (request) => {
+      const input = evaluationModelInput(request);
+      const pair = JSON.parse(input) as { prompt: string; A: string; B: string };
+      const judged = evaluationJudge(input);
+      if (pair.prompt === '汇总交付条件') {
+        const side = pair.A.includes('详尽') ? 'a' : 'b';
+        const baseline = side === 'a' ? 'b' : 'a';
+        const delivered = side === 'a' ? pair.A : pair.B;
+        assert(delivered.includes(overLimit));
+        assert(!delivered.includes(notSent));
+        judged.assertions[0][baseline] = { passed: true, quote: longer };
+        for (const [index, quote] of [atLimit, overLimit, forged, notSent].entries()) {
+          judged.assertions[index][side] = { passed: true, quote };
+        }
+      }
+      return { json: openAiJson(judged) };
+    },
+  });
+  const item = await receiveSkill(f);
+  await f.hub.evaluations.manual(f.admin, item.version_id, randomUUID());
+  const row = await finishModelEvaluation(f);
+
+  const owner = await signIn(f);
+  const history = managementEvaluationsResponseSchema.parse(
+    (await owner.get('/api/management/versions/' + item.version_id + '/evaluations').expect(200))
+      .body,
+  );
+  const evaluation = history.items.find((record) => record.id === row?.id);
+  assert(evaluation);
+  const stage = evaluation.stages.find((s) => s.id === 'task-run-1');
+  assert(stage?.assertion_results);
+  assert.deepEqual(stage.assertion_results[0], {
+    with_skill: { passed: true, valid: true, quote: atLimit },
+    without_skill: { passed: true, valid: true, quote: longer },
+  });
+  assert.deepEqual(
+    stage.assertion_results.slice(1).map((pair) => [pair.with_skill, pair.without_skill.valid]),
+    Array.from({ length: 3 }, () => [{ passed: false, valid: false, quote: '' }, true]),
+  );
+  const effect = evaluation.dimensions.find((dimension) => dimension.id === 'effectiveness');
+  assert.partialDeepStrictEqual(effect?.metrics, {
+    total_assertions: 16,
+    valid_assertions: 13,
+    pass_with: 13 / 16,
+    pass_without: 8 / 16,
+  });
+  assert.equal(stage.requests, 3);
+  assert.equal(stub.requests.length, 33);
+});
+
+test('盲评仍拒绝断言条数不符、缺侧、引文类型错误和不可持久化文本', async (t) => {
+  const { f } = await evaluationHub(t, {
+    'task-judge': (request) => {
+      const input = evaluationModelInput(request);
+      const { prompt } = JSON.parse(input) as { prompt: string };
+      const { assertions } = evaluationJudge(input);
+      const invalid: unknown[] = [...assertions];
+      switch (prompt) {
+        case '汇总交付条件':
+          invalid.pop();
+          break;
+        case '整理输入资料':
+          invalid[0] = { a: assertions[0].a };
+          break;
+        case '核对模块边界':
+          invalid[0] = { ...assertions[0], b: { passed: true, quote: 120 } };
+          break;
+        case '准备交付说明':
+          invalid[0] = {
+            a: { passed: true, quote: '\0' },
+            b: { passed: true, quote: '\ud800' },
+          };
+          break;
+      }
+      return { json: openAiJson({ assertions: invalid }) };
+    },
+  });
+  const item = await receiveSkill(f);
+  await f.hub.evaluations.manual(f.admin, item.version_id, randomUUID());
+  const last = await claimStage(f, 'transparency');
+  await f.hub.evaluationRunner.process(last);
+  const row = await f.store.get('resource_evaluations', last.aggregate_id);
+  assert.equal(row?.state, 'partial');
+  assert.deepEqual(
+    row.stages
+      .filter((stage) => stage.id.startsWith('task-run-'))
+      .map((stage) => [stage.state, stage.failure_code, stage.assertion_results]),
+    Array.from({ length: 4 }, () => ['failed', 'AI_OUTPUT_INVALID', undefined]),
+  );
+});
+
 test('纸面推演前作者附件已不可读，报告输入材料错误且不产生模型请求', async (t) => {
   const { f, stub } = await evaluationHub(t);
   const path = 'evals/input.txt';

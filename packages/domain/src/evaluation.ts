@@ -8,7 +8,7 @@ export {
 } from './evaluation-input.js';
 
 /** 权重、阈值或方法变化时使用新版本，使旧结果只与同标准比较。 */
-export const evaluationRubricVersion = '2026-11-24.5';
+export const evaluationRubricVersion = '2026-11-25.1';
 
 /** 调度准入按已启用的阶段合计调用数；每个阶段单独持有作业租约。 */
 export const evaluationStageRequests = {
@@ -204,6 +204,7 @@ export const evaluationThresholds = {
     maxAuthorInputBytes: 8192,
     minAssertionsPerCase: 3,
     maxAssertionsPerCase: 5,
+    maxQuoteChars: 320,
     minAssertions: 10,
     mediumAssertions: 16,
     maxInvalidRatio: 0.1,

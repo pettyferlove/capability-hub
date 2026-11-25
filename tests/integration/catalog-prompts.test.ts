@@ -37,7 +37,7 @@ function messageOf(request: StubRequest) {
     return JSON.parse(content) as {
       message?: string;
       resources?: { description: string }[];
-      catalog?: { ref: string; slug: string }[];
+      catalog?: { ref: string; slug: string; description: string }[];
     };
   } catch {
     return {};
@@ -454,6 +454,97 @@ test('预检只接受前台能交付的固定版本，不以空选择或与受�
     row?.batches.flatMap((item) => item.prompts),
     [prompt],
   );
+});
+
+test('预检超长摘抄不是证据，后续有依据的开场提示仍可缓存并按发布授权展示', async (context) => {
+  const questions = ['怎样检查发版风险？', '怎样生成便于复核的测试记录？'];
+  const shortQuote = '生成便于团队复核的测试记录';
+  const description = `${'在发版前检查关键接口并核对常见失败场景，'.repeat(7)}${shortQuote}。`;
+  const slug = 'release-checklist';
+  const stub = await serveModelStub(context, (request) => {
+    const { resources, message, catalog } = messageOf(request);
+    if (resources)
+      return { json: openAiJson({ prompts: questions.map((text) => ({ label: text, text })) }) };
+    const card = catalog?.find((item) => item.slug === slug);
+    if (!card) return { status: 500, json: {} };
+    return {
+      json: openAiJson({
+        action: 'search',
+        patch: {},
+        picks: [
+          {
+            ref: card.ref,
+            fit: 'direct',
+            reason: '用于发版前的检查和测试记录',
+            quote: message === questions[0] ? card.description : shortQuote,
+          },
+        ],
+      }),
+    };
+  });
+  const profile = stub.profile('openai');
+  const fixture = await createTestHub(context, {
+    ai: aiConfigurationSchema.parse({ profiles: [profile], default_profile: profile.id }),
+  });
+  const { intake } = await publishSkill(fixture, {
+    slug,
+    distribution: { mode: 'approved_audience', audience: [`group:${fixture.teamId}`] },
+    files: [
+      {
+        path: 'SKILL.md',
+        bytes: Buffer.from(`---\nname: ${slug}\ndescription: ${description}\n---\n\n# 清单\n`),
+        executable: false,
+      },
+    ],
+  });
+  await fixture.worker.waitForIdle();
+  const release = (await fixture.hub.assetAccess.getAsset(intake.asset_id)).current_release_id;
+  assert(release);
+  const before = stub.requests.length;
+  const job = await claimPromptJob(fixture);
+  await fixture.hub.prompts.process(job, new AbortController().signal);
+  assert.equal((await fixture.store.get('jobs', job.id))?.state, 'succeeded');
+
+  const state = await fixture.store.get('catalog_prompts', 'catalog-prompts');
+  const cached = state?.batches.flatMap(({ prompts }) => prompts) ?? [];
+  assert.deepEqual(
+    cached.map(({ text, basis }) => ({ text, basis })),
+    [
+      {
+        text: questions[1],
+        basis: {
+          asset_id: intake.asset_id,
+          version_id: intake.version_id,
+          release_id: release,
+          fields: ['description'],
+        },
+      },
+    ],
+  );
+  const member = await signIn(fixture, 'reviewer');
+  const outsider = await signIn(fixture, 'reader');
+  for (const [client, expected] of [
+    [member, [questions[1]]],
+    [outsider, []],
+    [httpClient(fixture), []],
+  ] as const) {
+    const entry: DiscoveryEntryResponse = (await client.get('/api/catalog/discovery').expect(200))
+      .body;
+    assert.deepEqual(
+      entry.suggestions.map(({ text }) => text),
+      expected,
+    );
+  }
+  await fixture.hub.lifecycle.revokeVersion(fixture.admin, intake.version_id, '停止分发');
+  const revoked: DiscoveryEntryResponse = (await member.get('/api/catalog/discovery').expect(200))
+    .body;
+  assert.deepEqual(revoked.suggestions, []);
+  const requests = stub.requests.slice(before).map(messageOf);
+  assert.deepEqual(
+    requests.map(({ message }) => message ?? 'generate'),
+    ['generate', ...questions],
+  );
+  assert.equal(requests[1].catalog?.find((item) => item.slug === slug)?.description, description);
 });
 
 test('同批含 NUL 和孤立代理项时只丢弃异常提示，非 BMP 文字保持原样', async (context) => {

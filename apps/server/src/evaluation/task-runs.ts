@@ -220,10 +220,21 @@ export async function generateTasks(
   };
 }
 
-function confirmed(judgment: { passed: boolean; quote: string }, output: string) {
-  const normalize = (text: string) => text.trim().replace(/\s+/gu, ' ');
-  const quote = normalize(judgment.quote);
-  const valid = quote.length > 0 && normalize(output).includes(quote);
+function withinQuoteLimit(quote: string) {
+  if (quote.length <= limits.maxQuoteChars) return true;
+  if (quote.length > limits.maxQuoteChars * 2) return false;
+  let length = 0;
+  for (const _ of quote) if (++length > limits.maxQuoteChars) return false;
+  return true;
+}
+
+function normalizeEvidence(text: string) {
+  return text.trim().replace(/\s+/gu, ' ');
+}
+
+function confirmed(judgment: { passed: boolean; quote: string }, normalizedOutput: string) {
+  const quote = withinQuoteLimit(judgment.quote) ? normalizeEvidence(judgment.quote) : '';
+  const valid = quote.length > 0 && normalizedOutput.includes(quote);
   return { passed: valid && judgment.passed, valid, quote: valid ? judgment.quote : '' };
 }
 
@@ -287,9 +298,11 @@ export async function runTask(
     JSON.stringify(pair),
     taskJudgeSchema(task.assertions.length),
   );
+  const normalizedWithout = normalizeEvidence(outputs[0]);
+  const normalizedWith = normalizeEvidence(outputs[1]);
   const assertions = judged.assertions.map((item) => ({
-    with_skill: confirmed(swap ? item.a : item.b, outputs[1]),
-    without_skill: confirmed(swap ? item.b : item.a, outputs[0]),
+    with_skill: confirmed(swap ? item.a : item.b, normalizedWith),
+    without_skill: confirmed(swap ? item.b : item.a, normalizedWithout),
   }));
   const coverageLimited =
     limited ||

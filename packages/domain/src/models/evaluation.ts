@@ -47,7 +47,7 @@ const dimension = z
 const verdictEvidence = z.strictObject({
   passed: z.boolean(),
   valid: z.boolean(),
-  quote: text.max(200),
+  quote: text.max(evaluationThresholds.effectiveness.maxQuoteChars),
 });
 
 const stage = z.strictObject({

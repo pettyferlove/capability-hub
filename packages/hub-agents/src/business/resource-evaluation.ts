@@ -7,7 +7,7 @@ const text = z.string().refine(isEvaluationText);
 export const resourceEvaluationOperation = {
   id: 'resource-evaluation',
   execution_mode: 'inline',
-  version: '5',
+  version: '6',
   title: '资源质量评测',
   description: '系统按固定版本评测 Skill 的触发准确、指令质量、纸面任务效果与边界透明。',
   input: z.strictObject({}),
@@ -125,11 +125,18 @@ export const taskRunInstructions =
 /** 交付物留在当前阶段供盲评，返回大小受操作标准限制。 */
 export const taskRunSchema = z.strictObject({ output: text.min(1).max(8000) });
 
+const judgeQuoteTarget = 200;
+
 /** 盲评看不到 A/B 的来源，引文的有效性另由服务端核对。 */
 export const taskJudgeInstructions =
   materialRules +
-  ' 独立盲评交付物 A 与 B，不能推测它们的来源。按给定顺序逐条判断断言，每份交付物各填 passed 和可直接核对的逐字引文（最多 200 字符，不改写、不拼接）。缺少佐证不能判通过。';
-const quotedVerdict = z.strictObject({ passed: z.boolean(), quote: text.max(200) });
+  ` 独立盲评交付物 A 与 B，不能推测它们的来源。按给定顺序逐条判断断言，每份交付物各填 passed 和 quote。仅逐字摘录直接支撑判定的最短连续片段，最多 ${judgeQuoteTarget} 个 Unicode 码点。不抄整段代码，不改写、不拼接。没有佐证时填 passed: false 和 quote: ""。`;
+
+// maxLength 只用于送模约束，单侧引文在业务取证时验收。
+const quotedVerdict = z.strictObject({
+  passed: z.boolean(),
+  quote: text.meta({ maxLength: judgeQuoteTarget }),
+});
 
 /** 各判定按任务断言的顺序返回，两侧始终分别取证；条数随本题断言固定，写进 Schema 供模型对照。 */
 export function taskJudgeSchema(count: number) {

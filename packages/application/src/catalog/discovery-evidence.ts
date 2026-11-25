@@ -98,7 +98,11 @@ const englishNegation =
   /(?<![\p{L}\p{N}])(?:not|no|without|cannot|can't|doesn't|don't|isn't|unsupported|excluding|except)(?![\p{L}\p{N}])/u;
 
 const graphemes = new Intl.Segmenter('zh', { granularity: 'grapheme' });
-const excerptLimit = 120;
+
+/** 目录依据的长度上限；模型摘抄按码点计，原文范围按 UTF-16 计。 */
+export const discoveryExcerptLimit = 120;
+
+const oversizedQuote = new RegExp(`^.{${discoveryExcerptLimit + 1}}`, 'su');
 
 function escapePattern(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -133,7 +137,7 @@ function negated(clause: string) {
 function excerpt(text: string, patterns: RegExp[]): string | undefined {
   const normalized = normalizeText(text);
   if (!patterns.every((pattern) => pattern.test(normalized))) return;
-  if (text.length <= excerptLimit) return text;
+  if (text.length <= discoveryExcerptLimit) return text;
   const offset = sourceOffsets(text);
   const spans = patterns.flatMap((pattern, term) =>
     Array.from(normalized.matchAll(new RegExp(pattern, 'gu'))).flatMap((match) => {
@@ -146,10 +150,10 @@ function excerpt(text: string, patterns: RegExp[]): string | undefined {
   const latest = patterns.map(() => -1);
   for (const { term, start, end } of spans.sort((a, b) => a.end - b.end)) {
     latest[term] = start;
-    let from = Math.max(0, end - excerptLimit);
+    let from = Math.max(0, end - discoveryExcerptLimit);
     if (/[\uDC00-\uDFFF]/u.test(text.charAt(from))) from++;
     if (latest.some((index) => index < from)) continue;
-    let to = from + excerptLimit;
+    let to = from + discoveryExcerptLimit;
     if (/[\uD800-\uDBFF]/u.test(text.charAt(to - 1))) to--;
     return text.slice(from, to);
   }
@@ -346,13 +350,15 @@ function compact(text: string) {
 
 /**
  * 模型摘抄的片段能否在该版本的标签、场景名或完整简介里逐字找到；只忽略全半角、大小写与空白差异，
- * 改写、省略号拼接或跨字段拼接都不算。
+ * 超长摘抄不参与核对，改写、省略号拼接或跨字段拼接也不算。
  */
 export function locateQuote(
   candidate: DiscoveryCandidate,
   quote: string,
 ): { field: EvidenceField; text: string } | null {
-  const wanted = compact(quote);
+  const trimmed = quote.trim();
+  if (oversizedQuote.test(trimmed)) return null;
+  const wanted = compact(trimmed);
   if ([...wanted].length < 2) return null;
   const units: [EvidenceField, string][] = [
     ...candidate.tags.map((tag): [EvidenceField, string] => ['tag', tag]),
@@ -367,7 +373,7 @@ export function locateQuote(
       offset ??= sourceOffsets(unit);
       const start = offset(match.index);
       const end = offset(match.index + match[0].length);
-      if (start === undefined || end === undefined || end - start > excerptLimit) continue;
+      if (start === undefined || end === undefined || end - start > discoveryExcerptLimit) continue;
       const raw = unit.slice(start, end);
       if (compact(raw) === wanted) return { field, text: raw };
     }
