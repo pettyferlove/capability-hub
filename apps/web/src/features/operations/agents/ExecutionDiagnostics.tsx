@@ -7,6 +7,7 @@ import {
 } from '@capability-hub/contracts';
 import { useQuery } from '../../../shared/api/use-query.js';
 import { CopyButton } from '../../../shared/components/CopyButton.js';
+import { InputField } from '../../../shared/components/InputField.js';
 import { QueryRegion } from '../../../shared/components/QueryRegion.js';
 import { SkeletonBlock, SkeletonRegion } from '../../../shared/components/Skeleton.js';
 import { DiagnosticsSkeleton } from '../OperationsSkeleton.js';
@@ -16,7 +17,7 @@ import { Download } from '../../../shared/icons/lucide.js';
 import { cn } from '../../../shared/styles/cn.js';
 import { btnStyles, dataTableStyles, tableWrapStyles } from '../../../shared/styles/recipes.js';
 import { eventLabel } from '../../ai/presentation.js';
-import { codeStyles, controlStyles, disclosureStyles } from '../../ai/styles.js';
+import { codeStyles, disclosureStyles } from '../../ai/styles.js';
 import { callFailures, failingCall, type ModelCall } from './call-failure.js';
 import { ModelCallRow } from './ModelCallRow.js';
 import { ModelExchangeView } from './ModelExchangeView.js';
@@ -271,17 +272,20 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
             {handoff && <HandoffPreview path={path} />}
             <section aria-label="事件时间线" className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-section">
-                  事件时间线{' '}
-                  <small className="text-caption text-muted-ink">{events.length} 条</small>
+                <h3 className="flex items-center gap-2 text-section">
+                  事件时间线
+                  <small className="rounded-full bg-page px-2 py-0.5 text-caption tabular-nums text-muted-ink">
+                    {events.length} 条
+                  </small>
                 </h3>
-                <div className="flex flex-wrap gap-2">
-                  <input
+                <div className="grid w-full grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-2 sm:w-72">
+                  <InputField
+                    icon="search"
                     ref={sequenceInput}
                     type="search"
                     aria-label="定位事件序号"
                     placeholder="定位事件序号"
-                    className={cn(controlStyles, 'w-34')}
+                    className="h-full py-0 text-label"
                     value={sequence}
                     onChange={(event) => {
                       setSequence(event.target.value.replace(/^#/, ''));
@@ -290,6 +294,7 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
                   />
                   <SelectField
                     aria-label="事件类别"
+                    className="[&>button]:gap-2 [&>button]:py-0 [&>button]:text-label"
                     value={category}
                     onValueChange={(value) => {
                       setCategory(value);
@@ -307,7 +312,7 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
               </div>
               {events.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map((event) => (
                 <details className={disclosureStyles} key={event.seq}>
-                  <summary>
+                  <summary className="flex-wrap [overflow-wrap:anywhere]">
                     <span className="font-mono text-caption text-muted-ink">#{event.seq}</span>
                     <span>{eventLabel(event) ?? event.type}</span>
                     {typeof event.data.code === 'string' && (
@@ -377,24 +382,42 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
                   </p>
                 )}
               {report.model_calls.length ? (
-                <div className={dataTableStyles}>
-                  <div className={tableWrapStyles}>
+                <div
+                  className={cn(
+                    dataTableStyles,
+                    '[&_table]:[table-layout:fixed] [&_td]:[vertical-align:top]',
+                  )}
+                >
+                  <div
+                    className={tableWrapStyles}
+                    tabIndex={0}
+                    role="region"
+                    aria-label="模型请求表格"
+                  >
                     <table className="text-left">
                       <thead>
                         <tr>
-                          {[
-                            '调用 / 档案',
-                            '调度 / 步骤',
-                            '传输结算',
-                            '耗时',
-                            '输入 / 输出 token',
-                            '输出结论',
-                            '传输与原文',
-                          ].map((label) => (
-                            <th scope="col" key={label}>
-                              {label}
-                            </th>
-                          ))}
+                          <th scope="col" className="w-55">
+                            调用 / 档案
+                          </th>
+                          <th scope="col" className="w-28">
+                            调度 / 步骤
+                          </th>
+                          <th scope="col" className="w-21">
+                            传输结算
+                          </th>
+                          <th scope="col" className="w-23 text-right">
+                            耗时
+                          </th>
+                          <th scope="col" className="w-32 text-right">
+                            输入 / 输出 token
+                          </th>
+                          <th scope="col" className="w-36">
+                            输出结论
+                          </th>
+                          <th scope="col" className="w-34">
+                            传输与原文
+                          </th>
                         </tr>
                       </thead>
                       <tbody>

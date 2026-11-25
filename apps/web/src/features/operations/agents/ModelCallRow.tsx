@@ -1,4 +1,5 @@
-import { btnStyles } from '../../../shared/styles/recipes.js';
+import { ChevronRight, FileText } from '../../../shared/icons/lucide.js';
+import { tagStyles, textBtnStyles } from '../../../shared/styles/recipes.js';
 import { cn } from '../../../shared/styles/cn.js';
 import { stepLabels } from '../../ai/presentation.js';
 import { callFailures, isTransportFailure, type ModelCall } from './call-failure.js';
@@ -70,8 +71,8 @@ export function ModelCallRow({
       className="focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
     >
       <td>
-        {call.profile}
-        <small className="block font-mono">{call.id}</small>
+        <span className="block font-semibold">{call.profile}</span>
+        <span className="block font-mono text-caption text-muted-ink">{call.id}</span>
         <time
           className="block text-caption text-muted-ink"
           dateTime={call.started_at}
@@ -85,7 +86,7 @@ export function ModelCallRow({
         {step && (
           <button
             type="button"
-            className="block text-brand underline"
+            className="block rounded text-left text-caption font-medium text-brand underline decoration-brand/35 underline-offset-2 hover:decoration-current"
             onClick={() => locate(step.start_seq)}
           >
             {stepLabels[step.id] ?? step.id} · #{step.start_seq}
@@ -97,13 +98,23 @@ export function ModelCallRow({
           </small>
         )}
       </td>
-      <td>{callStatus[call.status]}</td>
       <td>
+        <span
+          className={cn(
+            tagStyles,
+            call.status === 'failed' && 'bg-danger-soft text-danger',
+            call.status === 'unknown' && 'bg-warning-soft text-warning',
+          )}
+        >
+          {callStatus[call.status]}
+        </span>
+      </td>
+      <td className="text-right">
         {call.status === 'pending' || (call.status === 'unknown' && !call.duration_ms)
           ? '—'
           : ms(call.duration_ms)}
       </td>
-      <td>
+      <td className="text-right">
         {transport?.input_tokens_reported ? call.input_tokens : '—'} /{' '}
         {transport?.output_tokens_reported ? call.output_tokens : '—'}
       </td>
@@ -111,7 +122,7 @@ export function ModelCallRow({
         {!check ? (
           '—'
         ) : check.status === 'accepted' ? (
-          '输出已采纳'
+          <span className="font-medium text-success">输出已采纳</span>
         ) : (
           <OutputRejection check={check} reason={reason} />
         )}
@@ -120,10 +131,22 @@ export function ModelCallRow({
         {transportFailure && (
           <strong className="block font-medium text-danger">{transportFailure.label}</strong>
         )}
-        {call.error_code}
-        <details>
-          <summary className="cursor-pointer text-brand">{transportSummary(transport)}</summary>
-          <div className="space-y-1 py-2 text-caption text-muted-ink">
+        {call.error_code && <code className="block text-muted-ink">{call.error_code}</code>}
+        <details className="group/transport">
+          <summary
+            className={cn(
+              'flex min-h-7 w-fit cursor-pointer list-none items-center gap-1 rounded',
+              'text-caption font-medium text-muted-ink hover:text-ink [&::-webkit-details-marker]:hidden',
+            )}
+          >
+            <ChevronRight
+              size={14}
+              aria-hidden="true"
+              className="shrink-0 group-open/transport:rotate-90"
+            />
+            {transportSummary(transport)}
+          </summary>
+          <div className="space-y-1 pb-2 text-caption text-muted-ink">
             {transportFailure && <p className="text-ink">{transportFailure.hint}</p>}
             <p>
               {diagnostics.agent_id} · {diagnostics.format} · {diagnostics.model}
@@ -140,15 +163,11 @@ export function ModelCallRow({
                 <p>
                   HTTP {transport.http_status ?? '—'} · 响应头 {ms(transport.headers_ms)}
                 </p>
-                {transport.upstream_error_code && (
-                  <p className="min-w-48 break-all">上游错误码 {transport.upstream_error_code}</p>
-                )}
+                {transport.upstream_error_code && <p>上游错误码 {transport.upstream_error_code}</p>}
                 {transport.upstream_request_id && (
-                  <p className="min-w-48 break-all">上游请求 ID {transport.upstream_request_id}</p>
+                  <p>上游请求 ID {transport.upstream_request_id}</p>
                 )}
-                {transport.network_error && (
-                  <p className="min-w-48 break-all">底层错误 {transport.network_error}</p>
-                )}
+                {transport.network_error && <p>底层错误 {transport.network_error}</p>}
                 <p>
                   首个输出 {ms(transport.first_output_ms)} · 最后输出 {ms(transport.last_output_ms)}
                 </p>
@@ -174,9 +193,10 @@ export function ModelCallRow({
             disabled={exchange.disabled}
             aria-expanded={exchange.open}
             aria-controls={exchange.open ? exchange.controls : undefined}
-            className={cn(btnStyles, 'mt-1')}
+            className={cn(textBtnStyles, 'rounded enabled:hover:underline aria-expanded:underline')}
             onClick={(event) => exchange.toggle(event.currentTarget)}
           >
+            <FileText size={14} aria-hidden="true" />
             查看往返原文
           </button>
         ) : (
