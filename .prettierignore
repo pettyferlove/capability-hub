@@ -8,5 +8,8 @@ packages/contracts/schemas/
 # pnpm 自己维护锁文件格式；本地草稿与 IDE 目录不属于仓库内容。
 pnpm-lock.yaml
 .agents/local/
+# 第三方 vendored 技能保持上游原始字节，格式化会在重新同步时制造无意义冲突。
+.agents/skills/mastra/
+.agents/skills/mastra-factory/
 .idea/
 .pnpm-store/
