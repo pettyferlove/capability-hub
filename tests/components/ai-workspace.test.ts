@@ -75,25 +75,24 @@ for (const [description, canExecute, consoleAccess] of [
         case '/api/admin/operations/agents/catalog':
           await catalogReady.promise;
           return Response.json({ default_profile: '', profiles: [], operations: [] });
-        case '/api/admin/operations/agents/executions':
+        case '/api/admin/operations/agents/executions': {
           await ledgerReady;
           assert.equal(url.searchParams.get('view'), 'summary');
-          return Response.json({
-            items: [
-              { id: 'execution', owner_id: 'owner', owner_display_name: '用户' },
-              { id: 'other-task', owner_id: 'other', owner_display_name: '林工' },
-            ]
-              .filter((row) => row.owner_display_name.includes(url.searchParams.get('q') ?? ''))
-              .map((row) => ({
-                ...row,
-                title: '检查任务',
-                operation_id: 'assistant',
-                created_at: new Date().toISOString(),
-                status: 'queued',
-                error_code: null,
-              })),
-            next_cursor: null,
-          });
+          const items = [
+            { id: 'execution', owner_id: 'owner', owner_display_name: '用户' },
+            { id: 'other-task', owner_id: 'other', owner_display_name: '林工' },
+          ]
+            .filter((row) => row.owner_display_name.includes(url.searchParams.get('q') ?? ''))
+            .map((row) => ({
+              ...row,
+              title: '检查任务',
+              operation_id: 'assistant',
+              created_at: new Date().toISOString(),
+              status: 'queued',
+              error_code: null,
+            }));
+          return Response.json({ items, page: 1, page_size: 10, total: items.length });
+        }
         default:
           throw new Error('意外请求 ' + path);
       }
@@ -174,7 +173,7 @@ test('Agent 视图可用键盘切换，分析采样失败时仍能返回执行�
       case '/api/publication-requests':
         return Response.json({ items: [] });
       case '/api/admin/operations/agents/executions':
-        return Response.json({ items: [], next_cursor: null });
+        return Response.json({ items: [], page: 1, page_size: 10, total: 0 });
       case '/api/admin/operations':
         return (await sampling.promise).clone();
       default:

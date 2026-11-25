@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { operationsAgentApi, aiExecutionLedgerResponseSchema } from '@capability-hub/contracts';
+import { operationsAgentApi, aiExecutionLedgerPageResponseSchema } from '@capability-hub/contracts';
 import { useQuery } from '../../../shared/api/use-query.js';
 import { SelectField } from '../../../shared/components/SelectField.js';
-import { TablePagination } from '../../../shared/components/TablePagination.js';
+import { ServerPagination } from '../../../shared/components/ServerPagination.js';
 import { QueryRegion } from '../../../shared/components/QueryRegion.js';
 import { TableSkeleton } from '../../../shared/components/Skeleton.js';
 import { operationsRevealStyles } from '../styles.js';
@@ -26,33 +26,37 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
   const [term, setTerm] = useState('');
   const [status, setStatus] = useState('');
   const [operation, setOperation] = useState('');
-  const [cursors, setCursors] = useState<string[]>([]);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
     if (search.trim() === term) return;
     const timer = window.setTimeout(() => {
       setTerm(search.trim());
-      setCursors([]);
+      setPageNumber(1);
     }, 250);
     return () => window.clearTimeout(timer);
   }, [search, term]);
-  const params = new URLSearchParams({ view: 'summary' });
+  const params = new URLSearchParams({
+    view: 'summary',
+    page: String(pageNumber),
+    page_size: String(pageSize),
+  });
   if (status) params.set('status', status);
   if (operation) params.set('operation_id', operation);
   if (term) params.set('q', term);
-  const cursor = cursors.at(-1);
-  if (cursor) params.set('cursor', cursor);
   const query = useQuery<unknown>(
     active ? operationsAgentApi.executions + '?' + params.toString() : null,
     refresh,
   );
   const parsed = useMemo(
     () =>
-      query.data === undefined ? undefined : aiExecutionLedgerResponseSchema.safeParse(query.data),
+      query.data === undefined
+        ? undefined
+        : aiExecutionLedgerPageResponseSchema.safeParse(query.data),
     [query.data],
   );
   const page = parsed?.success ? parsed.data : undefined;
-  const nextCursor = page?.next_cursor;
   const error = query.error || (parsed && !parsed.success ? '执行列表格式无效' : '');
   if (!active) return null;
   return (
@@ -93,7 +97,7 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
           value={operation}
           onValueChange={(value) => {
             setOperation(value);
-            setCursors([]);
+            setPageNumber(1);
           }}
         >
           <option value="">全部 Agent</option>
@@ -108,7 +112,7 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
           value={status}
           onValueChange={(value) => {
             setStatus(value);
-            setCursors([]);
+            setPageNumber(1);
           }}
         >
           <option value="">全部状态</option>
@@ -128,12 +132,7 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
           <TableSkeleton label="正在加载执行记录…" columns={6} paginated />
         ) : (
           <div className={cn(dataTableStyles, operationsRevealStyles)}>
-            <div
-              className={cn(tableWrapStyles, "[[class~='group/data-table']_&]:max-h-none")}
-              tabIndex={0}
-              role="region"
-              aria-label="执行记录表格"
-            >
+            <div className={tableWrapStyles} tabIndex={0} role="region" aria-label="执行记录表格">
               <table className="text-left" aria-label="执行记录列表">
                 <thead>
                   <tr>
@@ -200,14 +199,16 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
                 </p>
               )}
             </div>
-            <TablePagination
+            <ServerPagination
               label="执行记录"
-              summary={`本页 ${page.items.length} 条`}
-              page={cursors.length + 1}
-              onPrevious={
-                cursors.length ? () => setCursors((value) => value.slice(0, -1)) : undefined
-              }
-              onNext={nextCursor ? () => setCursors([...cursors, nextCursor]) : undefined}
+              page={page.page}
+              pageSize={page.page_size}
+              total={page.total}
+              disabled={query.loading}
+              onChange={(next, size) => {
+                setPageNumber(next);
+                setPageSize(size);
+              }}
             />
           </div>
         )}

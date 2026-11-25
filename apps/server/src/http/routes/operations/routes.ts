@@ -12,7 +12,6 @@ import { operationsSnapshot } from '../../../operations/snapshot.js';
 import { tokenUsage } from '../../../operations/token-usage.js';
 import type { HttpContext } from '../../context.js';
 import { jsonRoute as send } from '../../response.js';
-import { decodeCursor } from '../ai-execution-page.js';
 import { executionLedgerPage } from './execution-ledger.js';
 import { registerExecutionDiagnosticsRoute } from './execution-diagnostics.js';
 
@@ -36,7 +35,7 @@ export function registerOperationsRoutes(
       const principal = await hub.ai.consolePrincipal(res.locals.principal);
       const query = agentExecutionLedgerQuerySchema.parse(req.query);
       res.set('Cache-Control', 'private, no-store');
-      return await executionLedgerPage(hub, principal, query, decodeCursor(query.cursor));
+      return await executionLedgerPage(hub, principal, query);
     }),
   );
   registerExecutionDiagnosticsRoute(app, hub);

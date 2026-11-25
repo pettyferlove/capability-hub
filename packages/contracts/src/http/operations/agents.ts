@@ -33,12 +33,26 @@ const modelOption = aiModelOptionsResponseSchema.shape.profiles.element;
 /** 默认列出可手动提交的操作；注册目录还包括可检查的自动操作。 */
 export const agentCatalogQuerySchema = z.strictObject({ view: z.literal('registered').optional() });
 
-/** 运营列表只筛选可读执行；业务资源 ID 仅用于业务列表。 */
-export const agentExecutionLedgerQuerySchema = aiExecutionPageQuerySchema.extend({
+const ledgerFilters = {
   operation_id: id.optional(),
   q: z.string().trim().max(200).optional(),
-  view: z.literal('summary').optional(),
-});
+};
+const ledgerPageSize = z.enum(['5', '10', '20', '50']).default('10').transform(Number);
+
+/** 页码分页只返回概要，不与游标参数混用。 */
+export const agentExecutionLedgerQuerySchema = z.union([
+  z.strictObject({
+    ...ledgerFilters,
+    status: aiExecutionPageQuerySchema.shape.status,
+    view: z.literal('summary'),
+    page: z
+      .string()
+      .regex(/^[1-9]\d{0,6}$/)
+      .transform(Number),
+    page_size: ledgerPageSize,
+  }),
+  aiExecutionPageQuerySchema.extend({ ...ledgerFilters, view: z.literal('summary').optional() }),
+]);
 
 /**
  * 能力目录：`default_profile` 必须指向 `profiles` 之一；每个操作的 `input_schema`/`output_schema`
@@ -68,27 +82,35 @@ export const aiCatalogResponseSchema = aiModelOptionsResponseSchema.extend({
 /** {@link aiCatalogResponseSchema} 的输出侧类型。 */
 export type AiCatalogResponse = z.infer<typeof aiCatalogResponseSchema>;
 
+const ledgerItems = z.array(
+  aiExecutionResponseSchema
+    .pick({
+      id: true,
+      owner_id: true,
+      operation_id: true,
+      status: true,
+      created_at: true,
+    })
+    .extend({
+      owner_display_name: z.string(),
+      title: z.string(),
+      error_code: z.string().nullable(),
+    }),
+);
+
 /** 概要检索仅返回列表所需字段，完整消息和成果由单次执行接口提供。 */
-export const aiExecutionLedgerResponseSchema = z
-  .object({
-    items: z.array(
-      aiExecutionResponseSchema
-        .pick({
-          id: true,
-          owner_id: true,
-          operation_id: true,
-          status: true,
-          created_at: true,
-        })
-        .extend({
-          owner_display_name: z.string(),
-          title: z.string(),
-          error_code: z.string().nullable(),
-        }),
-    ),
-    next_cursor: z.string().nullable(),
-  })
-  .strict();
+export const aiExecutionLedgerResponseSchema = z.strictObject({
+  items: ledgerItems,
+  next_cursor: z.string().nullable(),
+});
+
+/** 总数和页码按当前可读且匹配筛选的记录计算。 */
+export const aiExecutionLedgerPageResponseSchema = z.strictObject({
+  items: ledgerItems,
+  page: z.int().positive(),
+  page_size: z.union([z.literal(5), z.literal(10), z.literal(20), z.literal(50)]),
+  total: z.int().nonnegative(),
+});
 
 const elapsedMs = z.number().int().nonnegative();
 const upstreamIdentifier = z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/u);

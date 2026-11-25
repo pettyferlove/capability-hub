@@ -12,8 +12,11 @@ export const agentViewLinkStyles = cn(
   'transition-colors motion-reduce:transition-none pointer-coarse:min-h-11',
 );
 
+export const taskWorkspaceStyles = 'rounded-[22px] border border-line bg-paper';
+
 export const workspaceStyles = cn(
-  'relative flex h-[clamp(520px,calc(100dvh_-_240px),980px)] min-h-0 shrink-0 overflow-hidden rounded-[22px] border border-[color:var(--line)] bg-paper',
+  taskWorkspaceStyles,
+  'relative flex h-[clamp(520px,calc(100dvh_-_240px),980px)] min-h-0 shrink-0 flex-col overflow-hidden',
   '[box-shadow:0_1px_0_var(--highlight)_inset,0_12px_48px_color-mix(in_srgb,_var(--shadow-ink)_6%,_transparent)]',
 );
 export const taskColumnStyles = 'mx-auto w-full max-w-200 px-5 sm:px-8';

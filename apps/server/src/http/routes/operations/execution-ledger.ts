@@ -3,25 +3,46 @@ import type { ExecutionRecord } from '@capability-hub/ai';
 import type { agentExecutionLedgerQuerySchema } from '@capability-hub/contracts';
 import type { Principal } from '@capability-hub/domain/identity';
 import type { HttpContext } from '../../context.js';
-import { canInspect, encodeCursor, type ExecutionCursor } from '../ai-execution-page.js';
+import { decodeCursor, encodeCursor } from '../ai-execution-page.js';
 import { executionResponse } from '../ai-views.js';
 import { executionOwnerName } from '../../../operations/execution-owner.js';
+
+function inputTitle(row: ExecutionRecord) {
+  const input = row.payload.input;
+  return input && typeof input === 'object' && !Array.isArray(input)
+    ? (input.prompt ?? input.topic)
+    : undefined;
+}
 
 /** 跨用户筛选先复核每个任务的资源权限，再按可读记录分页。 */
 export async function executionLedgerPage(
   hub: HttpContext['hub'],
   principal: Principal,
   query: z.infer<typeof agentExecutionLedgerQuerySchema>,
-  after?: ExecutionCursor,
 ) {
-  const visible: { row: ExecutionRecord; ownerName: string; title: string }[] = [];
+  const numbered = 'page' in query;
+  const limit = numbered ? query.page_size : query.limit;
+  const requestedPage = numbered ? query.page : 1;
+  const batchSize = numbered ? 128 : limit + 1;
+  const pageEnd = requestedPage * limit;
+  let after = numbered ? undefined : decodeCursor(query.cursor);
+  let total = 0;
+  const rows: ExecutionRecord[] = [];
   const owners = new Map([[principal.id, principal.display_name]]);
-  const term = query.q?.toLocaleLowerCase();
+  const ownerNameOf = async (id: string) => {
+    const known = owners.get(id);
+    if (known !== undefined) return known;
+    const name = await executionOwnerName(hub.store, id);
+    owners.set(id, name);
+    return name;
+  };
+  const term = query.q?.toLocaleLowerCase() ?? '';
+  const matches = (value: unknown) =>
+    typeof value === 'string' && value.toLocaleLowerCase().includes(term);
   const agentTitles = new Map(
     hub.ai.runtime.catalog().operations.map((operation) => [operation.id, operation.title]),
   );
-  const batchSize = query.limit + 1;
-  while (visible.length <= query.limit) {
+  for (;;) {
     const batch = await hub.ai.runtime.store.list('ai_executions', {
       after,
       descending: true,
@@ -30,58 +51,64 @@ export async function executionLedgerPage(
       limit: batchSize,
     });
     for (const row of batch) {
-      if (query.operation_id && row.payload.operation_id !== query.operation_id) continue;
-      if (!(await canInspect(hub, principal, row))) continue;
-      const ownerName =
-        owners.get(row.owner_id) ?? (await executionOwnerName(hub.store, row.owner_id));
-      owners.set(row.owner_id, ownerName);
-      const input = row.payload.input;
-      const title =
-        input && typeof input === 'object' && !Array.isArray(input)
-          ? (input.prompt ?? input.topic)
-          : undefined;
+      const operation = row.payload.operation_id;
+      if (query.operation_id && operation !== query.operation_id) continue;
       if (
         term &&
-        ![
-          row.id,
-          row.owner_id,
-          ownerName,
-          row.payload.operation_id,
-          agentTitles.get(row.payload.operation_id),
-          title,
-          row.payload.error?.code,
-        ].some((value) => typeof value === 'string' && value.toLocaleLowerCase().includes(term))
+        !(
+          matches(row.id) ||
+          matches(row.owner_id) ||
+          matches(operation) ||
+          matches(agentTitles.get(operation)) ||
+          matches(inputTitle(row)) ||
+          matches(row.payload.error?.code) ||
+          matches(await ownerNameOf(row.owner_id))
+        )
       )
         continue;
-      const text = typeof title === 'string' ? title.trim().replace(/\s+/g, ' ') : '';
-      visible.push({
-        row,
-        ownerName,
+      if (!(await hub.ai.canInspectConsoleExecution(principal, row))) continue;
+
+      if (total < pageEnd) {
+        // 保留最后一个可用页，避免越界时二次扫描。
+        if (total % limit === 0) rows.length = 0;
+        rows.push(row);
+      }
+      total++;
+      if (!numbered && total > limit) break;
+    }
+    if ((!numbered && total > limit) || batch.length < batchSize) break;
+    after = batch.at(-1);
+  }
+  const items = [];
+  for (const row of rows) {
+    const ownerName = await ownerNameOf(row.owner_id);
+    if (query.view === 'summary') {
+      const input = inputTitle(row);
+      const text = typeof input === 'string' ? input.trim().replace(/\s+/g, ' ') : '';
+      const operation = row.payload.operation_id;
+      items.push({
+        id: row.id,
+        owner_id: row.owner_id,
+        owner_display_name: ownerName,
+        operation_id: operation,
+        status: row.status,
+        created_at: row.created_at,
         title:
           text.length > 100
             ? text.slice(0, 100) + '…'
-            : text || agentTitles.get(row.payload.operation_id) || row.payload.operation_id,
+            : text || agentTitles.get(operation) || operation,
+        error_code: row.payload.error?.code ?? null,
       });
-      if (visible.length > query.limit) break;
+    } else {
+      items.push({ ...executionResponse(row), owner_display_name: ownerName });
     }
-    if (batch.length < batchSize) break;
-    after = batch.at(-1);
   }
-  return {
-    items: visible.slice(0, query.limit).map(({ row, ownerName, title }) =>
-      query.view === 'summary'
-        ? {
-            id: row.id,
-            owner_id: row.owner_id,
-            owner_display_name: ownerName,
-            operation_id: row.payload.operation_id,
-            status: row.status,
-            created_at: row.created_at,
-            title,
-            error_code: row.payload.error?.code ?? null,
-          }
-        : { ...executionResponse(row), owner_display_name: ownerName },
-    ),
-    next_cursor: visible.length > query.limit ? encodeCursor(visible[query.limit - 1].row) : null,
-  };
+  return numbered
+    ? {
+        items,
+        page: Math.min(requestedPage, Math.max(1, Math.ceil(total / limit))),
+        page_size: limit,
+        total,
+      }
+    : { items, next_cursor: total > limit ? encodeCursor(rows.at(-1)) : null };
 }

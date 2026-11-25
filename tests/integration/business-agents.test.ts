@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { AgentEvidenceService } from '@capability-hub/application';
 import { AiError, aiConfigurationSchema } from '@capability-hub/ai';
 import {
+  aiExecutionLedgerPageResponseSchema,
   aiExecutionLedgerResponseSchema,
   aiExecutionListResponseSchema,
   assetFeedbackRequestSchema,
@@ -806,6 +807,60 @@ test('运营中心跨用户分页只列可读执行，业务面板仍只列本�
   await reviewer
     .get(`/api/admin/operations/agents/executions/${audit.id}/diagnostics?download=json`)
     .expect(403);
+});
+
+test('运营执行页码和总数只包含可读且匹配的任务', async (t) => {
+  const f = await createTestHub(t);
+  const intake = await receiveSkill(f);
+  const request = await submitPublication(f, intake);
+  const runtime = f.hub.ai.runtime;
+  Object.assign(runtime.config, frameworkConfig());
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const executions = [];
+  for (let i = 0; i < 6; i++) {
+    t.mock.timers.tick(1);
+    executions.unshift(await runtime.submit(f.admin.id, 'assistant', { prompt: `检查任务 ${i}` }));
+  }
+  t.mock.timers.tick(1);
+  const unreadable = await runtime.submit(f.reviewer.id, 'publication-review', {
+    publication_request_id: request.id,
+  });
+  const admin = await signIn(f);
+  const path = '/api/admin/operations/agents/executions';
+  await admin.get(`/api/ai/executions/${unreadable.id}`).expect(403);
+  const list = async (page: number, q?: string) =>
+    aiExecutionLedgerPageResponseSchema.parse(
+      (await admin.get(path).query({ view: 'summary', page, page_size: 5, q }).expect(200)).body,
+    );
+  const first = await list(1);
+  assert.equal(first.total, 6);
+  assert.equal(first.page, 1);
+  assert.equal(first.page_size, 5);
+  assert.deepEqual(
+    first.items.map((row) => row.id),
+    executions.slice(0, 5).map((row) => row.id),
+  );
+  const last = await list(9);
+  assert.equal(last.total, 6);
+  assert.equal(last.page, 2);
+  assert.deepEqual(
+    last.items.map((row) => row.id),
+    [executions[5].id],
+  );
+  const filtered = await list(2, '检查任务 3');
+  assert.equal(filtered.total, 1);
+  assert.equal(filtered.page, 1);
+  assert.deepEqual(
+    filtered.items.map((row) => row.id),
+    [executions[2].id],
+  );
+  assert.deepEqual(await list(2, unreadable.id), {
+    items: [],
+    page: 1,
+    page_size: 5,
+    total: 0,
+  });
+  await admin.get(path).query({ view: 'summary', page: 1, cursor: 'legacy' }).expect(422);
 });
 
 test('团队维护者的上传自动排队，撤回目标团队授权后公开版本的任务也不可读', async (t) => {

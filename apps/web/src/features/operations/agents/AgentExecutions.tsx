@@ -22,7 +22,7 @@ import { NewExecution } from './NewExecution.js';
 import { WorkspaceSkeleton } from '../OperationsSkeleton.js';
 import { useAiExecution } from '../../ai/use-ai-execution.js';
 import { fillStyles } from '../../ai/styles.js';
-import { workspaceStyles } from './styles.js';
+import { taskWorkspaceStyles, workspaceStyles } from './styles.js';
 import { cn } from '../../../shared/styles/cn.js';
 
 /** 记录、诊断和新建表单各有独立链接，返回列表时保留筛选和页码。 */
@@ -88,7 +88,7 @@ export function AgentExecutions({
       </div>
       <ExecutionLedger active={listing} readOnly={!canExecute} />
       {!listing && (
-        <div className={cn(workspaceStyles, 'flex-col')}>
+        <div className={creating ? taskWorkspaceStyles : workspaceStyles}>
           {(catalogError || execution.error) && (
             <p role="alert" className="bg-danger-soft px-5 py-3 text-danger">
               {catalogError || execution.error}

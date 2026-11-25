@@ -25,13 +25,7 @@ import { cn } from '../../../shared/styles/cn.js';
 import { btnStyles, btnPrimaryStyles } from '../../../shared/styles/recipes.js';
 import { SchemaFields, initialValues, requiredInputNames } from '../../ai/SchemaFields.js';
 import { jsonObject, operationLabels, operationMeta } from '../../ai/presentation.js';
-import {
-  disclosureChevronStyles,
-  disclosureStyles,
-  eyebrowStyles,
-  fillStyles,
-  scrollStyles,
-} from '../../ai/styles.js';
+import { disclosureChevronStyles, disclosureStyles, eyebrowStyles } from '../../ai/styles.js';
 import {
   chipStyles,
   composerStyles,
@@ -133,7 +127,6 @@ export function NewExecution({
   return (
     <form
       ref={form}
-      className={fillStyles}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -145,8 +138,8 @@ export function NewExecution({
         }
       }}
     >
-      <div className={scrollStyles}>
-        <div className={cn(taskColumnStyles, 'relative isolate py-6 sm:py-8')}>
+      <div className={taskColumnStyles}>
+        <div className="relative isolate py-6 sm:py-8">
           <span aria-hidden="true" className={dotFieldStyles} />
           <p className={eyebrowStyles}>New task</p>
           <h2 className="mt-2 text-2xl font-semibold leading-snug tracking-tight">

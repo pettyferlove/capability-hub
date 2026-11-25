@@ -368,6 +368,22 @@ export class HubAiServices {
     return fresh;
   }
 
+  /** 运营列表在请求入口刷新平台权限，批量统计仍逐条复查任务资源。 */
+  async canInspectConsoleExecution(principal: Principal, execution: ExecutionRecord) {
+    requireAiConsole(principal);
+    try {
+      await this.recheckResources(principal, execution, 'inspect');
+      return true;
+    } catch (error) {
+      if (
+        error instanceof HubError ||
+        (error instanceof AiError && ['AI_FORBIDDEN', 'AI_NOT_FOUND'].includes(error.code))
+      )
+        return false;
+      throw error;
+    }
+  }
+
   async submissionPrincipal(principal: Principal, operationId: string) {
     const fresh = await this.principal(principal);
     if (!businessOperations.has(operationId)) requireAiConsole(fresh, true);
