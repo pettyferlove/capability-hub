@@ -86,37 +86,39 @@ export function AgentExecutions({
           )}
         </div>
       </div>
-      <div className={cn(workspaceStyles, 'flex-col')}>
-        <ExecutionLedger active={listing} readOnly={!canExecute} />
-        {!listing && (catalogError || execution.error) && (
-          <p role="alert" className="bg-danger-soft px-5 py-3 text-danger">
-            {catalogError || execution.error}
-          </p>
-        )}
-        {creating && catalog && (
-          <NewExecution
-            catalog={catalog}
-            onCreated={(id) => navigate(operationsHref('agents', { execution: id }))}
-          />
-        )}
-        {((creating && !catalog && !catalogError) || (selected && !view && !execution.error)) && (
-          <WorkspaceSkeleton creating={creating} />
-        )}
-        {selected && view && (
-          <ExecutionPanel
-            key={selected}
-            view={view}
-            diagnostics={<ExecutionDiagnostics id={selected} liveWatermark={view.watermark} />}
-            canManage={
-              me?.id === view.execution.owner_id &&
-              canExecute &&
-              !!catalog?.operations.some((item) => item.id === view.execution.operation_id)
-            }
-            connection={execution.connection}
-            onRefresh={() => setRefresh((value) => value + 1)}
-          />
-        )}
-      </div>
+      <ExecutionLedger active={listing} readOnly={!canExecute} />
+      {!listing && (
+        <div className={cn(workspaceStyles, 'flex-col')}>
+          {(catalogError || execution.error) && (
+            <p role="alert" className="bg-danger-soft px-5 py-3 text-danger">
+              {catalogError || execution.error}
+            </p>
+          )}
+          {creating && catalog && (
+            <NewExecution
+              catalog={catalog}
+              onCreated={(id) => navigate(operationsHref('agents', { execution: id }))}
+            />
+          )}
+          {((creating && !catalog && !catalogError) || (selected && !view && !execution.error)) && (
+            <WorkspaceSkeleton creating={creating} />
+          )}
+          {selected && view && (
+            <ExecutionPanel
+              key={selected}
+              view={view}
+              diagnostics={<ExecutionDiagnostics id={selected} liveWatermark={view.watermark} />}
+              canManage={
+                me?.id === view.execution.owner_id &&
+                canExecute &&
+                !!catalog?.operations.some((item) => item.id === view.execution.operation_id)
+              }
+              connection={execution.connection}
+              onRefresh={() => setRefresh((value) => value + 1)}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

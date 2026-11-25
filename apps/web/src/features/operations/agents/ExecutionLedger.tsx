@@ -7,11 +7,18 @@ import { QueryRegion } from '../../../shared/components/QueryRegion.js';
 import { TableSkeleton } from '../../../shared/components/Skeleton.js';
 import { operationsRevealStyles } from '../styles.js';
 import { operationsHref } from '../navigation.js';
-import { btnStyles, dataTableStyles, tableWrapStyles } from '../../../shared/styles/recipes.js';
+import {
+  btnStyles,
+  dataTableStyles,
+  panelStyles,
+  sectionHeadingStyles,
+  subtleStyles,
+  tableWrapStyles,
+} from '../../../shared/styles/recipes.js';
 import { cn } from '../../../shared/styles/cn.js';
 import { ExecutionStatus } from '../../ai/ExecutionStatus.js';
 import { operationLabels, statusLabels } from '../../ai/presentation.js';
-import { controlStyles, scrollStyles } from '../../ai/styles.js';
+import { controlStyles } from '../../ai/styles.js';
 
 /** 筛选应用于服务端可见集合，切换筛选从首页开始，打开详情保留当前页。 */
 export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnly: boolean }) {
@@ -49,11 +56,14 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
   const error = query.error || (parsed && !parsed.success ? '执行列表格式无效' : '');
   if (!active) return null;
   return (
-    <section aria-label="执行记录" className={cn(scrollStyles, 'space-y-4 p-4 sm:p-6')}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section
+      aria-label="执行记录"
+      className={cn(panelStyles, 'flex flex-col gap-[var(--space-5)]')}
+    >
+      <div className={cn(sectionHeadingStyles, 'mb-0')}>
         <div>
-          <h2 className="text-section">执行记录</h2>
-          <p className="mt-1 text-caption text-muted-ink">
+          <h2>执行记录</h2>
+          <p className={subtleStyles}>
             {readOnly
               ? '当前账号具有只读权限，可从任务记录或执行链接查看详情。'
               : '选择一条执行，查看流程、定位失败步骤或导出交接材料。'}
@@ -118,7 +128,12 @@ export function ExecutionLedger({ active, readOnly }: { active: boolean; readOnl
           <TableSkeleton label="正在加载执行记录…" columns={6} paginated />
         ) : (
           <div className={cn(dataTableStyles, operationsRevealStyles)}>
-            <div className={tableWrapStyles}>
+            <div
+              className={cn(tableWrapStyles, "[[class~='group/data-table']_&]:max-h-none")}
+              tabIndex={0}
+              role="region"
+              aria-label="执行记录表格"
+            >
               <table className="text-left" aria-label="执行记录列表">
                 <thead>
                   <tr>
