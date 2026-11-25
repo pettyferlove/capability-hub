@@ -84,6 +84,12 @@ class DrizzleStore implements RecordStore {
   listAiExecutionJobs(executionId: string) {
     return this.execute((queries) => queries.listAiExecutionJobs(executionId));
   }
+  async removeAiExchanges(subjectId: string): Promise<void> {
+    if (!subjectId) return;
+    await this.tx(() =>
+      this.session.execute(({ ai }) => ai.removeExchangesBy('lookup_key', subjectId)),
+    );
+  }
   listDueSources(now: number) {
     return this.execute((queries) => queries.listDueSources(now));
   }

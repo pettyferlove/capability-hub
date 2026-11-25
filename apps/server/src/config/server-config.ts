@@ -66,6 +66,7 @@ const configSchema = z
     evaluationConcurrency: z.number().int().min(1),
     evaluationDailyRequests: z.int().nonnegative(),
     evaluationBackfill: z.boolean(),
+    aiExchangeRetentionDays: z.int().min(0).max(3650),
     workerConcurrency: z.number().int().min(1).max(JobQueue.maxConcurrency),
     requestLogging: z.boolean(),
     setupToken: z.string().optional(),
@@ -272,6 +273,7 @@ export function loadServerConfig(
     evaluationConcurrency: Number(environment.CAPABILITY_HUB_EVALUATION_CONCURRENCY ?? 1),
     evaluationDailyRequests: Number(environment.CAPABILITY_HUB_EVALUATION_DAILY_REQUESTS ?? 0),
     evaluationBackfill: flag(environment, 'CAPABILITY_HUB_EVALUATION_BACKFILL', false),
+    aiExchangeRetentionDays: Number(environment.CAPABILITY_HUB_AI_EXCHANGE_RETENTION_DAYS ?? 30),
     workerConcurrency: Number(
       environment.CAPABILITY_HUB_WORKER_CONCURRENCY ?? JobQueue.defaultConcurrency,
     ),

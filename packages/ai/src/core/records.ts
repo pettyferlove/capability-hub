@@ -80,7 +80,12 @@ export const executionPayloadSchema = z
       )
       .max(200),
     error: z
-      .object({ code: z.string(), message: z.string(), retryable: z.boolean() })
+      .object({
+        code: z.string(),
+        message: z.string(),
+        retryable: z.boolean(),
+        call_id: id.optional(),
+      })
       .strict()
       .nullable(),
     usage: z
@@ -245,6 +250,50 @@ const elapsedMs = z.number().int().nonnegative();
 
 /** 仅允许有界的协议标识进入传输诊断，不保存自由文本或完整响应头。 */
 export const upstreamIdentifierSchema = z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/u);
+
+/** 输出被拒的固定分类；`host_rejected` 表示已通过 Schema、但宿主业务规则不接受。 */
+export const outputRejectionReasons = [
+  'empty_output',
+  'invalid_json',
+  'schema_mismatch',
+  'output_limit',
+  'content_filter',
+  'response_too_large',
+  'host_rejected',
+] as const;
+
+/** 字段问题只含 Schema 路径、规则与长度，不含模型写出的值或键名。 */
+export const outputIssueSchema = z.strictObject({
+  path: z.string().max(200),
+  code: z.string().regex(/^[a-z_]{1,40}$/u),
+  expected: z.string().max(80).optional(),
+  limit: z.number().optional(),
+  actual: z.number().optional(),
+  options: z.array(z.string().max(64)).max(20).optional(),
+});
+
+/** 调用输出的采纳结论，与传输结算分开记录；只含固定分类、规则标识和数值。 */
+export const outputCheckSchema = z.strictObject({
+  status: z.enum(['accepted', 'rejected']),
+  reason: z.enum(outputRejectionReasons).optional(),
+  rule: z
+    .string()
+    .regex(/^[a-z][a-z0-9-]{0,63}$/u)
+    .optional(),
+  message: z.string().max(200).optional(),
+  issues: z.array(outputIssueSchema).max(20).optional(),
+  json_offset: z.number().int().nonnegative().optional(),
+  facts: z
+    .record(z.string().regex(/^[a-z_]{1,40}$/u), z.union([z.number(), z.boolean()]))
+    .optional(),
+});
+
+/** 一次模型输出的校验或宿主规则结论。 */
+export type ModelOutputCheck = z.infer<typeof outputCheckSchema>;
+
+/** 单个字段问题。 */
+export type ModelOutputIssue = z.infer<typeof outputIssueSchema>;
+
 const callDiagnosticsSchema = z.strictObject({
   agent_id: id,
   step: z.strictObject({ id, start_seq: z.number().int().positive() }).optional(),
@@ -261,8 +310,11 @@ const callDiagnosticsSchema = z.strictObject({
       headers_ms: elapsedMs.optional(),
       first_output_ms: elapsedMs.optional(),
       last_output_ms: elapsedMs.optional(),
+      request_bytes: z.number().int().nonnegative().optional(),
       received_bytes: z.number().int().nonnegative(),
       text_chars: z.number().int().nonnegative(),
+      reasoning_tokens: z.number().int().nonnegative().optional(),
+      network_error: upstreamIdentifierSchema.optional(),
       finish_reason: z
         .enum(['stop', 'length', 'tool_call', 'content_filter', 'context_limit', 'other'])
         .optional(),
@@ -294,6 +346,7 @@ export const callRecordSchema = z
         output_tokens: z.number().nonnegative(),
         error_code: z.string().nullable(),
         duration_ms: z.number().nonnegative(),
+        output_check: outputCheckSchema.optional(),
       })
       .strict(),
   })
@@ -322,6 +375,58 @@ export const artifactRecordSchema = z
   })
   .strict();
 
+/**
+ * 一次模型请求的往返原文，`id` 与对应 `ai_calls` 相同。`lookup_key` 是删除未发布版本时据以清理的
+ * 主体版本 ID，没有主体时为空串；`position` 是采集时刻（毫秒），按保留期清理。
+ * 请求体按实际出站内容保存，凭据只在请求头中，不进入本记录；正文按 `resource_refs` 授权查看。
+ */
+export const exchangeRecordSchema = z
+  .object({
+    ...base,
+    status: z.literal('stored'),
+    payload: z
+      .object({
+        resource_refs: z.array(id).max(1000),
+        request: z
+          .object({
+            bytes: z.number().int().nonnegative(),
+            body: jsonSchema.optional(),
+            text: z.string().optional(),
+            truncated: z.boolean(),
+          })
+          .strict(),
+        response: z
+          .object({
+            response_id: z.string().max(200).optional(),
+            text: z.string(),
+            reasoning: z.string(),
+            tool_calls: z
+              .array(
+                z
+                  .object({
+                    id: z.string().max(200).optional(),
+                    name: z.string().max(200),
+                    arguments: z.string(),
+                  })
+                  .strict(),
+              )
+              .max(200),
+            finish_reason: z.string().max(64).optional(),
+            usage: jsonSchema.optional(),
+            error_body: z.string().optional(),
+            raw: z.string().optional(),
+            truncated: z.boolean(),
+          })
+          .strict()
+          .nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+/** 往返原文的载荷；`response` 为 null 表示请求发出后没有收到任何响应。 */
+export type ModelExchangePayload = z.infer<typeof exchangeRecordSchema>['payload'];
+
 /** 表名到 Schema 的映射，是 `AiTable`/`AiRecordMap` 的唯一事实来源；新增表必须加在这里。 */
 export const aiRecordSchemas = {
   ai_executions: executionRecordSchema,
@@ -334,6 +439,7 @@ export const aiRecordSchemas = {
   ai_calls: callRecordSchema,
   ai_traces: traceRecordSchema,
   ai_artifacts: artifactRecordSchema,
+  ai_exchanges: exchangeRecordSchema,
 };
 
 /** AI 侧可访问的表名，与物理表名一致，不做映射。 */

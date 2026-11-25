@@ -3,6 +3,7 @@ import { test, type TestContext } from 'node:test';
 import { z } from 'zod';
 import {
   AiError,
+  OutputRejectedError,
   ShortModelError,
   modelProfileSchema,
   type CredentialResolver,
@@ -16,6 +17,7 @@ import { fixture } from '../support/ai-provider.js';
 import { frameworkFixture, frameworkConfig } from '../support/ai-framework.js';
 import { recoveryRuntime } from '../support/ai-recovery.js';
 import { signIn } from '../support/http.js';
+import { deferred } from '../support/store.js';
 
 for (const control of ['thinking_type', 'enable_thinking', 'omit'] as const)
   test(`OpenAI 兼容端点按 ${control} 接收思考参数，强度覆盖不能意外开启推理`, async (t) => {
@@ -141,14 +143,15 @@ test('AI HTTP 错误忽略不可用的正文，保留 HTTP 状态和可用的请
       const execution = await hub.runtime.submit(hub.admin.id, 'framework-test', {});
       await hub.run();
       const result = await hub.runtime.get(execution.id);
+      const [call] = await hub.runtime.store.list('ai_calls', {
+        execution_id: execution.id,
+        limit: 1,
+      });
       assert.deepEqual(result.payload.error, {
         code: 'AI_PROVIDER_FAILED',
         message: '模型端点返回 HTTP 400',
         retryable: false,
-      });
-      const [call] = await hub.runtime.store.list('ai_calls', {
-        execution_id: execution.id,
-        limit: 1,
+        call_id: call.id,
       });
       const transport = call.payload.diagnostics.transport;
       assert.equal(transport?.http_status, 400);
@@ -248,6 +251,95 @@ for (const format of ['openai', 'anthropic'] as const)
     );
   });
 
+test('无步骤包装的验收拒绝只标记原调用，不覆盖随后完成的独立调用', async (t) => {
+  const provider = await fixture('openai', 'json');
+  t.after(provider.close);
+  const f = await frameworkFixture(t, frameworkConfig(provider.url), (context) =>
+    context.structured(
+      {
+        id: 'report',
+        instructions: 'Return JSON.',
+        prompt: 'Prepare a report.',
+        accept: async (report) => {
+          await context.agent({
+            id: 'witness',
+            instructions: 'Answer briefly.',
+            prompt: 'Check the evidence.',
+          });
+          if (report.count !== 8)
+            throw new OutputRejectedError('evidence-count', '证据数量不符', {
+              expected: 8,
+              actual: report.count,
+            });
+        },
+      },
+      z.strictObject({ verdict: z.string(), count: z.number() }),
+    ),
+  );
+  const { id } = await f.runtime.submit(f.admin.id, 'framework-test', {});
+  await f.run();
+  const terminal = (await f.runtime.get(id)).payload.error;
+  assert.equal(terminal?.code, 'AI_OUTPUT_INVALID');
+  const calls = await f.runtime.store.list('ai_calls', { execution_id: id, limit: 10 });
+  assert.equal(terminal.call_id, calls[0].id);
+  assert.deepEqual(
+    calls.map(({ payload }) => [payload.diagnostics.agent_id, payload.output_check]),
+    [
+      [
+        'report',
+        {
+          status: 'rejected',
+          reason: 'host_rejected',
+          rule: 'evidence-count',
+          message: '证据数量不符',
+          facts: { expected: 8, actual: 7 },
+        },
+      ],
+      ['witness', { status: 'accepted' }],
+    ],
+  );
+});
+
+test('队列已处理的验收拒绝和已修复的输出都不是后续业务冲突的致因', async (t) => {
+  const provider = await fixture('openai', 'json', false, {
+    turns: [],
+    text: '{"count":7}',
+    json: ['{}', '{"count":7}'],
+  });
+  t.after(provider.close);
+  const conflict = new AiError('AI_CONFLICT', '业务状态已改变');
+  const f = await frameworkFixture(t, frameworkConfig(provider.url), async (context) => {
+    const schema = z.strictObject({ count: z.number() });
+    const options = { id: 'report', instructions: 'Return JSON.', prompt: 'Count.' };
+    await assert.rejects(
+      context.structured(
+        {
+          ...options,
+          accept: () => {
+            throw new OutputRejectedError('optional', '可选建议未被采纳');
+          },
+        },
+        schema,
+      ),
+      OutputRejectedError,
+    );
+    assert.equal((await context.structured(options, schema)).count, 7);
+    throw new Error('工作流步骤未完成', { cause: conflict });
+  });
+  const { id } = await f.runtime.submit(f.admin.id, 'framework-test', {});
+  await f.run();
+  const query = { execution_id: id, limit: 20 };
+  const calls = await f.runtime.store.list('ai_calls', query);
+  assert.deepEqual(
+    calls.map((call) => call.payload.output_check?.status),
+    ['rejected', 'rejected', 'accepted'],
+  );
+  const error = { code: 'AI_CONFLICT', message: '业务状态已改变', retryable: false };
+  assert.deepEqual((await f.runtime.get(id)).payload.error, error);
+  const events = await f.runtime.store.list('ai_events', query);
+  assert.deepEqual(events.at(-1)?.payload.data.error, error);
+});
+
 for (const format of ['openai', 'anthropic'] as const)
   test(`AI ${format} 非约定报告保留输出错误分类且不泄露原始校验结果`, async (t) => {
     const invalid = JSON.stringify({ 结论: 'private-model-output', 风险: '低' });
@@ -269,11 +361,6 @@ for (const format of ['openai', 'anthropic'] as const)
     await hub.run();
     const result = await hub.runtime.get(submitted.id);
     assert.equal(result.status, 'failed');
-    assert.deepEqual(result.payload.error, {
-      code: 'AI_OUTPUT_INVALID',
-      message: '模型结构化结果的字段或类型不符合约定',
-      retryable: false,
-    });
     const snapshots = await hub.runtime.store.list('ai_snapshots', {
       execution_id: submitted.id,
       limit: 10,
@@ -286,6 +373,23 @@ for (const format of ['openai', 'anthropic'] as const)
     assert.equal(repair?.data.repair_reason, 'invalid_fields');
     assert(!JSON.stringify(provider.requests[1].body).includes('private-model-output'));
     assert(!result.payload.message_text.includes('private-model-output'));
+    const calls = await hub.runtime.store.list('ai_calls', {
+      execution_id: submitted.id,
+      limit: 10,
+    });
+    assert.equal(calls.length, 2);
+    assert.deepEqual(result.payload.error, {
+      code: 'AI_OUTPUT_INVALID',
+      message: '模型结构化结果的字段或类型不符合约定',
+      retryable: false,
+      call_id: calls[1].id,
+    });
+    for (const call of calls) {
+      const check = call.payload.output_check;
+      assert.equal(check?.reason, 'schema_mismatch');
+      assert(check?.issues?.some((issue) => issue.path === 'summary' && issue.code === 'missing'));
+    }
+    assert(!/private-model-output|结论/.test(JSON.stringify(calls)));
   });
 
 for (const format of ['openai', 'anthropic'] as const)
@@ -341,7 +445,7 @@ for (const format of ['openai', 'anthropic'] as const)
       const provider = await fixture(format, 'text', gate);
       t.after(provider.close);
       const config = frameworkConfig(provider.url, format);
-      config.profiles[0].request_timeout_ms = 1000;
+      config.profiles[0].request_timeout_ms_overrides = { 'framework-test/writer': 1000 };
       const hub = await frameworkFixture(t, config, (context) =>
         context.step('prepare', () =>
           context.agent({
@@ -642,6 +746,98 @@ async function inlineFixture(t: TestContext, url: string, credentials?: Credenti
   return { ...hub, options, input };
 }
 
+test('内联并行步骤按传播的异常归因，不按最后结束的步骤归因', async (t) => {
+  for (const selected of ['endpoint', 'validation']) {
+    const provider = await fixture('openai', 'json', true);
+    t.after(provider.close);
+    const { runtime, options, input } = await inlineFixture(t, provider.url);
+    const ended = deferred();
+    const running = runtime.runInline(options, async (run) => {
+      const endpoint = run
+        .call('endpoint', {
+          ...input,
+          limits: { timeoutMs: 1000 },
+          onPartial: () => undefined,
+        })
+        .finally(() => ended.resolve());
+      const validation = run.call('validation', {
+        ...input,
+        accept: async () => {
+          if (selected === 'endpoint') await ended.promise;
+          throw new OutputRejectedError('count', '业务数量不符');
+        },
+      });
+      const results = await Promise.allSettled([endpoint, validation]);
+      const failure = results[selected === 'endpoint' ? 0 : 1];
+      assert.equal(failure.status, 'rejected');
+      throw failure.reason;
+    });
+    try {
+      await assert.rejects(
+        running,
+        selected === 'endpoint' ? ShortModelError : OutputRejectedError,
+      );
+    } finally {
+      provider.release.resolve();
+    }
+    const [row] = await runtime.store.list('ai_executions', { limit: 1 });
+    const query = { execution_id: row.id, limit: 20 };
+    const calls = await runtime.store.list('ai_calls', query);
+    const call = calls.find((item) => item.payload.diagnostics.step?.id === selected);
+    assert(call);
+    assert.equal(row.status, 'failed');
+    assert.equal(
+      row.payload.error?.code,
+      selected === 'endpoint' ? 'AI_PROVIDER_FAILED' : 'AI_OUTPUT_INVALID',
+    );
+    assert.equal(row.payload.error?.call_id, call.id);
+    const events = await runtime.store.list('ai_events', query);
+    assert.equal(events.filter((event) => event.payload.type === 'step.failed').length, 2);
+    assert.deepEqual(events.at(-1)?.payload.data.error, {
+      code: row.payload.error.code,
+      message: row.payload.error.message,
+      retryable: row.payload.error.retryable,
+    });
+  }
+});
+
+test('内联输出等待宿主验收时没有采纳结论，中断不能补写成功', async (t) => {
+  const provider = await fixture('openai', 'json');
+  t.after(provider.close);
+  const { runtime, options, input } = await inlineFixture(t, provider.url);
+  for (const stop of [false, true]) {
+    const controller = new AbortController();
+    const checking = deferred<string>();
+    const release = deferred();
+    const running = runtime.runInline({ ...options, signal: controller.signal }, (run) =>
+      run.call('check', {
+        ...input,
+        accept: async () => {
+          checking.resolve(run.executionId!);
+          await release.promise;
+        },
+      }),
+    );
+    const id = await checking.promise;
+    const query = { execution_id: id, limit: 1 };
+    try {
+      const [pending] = await runtime.store.list('ai_calls', query);
+      assert.equal(pending.status, 'succeeded');
+      assert.equal(pending.payload.output_check, undefined);
+      if (stop) controller.abort();
+    } finally {
+      release.resolve();
+    }
+    if (stop) await assert.rejects(running, ShortModelError);
+    else await running;
+    const [call] = await runtime.store.list('ai_calls', query);
+    assert.deepEqual(call.payload.output_check, stop ? undefined : { status: 'accepted' });
+    const row = await runtime.get(id);
+    assert.equal(row.status, stop ? 'cancelled' : 'succeeded');
+    assert.equal(row.payload.error?.call_id, undefined);
+  }
+});
+
 test('模型协议终止即交付并关闭上游，不等待 HTTP EOF，不重复结算', { timeout: 20000 }, async (t) => {
   for (const format of ['openai', 'anthropic'] as const) {
     const provider = await fixture(format, 'text', 'after-terminal');
@@ -820,6 +1016,7 @@ test('内联模型已结算后宿主拒绝结果：保留真实用量，不落�
   const [row] = await runtime.store.list('ai_executions', { limit: 10 });
   assert.equal(row.status, 'failed');
   assert.equal(row.payload.error?.code, 'AI_FORBIDDEN');
+  assert.equal(row.payload.error.call_id, undefined);
   assert.equal(row.payload.dispatch_id, null);
   assert.equal(row.payload.result, null);
   assert.deepEqual(row.payload.input, {});

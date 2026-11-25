@@ -1,5 +1,9 @@
 import type { AgentEvidenceService } from '@capability-hub/application';
-import { AiError, type AgentInvocation, type OperationContext } from '@capability-hub/ai';
+import {
+  OutputRejectedError,
+  type AgentInvocation,
+  type OperationContext,
+} from '@capability-hub/ai';
 import { z } from 'zod';
 import type { evidenceSchema } from './schemas.js';
 
@@ -33,7 +37,7 @@ export function validateCitations(findings: { evidence: ReadRange[] }[], readRan
             item.end_line >= citation.end_line,
         )
       )
-        throw new AiError('AI_OUTPUT_INVALID', '报告引用超出实际读取范围');
+        throw new OutputRejectedError('citation-range', '报告引用超出实际读取范围');
 }
 
 interface BusinessEvidence {

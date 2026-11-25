@@ -1,21 +1,89 @@
 import { MastraError } from '@mastra/core/error';
 import type { z } from 'zod';
 import { AiError } from '../core/errors.js';
+import type { ModelOutputCheck, ModelOutputIssue } from '../core/records.js';
 
 // 只传递校验位置和规则；不把模型原文、SDK 异常或资源内容写入错误及重试指令。
 
 /**
  * 结构化输出不符合 Schema 时抛出，`code` 固定为 `AI_OUTPUT_INVALID`。
- * `hint` 只描述期望的字段与格式并用于重试指令：模型原文与资源内容不进错误消息。
+ * `hint` 只描述期望的字段与格式并用于重试指令；`issues` 供调用记录，同样不含模型原文。
  */
 export class ReportFormatError extends AiError {
   constructor(
     readonly reason: 'invalid_fields' | 'incomplete_output' | 'output_limit',
     message: string,
     readonly hint: string,
+    readonly issues: ModelOutputIssue[] = [],
   ) {
     super('AI_OUTPUT_INVALID', message);
   }
+}
+
+/** 端点因内容过滤停止输出；不属于可纠正的格式问题。 */
+export class ContentFilterError extends AiError {
+  constructor() {
+    super('AI_OUTPUT_INVALID', '模型服务因内容过滤停止输出');
+  }
+}
+
+function issuePath(path: readonly PropertyKey[]) {
+  return (
+    path
+      .map((key) =>
+        /^(?:[a-z_][a-z0-9_]{0,47}|[0-9]{1,4})$/i.test(String(key)) ? String(key) : '*',
+      )
+      .join('.')
+      .slice(0, 200) || '$'
+  );
+}
+
+function lookup(candidate: unknown, path: readonly PropertyKey[]) {
+  let node = candidate;
+  for (const key of path) {
+    if (!node || typeof node !== 'object' || !Object.hasOwn(node, key)) return { found: false };
+    node = Reflect.get(node, key);
+  }
+  return { found: true, value: node };
+}
+
+/** 把 Zod 问题转换为字段问题：只含 Schema 路径、规则、上下限与实际长度，不含模型写出的值或键名。 */
+export function outputIssues(issues: z.ZodError['issues'], candidate: unknown) {
+  return issues.slice(0, 20).map((issue): ModelOutputIssue => {
+    const target = lookup(candidate, issue.path);
+    const item: ModelOutputIssue = { path: issuePath(issue.path), code: issue.code };
+    if (issue.code === 'invalid_type') {
+      if (!target.found) item.code = 'missing';
+      item.expected = String(issue.expected).slice(0, 80);
+    } else if (issue.code === 'too_big' || issue.code === 'too_small') {
+      item.limit = Number(issue.code === 'too_big' ? issue.maximum : issue.minimum);
+      if (typeof target.value === 'string' || Array.isArray(target.value))
+        item.actual = target.value.length;
+    } else if (issue.code === 'unrecognized_keys') {
+      item.actual = issue.keys.length;
+    } else if (issue.code === 'invalid_value') {
+      item.options = issue.values.slice(0, 20).map((value) => String(value).slice(0, 64));
+    }
+    return item;
+  });
+}
+
+const formatReasons = {
+  invalid_fields: 'schema_mismatch',
+  incomplete_output: 'invalid_json',
+  output_limit: 'output_limit',
+} as const;
+
+/** 结构化读取失败对应的调用输出结论；不属于输出校验的异常返回 undefined。 */
+export function structuredRejection(error: unknown): ModelOutputCheck | undefined {
+  if (error instanceof ReportFormatError)
+    return {
+      status: 'rejected',
+      reason: formatReasons[error.reason],
+      ...(error.issues.length ? { issues: error.issues } : {}),
+    };
+  if (error instanceof ContentFilterError) return { status: 'rejected', reason: 'content_filter' };
+  return undefined;
 }
 
 function decode(value: string): unknown {
@@ -75,7 +143,12 @@ function validate<T extends z.ZodType>(schema: T, candidate: unknown): z.infer<T
       );
     })
     .join('; ');
-  throw new ReportFormatError('invalid_fields', '模型结构化结果的字段或类型不符合约定', hint);
+  throw new ReportFormatError(
+    'invalid_fields',
+    '模型结构化结果的字段或类型不符合约定',
+    hint,
+    outputIssues(checked.error.issues, candidate),
+  );
 }
 
 /**
@@ -114,8 +187,7 @@ export async function readStructured<T extends z.ZodType>(
       '模型结构化结果因输出长度限制被截断',
       '上次已用完输出额度。直接写紧凑 JSON，合并重复说明并保留必要事实。不要复述原文、展示推导或添加排版空白。',
     );
-  if (finishReason === 'content-filter')
-    throw new AiError('AI_OUTPUT_INVALID', '模型服务因内容过滤停止输出');
+  if (finishReason === 'content-filter') throw new ContentFilterError();
   if (candidate === undefined)
     throw new ReportFormatError(
       'incomplete_output',

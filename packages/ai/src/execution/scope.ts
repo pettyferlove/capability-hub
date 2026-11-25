@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { AiStore, AiQueueBridge, ExecutionLease } from '../core/ports.js';
 import type { ExecutionRecord } from '../core/records.js';
-import { AiError } from '../core/errors.js';
+import { AiError, withWorkflowErrors } from '../core/errors.js';
 
 /**
  * 单轮执行的作用域。`controller` 的 abort reason 必须是 {@link AiError}：只有
@@ -28,7 +28,7 @@ export class ExecutionScope {
     readonly queue: AiQueueBridge,
   ) {}
   run<T>(scope: RunScope, work: () => Promise<T>): Promise<T> {
-    return this.context.run(scope, work);
+    return this.context.run(scope, () => withWorkflowErrors(work));
   }
   current(): RunScope {
     const value = this.context.getStore();

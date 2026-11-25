@@ -4,7 +4,7 @@ import { executionResponse } from '../../apps/server/src/http/routes/ai-views.js
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { AgentEvidenceService } from '@capability-hub/application';
-import { AiError } from '@capability-hub/ai';
+import { AiError, aiConfigurationSchema } from '@capability-hub/ai';
 import {
   aiExecutionLedgerResponseSchema,
   aiExecutionListResponseSchema,
@@ -20,6 +20,8 @@ import {
 } from '../support/application.js';
 import { fixture } from '../support/ai-provider.js';
 import { frameworkConfig } from '../support/ai-framework.js';
+import { openAiStream, serveModelStub } from '../support/model-provider-stub.js';
+import { deferred } from '../support/store.js';
 import { signIn } from '../support/http.js';
 import { archive } from '@capability-hub/infrastructure/content';
 import { skillDocument } from '../support/content.js';
@@ -1029,6 +1031,15 @@ test('模型伪造未读取文件的引用时任务失败，不生成可采纳�
   assert.equal(failed.status, 'failed');
   assert.equal(failed.payload.error?.code, 'AI_OUTPUT_INVALID');
   assert.equal((await f.hub.ai.runtime.view(failed.id)).interactions.length, 0);
+  const calls = await f.hub.ai.runtime.store.list('ai_calls', {
+    execution_id: failed.id,
+    limit: 50,
+  });
+  const rejected = calls.filter((call) => call.payload.output_check?.status === 'rejected');
+  assert.deepEqual(
+    rejected.map(({ payload }) => [payload.diagnostics.step?.id, payload.output_check?.rule]),
+    [['assessment', 'citation-range']],
+  );
 });
 
 test('分页读取的相邻区间可连续引用，跨越未读行的引用仍使任务失败', async (t) => {
@@ -1425,6 +1436,52 @@ async function cancelUploadAudit(f: TestHub) {
   });
   await f.hub.ai.runtime.cancel(audit.id, f.admin.id, audit.payload.revision);
 }
+
+test('审核简报派发后撤回并删除未发布资产，不重建原文仍保留已确认用量', async (t) => {
+  const dispatched = deferred();
+  const release = deferred();
+  const stub = await serveModelStub(t, async () => {
+    dispatched.resolve();
+    await release.promise;
+    return openAiStream('已收到');
+  });
+  const profile = stub.profile('openai');
+  const f = await createTestHub(t, {
+    ai: aiConfigurationSchema.parse({ profiles: [profile], default_profile: profile.id }),
+  });
+  const intake = await receiveSkill(f);
+  await cancelUploadAudit(f);
+  const request = await submitPublication(f, intake);
+  const runtime = f.hub.ai.runtime;
+  const review = await runtime.submit(f.reviewer.id, 'publication-review', {
+    publication_request_id: request.id,
+  });
+  const processing = run(f);
+  try {
+    await Promise.race([dispatched.promise, processing.then(() => assert.fail('简报调用未派发'))]);
+    await f.hub.publications.cancel(f.admin, request.id, { reason: '放弃发布' }, '"1"');
+    const asset = await f.hub.assetAccess.getAsset(intake.asset_id);
+    await f.hub.lifecycle.deleteAsset(
+      f.admin,
+      asset.id,
+      { reason: '清理候选' },
+      `"${asset.revision}"`,
+      randomUUID(),
+    );
+    assert.equal(await f.store.get('requests', request.id), undefined);
+    assert.equal(await f.store.get('versions', intake.version_id), undefined);
+  } finally {
+    release.resolve();
+    await processing;
+  }
+  const result = await runtime.get(review.id);
+  assert.equal(result.payload.usage.input_tokens, 11);
+  assert.equal(result.payload.usage.output_tokens, 7);
+  assert.equal(result.payload.usage.unknown_requests, 0);
+  const [call] = await runtime.store.list('ai_calls', { execution_id: review.id, limit: 1 });
+  assert.equal(call.status, 'succeeded');
+  assert.deepEqual(await runtime.store.listExchangeRefs(review.id), []);
+});
 
 test('审核简报绑定申请的基线和扫描，同版本扩大受众仍有变化，形成报告后仍由人工独立决定', async (t) => {
   const reviewScript = {

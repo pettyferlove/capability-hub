@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import {
   aiDiagnosticHandoffResponseSchema,
   aiExecutionDiagnosticsResponseSchema,
@@ -17,7 +17,10 @@ import { cn } from '../../../shared/styles/cn.js';
 import { btnStyles, dataTableStyles, tableWrapStyles } from '../../../shared/styles/recipes.js';
 import { eventLabel } from '../../ai/presentation.js';
 import { codeStyles, controlStyles, disclosureStyles } from '../../ai/styles.js';
+import { callFailures, failingCall, type ModelCall } from './call-failure.js';
 import { ModelCallRow } from './ModelCallRow.js';
+import { ModelExchangeView } from './ModelExchangeView.js';
+import { OutputRejection } from './OutputRejection.js';
 
 const categories = {
   key: '关键事件',
@@ -90,6 +93,14 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
   const sequenceInput = useRef<HTMLInputElement>(null);
   const [page, setPage] = useState(0);
   const [handoff, setHandoff] = useState(false);
+  const [exchange, setExchange] = useState<{
+    callId: string;
+    trigger: HTMLButtonElement;
+    openedAt: number;
+  } | null>(null);
+  const baseId = useId();
+  const rowId = (index: number) => baseId + '-call-' + index;
+  const exchangePanelId = baseId + '-exchange';
   const query = useQuery<unknown>(path, refresh);
   const parsed = useMemo(
     () =>
@@ -114,6 +125,20 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
         .slice(0, 5) ?? [],
     [report],
   );
+  const failure = useMemo(() => (report ? failingCall(report) : undefined), [report]);
+  const failureReason = failure?.failure_reason;
+  const exchangeIndex =
+    exchange && !query.loading && !query.error
+      ? (report?.model_calls.findIndex(
+          (call) => call.id === exchange.callId && call.exchange === 'available',
+        ) ?? -1)
+      : -1;
+  if (exchange && !query.loading && exchangeIndex < 0) setExchange(null);
+  const locateCall = (call: ModelCall) => {
+    const row = document.getElementById(rowId(report?.model_calls.indexOf(call) ?? -1));
+    row?.scrollIntoView({ block: 'center' });
+    row?.focus({ preventScroll: true });
+  };
   const lastPage = Math.max(0, Math.ceil(events.length / pageSize) - 1);
   const currentPage = Math.min(page, lastPage);
   const error = query.error || (parsed && !report ? '执行诊断数据无效' : '');
@@ -190,20 +215,49 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
               </p>
             )}
             {report.execution.error && (
-              <section aria-label="终止原因" className="rounded-xl bg-danger-soft p-4 text-danger">
+              <section
+                aria-label="终止原因"
+                className="space-y-2 rounded-xl bg-danger-soft p-4 text-danger"
+              >
                 <h3 className="font-semibold">{report.execution.error.code}</h3>
                 <p>{report.execution.error.message}</p>
-                <button
-                  type="button"
-                  className={btnStyles}
-                  onClick={() => {
-                    setCategory('error');
-                    setSequence('');
-                    setPage(0);
-                  }}
-                >
-                  定位异常事件
-                </button>
+                {!failure && !!report.model_calls.length && (
+                  <p className="text-caption">本次终止未关联模型调用。</p>
+                )}
+                {failure && failureReason && (
+                  <div className="space-y-1 border-t border-danger/20 pt-2 text-ink">
+                    {failure.output_check?.status === 'rejected' ? (
+                      <OutputRejection
+                        check={failure.output_check}
+                        reason={failureReason}
+                        limit={3}
+                      />
+                    ) : (
+                      <strong className="block font-medium text-danger">
+                        {callFailures[failureReason].label}
+                      </strong>
+                    )}
+                    <p className="text-caption">{callFailures[failureReason].hint}</p>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {failure && (
+                    <button type="button" className={btnStyles} onClick={() => locateCall(failure)}>
+                      定位失败调用
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={btnStyles}
+                    onClick={() => {
+                      setCategory('error');
+                      setSequence('');
+                      setPage(0);
+                    }}
+                  >
+                    定位异常事件
+                  </button>
+                </div>
               </section>
             )}
             <button
@@ -316,6 +370,12 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
             )}
             <section aria-label="模型请求" className="space-y-2">
               <h3 className="text-section">模型请求</h3>
+              {report.execution.operation_id === 'resource-evaluation' &&
+                report.model_calls.some((call) => call.exchange === 'withheld') && (
+                  <p className="text-caption text-muted-ink">
+                    查看评测原文需要全部引用版本的分发读权。仅有候选审核权或平台检查权，不能查看未发布候选的评测原文。
+                  </p>
+                )}
               {report.model_calls.length ? (
                 <div className={dataTableStyles}>
                   <div className={tableWrapStyles}>
@@ -325,10 +385,11 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
                           {[
                             '调用 / 档案',
                             '调度 / 步骤',
-                            '状态',
+                            '传输结算',
                             '耗时',
                             '输入 / 输出 token',
-                            '调用诊断',
+                            '输出结论',
+                            '传输与原文',
                           ].map((label) => (
                             <th scope="col" key={label}>
                               {label}
@@ -337,14 +398,26 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
                         </tr>
                       </thead>
                       <tbody>
-                        {report.model_calls.map((call) => (
+                        {report.model_calls.map((call, index) => (
                           <ModelCallRow
                             key={call.id}
                             call={call}
+                            rowId={rowId(index)}
                             locate={(seq) => {
                               setSequence(String(seq));
                               setPage(0);
                               sequenceInput.current?.focus();
+                            }}
+                            exchange={{
+                              open: index === exchangeIndex,
+                              controls: exchangePanelId,
+                              disabled: query.loading,
+                              toggle: (trigger) =>
+                                setExchange(
+                                  index === exchangeIndex
+                                    ? null
+                                    : { callId: call.id, trigger, openedAt: refresh },
+                                ),
                             }}
                           />
                         ))}
@@ -354,6 +427,23 @@ export function ExecutionDiagnostics({ id, liveWatermark }: { id: string; liveWa
                 </div>
               ) : (
                 <p className="text-muted-ink">尚无模型请求。</p>
+              )}
+              {exchange && exchangeIndex >= 0 && (
+                <ModelExchangeView
+                  key={exchange.callId}
+                  id={exchangePanelId}
+                  executionId={id}
+                  callId={exchange.callId}
+                  reveal={exchange.openedAt === refresh}
+                  onUnavailable={() => {
+                    setExchange(null);
+                    reload();
+                  }}
+                  onClose={() => {
+                    setExchange(null);
+                    exchange.trigger.focus();
+                  }}
+                />
               )}
             </section>
           </div>

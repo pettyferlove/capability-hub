@@ -33,6 +33,10 @@ export async function purgeAiHistory(store: RecordStore, retentionDays = 30): Pr
         const jobs = await store.listAiExecutionJobs(row.id);
         if (jobs.some((job) => ['queued', 'running'].includes(job.state))) return;
         for (const table of aiTables.filter((table) => table !== 'ai_executions')) {
+          if (table === 'ai_exchanges') {
+            await ai.removeExchangesBy('execution_id', row.id);
+            continue;
+          }
           for (;;) {
             const children = await ai.list(table, { execution_id: row.id, limit: 1000 });
             for (const child of children) await ai.remove(table, child.id);
@@ -48,4 +52,21 @@ export async function purgeAiHistory(store: RecordStore, retentionDays = 30): Pr
     const last = rows.at(-1)!;
     after = { id: last.id, position: last.position };
   }
+}
+
+/**
+ * 删除采集时刻已达保留期的模型往返原文，返回删除条数；不影响执行记录与调用诊断。
+ *
+ * `retentionDays` 取值 0–3650 且必须为整数，0 表示清除全部已采集原文。每轮至多删除 500 条。
+ */
+export async function purgeAiExchanges(
+  store: RecordStore,
+  retentionDays: number,
+  now = Date.now(),
+): Promise<number> {
+  if (!Number.isInteger(retentionDays) || retentionDays < 0 || retentionDays > 3650)
+    throw new Error('模型往返原文保留期必须为 0 至 3650 天');
+  return createAiStore(store).purgeExpiredExchanges(
+    retentionDays === 0 ? null : now - retentionDays * 86400000,
+  );
 }

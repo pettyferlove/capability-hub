@@ -119,6 +119,9 @@ export const ai_traces = defineAiTable('ai_traces');
 /** 产出物（名称、媒体类型、内容、摘要）；同样只有位置索引，允许多次产出。 */
 export const ai_artifacts = defineAiTable('ai_artifacts');
 
+/** 模型往返原文，按 `lookup_key` 主体版本和 `position` 采集时刻清理。 */
+export const ai_exchanges = defineAiTable('ai_exchanges');
+
 /** 按表名索引的全量集合，迁移与查询都从这里取表对象。 */
 export const aiSchema: Record<AiTable, ReturnType<typeof defineAiTable>> = {
   ai_executions,
@@ -131,4 +134,5 @@ export const aiSchema: Record<AiTable, ReturnType<typeof defineAiTable>> = {
   ai_calls,
   ai_traces,
   ai_artifacts,
+  ai_exchanges,
 };

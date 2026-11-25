@@ -1,13 +1,13 @@
-import { isEvaluationText } from '@capability-hub/domain/evaluation';
+import { evaluationRubric, isEvaluationText } from '@capability-hub/domain/evaluation';
 import { z } from 'zod';
 
 const text = z.string().refine(isEvaluationText);
 
-/** 模型只接收本阶段装填的材料，执行账本不持久化业务输入和结果。 */
+/** 模型只接收本阶段装填的材料；执行记录不含业务输入和结果，往返原文按留存期另存。 */
 export const resourceEvaluationOperation = {
   id: 'resource-evaluation',
   execution_mode: 'inline',
-  version: '4',
+  version: '5',
   title: '资源质量评测',
   description: '系统按固定版本评测 Skill 的触发准确、指令质量、纸面任务效果与边界透明。',
   input: z.strictObject({}),
@@ -86,9 +86,11 @@ export const instructionReviewInstructions =
   materialRules +
   ' 按输入所列九个标准项逐项核对目标与适用范围、有序步骤、具体输入输出、精炼程度、术语、自由度、反馈环、时效和脚本健壮性。每项给判定、至多三段实际发送过的文件行号、简短说明和可执行的改进建议。术语项扣分时指出同一概念的两种冲突叫法，精炼项扣分时指出可删的重复段落。没有关键操作时，反馈环可不适用。bundled_scripts 是平台清点的包内脚本数，为 0 时脚本健壮性填 na。文档中的 CLI 示例只是用法说明。';
 
-/** 每个样本覆盖九项，固定 ID 集和实际引用另行核验。 */
+const rubricIds = evaluationRubric.instructions.checks.map((item) => item.id);
+
+/** 标准项 ID 以枚举写进 Schema，模型可见；重复或缺项仍由服务端核对。 */
 export const instructionReviewSchema = z.strictObject({
-  checks: z.array(check.extend({ id: text.max(80) })).length(9),
+  checks: z.array(check.extend({ id: z.enum(rubricIds) })).length(rubricIds.length),
 });
 
 /** 作者候选和备用任务一次生成，保留运行依赖的标记供服务端剔除。 */
@@ -129,10 +131,9 @@ export const taskJudgeInstructions =
   ' 独立盲评交付物 A 与 B，不能推测它们的来源。按给定顺序逐条判断断言，每份交付物各填 passed 和可直接核对的逐字引文（最多 200 字符，不改写、不拼接）。缺少佐证不能判通过。';
 const quotedVerdict = z.strictObject({ passed: z.boolean(), quote: text.max(200) });
 
-/** 各判定按任务断言的顺序返回，两侧始终分别取证。 */
-export const taskJudgeSchema = z.strictObject({
-  assertions: z
-    .array(z.strictObject({ a: quotedVerdict, b: quotedVerdict }))
-    .min(3)
-    .max(5),
-});
+/** 各判定按任务断言的顺序返回，两侧始终分别取证；条数随本题断言固定，写进 Schema 供模型对照。 */
+export function taskJudgeSchema(count: number) {
+  return z.strictObject({
+    assertions: z.array(z.strictObject({ a: quotedVerdict, b: quotedVerdict })).length(count),
+  });
+}

@@ -2,22 +2,27 @@
 
 这些接口均要求网页登录会话。运营中心的 Agent 接口另需平台级 `ai:inspect`，任务读取复核当前资源权限。写入还需 CSRF 和 `Idempotency-Key`。
 
-| 方法与路径                                                        | 输入/结果                                                                                  |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| GET `/api/admin/operations/agents/catalog`                        | 可手动提交的操作及模型档案；`view=registered` 还返回业务自动触发的操作                     |
-| GET `/api/admin/operations/agents/executions?limit=30&cursor=…`   | 按 `status`、`operation_id`、`q` 跨用户检索可读执行，倒序分页；`view=summary` 返回概要     |
-| GET `/api/admin/operations/agents/executions/:id/diagnostics`     | 单次执行的诊断快照。可用 `download=json` 或 `download=markdown` 下载                       |
-| GET `/api/ai/model-options`                                       | 业务面板的模型选项，需 `ai:execute`。仅返回默认模型档案 ID 及各档案的 ID、标签             |
-| POST `/api/ai/executions`                                         | `{operation_id, model_profile?, input}` → 201 执行 DTO、ETag；支持[复用](#业务任务)        |
-| GET `/api/ai/executions`                                          | 业务历史，须提供 `version_id`、`feedback_id` 或 `publication_request_id`，否则返回 422     |
-| GET `/api/ai/executions/:id`                                      | `{execution, interactions, artifacts, activity, activity_truncated, watermark}`、执行 ETag |
-| POST `/api/ai/executions/:id/cancel`                              | `{}`、`If-Match: "<执行 revision>"` → 更新后的执行                                         |
-| POST `/api/ai/executions/:id/interactions/:interactionId/respond` | `{response}`、`If-Match: "<交互 revision>"` → 更新后的执行                                 |
-| GET `/api/ai/executions/:id/events`                               | SSE，可用 `Last-Event-ID` 或 `cursor` 查询参数续传，header 优先                            |
+| 方法与路径                                                               | 输入/结果                                                                                      |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| GET `/api/admin/operations/agents/catalog`                               | 可手动提交的操作及模型档案；`view=registered` 还返回业务自动触发的操作                         |
+| GET `/api/admin/operations/agents/executions?limit=30&cursor=…`          | 按 `status`、`operation_id`、`q` 跨用户检索可读执行，倒序分页；`view=summary` 返回概要         |
+| GET `/api/admin/operations/agents/executions/:id/diagnostics`            | 单次执行的诊断快照。可用 `download=json` 或 `download=markdown` 下载，下载附有权查看的往返原文 |
+| GET `/api/admin/operations/agents/executions/:id/calls/:callId/exchange` | 单次模型请求的往返原文；不存在或已过留存期为 404，涉及无权读取的版本为 403                     |
+| GET `/api/ai/model-options`                                              | 业务面板的模型选项，需 `ai:execute`。仅返回默认模型档案 ID 及各档案的 ID、标签                 |
+| POST `/api/ai/executions`                                                | `{operation_id, model_profile?, input}` → 201 执行 DTO、ETag；支持[复用](#业务任务)            |
+| GET `/api/ai/executions`                                                 | 业务历史，须提供 `version_id`、`feedback_id` 或 `publication_request_id`，否则返回 422         |
+| GET `/api/ai/executions/:id`                                             | `{execution, interactions, artifacts, activity, activity_truncated, watermark}`、执行 ETag     |
+| POST `/api/ai/executions/:id/cancel`                                     | `{}`、`If-Match: "<执行 revision>"` → 更新后的执行                                             |
+| POST `/api/ai/executions/:id/interactions/:interactionId/respond`        | `{response}`、`If-Match: "<交互 revision>"` → 更新后的执行                                     |
+| GET `/api/ai/executions/:id/events`                                      | SSE，可用 `Last-Event-ID` 或 `cursor` 查询参数续传，header 优先                                |
 
 执行 DTO 包含状态、用量、消息块、输入/结果、错误、期限与 revision。目录和执行中的 `execution_mode: inline` 标记由业务入口触发的只读记录；不能通过通用接口新建、取消或应答。人工回答的 If-Match 使用交互修订。缺失为 428，陈旧为 412，状态冲突为 409，字段错误为 422；同键同内容重试复用原结果。
 
-运营列表的 `q` 匹配标题、执行 ID、Agent、负责人或错误码。诊断快照汇集版本、截至 `watermark` 的 operator 事件、调用、耗时、决定、回执和成果，`event_gaps` 标出缺失的闭区间。`diagnostics` 记录模型、协议和限额。`reasoning_effort` 记录请求的档位，`none` 表示请求关闭思考，缺省表示未记录思考参数。`step.start_seq` 指向步骤开始事件。结算时附 `transport`，记录响应头、首末输出耗时、停止原因及用量上报。HTTP 失败可附经校验的 `upstream_error_code` 和 `upstream_request_id`，不保存错误正文。Markdown 合并文本增量并保留事件号，`view=handoff` 返回 `{markdown, watermark}`。读取时重新授权。
+运营列表的 `q` 匹配标题、执行 ID、Agent、负责人或错误码。诊断快照汇集 `watermark` 以内的事件、调用、耗时、决定、回执和成果；`event_gaps` 标出缺失的闭区间。调用的 `diagnostics` 指明模型、协议和本次限额，`reasoning_effort` 为 `none` 表示请求关闭思考，缺省表示未记录。`step.start_seq` 指向步骤开始事件。`transport` 给出收发字节、响应头与首末输出耗时、停止原因及用量；可附 `network_error`、`upstream_error_code` 和 `upstream_request_id`。错误正文只随往返原文提供。
+
+诊断快照与 JSON 导出使用 `schema_version: 2`。新版可读 v1 文件，旧调用没有 `exchange` 时视为 `none`；旧 Web 与服务端须一同更新。调用分别记录 `output_check` 和 `failure_reason`。只有 `execution.error.call_id` 指向引发终止的调用，已处理的失败只进调用历史。
+
+快照只给原文状态 `available`、`withheld`、`none`。展开和导出重新检查授权与留存期。JSON 附全部可读原文；Markdown 只附已确认致因的可读原文，`view=handoff` 返回 `{markdown, watermark}`。单份导出上限 8 MiB，超出返回 413，请改用快照和逐调用接口。
 
 `activity` 与执行投影在同一事务读取，是同一执行、operator audience、水位以内的持久事件 envelope，按 seq 升序排列。查询先排除 `message.delta`、`message.completed`、`usage.updated` 和 `execution.completed`，再取最近 1000 条，文本流不会挤掉工具调用。`activity_truncated` 表示更早的活动已省略；消息全文、完成状态、用量与结果由 `execution` 提供，完整人工回答由 `interactions` 提供。客户端校验归属、排序、事件类型和水位；接收后续 SSE 时仅将相同类型的事件加入活动列表并保持上限。活动快照不会改变 seq 或重放游标规则。
 

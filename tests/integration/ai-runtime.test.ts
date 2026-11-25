@@ -1,19 +1,28 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { aiConfigurationSchema, AiRuntime, OperationRegistry } from '@capability-hub/ai';
+import { randomUUID } from 'node:crypto';
+import { test, type TestContext } from 'node:test';
+import {
+  aiConfigurationSchema,
+  AiRuntime,
+  OperationRegistry,
+  OutputRejectedError,
+  ShortModelError,
+} from '@capability-hub/ai';
 import { createStep, createWorkflow } from '@capability-hub/ai/mastra';
-import { createAiStore, HubAiQueue } from '@capability-hub/infrastructure/ai';
+import { createAiStore, HubAiQueue, purgeAiExchanges } from '@capability-hub/infrastructure/ai';
+import { snapshotStore } from '@capability-hub/infrastructure/store';
 import { z } from 'zod';
-import { createTestHub, publishSkill } from '../support/application.js';
+import { createTestHub, publishSkill, receiveSkill } from '../support/application.js';
 import { fixture as providerFixture } from '../support/ai-provider.js';
 import { signIn } from '../support/http.js';
 import { deferred } from '../support/store.js';
-import { serveModelStub } from '../support/model-provider-stub.js';
+import { serveModelStub, type StubHandler } from '../support/model-provider-stub.js';
 import {
   aiCatalogResponseSchema,
   aiExecutionLedgerResponseSchema,
   aiExecutionDiagnosticsResponseSchema,
   aiExecutionViewResponseSchema,
+  aiModelExchangeResponseSchema,
 } from '@capability-hub/contracts';
 import type { AiRecordMap, AiTable } from '@capability-hub/ai/records';
 
@@ -360,20 +369,21 @@ for (const format of ['openai', 'anthropic'] as const)
   }
 
 for (const format of ['openai', 'anthropic'] as const)
-  test(`AI ${format} HTTP 失败诊断可导出上游标识但不暴露错误正文`, async (t) => {
+  test(`AI ${format} HTTP 失败诊断导出上游标识，错误正文只随往返原文提供`, async (t) => {
     const detail = 'private-upstream-error-text';
     const chat = format === 'openai';
     const provider = await providerFixture(format, {
       status: 400,
       headers: {
         'content-type': 'application/json; charset=utf-8',
-        ...(chat && { 'x-request-id': 'req-header' }),
+        'x-request-id': chat ? 'req-header' : 'ai-fixture-key',
       },
       body: JSON.stringify({
         error: {
-          code: chat ? 'missing_session' : undefined,
+          code: chat ? 'missing_session' : 'ai-fixture-key',
           type: 'invalid_request_error',
-          message: detail,
+          message: `${detail}: ai-fixture-key\nAuthorization: Bearer synthetic-header-value`,
+          headers: { 'x-custom': 'synthetic-envelope-extension' },
         },
         request_id: 'req-envelope',
       }),
@@ -401,12 +411,63 @@ for (const format of ['openai', 'anthropic'] as const)
     assert.equal(call.diagnostics.transport?.http_status, 400);
     assert.equal(call.diagnostics.transport?.upstream_error_code, code);
     assert.equal(call.diagnostics.transport?.upstream_request_id, requestId);
+    assert.equal(call.exchange, 'available');
     assert(!response.text.includes(detail));
+    const exchange = await client
+      .get(`/api/admin/operations/agents/executions/${row.id}/calls/${call.id}/exchange`)
+      .expect(200);
+    const { response: reply } = aiModelExchangeResponseSchema.parse(exchange.body);
+    assert(reply?.error_body?.includes(detail));
     const markdown = await client.get(path + '?download=markdown').expect(200);
     assert(markdown.text.includes(`"upstream_error_code": "${code}"`));
     assert(markdown.text.includes(`"upstream_request_id": "${requestId}"`));
-    assert(!markdown.text.includes(detail));
+    assert(markdown.text.includes(detail));
+    const json = await client.get(path + '?download=json').expect(200);
+    for (const evidence of [response, exchange, markdown, json]) {
+      for (const secret of [
+        'ai-fixture-key',
+        'synthetic-header-value',
+        'synthetic-envelope-extension',
+      ])
+        assert(!evidence.text.includes(secret));
+    }
   });
+
+test('队列收到非 SSE 的 200 时保留脱敏有界样本，不当作断流或确认用量', async (t) => {
+  const stub = await serveModelStub(t);
+  const sample = `gateway: ${stub.credential}\nx-api-key: synthetic-gateway-value\n`;
+  stub.setHandler(() => ({
+    headers: { 'content-type': 'text/html' },
+    body: sample + '界'.repeat(4000),
+  }));
+  const ai = config(stub.origin);
+  ai.profiles[0].credential_ref = stub.credentialRef;
+  const hub = await createTestHub(t, { ai });
+  const row = await hub.hub.ai.runtime.submit(hub.admin.id, 'assistant', { prompt: 'Hello' });
+  await hub.worker.tick();
+  await hub.worker.waitForIdle();
+  const runtime = hub.hub.ai.runtime;
+  assert.equal((await runtime.get(row.id)).payload.usage.unknown_requests, 1);
+  const [call] = await runtime.store.list('ai_calls', { execution_id: row.id, limit: 1 });
+  assert.equal(call.payload.error_code, 'AI_PROVIDER_FAILED');
+  const client = await signIn(hub);
+  const report = aiExecutionDiagnosticsResponseSchema.parse(
+    (await client.get(`/api/admin/operations/agents/executions/${row.id}/diagnostics`).expect(200))
+      .body,
+  );
+  assert.equal(report.model_calls[0].failure_reason, undefined);
+  const exchange = await client
+    .get(`/api/admin/operations/agents/executions/${row.id}/calls/${call.id}/exchange`)
+    .expect(200);
+  const reply = aiModelExchangeResponseSchema.parse(exchange.body).response;
+  assert(reply && typeof reply.raw === 'string');
+  assert(reply.raw.startsWith('gateway: *'));
+  assert(reply.raw.includes('界'));
+  assert(Buffer.byteLength(reply.raw) <= 8192);
+  assert.equal(reply.truncated, true);
+  assert(!exchange.text.includes(stub.credential));
+  assert(!exchange.text.includes('synthetic-gateway-value'));
+});
 
 test('AI 第一个文本增量在模型完成前提交；取消后旧执行者不能再写回', async (t) => {
   const provider = await providerFixture('openai', 'text', true);
@@ -736,4 +797,214 @@ test('AI 调度检查失败时停机仍中断活跃模型并等待收敛', { tim
   await provider.disconnected.promise;
   assert.equal((await runtime.get(row.id)).status, 'queued');
   assert.equal(hub.worker.busy, false);
+});
+
+async function inlineHub(t: TestContext, reply?: StubHandler) {
+  const stub = await serveModelStub(t, reply);
+  const profile = stub.profile('openai');
+  const f = await createTestHub(t, {
+    ai: aiConfigurationSchema.parse({ profiles: [profile], default_profile: profile.id }),
+  });
+  const options = {
+    operationId: 'resource-evaluation',
+    ownerId: 'system',
+    profileId: profile.id,
+    signal: new AbortController().signal,
+  };
+  return { f, options };
+}
+
+for (const reason of ['cancelled', 'execution_timeout'] as const)
+  test(`诊断保留宿主的 ${reason} 原因，不误报网络或单请求超时`, async (t) => {
+    const dispatched = deferred();
+    const { f, options } = await inlineHub(t, () => {
+      dispatched.resolve();
+      return { hang: true };
+    });
+    const controller = new AbortController();
+    const runtime = f.hub.ai.runtime;
+    const running = runtime.runInline({ ...options, signal: controller.signal }, (run) =>
+      run.call('check', {
+        operation: 'resource-evaluation/check',
+        input: '{}',
+        instructions: '返回空对象',
+        schema: z.strictObject({}),
+      }),
+    );
+    const ended = assert.rejects(running, ShortModelError);
+    await dispatched.promise;
+    controller.abort(
+      reason === 'execution_timeout' ? new DOMException('', 'TimeoutError') : undefined,
+    );
+    await ended;
+    const [row] = await runtime.store.list('ai_executions', {
+      lookup_key: options.operationId,
+      limit: 1,
+    });
+    const client = await signIn(f);
+    const path = `/api/admin/operations/agents/executions/${row.id}/diagnostics`;
+    const report = aiExecutionDiagnosticsResponseSchema.parse(
+      (await client.get(path).expect(200)).body,
+    );
+    assert.equal(report.execution.status, reason === 'cancelled' ? 'cancelled' : 'timed_out');
+    assert.equal(report.model_calls[0].failure_reason, reason);
+    assert.equal(report.model_calls[0].diagnostics.transport?.request_timed_out, false);
+  });
+
+test('内联调用记录字段与业务规则拒绝，往返原文只交给能读取所引版本的检查者', async (t) => {
+  const { f, options } = await inlineHub(t, (_request, index) => ({
+    json: {
+      id: 'chatcmpl-stub',
+      object: 'chat.completion',
+      created: 1,
+      model: 'stub-model',
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: JSON.stringify({ verdict: index === 0 ? 7 : 'ok' }),
+            reasoning_content: 'private-reasoning',
+          },
+          finish_reason: 'stop',
+        },
+      ],
+      usage: {
+        prompt_tokens: 11,
+        completion_tokens: 7,
+        total_tokens: 18,
+        completion_tokens_details: { reasoning_tokens: 5 },
+      },
+    },
+  }));
+  const { intake } = await publishSkill(f);
+  const runtime = f.hub.ai.runtime;
+  const request = {
+    operation: 'resource-evaluation/check',
+    instructions: 'private-instructions',
+    input: 'private-input',
+    schema: z.strictObject({ verdict: z.string() }),
+  };
+  await assert.rejects(
+    runtime.runInline(options, (run) =>
+      run.call('check', { ...request, subject: intake.version_id }),
+    ),
+    (error) => error instanceof ShortModelError && error.reason === 'invalid_output',
+  );
+  await assert.rejects(
+    runtime.runInline(options, (run) =>
+      run.call('rule', {
+        ...request,
+        resources: ['unreadable-version'],
+        accept: () => {
+          throw new OutputRejectedError('verdict-rule', '结论不在允许范围', {
+            expected: 1,
+            actual: 0,
+          });
+        },
+      }),
+    ),
+    OutputRejectedError,
+  );
+  const [schemaRun, ruleRun] = await runtime.store.list('ai_executions', {
+    lookup_key: 'resource-evaluation',
+    limit: 10,
+  });
+  assert.equal(schemaRun.payload.error?.message, '模型回答的字段或类型不符合约定');
+  assert.equal(ruleRun.payload.error?.message, '结论不在允许范围');
+  const [schemaCall] = await runtime.store.list('ai_calls', {
+    execution_id: schemaRun.id,
+    limit: 10,
+  });
+  assert.equal(schemaCall.status, 'succeeded');
+  assert.equal(schemaCall.payload.diagnostics.transport?.reasoning_tokens, 5);
+  assert.deepEqual(schemaCall.payload.output_check, {
+    status: 'rejected',
+    reason: 'schema_mismatch',
+    issues: [{ path: 'verdict', code: 'invalid_type', expected: 'string' }],
+  });
+  const [ruleCall] = await runtime.store.list('ai_calls', { execution_id: ruleRun.id, limit: 10 });
+  assert.deepEqual(ruleCall.payload.output_check, {
+    status: 'rejected',
+    reason: 'host_rejected',
+    message: '结论不在允许范围',
+    rule: 'verdict-rule',
+    facts: { expected: 1, actual: 0 },
+  });
+  const ruleEvents = await runtime.store.list('ai_events', { execution_id: ruleRun.id, limit: 20 });
+  assert.deepEqual(
+    ruleEvents.map((event) => event.payload.type).filter((type) => type.startsWith('step.')),
+    ['step.started', 'step.failed'],
+  );
+  assert(
+    !JSON.stringify([schemaRun, ruleRun, schemaCall, ruleCall, ruleEvents]).includes('private-'),
+  );
+
+  const inspect = await f.hub.administration.createRole(f.admin, {
+    name: '平台运行检查',
+    permissions: ['ai:inspect'],
+  });
+  await f.hub.administration.grantRole(f.admin, {
+    principal_id: f.reviewer.id,
+    role_id: inspect.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  const inspector = await signIn(f, f.reviewer.username);
+  const ledger = '/api/admin/operations/agents/executions';
+  const schemaReport = aiExecutionDiagnosticsResponseSchema.parse(
+    (await inspector.get(`${ledger}/${schemaRun.id}/diagnostics`).expect(200)).body,
+  );
+  assert.equal(schemaReport.model_calls[0].failure_reason, 'schema_mismatch');
+  assert.equal(schemaReport.model_calls[0].exchange, 'available');
+  assert(!JSON.stringify(schemaReport).includes('private-'));
+  const exchange = aiModelExchangeResponseSchema.parse(
+    (await inspector.get(`${ledger}/${schemaRun.id}/calls/${schemaCall.id}/exchange`).expect(200))
+      .body,
+  );
+  assert.deepEqual(exchange.resource_refs, [intake.version_id]);
+  assert.match(JSON.stringify(exchange.request.body), /private-instructions[\s\S]*private-input/);
+  assert.equal(exchange.response?.text, '{"verdict":7}');
+  assert.equal(exchange.response?.reasoning, 'private-reasoning');
+  const ruleReport = aiExecutionDiagnosticsResponseSchema.parse(
+    (await inspector.get(`${ledger}/${ruleRun.id}/diagnostics?download=json`).expect(200)).body,
+  );
+  assert.equal(ruleReport.model_calls[0].failure_reason, 'host_rejected');
+  assert.equal(ruleReport.model_calls[0].exchange, 'withheld');
+  assert.deepEqual(ruleReport.exchanges, []);
+  await inspector.get(`${ledger}/${ruleRun.id}/calls/${ruleCall.id}/exchange`).expect(403);
+});
+
+test('往返原文随未发布版本删除、按保留期清理，且不进入备份', async (t) => {
+  const { f, options } = await inlineHub(t);
+  const candidate = await receiveSkill(f);
+  const runtime = f.hub.ai.runtime;
+  const call = (subject?: string) =>
+    runtime.runInline(options, (run) =>
+      run.call('check', {
+        operation: 'resource-evaluation/check',
+        instructions: '返回空对象',
+        input: '{}',
+        schema: z.strictObject({}),
+        ...(subject && { subject }),
+      }),
+    );
+  await call(candidate.version_id);
+  await call();
+  assert.equal((await runtime.store.list('ai_exchanges', { limit: 10 })).length, 2);
+  assert(!('ai_exchanges' in (await snapshotStore(f.store))));
+  const asset = await f.hub.assetAccess.getAsset(candidate.asset_id);
+  await f.hub.lifecycle.deleteAsset(
+    f.admin,
+    asset.id,
+    { reason: '放弃发布' },
+    `"${asset.revision}"`,
+    randomUUID(),
+  );
+  const [kept] = await runtime.store.list('ai_exchanges', { limit: 10 });
+  assert.equal(kept.lookup_key, '');
+  const day = 86_400_000;
+  assert.equal(await purgeAiExchanges(f.store, 30, Date.now() + 29 * day), 0);
+  assert.equal(await purgeAiExchanges(f.store, 30, Date.now() + 31 * day), 1);
+  assert.deepEqual(await runtime.store.list('ai_exchanges', { limit: 10 }), []);
 });

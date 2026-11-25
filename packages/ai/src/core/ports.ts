@@ -8,6 +8,7 @@ import type { AiEventType, AiRecordMap, AiTable, ExecutionRecord, Json } from '.
  */
 export interface AiRecordQuery {
   execution_id?: string;
+  ids?: string[];
   owner_id?: string;
   lookup_key?: string;
   status?: string;
@@ -72,6 +73,17 @@ export interface AiQueries {
     through: string,
     granularity: 'day' | 'month',
   ): Promise<TokenUsageBucket[]>;
+  /** 只读取一次执行内往返原文的 ID 与引用版本，不取正文；用于判断能否查看。 */
+  listExchangeRefs(
+    executionId: string,
+    callId?: string,
+    capturedAfter?: number,
+  ): Promise<{ id: string; resource_refs: string[] }[]>;
+  /** 在结算事务的保存点内复核主体版本；主体消失或原文写入失败都不影响账本。 */
+  retainExchange(record: AiRecordMap['ai_exchanges']): Promise<void>;
+  removeExchangesBy(key: 'execution_id' | 'lookup_key', value: string): Promise<void>;
+  /** 至多删除 500 条采集时刻 ≤ through 的原文；null 表示留存已关闭。 */
+  purgeExpiredExchanges(through: number | null): Promise<number>;
   insert<K extends AiTable>(table: K, record: AiRecordMap[K]): Promise<AiRecordMap[K]>;
   put<K extends AiTable>(table: K, record: AiRecordMap[K]): Promise<AiRecordMap[K]>;
   remove(table: AiTable, id: string): Promise<void>;
@@ -162,4 +174,12 @@ export interface AiTelemetry {
     duration_ms: number;
     attributes: Record<string, Json>;
   }): void;
+}
+
+/**
+ * 队列预留时固定原文清理主体：非空版本 ID 在结算时复核，空串表示明确没有主体，
+ * null 表示无法核实而不留存。内联调用由宿主逐次给出主体。
+ */
+export interface AiExchangeRetention {
+  subject(execution: ExecutionRecord): Promise<string | null>;
 }

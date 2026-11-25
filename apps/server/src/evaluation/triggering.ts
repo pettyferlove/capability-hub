@@ -1,4 +1,4 @@
-import { AiError } from '@capability-hub/ai';
+import { AiError, OutputRejectedError } from '@capability-hub/ai';
 import type { EvaluationPool, EvaluationStageResult } from '@capability-hub/application';
 import type { RecordStore } from '@capability-hub/application/ports';
 import { sha256 } from '@capability-hub/domain/canonical';
@@ -175,6 +175,7 @@ export async function routeCases(
   let limited =
     row.stages.some((stage) => stage.id === 'trigger-cases' && stage.coverage_limited) ||
     options.some((option, index) => option.description !== snapshot.options[index].description);
+  const resources = options.flatMap((option) => (option.version ? [option.version.id] : []));
   let hit = 0;
   let avoided = 0;
   const confusions: NonNullable<ResourceEvaluationRecord['confusions']> = [];
@@ -188,11 +189,18 @@ export async function routeCases(
           routingInstructions,
           request.input,
           routingSchema,
-          authorize,
+          {
+            authorize,
+            resources,
+            accept: ({ choice }) => {
+              if (choice !== null && !options.some((option) => option.name === choice))
+                throw new OutputRejectedError('routing-choice', '选择不在本轮候选清单', {
+                  candidates: options.length,
+                });
+            },
+          },
         );
         const picked = options.find((option) => option.name === result.choice);
-        if (result.choice !== null && !picked)
-          throw new AiError('AI_OUTPUT_INVALID', '选择不在本轮候选清单');
         return { item, picked, limited: request.limited };
       }),
     );

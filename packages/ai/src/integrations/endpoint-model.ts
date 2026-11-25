@@ -42,6 +42,12 @@ export function reasoningEffortFor(
   return undefined;
 }
 
+/** 重设某一步的请求时限，不改变同档案里的其他调用。 */
+export function requestTimeoutFor(profile: ModelProfile, key?: string) {
+  if (key === undefined) return profile.request_timeout_ms;
+  return profile.request_timeout_ms_overrides?.[key] ?? profile.request_timeout_ms;
+}
+
 type ReasoningEffort = NonNullable<ModelCallDiagnostics['reasoning_effort']>;
 
 /** 只关闭或限制思考，不传其它供应商参数；返回值直接作为 SDK 的 `providerOptions`。 */

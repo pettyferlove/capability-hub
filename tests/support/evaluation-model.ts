@@ -86,15 +86,22 @@ export function evaluationModelInput(request: StubRequest) {
   return messages(request).find((m) => m.role === 'user')!.content;
 }
 
-/** 依据请求中真实输出 Schema 的字段选择脚本回复；A/B 评审仅根据交付物内容作答。 */
-export function evaluationModelStep(request: StubRequest) {
+/** 取模型实际收到的 Schema，不用应用内的校验器代替出站契约。 */
+export function evaluationOutputSchema(request: StubRequest) {
   const instructions = messages(request).find(
     (m) => m.role === 'system' || m.role === 'developer',
   )!.content;
-  const schema = JSON.parse(instructions.trim().split('\n').at(-1)!) as {
-    properties: Record<string, { items?: { properties?: Record<string, unknown> } }>;
+  return JSON.parse(instructions.trim().split('\n').at(-1)!) as {
+    properties: Record<
+      string,
+      { minItems?: number; maxItems?: number; items?: { properties?: Record<string, unknown> } }
+    >;
   };
-  const fields = schema.properties;
+}
+
+/** 依据请求中真实输出 Schema 的字段选择脚本回复；A/B 评审仅根据交付物内容作答。 */
+export function evaluationModelStep(request: StubRequest) {
+  const fields = evaluationOutputSchema(request).properties;
   if (fields.cases) return fields.cases.items?.properties?.kind ? 'trigger-cases' : 'task-cases';
   if (fields.choice) return 'trigger-routing';
   if (fields.checks) return 'instructions';

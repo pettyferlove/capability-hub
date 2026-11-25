@@ -19,7 +19,7 @@ export function bindPersistenceSession(store: RecordStore, session: PersistenceS
  *
  * 关键不变量：`insert`/`put`/`remove` 各自开启一个事务（`store.tx`），并由适配器在事务内
  * 校验归属——子表记录的 `owner_id` 必须与所属 `ai_executions` 一致，`ai_events`/`ai_artifacts`/
- * `ai_effects` 一旦写入不可修改。任何违反都以普通 `Error` 抛出，使所在事务整体回滚。
+ * `ai_effects`/`ai_exchanges` 一旦写入不可修改。任何违反都以普通 `Error` 抛出，使所在事务整体回滚。
  */
 export function createAiStore(store: RecordStore): AiStore {
   const session = sessions.get(store);
@@ -52,6 +52,18 @@ class AiStoreAdapter implements AiStore {
   summarizeTokenUsage(from: string | null, through: string, granularity: 'day' | 'month') {
     return this.session.execute((q) => q.ai.summarizeTokenUsage(from, through, granularity));
   }
+  listExchangeRefs(executionId: string, callId?: string, capturedAfter?: number) {
+    return this.session.execute((q) => q.ai.listExchangeRefs(executionId, callId, capturedAfter));
+  }
+  retainExchange(record: AiRecordMap['ai_exchanges']) {
+    return this.tx(() => this.session.execute((q) => q.ai.retainExchange(record)));
+  }
+  removeExchangesBy(key: 'execution_id' | 'lookup_key', value: string) {
+    return this.tx(() => this.session.execute((q) => q.ai.removeExchangesBy(key, value)));
+  }
+  purgeExpiredExchanges(through: number | null) {
+    return this.tx(() => this.session.execute((q) => q.ai.purgeExpiredExchanges(through)));
+  }
   private async owner<K extends AiTable>(table: K, record: AiRecordMap[K]) {
     if (table === 'ai_executions') {
       if (record.execution_id !== record.id) throw new Error('执行 ID 不一致');
@@ -68,7 +80,7 @@ class AiStoreAdapter implements AiStore {
   }
   put<K extends AiTable>(table: K, record: AiRecordMap[K]) {
     return this.tx(async () => {
-      if (['ai_events', 'ai_artifacts', 'ai_effects'].includes(table))
+      if (['ai_events', 'ai_artifacts', 'ai_effects', 'ai_exchanges'].includes(table))
         throw new Error('已提交的 AI 记录不可修改');
       const prior = await this.get(table, record.id);
       if (

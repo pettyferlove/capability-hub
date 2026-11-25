@@ -8,6 +8,7 @@ import {
   type ShortModelCall,
   type ShortModelFailureReason,
 } from '../../packages/ai/src/integrations/short-model.js';
+import { ModelExchangeCapture } from '../../packages/ai/src/integrations/model-exchange.js';
 import {
   anthropicJson,
   openAiJson,
@@ -16,6 +17,7 @@ import {
   type StubReply,
 } from '../support/model-provider-stub.js';
 import { deferred } from '../support/store.js';
+import { fixture as providerFixture } from '../support/ai-provider.js';
 
 const schema = z.object({ answer: z.string() });
 const credentials = { resolve: async (ref: string) => process.env[ref] ?? '' };
@@ -339,17 +341,25 @@ test('流式响应超过响应上限时中断为 output_too_large 并只释放�
     openAiStream({ answer: 'a'.repeat(600_000) }, { size: 4096 }),
   );
   let released = 0;
+  const ledger = recordCalls();
 
   await rejectsWith(
     callShortModel(
       call(stub.profile('openai'), {
         reserve: () => undefined,
+        observer: ledger.observer,
         release: () => void released++,
         onPartial: () => undefined,
       }),
     ),
     'output_too_large',
   );
+  assert.partialDeepStrictEqual(ledger.finishes, [
+    {
+      errorCode: 'AI_OUTPUT_INVALID',
+      outputCheck: { status: 'rejected', reason: 'response_too_large' },
+    },
+  ]);
 
   assert.equal(released, 1);
   assert.equal(stub.requests.length, 1);
@@ -494,8 +504,8 @@ test('宿主窗口到期按超时结算，不误记为用户取消', async (t) =
   assert.equal(ledger.finishes.length, 1);
   assert.partialDeepStrictEqual(ledger.finishes[0], {
     complete: false,
-    errorCode: 'AI_PROVIDER_FAILED',
-    transport: { request_timed_out: true },
+    errorCode: 'AI_DEADLINE_EXCEEDED',
+    transport: { request_timed_out: false },
   });
 });
 
@@ -555,4 +565,256 @@ test('截断事件流不因已有用量或停止原因而结算为完整', async
     });
     assert.equal(stub.requests.length, 1);
   }
+});
+
+test('往返采集按协议还原正文与推理，端点错误正文只进入原文且凭据不入记录', async (t) => {
+  const envelope = { id: 'chatcmpl-stub', created: 1, model: 'stub-model' };
+  const chunk = (delta: object, finish: string | null = null, totals?: object) =>
+    `data: ${JSON.stringify({
+      ...envelope,
+      object: 'chat.completion.chunk',
+      choices: [{ index: 0, delta, finish_reason: finish }],
+      ...(totals && { usage: totals }),
+    })}\n\n`;
+  const usage = { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 };
+  const replies: StubReply[] = [
+    {
+      json: {
+        ...envelope,
+        object: 'chat.completion',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: [
+                { type: 'thinking', thinking: [{ type: 'text', text: 'reasoning' }] },
+                { type: 'text', text: '{"answer":' },
+                { type: 'text', text: '"ok"}' },
+              ],
+              reasoning_content: 'private-',
+            },
+            finish_reason: 'stop',
+          },
+        ],
+        usage,
+      },
+    },
+    {
+      headers: { 'content-type': 'text/event-stream' },
+      body: [
+        chunk({ role: 'assistant', reasoning_content: 'private-' }),
+        chunk({
+          content: [
+            { type: 'thinking', thinking: [{ type: 'text', text: 'reasoning' }] },
+            { type: 'text', text: '{"answer":' },
+            { type: 'text', text: '"ok"}' },
+          ],
+        }),
+        chunk({}, 'stop', usage),
+        'data: [DONE]\n\n',
+      ].join(''),
+    },
+    { status: 400, json: { error: { code: 'bad_request', message: 'private-upstream-text' } } },
+  ];
+  const stub = await serveModelStub(t, (_request, index) => replies[index]);
+  const profile = stub.profile('openai');
+  const captures = [0, 1, 2].map(() => new ModelExchangeCapture('openai'));
+  for (const [index, capture] of captures.slice(0, 2).entries()) {
+    const success = recordCalls();
+    const result = await callShortModel(
+      call(profile, {
+        capture,
+        observer: success.observer,
+        ...(index === 1 && { onPartial: () => undefined }),
+      }),
+    );
+    assert.deepEqual(result.value, { answer: 'ok' });
+    assert.partialDeepStrictEqual(success.finishes, [
+      { complete: true, transport: { text_chars: '{"answer":"ok"}'.length } },
+    ]);
+    assert(!Object.hasOwn(success.finishes[0] as object, 'outputCheck'));
+  }
+  const ledger = recordCalls();
+  await rejectsWith(
+    callShortModel(call(profile, { capture: captures[2], observer: ledger.observer })),
+    'provider',
+  );
+  const [json, stream, failed] = captures.map((capture) => capture.payload(['version-1']));
+  for (const exchange of [json, stream]) {
+    assert.equal(exchange.response?.text, '{"answer":"ok"}');
+    assert.equal(exchange.response?.reasoning, 'private-reasoning');
+    assert.equal(exchange.response?.finish_reason, 'stop');
+    assert.match(JSON.stringify(exchange.request.body), /Which skill reviews code\?/);
+  }
+  assert.deepEqual(json.resource_refs, ['version-1']);
+  assert.match(failed.response?.error_body ?? '', /private-upstream-text/);
+  assert.partialDeepStrictEqual(ledger.finishes[0], {
+    transport: { http_status: 400, upstream_error_code: 'bad_request' },
+  });
+  assert(!JSON.stringify(ledger.finishes).includes('private-'));
+  assert(!JSON.stringify(captures.map((capture) => capture.payload([]))).includes(stub.credential));
+});
+
+test('请求与分帧回答的已知凭据只在原文副本里脱敏，SDK 仍交付完整答案', async (t) => {
+  const stub = await serveModelStub(t);
+  stub.setHandler(() => openAiStream({ answer: stub.credential }, { size: 2 }));
+  const capture = new ModelExchangeCapture('openai');
+  const result = await callShortModel(
+    call(stub.profile('openai'), {
+      input: `synthetic input ${stub.credential}`,
+      capture,
+      onPartial: () => undefined,
+    }),
+  );
+  assert.equal(result.value.answer, stub.credential);
+  assert(JSON.stringify(stub.requests[0].body).includes(stub.credential));
+  const exchange = capture.payload([]);
+  assert.equal(exchange.response?.text, '{"answer":"*"}');
+  assert(!JSON.stringify(exchange).includes(stub.credential));
+});
+
+test('HTTP 限流不被延迟错误正文触发的请求时限覆盖', async (t) => {
+  const upstream = await providerFixture(
+    'openai',
+    {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'x-request-id': 'req-gated' },
+      body: 'late',
+    },
+    'before-output',
+  );
+  t.after(upstream.close);
+  const stub = await serveModelStub(t);
+  const profile = { ...stub.profile('openai'), base_url: upstream.url };
+  for (const retain of [true, false]) {
+    const ledger = recordCalls();
+    const capture = retain ? new ModelExchangeCapture('openai') : undefined;
+    await rejectsWith(
+      callShortModel(
+        call(profile, { capture, limits: { timeoutMs: 300 }, observer: ledger.observer }),
+      ),
+      'rate_limited',
+    );
+    assert.partialDeepStrictEqual(ledger.finishes, [
+      {
+        errorCode: 'AI_PROVIDER_FAILED',
+        transport: { http_status: 429, upstream_request_id: 'req-gated', request_timed_out: false },
+      },
+    ]);
+    if (capture) assert.equal(capture.payload([]).response?.truncated, true);
+  }
+});
+
+test('短调用错误事件只保留脱敏的 UTF-8 前缀，不采信上游附带的用量', async (t) => {
+  const stub = await serveModelStub(t);
+  const error = {
+    error: {
+      code: stub.credential,
+      message: `${stub.credential}\nAuthorization: Bearer synthetic-header-value\n${'错'.repeat(4000)}`,
+      headers: { custom: 'synthetic-envelope-extension' },
+    },
+    request_id: stub.credential,
+    usage: { prompt_tokens: 1, completion_tokens: 2 },
+  };
+  stub.setHandler(() => ({
+    headers: { 'content-type': 'text/event-stream' },
+    body: `data: ${JSON.stringify(error)}\n\n`,
+  }));
+  const capture = new ModelExchangeCapture('openai');
+  const ledger = recordCalls();
+  await rejectsWith(
+    callShortModel(
+      call(stub.profile('openai'), {
+        capture,
+        onPartial: () => undefined,
+        observer: ledger.observer,
+      }),
+    ),
+    'provider',
+  );
+  const reply = capture.payload([]).response;
+  assert(reply && typeof reply.error_body === 'string');
+  assert(reply.error_body.includes('错'));
+  assert(Buffer.byteLength(reply.error_body) <= 8192);
+  assert.equal(reply.truncated, true);
+  assert.partialDeepStrictEqual(ledger.finishes, [
+    { complete: false, inputTokens: null, outputTokens: null, errorCode: 'AI_PROVIDER_FAILED' },
+  ]);
+  const evidence = JSON.stringify([reply, ledger.finishes]);
+  for (const secret of [stub.credential, 'synthetic-header-value', 'synthetic-envelope-extension'])
+    assert(!evidence.includes(secret));
+});
+
+test('非流式超限与中途读取失败保留整字符前缀，不确认前缀中的用量', async (t) => {
+  const stub = await serveModelStub(t);
+  const start = `{"usage":{"prompt_tokens":3},"message":"${stub.credential}`;
+  const prefix = start + '证据';
+  const bytes = Buffer.from(prefix + '字');
+  for (const oversized of [true, false]) {
+    const capture = new ModelExchangeCapture('openai');
+    const ledger = recordCalls();
+    const fetch = t.mock.method(
+      globalThis,
+      'fetch',
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(bytes.subarray(0, bytes.length - 1));
+            },
+            pull(controller) {
+              if (oversized) controller.close();
+              else controller.error(new Error('synthetic disconnect'));
+            },
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    try {
+      await rejectsWith(
+        callShortModel(
+          call(stub.profile('openai'), {
+            capture,
+            observer: ledger.observer,
+            limits: { maxResponseBytes: oversized ? bytes.length - 2 : bytes.length },
+          }),
+        ),
+        oversized ? 'output_too_large' : 'provider',
+      );
+    } finally {
+      fetch.mock.restore();
+    }
+    assert.partialDeepStrictEqual(capture.payload([]).response, {
+      raw: prefix.replace(stub.credential, '*'),
+      truncated: true,
+    });
+    assert.partialDeepStrictEqual(ledger.finishes, [
+      { complete: false, inputTokens: null, outputTokens: null },
+    ]);
+  }
+});
+
+test('无 index 的工具增量按 ID 分开，跨过工具上限后不再拼接后续片段', () => {
+  const capture = new ModelExchangeCapture('openai');
+  const tool = (id: string, args: string) =>
+    capture.frame({
+      choices: [{ delta: { tool_calls: [{ id, function: { name: id, arguments: args } }] } }],
+    });
+  tool('first', 'a');
+  tool('second', 'b');
+  tool('first', 'c');
+  tool('second', 'd'.repeat(262139));
+  tool('second', '字');
+  tool('first', '!');
+  const response = capture.payload([]).response;
+  assert(response?.truncated);
+  assert.deepEqual(
+    response.tool_calls.map((item) => [item.id, item.arguments.length]),
+    [
+      ['first', 2],
+      ['second', 262140],
+    ],
+  );
+  assert.equal(response.tool_calls[0].arguments, 'ac');
 });

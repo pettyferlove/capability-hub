@@ -242,7 +242,7 @@ export async function runTask(
   const task = tasks[index];
   if (tasks.length !== limits.cases || !task) return { skipped: true };
   const files = await attachments(task.files ?? [], read, secretLines, materialFiles);
-  if (!files) throw new AiError('AI_OUTPUT_INVALID', '作者用例输入文件不再可读');
+  if (!files) throw new AiError('AI_NOT_FOUND', '作者用例输入文件不再可读');
 
   const prompt = '用户任务\n' + task.prompt + '\n';
   const reference = '\n<参考材料>\n';
@@ -285,10 +285,8 @@ export async function runTask(
     'task-judge',
     taskJudgeInstructions,
     JSON.stringify(pair),
-    taskJudgeSchema,
+    taskJudgeSchema(task.assertions.length),
   );
-  if (judged.assertions.length !== task.assertions.length)
-    throw new AiError('AI_OUTPUT_INVALID', '盲评断言数量不符');
   const assertions = judged.assertions.map((item) => ({
     with_skill: confirmed(swap ? item.a : item.b, outputs[1]),
     without_skill: confirmed(swap ? item.b : item.a, outputs[0]),

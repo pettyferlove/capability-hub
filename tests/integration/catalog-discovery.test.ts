@@ -1371,7 +1371,7 @@ test('成功、超时与格式错误都不在幂等、AI 记录、审计或日�
   const { agents } = snapshot.body as OperationsResponse;
   const agent = agents.operations.find((item) => item.id === 'catalog-discovery');
   assert.equal(agent?.title, '首页对话检索');
-  assert.deepEqual(agent.activity?.by_status, { succeeded: 1, failed: 2, timed_out: 1 });
+  assert.deepEqual(agent.activity?.by_status, { succeeded: 1, failed: 3 });
   const usage = tokenUsageResponseSchema.parse(
     (await client.get('/api/admin/token-usage').expect(200)).body,
   );

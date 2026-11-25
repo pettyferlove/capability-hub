@@ -83,6 +83,11 @@ export class HubWorker {
   private async dispatchReady() {
     await this.cancelRequestedJobs();
     await this.hub.ai.runtime.expireDueExecutions();
+    try {
+      await this.hub.ai.purgeExchanges();
+    } catch (err) {
+      this.hub.logs.logger.error({ event: 'ai_exchanges.purge_failed', err });
+    }
     for (const { job, controller } of this.active.values()) {
       if (job.kind !== 'ai_execution' || !controller || controller.signal.aborted) continue;
       const execution = await this.hub.ai.runtime.get(job.aggregate_id);

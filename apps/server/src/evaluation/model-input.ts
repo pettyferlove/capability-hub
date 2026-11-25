@@ -1,13 +1,20 @@
 import type { EvaluationEvidence } from '@capability-hub/domain/models';
 import type { z } from 'zod';
 
+/** 单次评测调用的附加条件：出站授权、通过 Schema 后的业务规则，以及请求中其他版本的引用。 */
+export interface EvaluationCallOptions<T> {
+  authorize?: () => Promise<void>;
+  accept?: (value: T) => void;
+  resources?: readonly string[];
+}
+
 /** 各阶段只在实际出站时核对业务租约，以及该次调用所需的受众权限。 */
 export type EvaluationCall = <S extends z.ZodType>(
   step: string,
   instructions: string,
   input: string,
   schema: S,
-  authorize?: () => Promise<void>,
+  options?: EvaluationCallOptions<z.infer<S>>,
 ) => Promise<z.infer<S>>;
 
 /** 短调用把整个用户输入作为一个 JSON 字符串发送。 */

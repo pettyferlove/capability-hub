@@ -1,12 +1,14 @@
-import type { AiExecutionDiagnosticsResponse } from '@capability-hub/contracts';
+import { btnStyles } from '../../../shared/styles/recipes.js';
+import { cn } from '../../../shared/styles/cn.js';
 import { stepLabels } from '../../ai/presentation.js';
+import { callFailures, isTransportFailure, type ModelCall } from './call-failure.js';
+import { OutputRejection } from './OutputRejection.js';
 
-type Call = AiExecutionDiagnosticsResponse['model_calls'][number];
-type Transport = Call['diagnostics']['transport'];
+type Transport = ModelCall['diagnostics']['transport'];
 
 const callStatus = {
   pending: '待结算',
-  succeeded: '已成功',
+  succeeded: '已完成',
   failed: '失败',
   unknown: '用量待核实',
 };
@@ -23,25 +25,50 @@ function transportSummary(data: Transport) {
   if (!data) return '请求配置';
   if (data.request_timed_out) {
     if (data.headers_ms === undefined) return '等待响应头时超时';
-    if (data.terminal_received) return '收到终止帧后超时';
-    if (data.finish_reason) return '模型停止后等待终止帧时超时';
+    if (data.terminal_received) return '收到完整响应后超时';
+    if (data.finish_reason) return '模型停止后等待响应结束时超时';
     return data.first_output_ms === undefined ? '等待首个模型输出时超时' : '收到模型输出后超时';
   }
   if (data.http_status && data.http_status >= 400) return 'HTTP ' + data.http_status;
-  if (!data.terminal_received) return '未收到终止帧';
-  return data.finish_reason ? stopLabels[data.finish_reason] : '传输明细';
+  return data.terminal_received && data.finish_reason ? stopLabels[data.finish_reason] : '传输明细';
 }
 
 function ms(value: number | undefined) {
   return value === undefined ? '—' : value + ' ms';
 }
 
+const exchangeNotes = {
+  withheld: '无法确认相关资源的读权，已隐藏原文。',
+  none: '未留存原文（首页对话、未开启留存或已过留存期）。',
+};
+
 /** 输入和输出用量独立上报，预留时的零值不能作为已知用量。 */
-export function ModelCallRow({ call, locate }: { call: Call; locate: (seq: number) => void }) {
-  const { diagnostics } = call;
+export function ModelCallRow({
+  call,
+  rowId,
+  locate,
+  exchange,
+}: {
+  call: ModelCall;
+  /** 终止卡片据此滚动并聚焦到失败调用。 */
+  rowId: string;
+  locate: (seq: number) => void;
+  exchange: {
+    open: boolean;
+    controls: string;
+    disabled: boolean;
+    toggle: (trigger: HTMLButtonElement) => void;
+  };
+}) {
+  const { diagnostics, output_check: check, failure_reason: reason } = call;
   const { step, transport } = diagnostics;
+  const transportFailure = reason && isTransportFailure(reason) ? callFailures[reason] : undefined;
   return (
-    <tr>
+    <tr
+      id={rowId}
+      tabIndex={-1}
+      className="focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+    >
       <td>
         {call.profile}
         <small className="block font-mono">{call.id}</small>
@@ -76,10 +103,23 @@ export function ModelCallRow({ call, locate }: { call: Call; locate: (seq: numbe
         {transport?.output_tokens_reported ? call.output_tokens : '—'}
       </td>
       <td>
+        {!check ? (
+          '—'
+        ) : check.status === 'accepted' ? (
+          '输出已采纳'
+        ) : (
+          <OutputRejection check={check} reason={reason} />
+        )}
+      </td>
+      <td>
+        {transportFailure && (
+          <strong className="block font-medium text-danger">{transportFailure.label}</strong>
+        )}
         {call.error_code}
         <details>
           <summary className="cursor-pointer text-brand">{transportSummary(transport)}</summary>
           <div className="space-y-1 py-2 text-caption text-muted-ink">
+            {transportFailure && <p className="text-ink">{transportFailure.hint}</p>}
             <p>
               {diagnostics.agent_id} · {diagnostics.format} · {diagnostics.model}
             </p>
@@ -101,21 +141,42 @@ export function ModelCallRow({ call, locate }: { call: Call; locate: (seq: numbe
                 {transport.upstream_request_id && (
                   <p className="min-w-48 break-all">上游请求 ID {transport.upstream_request_id}</p>
                 )}
+                {transport.network_error && (
+                  <p className="min-w-48 break-all">底层错误 {transport.network_error}</p>
+                )}
                 <p>
                   首个输出 {ms(transport.first_output_ms)} · 最后输出 {ms(transport.last_output_ms)}
                 </p>
                 <p>
+                  {transport.request_bytes !== undefined &&
+                    `请求 ${transport.request_bytes} 字节 · `}
                   接收 {transport.received_bytes} 字节 · 正文 {transport.text_chars} 个 UTF-16 码元
+                  {transport.reasoning_tokens !== undefined &&
+                    ` · 推理 ${transport.reasoning_tokens} token`}
                 </p>
                 <p>
                   停止原因{' '}
                   {transport.finish_reason ? stopLabels[transport.finish_reason] : '未收到'} ·
-                  终止帧{transport.terminal_received ? '已收到' : '未收到'}
+                  响应结束{transport.terminal_received ? '已确认' : '未确认'}
                 </p>
               </>
             )}
           </div>
         </details>
+        {call.exchange === 'available' ? (
+          <button
+            type="button"
+            disabled={exchange.disabled}
+            aria-expanded={exchange.open}
+            aria-controls={exchange.open ? exchange.controls : undefined}
+            className={cn(btnStyles, 'mt-1')}
+            onClick={(event) => exchange.toggle(event.currentTarget)}
+          >
+            查看往返原文
+          </button>
+        ) : (
+          <p className="text-caption text-muted-ink">{exchangeNotes[call.exchange]}</p>
+        )}
       </td>
     </tr>
   );

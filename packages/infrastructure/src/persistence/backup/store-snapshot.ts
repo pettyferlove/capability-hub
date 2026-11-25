@@ -4,12 +4,20 @@ import { tables } from '../tables.js';
 import { aiTables, type AiRecordMap, type AiTable } from '@capability-hub/ai/records';
 import { createAiStore } from '../ai/ai-store.js';
 
+/** 模型往返原文是诊断内容，有独立保留期，不进入备份。 */
+export type SnapshotAiTable = Exclude<AiTable, 'ai_exchanges'>;
+
+/** 备份导出、校验与恢复使用的 AI 表集合。 */
+export const snapshotAiTables = aiTables.filter(
+  (table): table is SnapshotAiTable => table !== 'ai_exchanges',
+);
+
 /**
- * 整库快照的序列化形态：业务表与 AI 表一一对应，键集合必须与当前 schema 完全吻合。
- * 内容按存储原样读出，不做投影、脱敏或重排。
+ * 整库快照的序列化形态：业务表与 {@link snapshotAiTables} 一一对应，
+ * 键集合必须与当前 schema 完全吻合。内容按存储原样读出，不做投影、脱敏或重排。
  */
 export type StoreSnapshot = { [K in TableName]: RecordMap[K][] } & {
-  [K in AiTable]: AiRecordMap[K][];
+  [K in SnapshotAiTable]: AiRecordMap[K][];
 };
 const restoreOrder: readonly TableName[] = [
   'users',
@@ -59,7 +67,7 @@ export async function snapshotStore(store: RecordStore): Promise<StoreSnapshot> 
     const entries: [string, unknown][] = [];
     for (const table of tables) entries.push([table, await store.all(table)]);
     const ai = createAiStore(store);
-    for (const table of aiTables) {
+    for (const table of snapshotAiTables) {
       const rows: AiRecordMap[AiTable][] = [];
       let after: { id: string; position: number } | undefined;
       for (;;) {
@@ -79,12 +87,14 @@ export async function snapshotStore(store: RecordStore): Promise<StoreSnapshot> 
 export async function restoreStore(store: RecordStore, snapshot: StoreSnapshot): Promise<void> {
   await store.tx(async () => {
     const ai = createAiStore(store);
+    // 目标库必须完全为空，包括不随备份恢复的模型往返原文。
     for (const table of aiTables)
       if ((await ai.list(table, { limit: 1 })).length) throw new Error('恢复目标数据库必须为空');
     for (const table of tables)
       if ((await store.all(table)).length) throw new Error('恢复目标数据库必须为空');
     for (const table of restoreOrder)
       for (const row of snapshot[table]) await store.insert(table, row);
-    for (const table of aiTables) for (const row of snapshot[table]) await ai.insert(table, row);
+    for (const table of snapshotAiTables)
+      for (const row of snapshot[table]) await ai.insert(table, row);
   });
 }

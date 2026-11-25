@@ -1,10 +1,13 @@
 import type { ModelProfile } from '../core/config.js';
 import { AiError } from '../core/errors.js';
 import { upstreamIdentifierSchema, type ModelCallDiagnostics } from '../core/records.js';
+import type { ModelExchangeCapture } from './model-exchange.js';
+import { openAiContent, WirePrivacy, wireObject as object } from './wire-content.js';
 
 type Transport = NonNullable<ModelCallDiagnostics['transport']>;
 const maxErrorBodyBytes = 8192;
 const errorBodyTimeoutMs = 500;
+const unavailable = Promise.resolve(null);
 const upstreamRequestIdHeaders = [
   'x-request-id',
   'request-id',
@@ -29,29 +32,17 @@ const finishReasons = new Map<string, NonNullable<Transport['finish_reason']>>([
   ['refusal', 'content_filter'],
 ]);
 
-function object(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function identifier(value: unknown) {
-  if (typeof value !== 'string') return undefined;
+function identifier(value: unknown, privacy?: WirePrivacy) {
+  if (typeof value !== 'string' || (privacy && privacy.text(value) !== value)) return undefined;
   const parsed = upstreamIdentifierSchema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
 }
 
-async function readErrorEnvelope(response: Response) {
+/** 只采集有界的 UTF-8 前缀，超限或读取失败时不补齐尾部字符。 */
+async function readErrorBody(response: Response, transport: Transport, waitForBody: boolean) {
   const stream = response.body;
-  if (!stream) return;
-  const type = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
-  if (
-    (type !== 'application/json' && !type?.endsWith('+json')) ||
-    Number(response.headers.get('content-length')) > maxErrorBodyBytes
-  ) {
-    void stream.cancel().catch(() => undefined);
-    return;
-  }
+  if (!stream) return { text: '', partial: false };
+  if (stream.locked) return { text: '', partial: true };
   const reader = stream.getReader();
   let expired = false;
   const timeout = setTimeout(() => {
@@ -59,19 +50,23 @@ async function readErrorEnvelope(response: Response) {
     void reader.cancel().catch(() => undefined);
   }, errorBodyTimeoutMs);
   timeout.unref();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  let bytes = 0;
+  let text = '';
   try {
-    const decoder = new TextDecoder('utf-8', { fatal: true });
-    let bytes = 0;
-    let text = '';
     for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) return expired ? undefined : object(JSON.parse(text + decoder.decode()));
-      bytes += chunk.value.byteLength;
-      if (bytes > maxErrorBodyBytes) return;
-      text += decoder.decode(chunk.value, { stream: true });
+      const pending = reader.read();
+      const chunk = waitForBody ? await pending : await Promise.race([pending, unavailable]);
+      if (!chunk) return { text, partial: true };
+      if (chunk.done) return { text: expired ? text : text + decoder.decode(), partial: expired };
+      transport.received_bytes += chunk.value.byteLength;
+      const keep = Math.min(chunk.value.byteLength, maxErrorBodyBytes - bytes);
+      text += decoder.decode(chunk.value.subarray(0, keep), { stream: true });
+      bytes += keep;
+      if (keep < chunk.value.byteLength) return { text, partial: true };
     }
   } catch {
-    return undefined;
+    return { text, partial: true };
   } finally {
     clearTimeout(timeout);
     void reader.cancel().catch(() => undefined);
@@ -79,21 +74,51 @@ async function readErrorEnvelope(response: Response) {
   }
 }
 
-/** 错误体只用于提取协议标识；读取或解析失败不得遮蔽已收到的 HTTP 状态。 */
-export async function observeModelHttpError(transport: Transport, response: Response) {
+/** 无留存时只解析已就绪的错误信封，不为等待更多字节延迟业务响应。 */
+export async function observeModelHttpError(
+  transport: Transport,
+  response: Response,
+  privacy: WirePrivacy,
+  capture?: ModelExchangeCapture,
+) {
   for (const name of upstreamRequestIdHeaders) {
-    const id = identifier(response.headers.get(name));
+    const id = identifier(response.headers.get(name), privacy);
     if (id) {
       transport.upstream_request_id = id;
       break;
     }
   }
-  const envelope = await readErrorEnvelope(response);
-  if (!envelope) return;
+  const type = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+  const json = type === 'application/json' || type?.endsWith('+json');
+  if (!capture && (!json || Number(response.headers.get('content-length')) > maxErrorBodyBytes)) {
+    void response.body?.cancel().catch(() => undefined);
+    return;
+  }
+  const { text, partial } = await readErrorBody(response, transport, !!capture);
+  let envelope: Record<string, unknown> | undefined;
+  if (!partial && (json || (capture && text.trimStart().startsWith('{')))) {
+    try {
+      envelope = object(JSON.parse(text));
+    } catch {
+      // 不能解析的正文只交付脱敏前缀。
+    }
+  }
+  if (!response.ok) capture?.error(envelope ?? text, partial);
+  else if (envelope?.error || envelope?.type === 'error') capture?.error(envelope);
+  else capture?.unparsed(text, partial);
+  if (json && envelope) observeErrorIdentifiers(transport, envelope, privacy);
+}
+
+function observeErrorIdentifiers(
+  transport: Transport,
+  envelope: Record<string, unknown>,
+  privacy: WirePrivacy,
+) {
   const error = object(envelope.error);
   for (const value of [error?.code, envelope.code, error?.type]) {
     const code = identifier(
       typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : value,
+      privacy,
     );
     if (code) {
       transport.upstream_error_code = code;
@@ -101,9 +126,20 @@ export async function observeModelHttpError(transport: Transport, response: Resp
     }
   }
   if (!transport.upstream_request_id) {
-    const id = identifier(envelope.request_id);
+    const id = identifier(envelope.request_id, privacy);
     if (id) transport.upstream_request_id = id;
   }
+}
+
+/** 连接层异常只取 cause 链上的协议错误码（如 ECONNRESET），不保存异常消息。 */
+export function networkErrorCode(error: unknown, privacy?: WirePrivacy) {
+  let current: unknown = error;
+  for (let depth = 0; depth < 6 && current && typeof current === 'object'; depth++) {
+    const code = 'code' in current ? identifier(current.code, privacy) : undefined;
+    if (code) return code;
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return undefined;
 }
 
 function hasText(value: unknown) {
@@ -123,11 +159,11 @@ function observeModelFrame(
   if (format === 'openai') {
     const choice = object(Array.isArray(frame.choices) ? frame.choices[0] : undefined);
     const delta = object(choice?.delta);
-    text = delta?.content;
+    const content = delta && openAiContent(delta);
+    text = content?.text;
     stop = choice?.finish_reason;
     otherOutput =
-      hasText(delta?.reasoning_content) ||
-      hasText(delta?.reasoning) ||
+      hasText(content?.reasoning) ||
       (Array.isArray(delta?.tool_calls) && delta.tool_calls.length > 0) ||
       !!object(delta?.function_call);
   } else if (frame.type === 'content_block_delta') {
@@ -169,7 +205,11 @@ export class ModelWireUsage {
   private baseInput: number | null = null;
   private cacheCreation: number | null = 0;
   private cacheRead: number | null = 0;
-  constructor(private readonly format: ModelProfile['format']) {}
+  constructor(
+    private readonly format: ModelProfile['format'],
+    private readonly capture?: ModelExchangeCapture,
+    private readonly privacy = new WirePrivacy(),
+  ) {}
   private report(raw: unknown, initial = false) {
     const usage = object(raw);
     if (!usage) return;
@@ -177,6 +217,8 @@ export class ModelWireUsage {
     if (openai) {
       const input = tokenCount(usage.prompt_tokens);
       if (input !== null) this.inputTokens = input;
+      const reasoning = tokenCount(object(usage.completion_tokens_details)?.reasoning_tokens);
+      if (reasoning !== null) this.transport.reasoning_tokens = reasoning;
     } else {
       // Messages 的 delta 只更新出现的累计字段；未报告基础输入不能推断为零。
       if (usage.input_tokens != null) this.baseInput = tokenCount(usage.input_tokens);
@@ -212,8 +254,11 @@ export class ModelWireUsage {
     }
     const item = object(JSON.parse(data));
     if (!item) return;
-    if (item.type === 'error' || item.error)
+    this.capture?.frame(item);
+    if (item.type === 'error' || item.error) {
+      observeErrorIdentifiers(this.transport, item, this.privacy);
       throw new AiError('AI_PROVIDER_FAILED', '端点返回错误事件');
+    }
     observeModelFrame(this.transport, this.format, item, elapsed);
     if (this.format === 'openai') this.report(item.usage);
     else if (item.type === 'message_start') this.report(object(item.message)?.usage, true);
@@ -223,6 +268,11 @@ export class ModelWireUsage {
   observeJson(body: unknown, elapsed: number) {
     const item = object(body);
     if (!item) return;
+    this.capture?.json(item);
+    if (item.type === 'error' || item.error) {
+      observeErrorIdentifiers(this.transport, item, this.privacy);
+      return;
+    }
     if (this.format === 'openai') {
       const choice = object(Array.isArray(item.choices) ? item.choices[0] : undefined);
       if (!choice || !object(choice.message)) return;
@@ -263,12 +313,21 @@ export class ModelSseFrames {
   constructor(
     private readonly wire: ModelWireUsage,
     private readonly maxFrameChars = Infinity,
+    private readonly capture?: ModelExchangeCapture,
   ) {}
+
+  incomplete(bytes?: Uint8Array) {
+    if (!this.capture) return;
+    const tail = bytes ? this.decoder.decode(bytes, { stream: true }) : '';
+    this.capture.unparsed(this.buffer + tail, true);
+  }
 
   private append(bytes: Uint8Array) {
     this.buffer += this.decoder.decode(bytes, { stream: true });
-    if (this.buffer.length > this.maxFrameChars)
-      throw new AiError('AI_STREAM_INCOMPLETE', '模型事件帧超过限制');
+    if (this.buffer.length > this.maxFrameChars) {
+      this.incomplete();
+      throw new AiError('AI_PROVIDER_FAILED', '模型事件帧超过限制');
+    }
   }
 
   take(chunk: Uint8Array, elapsed: number) {
@@ -281,7 +340,12 @@ export class ModelSseFrames {
       }
       if (this.emptyLine) {
         this.append(chunk.subarray(start, index + 1));
-        this.wire.inspectSseFrame(this.buffer, elapsed);
+        try {
+          this.wire.inspectSseFrame(this.buffer, elapsed);
+        } catch (error) {
+          if (error instanceof SyntaxError) this.capture?.unparsed(this.buffer);
+          throw error;
+        }
         this.buffer = '';
         start = index + 1;
         if (this.wire.transport.terminal_received)
@@ -295,9 +359,16 @@ export class ModelSseFrames {
 
   /** 部分端点在最后一帧后直接 EOF；只补分帧空行，不能补协议终止标记。 */
   finish(elapsed: number) {
-    this.wire.inspectSseFrame(this.buffer + this.decoder.decode(), elapsed);
-    if (!this.wire.transport.terminal_received)
+    try {
+      this.wire.inspectSseFrame(this.buffer + this.decoder.decode(), elapsed);
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      this.incomplete();
+    }
+    if (!this.wire.transport.terminal_received) {
+      this.capture?.incomplete();
       throw new AiError('AI_STREAM_INCOMPLETE', '模型流在终止帧之前结束', true);
+    }
     return new Uint8Array([10, 10]);
   }
 }

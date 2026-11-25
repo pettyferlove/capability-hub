@@ -595,15 +595,17 @@ export class CatalogPromptService {
     input: string,
     signal: AbortSignal,
     deadline: number,
+    resources: readonly string[],
   ): Promise<z.infer<S>> {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new ShortModelError('timeout');
     const result = await run.call(step, {
-      operation: 'catalog-discovery/prompts',
+      operation: `${catalogPromptsOperation.id}/${step}`,
       instructions,
       input,
       schema,
       signal: AbortSignal.any([signal, AbortSignal.timeout(remaining)]),
+      resources,
     });
     return result.value;
   }
@@ -620,6 +622,11 @@ export class CatalogPromptService {
   > {
     const generation = await this.reserve(job, batch, view);
     if (generation.kind !== 'reserved') return generation;
+    // 两个步骤的输入都依赖整批来源；同版重发不会改变原请求中的标签和场景。
+    const resources = batch.sources.map(
+      ({ version, release, resolvedReleaseId }) =>
+        `catalog-release:${version.id}:${release.id}:${resolvedReleaseId}`,
+    );
     const { prompts: candidates } = await this.call(
       run,
       'generate',
@@ -628,6 +635,7 @@ export class CatalogPromptService {
       JSON.stringify(batch.input),
       signal,
       generation.deadline,
+      resources,
     );
     const prompts: CatalogPromptItem[] = [];
     for (const candidate of candidates) {
@@ -669,6 +677,7 @@ export class CatalogPromptService {
         JSON.stringify(input),
         signal,
         preflight.deadline,
+        resources,
       );
       const name = decision.patch.scenario;
       const id = name ? view.scenarios.get(scenarioKey(name)) : null;

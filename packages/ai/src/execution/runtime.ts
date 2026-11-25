@@ -132,6 +132,7 @@ export class AiRuntime {
       profile,
       this.dependencies.credentials,
       operationId,
+      !!this.dependencies.exchanges && definition.retain_exchanges !== false,
       signal,
       (id, deadline) => this.createExecution(id, ownerId, definition, profile, {}, deadline),
       work,
@@ -343,6 +344,7 @@ export class AiRuntime {
               this.config,
               profileFor(this.config, current.payload.model_profile),
               definition.id,
+              definition.retain_exchanges !== false,
             );
             const workflow = definition.create(context);
             if (workflow.id !== definition.id)
@@ -376,8 +378,7 @@ export class AiRuntime {
                 if (!state) throw new AiError('AI_RECOVERY_UNCERTAIN', '原生快照未持久化');
                 const reader = createWorkflowStateReader(state);
                 if (state.status !== 'suspended') {
-                  if (state.status !== 'success')
-                    throw context.failure ?? new AiError('AI_INTERNAL', '原生工作流未成功完成');
+                  if (state.status !== 'success') throw aiFailure(reader.getError());
                   const output = asJson(definition.output.parse(reader.getResult()));
                   await this.complete(current.id, output);
                   return;
@@ -593,16 +594,13 @@ export class AiRuntime {
           return;
         }
         execution.status = error.code === 'AI_DEADLINE_EXCEEDED' ? 'timed_out' : 'failed';
-        execution.payload.error = {
-          code: error.code,
-          message: error.message,
-          retryable: error.retryable,
-        };
+        const summary = { code: error.code, message: error.message, retryable: error.retryable };
+        execution.payload.error = error.callId ? { ...summary, call_id: error.callId } : summary;
         await this.closeUnsettled(execution);
         await this.events.append(
           execution,
           execution.status === 'timed_out' ? 'execution.timed_out' : 'execution.failed',
-          { error: execution.payload.error },
+          { error: summary },
         );
         await this.queue.finish(lease, 'failed');
       });

@@ -1,4 +1,4 @@
-import { AiError, type OperationRegistry } from '@capability-hub/ai';
+import { AiError, OutputRejectedError, type OperationRegistry } from '@capability-hub/ai';
 import { createStep, createWorkflow } from '@capability-hub/ai/mastra';
 import type { AgentEvidenceService } from '@capability-hub/application';
 import { z } from 'zod';
@@ -118,11 +118,16 @@ export function registerBusinessOperations(
                 max_steps: 64,
                 tools,
                 prompt: `目标：${overview.slug}，版本 ${overview.version_label}。入口：${overview.entry_file}。先调用工具读取证据。`,
+                accept: () => {
+                  if (!inspected.some((item) => item.path === overview.entry_file))
+                    throw new OutputRejectedError(
+                      'entry-not-read',
+                      '研判未读取资源入口文件，不能形成审计结论',
+                    );
+                  if (target.feedback_id && !evidence.feedbackRead)
+                    throw new OutputRejectedError('feedback-not-read', '研判未读取反馈证据');
+                },
               });
-              if (!inspected.some((item) => item.path === overview.entry_file))
-                throw new AiError('AI_OUTPUT_INVALID', '研判未读取资源入口文件，不能形成审计结论');
-              if (target.feedback_id && !evidence.feedbackRead)
-                throw new AiError('AI_OUTPUT_INVALID', '研判未读取反馈证据');
               const readRanges = mergeReadRanges(inspected);
               const material = {
                 resource: overview.slug,
@@ -150,13 +155,14 @@ export function registerBusinessOperations(
                         },
                       }),
                     }),
+                    accept: (report) => validateCitations(report.findings, readRanges),
                   },
                   assessmentSchema,
                 ),
               );
-              validateCitations(assessment.findings, readRanges);
               if (kind === 'resource-audit') {
                 const candidates = [...evidence.scenarios];
+                let issue: SuggestionIssueCode | undefined;
                 const suggestion = await context
                   .step('publication-suggestion', () =>
                     context.structured(
@@ -168,6 +174,14 @@ export function registerBusinessOperations(
                           scenario_catalog_checked: evidence.catalogNames !== undefined,
                           scenarios: candidates.map(([, item]) => item),
                         }),
+                        accept: (value) => {
+                          issue = scenarioIssue(value, candidates.length, evidence.catalogNames);
+                          if (issue)
+                            throw new OutputRejectedError(
+                              issue.replaceAll('_', '-'),
+                              suggestionIssueMessages[issue],
+                            );
+                        },
                       },
                       generatedPublicationSuggestion,
                     ),
@@ -175,13 +189,9 @@ export function registerBusinessOperations(
                   .catch((error: unknown) => {
                     if (!(error instanceof AiError) || error.code !== 'AI_OUTPUT_INVALID')
                       throw error;
-                    // 建议输出不合规不应掩盖此后记录报告时的失败。
-                    if (context.failure === error) context.failure = undefined;
                     return undefined;
                   });
-                const issue =
-                  suggestion && scenarioIssue(suggestion, candidates.length, evidence.catalogNames);
-                if (!suggestion || issue) {
+                if (!suggestion) {
                   const code = issue ?? 'invalid_output';
                   Object.assign(assessment, {
                     publication_suggestion_issue: { code, message: suggestionIssueMessages[code] },

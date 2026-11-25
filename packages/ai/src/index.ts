@@ -7,7 +7,7 @@ export {
   type RuntimeDependencies,
   type ToolDefinition,
 } from './operations/context.js';
-export { AiError, type AiErrorCode, aiFailure } from './core/errors.js';
+export { AiError, OutputRejectedError, type AiErrorCode, aiFailure } from './core/errors.js';
 export {
   shortModelLimits,
   ShortModelError,

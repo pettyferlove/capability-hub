@@ -20,6 +20,8 @@ interface OperationMetadata {
   input: z.ZodType;
   output: z.ZodType;
   interactions: Record<string, z.ZodType>;
+  /** 为 false 时不留存模型往返原文，只记录结构化失败原因；不参与定义摘要。 */
+  retain_exchanges?: false;
 }
 
 /** 工作流由队列驱动；内联操作只允许宿主在既有请求或作业内调用。 */

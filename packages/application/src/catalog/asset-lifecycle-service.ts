@@ -177,6 +177,7 @@ export class AssetLifecycleService {
       }
       for (const scan of await this.context.store.where('scans', 'version_id', candidate.id))
         await this.context.store.remove('scans', scan.id);
+      await this.context.store.removeAiExchanges(candidate.id);
       await this.context.store.remove('versions', candidate.id);
     }
     for (const binding of await this.context.store.where('bindings', 'asset_id', assetId))

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import { aiConfigurationSchema, type ModelProfile } from '@capability-hub/ai';
 import {
@@ -10,7 +11,12 @@ import {
 import type { DiscoveryEntryResponse, DiscoveryTurnResponse } from '@capability-hub/contracts/http';
 import { parseRecord } from '@capability-hub/domain/models';
 import { parseSnapshot, restoreStore, snapshotStore } from '@capability-hub/infrastructure/store';
-import { createTestHub, publishSkill, type TestHub } from '../support/application.js';
+import {
+  createTestHub,
+  publishSkill,
+  submitPublication,
+  type TestHub,
+} from '../support/application.js';
 import { httpClient, signIn } from '../support/http.js';
 import { openAiJson, serveModelStub, type StubRequest } from '../support/model-provider-stub.js';
 import { createSqliteStore } from '../support/store.js';
@@ -170,6 +176,144 @@ test('开场提示先过安全门槛再预检：索取凭据、外部命令与�
   assert(tokens);
   assert.deepEqual([tokens.requests, tokens.input_tokens, tokens.output_tokens], [3, 33, 21]);
   assert.equal(usage.by_user.find((item) => item.id === 'system')?.label, '系统任务');
+});
+
+test('同版重新发布不能向新增受众交付旧开场原文，缺少发布依据只保留诊断元数据', async (t) => {
+  const stub = await serveModelStub(t, (request) => ({
+    json: openAiJson(
+      messageOf(request).resources
+        ? { prompts: [generation.prompts[0]] }
+        : { action: 'search', patch: {}, picks: [] },
+    ),
+  }));
+  const profile = stub.profile('openai');
+  const seeded = await createTestHub(t, {
+    ai: aiConfigurationSchema.parse({ profiles: [profile], default_profile: profile.id }),
+  });
+  const { hub, admin, reader } = seeded;
+  const inspect = await hub.administration.createRole(admin, {
+    name: '运行检查',
+    permissions: ['ai:inspect'],
+  });
+  await hub.administration.grantRole(admin, {
+    principal_id: reader.id,
+    role_id: inspect.id,
+    scope_type: 'platform',
+    scope_id: '',
+  });
+  const fixture = {
+    ...seeded,
+    admin: await hub.identity.principal(admin.id),
+    reviewer: await hub.identity.principal(seeded.reviewer.id),
+  };
+  const oldTag = '团队原发布标签';
+  const { intake } = await publishSkill(fixture, {
+    distribution: { mode: 'approved_audience', audience: [`group:${fixture.teamId}`] },
+    appliesTo: { languages: [oldTag] },
+  });
+  await fixture.worker.waitForIdle();
+  const job = await claimPromptJob(fixture);
+  await hub.prompts.process(job, new AbortController().signal);
+  const store = hub.ai.runtime.store;
+  const [run] = await store.list('ai_executions', { lookup_key: 'catalog-prompts', limit: 1 });
+  const diagnostics = operationsAgentApi.diagnostics(run.id);
+  const oldAudience = await signIn(fixture);
+  const newAudience = await signIn(fixture, reader.username);
+  const republish = async (audience: string[]) => {
+    const request = await submitPublication(fixture, intake, {
+      mode: 'approved_audience',
+      audience,
+    });
+    await hub.publications.decide(
+      fixture.reviewer,
+      request.id,
+      {
+        decision: 'approve',
+        comment: '',
+        policy_digest: request.policy_digest,
+        accepted_warnings: [],
+      },
+      `"${request.revision}"`,
+      randomUUID(),
+    );
+  };
+  await republish(['organization']);
+  await hub.assetAccess.requireReadableVersion(
+    await hub.identity.principal(reader.id),
+    intake.version_id,
+  );
+  const report = aiExecutionDiagnosticsResponseSchema.parse(
+    (await newAudience.get(diagnostics).query({ download: 'json' }).expect(200)).body,
+  );
+  assert.deepEqual(
+    report.model_calls.map(({ diagnostics, exchange }) => [diagnostics.step?.id, exchange]),
+    [
+      ['generate', 'withheld'],
+      ['preflight', 'withheld'],
+    ],
+  );
+  assert.deepEqual(report.exchanges, []);
+  assert(!JSON.stringify(report).includes(oldTag));
+  for (const call of report.model_calls) {
+    const path = operationsAgentApi.exchange(run.id, call.id);
+    assert((await oldAudience.get(path).expect(200)).text.includes(oldTag));
+    await newAudience.get(path).expect(403);
+  }
+  const [generate, preflight] = report.model_calls;
+  const captured = await store.get('ai_exchanges', preflight.id);
+  const call = await store.get('ai_calls', preflight.id);
+  assert(captured && call);
+  for (const refs of [[intake.version_id], []]) {
+    const id = randomUUID();
+    await store.tx(async () => {
+      await store.insert('ai_calls', { ...call, id });
+      await store.insert('ai_exchanges', {
+        ...captured,
+        id,
+        payload: { ...captured.payload, resource_refs: refs },
+      });
+    });
+    await oldAudience.get(operationsAgentApi.exchange(run.id, id)).expect(403);
+    const summary = aiExecutionDiagnosticsResponseSchema.parse(
+      (await oldAudience.get(diagnostics).expect(200)).body,
+    );
+    assert.equal(summary.model_calls.find((item) => item.id === id)?.exchange, 'withheld');
+  }
+  await republish([`principal:${reader.id}`]);
+  await oldAudience.get(operationsAgentApi.exchange(run.id, generate.id)).expect(403);
+});
+
+test('开场生成和预检各自使用对应步骤的请求时限与推理配置', async (t) => {
+  const { fixture } = await promptHub(t, {
+    profile: {
+      thinking_control: 'effort_only',
+      request_timeout_ms_overrides: {
+        'catalog-prompts/generate': 90_000,
+        'catalog-prompts/preflight': 24_000,
+      },
+      reasoning_effort_overrides: {
+        'catalog-prompts/generate': 'high',
+        'catalog-prompts/preflight': 'low',
+      },
+    },
+  });
+  const job = await claimPromptJob(fixture);
+  await fixture.hub.prompts.process(job, new AbortController().signal);
+  const store = fixture.hub.ai.runtime.store;
+  const [run] = await store.list('ai_executions', { lookup_key: 'catalog-prompts', limit: 1 });
+  const calls = await store.list('ai_calls', { execution_id: run.id, limit: 10 });
+  assert.deepEqual(
+    calls.map(({ payload: { diagnostics: d } }) => [
+      d.step?.id,
+      d.request_timeout_ms,
+      d.reasoning_effort,
+    ]),
+    [
+      ['generate', 90_000, 'high'],
+      ['preflight', 24_000, 'low'],
+      ['preflight', 24_000, 'low'],
+    ],
+  );
 });
 
 test('开场生成和预检使用档案输出限额；小档案截断时不发布也不重发', async (context) => {

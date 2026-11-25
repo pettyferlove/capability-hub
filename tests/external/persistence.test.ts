@@ -2,10 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
+import { aiConfigurationSchema, ShortModelError } from '@capability-hub/ai';
+import { aiExecutionDiagnosticsResponseSchema } from '@capability-hub/contracts';
+import { z } from 'zod';
 import { sha256 } from '@capability-hub/domain/canonical';
 import { openRecordStore, snapshotStore, restoreStore } from '@capability-hub/infrastructure/store';
 import { JobQueue } from '@capability-hub/application';
 import { MinioBlobStore } from '@capability-hub/infrastructure/content';
+import { purgeAiExchanges } from '@capability-hub/infrastructure/ai';
 import { HubError } from '@capability-hub/domain/errors';
 import type {
   GitSourceRecord,
@@ -24,6 +28,7 @@ import { assertResourceActivity } from '../support/resource-activity.js';
 import { assertScenarioDeletionReferences } from '../support/scenario-deletion.js';
 import { assertSingleInstallRedemption } from '../support/install-tickets.js';
 import { serveTestHub } from '../support/server.js';
+import { openAiJson, serveModelStub } from '../support/model-provider-stub.js';
 
 test('PostgreSQL 通过评测生成列调度，同一空摘要仅允许一条在途评测', async (context) => {
   const database = await externalDatabase();
@@ -208,6 +213,170 @@ test('PostgreSQL 的项目 Token 总量、时间边界和分布与 SQLite 一致
     try {
       await assertProjectTokenUsage(f);
     } finally {
+      await f.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
+
+test('PostgreSQL 诊断与导出不解码无权查看的往返正文，交接只附相关调用', async (t) => {
+  const stub = await serveModelStub(t);
+  const profile = stub.profile('openai');
+  const database = await externalDatabase();
+  try {
+    const f = await createTestHub(t, {
+      database: { driver: 'postgresql', url: database.url, poolSize: 2 },
+      ai: aiConfigurationSchema.parse({ profiles: [profile], default_profile: profile.id }),
+    });
+    const sql = new Client({ connectionString: database.url });
+    try {
+      const runtime = f.hub.ai.runtime;
+      const options = {
+        operationId: 'resource-evaluation',
+        ownerId: 'system',
+        profileId: profile.id,
+        signal: new AbortController().signal,
+      };
+      const input = {
+        operation: 'resource-evaluation/check',
+        instructions: 'Return JSON.',
+        schema: z.strictObject({}),
+      };
+      await assert.rejects(
+        runtime.runInline(options, async (run) => {
+          await run.call('accepted', { ...input, input: 'accepted-only-marker' });
+          await run.call('restricted', {
+            ...input,
+            input: 'restricted-marker',
+            resources: [randomUUID()],
+          });
+          await run.call('rejected', {
+            ...input,
+            input: 'rejected-marker',
+            schema: z.strictObject({ decision: z.boolean() }),
+          });
+        }),
+        ShortModelError,
+      );
+      const [record] = await runtime.store.list('ai_executions', {
+        lookup_key: options.operationId,
+        limit: 1,
+      });
+      const path = '/api/admin/operations/agents/executions/' + record.id;
+      const calls = await runtime.store.list('ai_calls', { execution_id: record.id, limit: 3 });
+      // 模拟不可解码的历史正文：仅检查引用版本时不应解析它，无权查看时也不能阻断其他调用的导出。
+      await sql.connect();
+      await sql.query(
+        "UPDATE ai_exchanges SET data = jsonb_set(data, '{payload,response,text}', 'null') WHERE id = $1",
+        [calls[1].id],
+      );
+      const client = await signIn(f);
+      const snapshot = await client.get(path + '/diagnostics').expect(200);
+      const report = aiExecutionDiagnosticsResponseSchema.parse(snapshot.body);
+      assert.deepEqual(
+        report.model_calls.map((call) => call.exchange),
+        ['available', 'withheld', 'available'],
+      );
+      assert.doesNotMatch(snapshot.text, /accepted-only-marker|restricted-marker|rejected-marker/);
+      await client.get(`${path}/calls/${calls[1].id}/exchange`).expect(403);
+      const download = await client.get(path + '/diagnostics?download=json').expect(200);
+      assert.deepEqual(
+        aiExecutionDiagnosticsResponseSchema
+          .parse(download.body)
+          .exchanges?.map((entry) => entry.call_id)
+          .sort(),
+        [calls[0].id, calls[2].id].sort(),
+      );
+      const handoff = await client.get(path + '/diagnostics?download=markdown').expect(200);
+      assert.match(handoff.text, /rejected-marker/);
+      assert.doesNotMatch(handoff.text, /accepted-only-marker|restricted-marker/);
+      assert.equal(await purgeAiExchanges(f.store, 0, 0), 3);
+      assert.deepEqual(await runtime.store.listExchangeRefs(record.id), []);
+    } finally {
+      await sql.end();
+      await f.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
+
+test('PostgreSQL 无损保留特殊字符，原文写入被拒也结算已返回的模型用量', async (t) => {
+  const reasoning = '证\0据\ud800😀\\u0000';
+  const stub = await serveModelStub(t, () => {
+    const reply = openAiJson({});
+    Object.assign(reply.choices[0].message, { reasoning_content: reasoning });
+    return { json: reply };
+  });
+  const profile = stub.profile('openai');
+  const database = await externalDatabase();
+  try {
+    const f = await createTestHub(t, {
+      database: { driver: 'postgresql', url: database.url, poolSize: 2 },
+      ai: aiConfigurationSchema.parse({ profiles: [profile], default_profile: profile.id }),
+    });
+    const sql = new Client({ connectionString: database.url });
+    try {
+      await sql.connect();
+      const runtime = f.hub.ai.runtime;
+      const options = {
+        operationId: 'resource-evaluation',
+        ownerId: 'system',
+        profileId: profile.id,
+        signal: new AbortController().signal,
+      };
+      const request = {
+        operation: 'resource-evaluation/check',
+        instructions: '返回空对象',
+        input: reasoning,
+        schema: z.strictObject({}),
+      };
+      await runtime.runInline(options, async (run) => {
+        await run.call('retained', request);
+        await sql.query('ALTER TABLE ai_exchanges ADD CHECK (false) NOT VALID');
+        await run.call('unavailable', request);
+      });
+      const [execution] = await runtime.store.list('ai_executions', {
+        lookup_key: options.operationId,
+        limit: 1,
+      });
+      assert.equal(execution.status, 'succeeded');
+      assert.deepEqual(execution.payload.usage, {
+        requests: 2,
+        tools: 0,
+        input_tokens: 22,
+        output_tokens: 14,
+        unknown_requests: 0,
+      });
+      const query = { execution_id: execution.id, limit: 10 };
+      const calls = await runtime.store.list('ai_calls', query);
+      assert.deepEqual(
+        calls.map((call) => [call.status, call.payload.input_tokens, call.payload.output_tokens]),
+        [
+          ['succeeded', 11, 7],
+          ['succeeded', 11, 7],
+        ],
+      );
+      const exchanges = await runtime.store.list('ai_exchanges', query);
+      assert.equal(exchanges.length, 1);
+      const [kept] = exchanges;
+      assert.equal(kept.id, calls[0].id);
+      assert.equal(kept.payload.response?.reasoning, reasoning);
+      assert.deepEqual(kept.payload.request.body, stub.requests[0].body);
+      assert.deepEqual(
+        await runtime.store.listExchangeRefs(execution.id, kept.id, kept.position),
+        [],
+      );
+      assert.deepEqual(
+        (await runtime.store.listExchangeRefs(execution.id, undefined, kept.position - 1)).map(
+          (row) => row.id,
+        ),
+        [kept.id],
+      );
+      assert.equal(await purgeAiExchanges(f.store, 1, kept.position + 86_400_000), 1);
+    } finally {
+      await sql.end();
       await f.close();
     }
   } finally {

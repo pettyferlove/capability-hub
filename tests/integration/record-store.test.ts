@@ -2,9 +2,17 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
+import { join } from 'node:path';
+import { z } from 'zod';
+import { aiConfigurationSchema } from '@capability-hub/ai';
+import { purgeAiExchanges, purgeAiHistory } from '@capability-hub/infrastructure/ai';
 import { openRecordStore } from '@capability-hub/infrastructure/store';
 import { createSqliteStore, deferred } from '../support/store.js';
 import { catalogPromptState } from '../support/migrations.js';
+import { createTestHub, receiveSkill } from '../support/application.js';
+import { openAiJson, serveModelStub } from '../support/model-provider-stub.js';
+import { frameworkConfig } from '../support/ai-framework.js';
 
 const group = (name: string) => ({ id: randomUUID(), name, active: true, revision: 1 });
 
@@ -184,4 +192,125 @@ test('写入前拒绝不符合当前结构的记录，捕获校验异常也不�
     }),
   );
   assert.deepEqual(await store.all('groups'), [valid]);
+});
+
+test('候选删除清除损坏原文，已派发的内联调用晚返回只结算真实用量', async (t) => {
+  const stub = await serveModelStub(t);
+  const profile = stub.profile('openai');
+  const f = await createTestHub(t, {
+    ai: aiConfigurationSchema.parse({ profiles: [profile], default_profile: profile.id }),
+  });
+  const candidate = await receiveSkill(f);
+  const runtime = f.hub.ai.runtime;
+  const pending = deferred();
+  const release = deferred();
+  const options = {
+    operationId: 'resource-evaluation',
+    ownerId: 'system',
+    profileId: profile.id,
+    signal: new AbortController().signal,
+  };
+  const request = {
+    operation: 'resource-evaluation/check',
+    instructions: '返回空对象',
+    input: '待删除的候选内容',
+    schema: z.strictObject({}),
+    subject: candidate.version_id,
+  };
+  const work = runtime.runInline(options, async (run) => {
+    await run.call('first', request);
+    stub.setHandler(async () => {
+      pending.resolve();
+      await release.promise;
+      return { json: openAiJson({}) };
+    });
+    await run.call('late', request);
+  });
+  try {
+    await Promise.race([pending.promise, work.then(() => assert.fail('第二次调用未派发'))]);
+    const sql = new DatabaseSync(join(f.directory, 'hub.sqlite'));
+    try {
+      const change = sql
+        .prepare(
+          `UPDATE ai_exchanges SET data = json_set(data, '$.payload.response.text', null)
+           WHERE lookup_key = ?`,
+        )
+        .run(candidate.version_id);
+      assert.equal(change.changes, 1);
+    } finally {
+      sql.close();
+    }
+    const asset = await f.hub.assetAccess.getAsset(candidate.asset_id);
+    await f.hub.lifecycle.deleteAsset(
+      f.admin,
+      asset.id,
+      { reason: '放弃发布' },
+      `"${asset.revision}"`,
+      randomUUID(),
+    );
+    assert.equal(await f.store.get('versions', candidate.version_id), undefined);
+  } finally {
+    release.resolve();
+    await work;
+  }
+  const [execution] = await runtime.store.list('ai_executions', {
+    lookup_key: options.operationId,
+    limit: 1,
+  });
+  assert.equal(execution.status, 'succeeded');
+  assert.deepEqual(execution.payload.usage, {
+    requests: 2,
+    tools: 0,
+    input_tokens: 22,
+    output_tokens: 14,
+    unknown_requests: 0,
+  });
+  assert.deepEqual(await runtime.store.listExchangeRefs(execution.id), []);
+});
+
+test('SQLite 每轮最多删除 500 条含损坏正文的到期原文，执行历史清理也不解码正文', async (t) => {
+  const f = await createTestHub(t, { ai: frameworkConfig() });
+  const runtime = f.hub.ai.runtime;
+  const execution = await runtime.submit(f.admin.id, 'assistant', { prompt: '保留期夹具' });
+  const cutoff = Date.now() - 40 * 86_400_000;
+  const sql = new DatabaseSync(join(f.directory, 'hub.sqlite'));
+  try {
+    const data = JSON.stringify({
+      execution_id: execution.id,
+      owner_id: f.admin.id,
+      lookup_key: '',
+      status: 'stored',
+      created_at: execution.created_at,
+      updated_at: execution.updated_at,
+      payload: { resource_refs: [], request: null },
+    });
+    sql
+      .prepare(
+        `WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM seq WHERE n < 502)
+         INSERT INTO ai_exchanges (id, data)
+         SELECT 'sample-' || n, json_set(?, '$.id', 'sample-' || n, '$.position', ? + (n = 502))
+         FROM seq`,
+      )
+      .run(data, cutoff);
+  } finally {
+    sql.close();
+  }
+  assert.deepEqual(
+    (await runtime.store.listExchangeRefs(execution.id, undefined, cutoff)).map((row) => row.id),
+    ['sample-502'],
+  );
+  const now = cutoff + 86_400_000;
+  assert.equal(await purgeAiExchanges(f.store, 1, now), 500);
+  assert.equal((await runtime.store.listExchangeRefs(execution.id)).length, 2);
+  assert.equal(await purgeAiExchanges(f.store, 1, now), 1);
+  assert.equal(await purgeAiExchanges(f.store, 1, now), 0);
+  await runtime.cancel(execution.id, f.admin.id, execution.payload.revision);
+  const cancelled = await runtime.get(execution.id);
+  await runtime.store.put('ai_executions', {
+    ...cancelled,
+    position: cutoff,
+    updated_at: new Date(cutoff).toISOString(),
+  });
+  assert.equal(await purgeAiHistory(f.store), 1);
+  assert.deepEqual(await runtime.store.listExchangeRefs(execution.id), []);
 });

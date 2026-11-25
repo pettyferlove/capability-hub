@@ -30,7 +30,11 @@ export function executionResponse(row: ExecutionRecord) {
     message_text: payload.message_text,
     message_blocks: payload.message_blocks,
     usage: payload.usage,
-    error: payload.error,
+    error: payload.error && {
+      code: payload.error.code,
+      message: payload.error.message,
+      retryable: payload.error.retryable,
+    },
   });
 }
 

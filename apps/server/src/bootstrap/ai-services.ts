@@ -6,7 +6,12 @@ import {
   type ResourceResolver,
 } from '@capability-hub/ai';
 import { createHubAgentRegistry } from '@capability-hub/hub-agents';
-import { createAiStore, HubAiQueue } from '@capability-hub/infrastructure/ai';
+import {
+  createAiStore,
+  exchangePurgeBatchSize,
+  HubAiQueue,
+  purgeAiExchanges,
+} from '@capability-hub/infrastructure/ai';
 import type {
   IdentityService,
   JobQueue,
@@ -59,6 +64,8 @@ function approvesAssessment(response: unknown) {
  */
 export class HubAiServices {
   readonly runtime: AiRuntime;
+  private readonly exchangeRetentionDays: number;
+  private lastExchangePurge = 0;
   // 目标无权直接拒绝；仅历史依据不可交付时返回原因，允许首份审计跳过该条记录。
   private readonly checkResources: (
     principal: Principal,
@@ -76,6 +83,7 @@ export class HubAiServices {
     private readonly publications: PublicationQueryService,
   ) {
     const aiStore = createAiStore(store);
+    this.exchangeRetentionDays = config.aiExchangeRetentionDays;
     this.checkResources = async (principal, execution, mode) => {
       if (execution.payload.execution_mode === 'inline') {
         requireAiConsole(principal);
@@ -266,9 +274,84 @@ export class HubAiServices {
             return Promise.resolve(value);
           },
         },
+        ...(config.aiExchangeRetentionDays > 0 && {
+          exchanges: { subject: (execution) => this.exchangeSubject(execution) },
+        }),
       },
       config.ai,
     );
+  }
+  /** 队列执行的往返原文以业务目标版本为主体，删除未发布版本时据此清理。 */
+  private async exchangeSubject(execution: ExecutionRecord) {
+    if (!businessOperations.has(execution.payload.operation_id)) return '';
+    const input = execution.payload.input;
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+    if (execution.payload.operation_id === 'publication-review')
+      return typeof input.publication_request_id === 'string'
+        ? ((await this.store.get('requests', input.publication_request_id))?.version_id ?? null)
+        : null;
+    return typeof input.version_id === 'string' && input.version_id ? input.version_id : null;
+  }
+
+  /**
+   * 内联原文要求所有引用版本的分发读权；开场提示还要复核生成时的两层发布受众与策略来源。
+   * 队列原文的业务引用已由执行级授权覆盖。
+   */
+  async canReadExchange(
+    principal: Principal,
+    resourceRefs: readonly string[],
+    execution: ExecutionRecord,
+  ) {
+    const catalogPrompts = execution.payload.operation_id === 'catalog-prompts';
+    if (catalogPrompts && !resourceRefs.length) return false;
+    try {
+      for (const ref of resourceRefs) {
+        if (!catalogPrompts) {
+          await this.access.requireReadableVersion(principal, ref);
+          continue;
+        }
+        const [kind, versionId, releaseId, resolvedId, extra] = ref.split(':');
+        if (
+          kind !== 'catalog-release' ||
+          !versionId ||
+          !releaseId ||
+          !resolvedId ||
+          extra !== undefined
+        )
+          return false;
+        const version = await this.access.requireReadableVersion(principal, versionId);
+        for (const id of releaseId === resolvedId ? [releaseId] : [releaseId, resolvedId]) {
+          const release = await this.store.get('releases', id);
+          if (
+            !release ||
+            release.asset_id !== version.asset_id ||
+            release.version_id !== version.id ||
+            !(await this.access.matchesAudience(principal, release))
+          )
+            return false;
+        }
+      }
+      return true;
+    } catch (error) {
+      if (isUnavailableResource(error)) return false;
+      throw error;
+    }
+  }
+
+  /** 读取时即执行留存期限，不依赖 Worker 的删除进度。 */
+  async retainedExchangeRefs(executionId: string, callId?: string) {
+    if (!this.exchangeRetentionDays) return [];
+    const cutoff = Date.now() - this.exchangeRetentionDays * 86_400_000;
+    return this.runtime.store.listExchangeRefs(executionId, callId, cutoff);
+  }
+
+  /** 每轮只删一批；有积压时下轮继续，已清空才冷却十分钟。 */
+  async purgeExchanges(now = Date.now()) {
+    if (now - this.lastExchangePurge < 600_000) return 0;
+    this.lastExchangePurge = now;
+    const removed = await purgeAiExchanges(this.store, this.exchangeRetentionDays, now);
+    if (removed === exchangePurgeBatchSize) this.lastExchangePurge = 0;
+    return removed;
   }
   private async recheckResources(
     principal: Principal,

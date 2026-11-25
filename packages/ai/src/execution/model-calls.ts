@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { AiError, type AiErrorCode } from '../core/errors.js';
 import type { AiStore } from '../core/ports.js';
-import type { ExecutionRecord, ModelCallDiagnostics } from '../core/records.js';
+import type {
+  ExecutionRecord,
+  ModelCallDiagnostics,
+  ModelExchangePayload,
+  ModelOutputCheck,
+} from '../core/records.js';
 import type { AiEventService } from './events.js';
 
 /** 用量缺项以 null 传递；端点明确报告的零和未知不能互换。 */
@@ -11,6 +16,13 @@ export interface ModelCallSettlement {
   outputTokens: number | null;
   complete: boolean;
   errorCode: AiErrorCode | null;
+  outputCheck?: ModelOutputCheck;
+}
+
+/** 结算时一并写入的往返原文；`subject` 为空串表示没有可据以清理的主体版本。 */
+export interface ModelExchangeRecord {
+  subject: string;
+  payload: ModelExchangePayload;
 }
 
 /** 调用方在同一事务内取得当前执行并核验写入资格，每次真实出站仅预留一次。 */
@@ -67,6 +79,7 @@ export async function settleModelCall(
   execution: ExecutionRecord,
   callId: string,
   result: ModelCallSettlement,
+  exchange?: ModelExchangeRecord,
 ) {
   const call = await events.store.get('ai_calls', callId);
   if (!call || call.status !== 'pending' || call.execution_id !== execution.id) return;
@@ -78,12 +91,39 @@ export async function settleModelCall(
   call.payload.error_code = result.errorCode;
   call.payload.input_tokens = result.inputTokens ?? 0;
   call.payload.output_tokens = result.outputTokens ?? 0;
+  if (result.outputCheck) call.payload.output_check = result.outputCheck;
   if (known) {
     execution.payload.usage.input_tokens += call.payload.input_tokens;
     execution.payload.usage.output_tokens += call.payload.output_tokens;
   } else execution.payload.usage.unknown_requests++;
   await events.store.put('ai_calls', call);
+  if (exchange)
+    await events.store.retainExchange({
+      id: callId,
+      owner_id: execution.owner_id,
+      execution_id: execution.id,
+      lookup_key: exchange.subject,
+      position: Date.now(),
+      status: 'stored',
+      created_at: call.updated_at,
+      updated_at: call.updated_at,
+      payload: exchange.payload,
+    });
   await events.append(execution, 'usage.updated', { ...execution.payload.usage });
+}
+
+/** 输出结论晚于传输结算给出时（宿主规则、结构化读取），只更新本执行内的调用。 */
+export async function recordOutputCheck(
+  store: AiStore,
+  execution: ExecutionRecord,
+  callId: string,
+  check: ModelOutputCheck,
+) {
+  const call = await store.get('ai_calls', callId);
+  if (!call || call.execution_id !== execution.id) return;
+  call.payload.output_check = check;
+  call.updated_at = new Date().toISOString();
+  await store.put('ai_calls', call);
 }
 
 /** 崩溃或中断后不补发模型请求；调用者的后续事件在同一事务内保存累计用量。 */

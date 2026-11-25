@@ -1,4 +1,9 @@
-import { AiError, digest as profileDigest, type AiRuntime } from '@capability-hub/ai';
+import {
+  AiError,
+  OutputRejectedError,
+  digest as profileDigest,
+  type AiRuntime,
+} from '@capability-hub/ai';
 import {
   stageDimension,
   type EvaluationService,
@@ -166,12 +171,18 @@ export class EvaluationRunner {
           instructionReviewInstructions,
           input,
           instructionReviewSchema,
+          {
+            // 未知 ID 已由 Schema 枚举拒绝，这里只剩重复项导致的缺项。
+            accept: ({ checks }) => {
+              const ids = new Set(checks.map((c) => c.id));
+              if (ids.size !== criteria.length)
+                throw new OutputRejectedError('rubric-ids', '指令质量检查项不完整', {
+                  expected: criteria.length,
+                  distinct: ids.size,
+                });
+            },
+          },
         );
-        if (
-          new Set(result.checks.map((c) => c.id)).size !== criteria.length ||
-          result.checks.some((c) => !criteria.some((k) => k.id === c.id))
-        )
-          throw new AiError('AI_OUTPUT_INVALID', '指令质量检查项不完整');
         samples.push(
           result.checks.map((c) => ({ ...c, evidence: sentEvidence(c.evidence, packed.ranges) })),
         );
@@ -239,7 +250,7 @@ export class EvaluationRunner {
         },
         async (run) => {
           let ordinal = 0;
-          const call: EvaluationCall = async (step, instructions, input, schema, authorize) => {
+          const call: EvaluationCall = async (step, instructions, input, schema, options = {}) => {
             const stepId =
               step === 'trigger-routing' || step === 'instructions' ? step + '-' + ++ordinal : step;
             const result = await run.call(stepId, {
@@ -248,7 +259,10 @@ export class EvaluationRunner {
               input,
               schema,
               signal,
-              reserve: () => stages.reserve(job, run.executionId, authorize),
+              reserve: () => stages.reserve(job, run.executionId, options.authorize),
+              accept: options.accept,
+              subject: version.id,
+              resources: options.resources,
             });
             return result.value;
           };

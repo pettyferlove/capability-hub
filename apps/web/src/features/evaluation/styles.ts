@@ -19,6 +19,7 @@ export const evaluationScoreStyles =
 export const evaluationStageStyles = 'relative min-w-0 flex-1 overflow-hidden rounded-full bg-line';
 export const evaluationStageFillStyles =
   'absolute inset-0 origin-left rounded-full bg-brand transition-transform duration-500 ease-(--ease-out)';
+
 /** 只标记服务端正在处理的下一阶段，不表示阶段内完成比例。 */
 export const evaluationStageActiveStyles =
   'after:absolute after:inset-y-0 after:left-0 after:w-1/2 after:rounded-full after:bg-linear-to-r after:from-transparent after:via-brand after:to-transparent motion-safe:after:animate-[agent-sweep_1.4s_ease-in-out_infinite]';

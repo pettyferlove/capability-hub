@@ -12,14 +12,23 @@ import type { z } from 'zod';
 import type { ModelProfile } from '../core/config.js';
 import { AiError, type AiErrorCode } from '../core/errors.js';
 import type { CredentialResolver } from '../core/ports.js';
-import type { ModelCallDiagnostics } from '../core/records.js';
+import type { ModelCallDiagnostics, ModelOutputCheck } from '../core/records.js';
 import type { ModelCallSettlement } from '../execution/model-calls.js';
 import {
   createEndpointModel,
   endpointProviderOptions,
   reasoningEffortFor,
+  requestTimeoutFor,
 } from './endpoint-model.js';
-import { ModelSseFrames, ModelWireUsage } from './provider-diagnostics.js';
+import type { ModelExchangeCapture } from './model-exchange.js';
+import {
+  ModelSseFrames,
+  ModelWireUsage,
+  networkErrorCode,
+  observeModelHttpError,
+} from './provider-diagnostics.js';
+import { outputIssues } from './structured-output.js';
+import { WirePrivacy } from './wire-content.js';
 
 /** 短调用失败的环节，供宿主区分超时、限流、无效输出等状态。 */
 export type ShortModelFailureReason =
@@ -51,6 +60,43 @@ const outputFailures = {
   schema: '模型回答的字段或类型不符合约定',
 } as const;
 
+const issueReasons = {
+  truncated: 'output_limit',
+  filtered: 'content_filter',
+  empty: 'empty_output',
+  json: 'invalid_json',
+  schema: 'schema_mismatch',
+} as const;
+
+const jsonFence = /^```(?:json)?[ \t]*\r?\n([\s\S]*)\r?\n```$/i;
+
+/** 解析失败位置与形态只用数值和布尔值描述，不保存原文片段。 */
+function jsonFailure(text: string): Partial<ModelOutputCheck> {
+  const fenced = jsonFence.exec(text.trim());
+  const body = fenced?.[1] ?? text;
+  const facts = { fenced: !!fenced, starts_with_json: /^\s*[[{]/.test(body) };
+  try {
+    JSON.parse(body);
+    return { facts };
+  } catch (error) {
+    const message = error instanceof SyntaxError ? error.message : '';
+    const position = /position (\d+)/.exec(message)?.[1];
+    const offset = position ?? (/end of JSON input/.test(message) ? body.length : undefined);
+    return { facts, ...(offset !== undefined && { json_offset: Number(offset) }) };
+  }
+}
+
+function schemaFailure(schema: z.ZodType, text: string): Partial<ModelOutputCheck> {
+  let candidate: unknown;
+  try {
+    candidate = JSON.parse(jsonFence.exec(text.trim())?.[1] ?? text);
+  } catch {
+    return {};
+  }
+  const parsed = schema.safeParse(candidate);
+  return parsed.success ? {} : { issues: outputIssues(parsed.error.issues, candidate) };
+}
+
 /** 只记录固定失败类别和以 token 为单位的计数，不携带原始响应。 */
 interface OutputDiagnostic {
   issue: keyof typeof outputFailures;
@@ -65,12 +111,9 @@ export class ShortModelError extends AiError {
     readonly reason: ShortModelFailureReason,
     retryable = reason === 'timeout' || reason === 'rate_limited',
     readonly output?: OutputDiagnostic,
+    code: AiErrorCode = failures[reason].code,
   ) {
-    super(
-      failures[reason].code,
-      output ? outputFailures[output.issue] : failures[reason].message,
-      retryable,
-    );
+    super(code, output ? outputFailures[output.issue] : failures[reason].message, retryable);
     this.name = 'ShortModelError';
   }
 }
@@ -109,6 +152,8 @@ export interface ShortModelCall<T extends z.ZodType> {
   reserve?: () => void | Promise<void>;
   release?: () => void;
   observer?: ShortModelObserver;
+  /** 提供时采集本次请求的往返原文，由观察者随结算写入。 */
+  capture?: ModelExchangeCapture;
   /**
    * 提供时按流式请求；部分结果未经校验，只用于进度，不应直接展示。
    * 最终输出仍整体按 Schema 校验。
@@ -127,12 +172,13 @@ export interface ShortModelResult<T> {
 export function shortModelLimits(
   profile: ModelProfile,
   overrides: Partial<ShortModelLimits> = {},
+  operation?: string,
 ): ShortModelLimits {
   return {
     maxRequestBytes: Math.min(32768, overrides.maxRequestBytes ?? Infinity),
     maxResponseBytes: Math.min(524288, overrides.maxResponseBytes ?? Infinity),
     maxOutputTokens: Math.min(profile.max_output_tokens, overrides.maxOutputTokens ?? Infinity),
-    timeoutMs: Math.min(profile.request_timeout_ms, overrides.timeoutMs ?? Infinity),
+    timeoutMs: Math.min(requestTimeoutFor(profile, operation), overrides.timeoutMs ?? Infinity),
   };
 }
 
@@ -165,19 +211,34 @@ async function readLimited(
   response: Response,
   limit: number,
   wire: ModelWireUsage,
+  capture?: ModelExchangeCapture,
 ): Promise<Uint8Array<ArrayBuffer>> {
   if (!response.body) return new Uint8Array();
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    wire.transport.received_bytes += value.byteLength;
-    if (wire.transport.received_bytes > limit) {
-      await reader.cancel().catch(() => undefined);
-      throw new ShortModelError('output_too_large');
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const remaining = limit - wire.transport.received_bytes;
+      wire.transport.received_bytes += value.byteLength;
+      if (value.byteLength > remaining) {
+        if (capture) chunks.push(value.subarray(0, remaining));
+        void reader.cancel().catch(() => undefined);
+        throw new ShortModelError('output_too_large');
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+  } catch (error) {
+    if (capture) {
+      const decoder = new TextDecoder();
+      let prefix = '';
+      for (const chunk of chunks) prefix += decoder.decode(chunk, { stream: true });
+      capture.unparsed(prefix, true);
+    }
+    throw error;
+  } finally {
+    reader.releaseLock();
   }
   const bytes = new Uint8Array(wire.transport.received_bytes);
   let offset = 0;
@@ -197,18 +258,26 @@ export async function callShortModel<T extends z.ZodType>(
 ): Promise<ShortModelResult<z.infer<T>>> {
   const started = performance.now();
   const { profile } = call;
-  const limits = shortModelLimits(profile, call.limits);
-  const wire = new ModelWireUsage(profile.format);
+  const limits = shortModelLimits(profile, call.limits, call.operation);
+  const privacy = new WirePrivacy();
+  const wire = new ModelWireUsage(profile.format, call.capture, privacy);
   const { transport } = wire;
   const effort = reasoningEffortFor(profile, call.operation);
-  const invalid = (issue: OutputDiagnostic['issue'], usage?: LanguageModelUsage) =>
-    new ShortModelError('invalid_output', false, {
+  let outputCheck: ModelOutputCheck | undefined;
+  const invalid = (
+    issue: OutputDiagnostic['issue'],
+    usage?: LanguageModelUsage,
+    details: Partial<ModelOutputCheck> = {},
+  ) => {
+    outputCheck = { ...details, status: 'rejected', reason: issueReasons[issue] };
+    return new ShortModelError('invalid_output', false, {
       issue,
       limit: limits.maxOutputTokens,
       used: wire.outputTokens,
       // 兼容端点未报告推理用量时 SDK 也会填 0，不据此断言模型没有推理。
       reasoning: usage?.outputTokenDetails.reasoningTokens || null,
     });
+  };
   const checkFinish = (reason: FinishReason | undefined, usage?: LanguageModelUsage) => {
     if (reason === 'length') throw invalid('truncated', usage);
     if (reason === 'content-filter') throw invalid('filtered', usage);
@@ -228,20 +297,30 @@ export async function callShortModel<T extends z.ZodType>(
     lifecycle.signal,
     ...(call.signal ? [call.signal] : []),
   ]);
-  // 宿主窗口和端点时限都使用 AbortSignal.timeout；普通 abort 不应被归为超时。
-  const timedOut = () =>
-    signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError';
+  const abortFailure = () => {
+    if (timeout.aborted && signal.reason === timeout.reason) {
+      transport.request_timed_out = true;
+      return new ShortModelError('timeout');
+    }
+    const reason: unknown = call.signal?.reason;
+    if (
+      (reason instanceof Error && reason.name === 'TimeoutError') ||
+      (reason instanceof AiError && reason.code === 'AI_DEADLINE_EXCEEDED')
+    )
+      return new ShortModelError('timeout', true, undefined, 'AI_DEADLINE_EXCEEDED');
+    return new ShortModelError('cancelled');
+  };
   let reserveError: unknown;
   let reserved = false;
   let reservation: ShortModelReservation | undefined;
   let fetchStarted = false;
   let complete = false;
   let transportFailure: AiErrorCode = 'AI_PROVIDER_FAILED';
-  let streamFailure: ShortModelError | undefined;
+  let wireFailure: ShortModelError | undefined;
   let outbound: Promise<Response> | undefined;
   const send: typeof fetch = async (input, init) => {
-    if (requestBytes(init?.body) > limits.maxRequestBytes)
-      throw new ShortModelError('input_too_large');
+    const bytes = requestBytes(init?.body);
+    if (bytes > limits.maxRequestBytes) throw new ShortModelError('input_too_large');
     signal.throwIfAborted();
     try {
       await call.reserve?.();
@@ -258,6 +337,7 @@ export async function callShortModel<T extends z.ZodType>(
       if (!signal.aborted || signal.reason !== error) reserveError = error;
       throw error;
     }
+    transport.request_bytes = bytes;
     const sent = performance.now();
     const elapsed = () => Math.round(performance.now() - sent);
     const headers = new Headers(init?.headers);
@@ -268,6 +348,8 @@ export async function callShortModel<T extends z.ZodType>(
           ? value
           : (value.prefix ?? '') + (reservation?.executionId ?? randomUUID()),
       );
+    privacy.configure(headers, apiKey);
+    call.capture?.sent(init?.body, privacy);
     let response: Response;
     try {
       signal.throwIfAborted();
@@ -281,14 +363,20 @@ export async function callShortModel<T extends z.ZodType>(
       });
     } catch (error) {
       if (signal.aborted) throw error;
+      const code = networkErrorCode(error, privacy);
+      if (code) transport.network_error = code;
       throw new ShortModelError('provider');
     }
     transport.headers_ms = elapsed();
     transport.http_status = response.status;
+    call.capture?.responded();
     if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      if (response.status === 429) throw new ShortModelError('rate_limited');
-      throw new ShortModelError('provider', response.status >= 500);
+      wireFailure =
+        response.status === 429
+          ? new ShortModelError('rate_limited')
+          : new ShortModelError('provider', response.status >= 500);
+      await observeModelHttpError(transport, response, privacy, call.capture);
+      throw wireFailure;
     }
     const replyHeaders = new Headers(response.headers);
     // 正文已解压，保留原编码头会让下游误判。
@@ -300,54 +388,94 @@ export async function callShortModel<T extends z.ZodType>(
       headers: replyHeaders,
     };
     if (call.onPartial) {
-      transportFailure = 'AI_STREAM_INCOMPLETE';
       if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) {
-        await response.body?.cancel();
-        throw new ShortModelError('provider');
+        wireFailure = new ShortModelError('provider');
+        await observeModelHttpError(transport, response, privacy, call.capture);
+        throw wireFailure;
       }
-      const frames = new ModelSseFrames(wire);
-      const streamError = (error: unknown) => {
-        if (error instanceof AiError) transportFailure = error.code;
-        streamFailure = new ShortModelError('provider');
-        return streamFailure;
+      const frames = new ModelSseFrames(wire, Infinity, call.capture);
+      const reader = response.body.getReader();
+      let closed = false;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        void reader.cancel().catch(() => undefined);
+        reader.releaseLock();
       };
-      const limited = new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          transport.received_bytes += chunk.byteLength;
-          if (transport.received_bytes > limits.maxResponseBytes) {
-            transportFailure = 'AI_OUTPUT_INVALID';
-            streamFailure = new ShortModelError('output_too_large');
-            throw streamFailure;
-          }
+      const limited = new ReadableStream<Uint8Array>({
+        async pull(controller) {
           try {
-            controller.enqueue(frames.take(chunk, elapsed()));
+            const chunk = await reader.read();
+            if (closed) return;
+            if (!chunk.done) {
+              const remaining = limits.maxResponseBytes - transport.received_bytes;
+              transport.received_bytes += chunk.value.byteLength;
+              if (chunk.value.byteLength > remaining) {
+                frames.incomplete(chunk.value.subarray(0, remaining));
+                throw new ShortModelError('output_too_large');
+              }
+            }
+            const bytes = chunk.done
+              ? frames.finish(elapsed())
+              : frames.take(chunk.value, elapsed());
+            controller.enqueue(bytes);
+            if (transport.terminal_received) {
+              complete = true;
+              close();
+              controller.close();
+            }
           } catch (error) {
-            throw streamError(error);
-          }
-          if (transport.terminal_received) {
-            complete = true;
-            controller.terminate();
+            if (closed) return;
+            close();
+            if (signal.aborted) {
+              frames.incomplete();
+              controller.error(error);
+              return;
+            }
+            if (error instanceof ShortModelError) wireFailure = error;
+            else {
+              const code =
+                error instanceof AiError
+                  ? error.code
+                  : error instanceof SyntaxError
+                    ? 'AI_PROVIDER_FAILED'
+                    : 'AI_STREAM_INCOMPLETE';
+              if (code === 'AI_STREAM_INCOMPLETE' && !(error instanceof AiError)) {
+                frames.incomplete();
+                transport.network_error = networkErrorCode(error, privacy);
+              }
+              wireFailure = new ShortModelError('provider', false, undefined, code);
+            }
+            transportFailure = wireFailure.code;
+            controller.error(wireFailure);
           }
         },
-        flush(controller) {
-          try {
-            controller.enqueue(frames.finish(elapsed()));
-          } catch (error) {
-            throw streamError(error);
-          }
-          complete = true;
-        },
+        cancel: close,
       });
-      return new Response(response.body.pipeThrough(limited), initResponse);
+      return new Response(limited, initResponse);
     }
-    const bytes = await readLimited(response, limits.maxResponseBytes, wire);
+    let body: Uint8Array<ArrayBuffer>;
     try {
-      wire.observeJson(JSON.parse(new TextDecoder().decode(bytes)), elapsed());
+      body = await readLimited(response, limits.maxResponseBytes, wire, call.capture);
+    } catch (error) {
+      if (error instanceof ShortModelError) {
+        wireFailure = error;
+        throw error;
+      }
+      if (signal.aborted) throw error;
+      const code = networkErrorCode(error, privacy);
+      if (code) transport.network_error = code;
+      throw new ShortModelError('provider');
+    }
+    const text = new TextDecoder().decode(body);
+    try {
+      wire.observeJson(JSON.parse(text), elapsed());
       complete = transport.terminal_received;
     } catch {
-      // SDK 负责将不合法的端点响应映射为调用错误。
+      // SDK 负责将不合法的端点响应映射为调用错误；原文仅进入往返采集。
+      call.capture?.unparsed(text);
     }
-    return new Response(bytes, initResponse);
+    return new Response(body, initResponse);
   };
   const guardedFetch: typeof fetch = (input, init) => {
     if (outbound) throw new ShortModelError('provider');
@@ -418,33 +546,43 @@ export async function callShortModel<T extends z.ZodType>(
   } catch (error) {
     if (reserveError !== undefined && findError(error, (value) => value === reserveError))
       throw reserveError instanceof Error ? reserveError : new ShortModelError('provider');
-    if (timedOut()) throw new ShortModelError('timeout');
-    if (call.signal?.aborted) throw new ShortModelError('cancelled');
-    if (streamFailure) throw streamFailure;
-    const known = findError(error, (value) => value instanceof ShortModelError);
-    if (known instanceof ShortModelError) {
-      if (known.reason === 'output_too_large') transportFailure = known.code;
+    const known = wireFailure ?? findError(error, (value) => value instanceof ShortModelError);
+    if (known instanceof ShortModelError && (wireFailure || !signal.aborted)) {
+      if (known.reason === 'output_too_large') {
+        transportFailure = known.code;
+        outputCheck = { status: 'rejected', reason: 'response_too_large' };
+      }
       throw known;
+    }
+    if (signal.aborted) {
+      const failure = abortFailure();
+      transportFailure = failure.code;
+      if (!complete && transport.http_status !== undefined) call.capture?.incomplete();
+      throw failure;
     }
     const objectError = findError(error, (value) => NoObjectGeneratedError.isInstance(value));
     if (NoObjectGeneratedError.isInstance(objectError)) {
       checkFinish(objectError.finishReason, objectError.usage);
-      const issue = !objectError.text?.trim()
-        ? 'empty'
-        : TypeValidationError.isInstance(objectError.cause)
-          ? 'schema'
-          : 'json';
-      throw invalid(issue, objectError.usage);
+      const text = objectError.text ?? '';
+      if (!text.trim()) throw invalid('empty', objectError.usage);
+      if (TypeValidationError.isInstance(objectError.cause))
+        throw invalid('schema', objectError.usage, schemaFailure(call.schema, text));
+      throw invalid('json', objectError.usage, jsonFailure(text));
     }
-    if (findError(error, (value) => outputErrors.has((value as Error).name)))
+    const outputError = findError(error, (value) => outputErrors.has((value as Error).name));
+    if (outputError) {
+      outputCheck = {
+        status: 'rejected',
+        reason: TypeValidationError.isInstance(outputError) ? 'schema_mismatch' : 'invalid_json',
+      };
       throw new ShortModelError('invalid_output');
+    }
     throw new ShortModelError('provider');
   } finally {
     // SDK 可能先于预留回调或响应体结束；不让悬空的请求越过本次执行的结算边界。
     lifecycle.abort();
     try {
       await outbound?.catch(() => undefined);
-      transport.request_timed_out = !complete && timedOut();
       await reservation?.finish(
         fetchStarted
           ? {
@@ -452,13 +590,8 @@ export async function callShortModel<T extends z.ZodType>(
               inputTokens: wire.inputTokens,
               outputTokens: wire.outputTokens,
               complete,
-              errorCode: complete
-                ? null
-                : transport.request_timed_out
-                  ? 'AI_PROVIDER_FAILED'
-                  : call.signal?.aborted
-                    ? 'AI_CANCELLED'
-                    : transportFailure,
+              ...(outputCheck && { outputCheck }),
+              errorCode: complete ? null : transportFailure,
             }
           : 'not_sent',
       );

@@ -47,13 +47,15 @@ const requestHeadersSchema = z
     }
   });
 
+const invocationKey = z.string().regex(/^[a-z][a-z0-9-]{0,63}\/[a-z][a-z0-9-]{0,63}$/);
+const requestTimeoutMs = z.int().min(1000).max(300000);
+
 /**
  * 单个模型端点的配置。`base_url` 必须是 API 前缀而不是具体操作地址：不允许内嵌凭据、查询或片段，
  * 也不接受以 `/messages`、`/chat/completions`、`/responses` 结尾（这些由 provider 适配器自行拼接）；
  * 明文 HTTP 必须显式打开 `allow_http`。
  * 凭据只以 `credential_ref`（大写环境变量式名称）引用，由 `CredentialResolver` 在调用时解析，
- * 配置本身从不持有密钥。`max_output_tokens` 128–32768（默认 4096），`request_timeout_ms`
- * 1000–120000（默认 60000）——超时是单次请求上限，不含排队与重试。
+ * 配置本身从不持有密钥。单次请求时限不含排队时间，不能延长执行窗口。
  */
 export const modelProfileSchema = z
   .object({
@@ -67,17 +69,13 @@ export const modelProfileSchema = z
     allow_http: z.boolean().default(false),
     max_output_tokens: z.number().int().min(128).max(32768).default(4096),
     chat_max_tokens_field: z.enum(['max_tokens', 'max_completion_tokens']).optional(),
-    request_timeout_ms: z.number().int().min(1000).max(120000).default(60000),
+    request_timeout_ms: requestTimeoutMs.default(60000),
+    request_timeout_ms_overrides: z.record(invocationKey, requestTimeoutMs).optional(),
     thinking_control: z
       .enum(['protocol', 'thinking_type', 'enable_thinking', 'effort_only', 'omit'])
       .default('protocol'),
     reasoning_effort: reasoningEffortSchema.default('medium'),
-    reasoning_effort_overrides: z
-      .record(
-        z.string().regex(/^[a-z][a-z0-9-]{0,63}\/[a-z][a-z0-9-]{0,63}$/),
-        reasoningEffortSchema,
-      )
-      .optional(),
+    reasoning_effort_overrides: z.record(invocationKey, reasoningEffortSchema).optional(),
   })
   .strict()
   .superRefine((profile, ctx) => {

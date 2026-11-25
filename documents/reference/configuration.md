@@ -18,6 +18,7 @@
 | CAPABILITY_HUB_EVALUATION_CONCURRENCY         | 默认 1，整数范围为 1 到 max(1, Worker 并发 − 1)                      |
 | CAPABILITY_HUB_EVALUATION_DAILY_REQUESTS      | 默认 0，仅做结构检查。启用模型评测须显式设置 UTC 每日调用上限        |
 | CAPABILITY_HUB_EVALUATION_BACKFILL            | 默认 false，按近 30 天使用次数回填当前 Skill 发布                    |
+| CAPABILITY_HUB_AI_EXCHANGE_RETENTION_DAYS     | 默认 30，0–3650 天；0 停止采集，也不再交付已留存的模型往返原文       |
 | CAPABILITY_HUB_GIT_HOSTS                      | github.com,gitlab.com，规范域名/IP 列表                              |
 | CAPABILITY_HUB_PRIVATE_GIT_HOSTS              | 空；必须为 Git 允许列表子集                                          |
 | CAPABILITY_HUB_LOG_LEVEL                      | info，允许 trace/debug/info/warn/error/fatal/silent                  |
@@ -65,6 +66,6 @@ Chat Completions 缺省发送 `max_tokens`。端点要求 `max_completion_tokens
 
 `thinking_control` 默认 `protocol`，OpenAI 发送 `reasoning_effort=none`，Anthropic 发送 `thinking.type=disabled`。Chat 端点可用 `thinking_type` 发送 `thinking.type=disabled`，或用 `enable_thinking` 发送 `enable_thinking=false`。`omit` 不发思考参数，沿用端点默认值。
 
-必须思考的模型选 `effort_only`，仅发送强度。默认 `reasoning_effort` 为 `medium`，可选端点支持的 `low`、`medium`、`high`、`xhigh`、`max`。用 `"reasoning_effort_overrides": {"resource-audit/assessment": "low"}` 按 `操作 ID/调用的 Agent ID` 覆盖，格式修复沿用原调用档位。
+必须思考的模型选 `effort_only`，`reasoning_effort` 默认为 `medium`，可选 `low`、`medium`、`high`、`xhigh`、`max`。单次 `request_timeout_ms` 为 1000–300000 毫秒，默认 60000。`reasoning_effort_overrides`、`request_timeout_ms_overrides` 按操作/步骤覆盖，不延长执行窗口。示例将 `resource-evaluation/task-judge` 放宽到 240000 毫秒。开场提示用 `catalog-prompts/generate` 和 `catalog-prompts/preflight`；配置过 `catalog-discovery/prompts` 的档案须把原值移到这两个键。
 
 Compose 传入 `CAPABILITY_HUB_AI_CONFIG` 和示例使用的 `HUB_AI_PRIMARY_KEY`。模型配置可单独只读挂载，也可放入宿主数据目录并使用容器路径 `/app/data/ai-config.json`。其他 `credential_ref` 需显式注入对应环境变量，凭据不得进入 Web 构建。

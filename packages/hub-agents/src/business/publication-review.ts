@@ -1,4 +1,4 @@
-import { AiError, type OperationRegistry } from '@capability-hub/ai';
+import { OutputRejectedError, type OperationRegistry } from '@capability-hub/ai';
 import { createStep, createWorkflow } from '@capability-hub/ai/mastra';
 import type { AgentEvidenceService, PublicationQueryService } from '@capability-hub/application';
 import { z } from 'zod';
@@ -151,6 +151,15 @@ export function registerPublicationReview(
                 source_consent: review.source_consent,
                 warning_count: warnings.length,
               }),
+              accept: () => {
+                if (!inspected.some((item) => item.path === entry))
+                  throw new OutputRejectedError('entry-not-read', '审核简报缺少入口文件的读取证据');
+                if (warnings.length && !seenWarnings.size)
+                  throw new OutputRejectedError(
+                    'warnings-not-read',
+                    '审核简报未查阅本次扫描的告警',
+                  );
+              },
               tools: {
                 read_file: tools.read_file,
                 list_files: tools.list_files,
@@ -183,10 +192,6 @@ export function registerPublicationReview(
                 }),
               },
             });
-            if (!inspected.some((item) => item.path === entry))
-              throw new AiError('AI_OUTPUT_INVALID', '审核简报缺少入口文件的读取证据');
-            if (warnings.length && !seenWarnings.size)
-              throw new AiError('AI_OUTPUT_INVALID', '审核简报未查阅本次扫描的告警');
             const ranges = mergeReadRanges(inspected);
             const report = await context.step('assessment', () =>
               context.structured(
@@ -204,17 +209,22 @@ export function registerPublicationReview(
                     warning_count: warnings.length,
                     warning_ids: [...seenWarnings],
                   }),
+                  accept: (value) => {
+                    validateCitations(value.findings, ranges);
+                    const mentioned = new Set<string>();
+                    for (const item of value.warning_questions) {
+                      if (!seenWarnings.has(item.finding_id) || mentioned.has(item.finding_id))
+                        throw new OutputRejectedError(
+                          'warning-reference',
+                          '审核简报引用未知、未查阅或重复的告警',
+                        );
+                      mentioned.add(item.finding_id);
+                    }
+                  },
                 },
                 assessment,
               ),
             );
-            validateCitations(report.findings, ranges);
-            const mentioned = new Set<string>();
-            for (const item of report.warning_questions) {
-              if (!seenWarnings.has(item.finding_id) || mentioned.has(item.finding_id))
-                throw new AiError('AI_OUTPUT_INVALID', '审核简报引用未知、未查阅或重复的告警');
-              mentioned.add(item.finding_id);
-            }
             if (review.asset.kind === 'mcp') {
               report.limitations = report.limitations.slice(0, 29);
               report.limitations.push(

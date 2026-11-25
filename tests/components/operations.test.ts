@@ -1,13 +1,18 @@
 import '../support/dom.js';
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'node:test';
+import { afterEach, test, type TestContext } from 'node:test';
 import { createElement, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { deferred } from '../support/store.js';
 import { OperationsAnalytics } from '../../apps/web/src/features/operations/agents/OperationsAnalytics.js';
+import { ExecutionDiagnostics } from '../../apps/web/src/features/operations/agents/ExecutionDiagnostics.js';
 import { TokenUsagePanel } from '../../apps/web/src/features/operations/usage/TokenUsagePanel.js';
-import type { TokenUsageResponse } from '@capability-hub/contracts';
+import type {
+  AiExecutionDiagnosticsResponse,
+  AiModelExchangeResponse,
+  TokenUsageResponse,
+} from '@capability-hub/contracts';
 import type { AuditLogResponse, OperationsResponse } from '@capability-hub/contracts/http';
 import { OperationsPanel } from '../../apps/web/src/features/operations/OperationsPanel.js';
 import OperationsCenter from '../../apps/web/src/features/operations/OperationsCenter.js';
@@ -498,3 +503,266 @@ test('时间和 Agent 筛选同步更新成功率、逐日数据与错误分布�
   assert.equal(screen.queryByText('AI_OUTPUT_INVALID'), null);
   assert(within(table).getByRole('row', { name: '2026-10-30 5 0' }));
 });
+
+function diagnosticApi(
+  t: TestContext,
+  snapshot: (value: AiExecutionDiagnosticsResponse) => Response | Promise<Response> = (value) =>
+    Response.json(value),
+  exchange: (value: AiModelExchangeResponse) => Response = (value) => Response.json(value),
+) {
+  const time = '2026-11-25T08:00:00.000Z';
+  const base = '/api/admin/operations/agents/executions/exec-1';
+  const requested: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    requested.push(path);
+    if (path === base + '/calls/call-1/exchange')
+      return exchange({
+        call_id: 'call-1',
+        captured_at: time,
+        resource_refs: [],
+        request: {
+          bytes: 512,
+          body: {
+            model: 'test-model',
+            messages: [
+              { role: 'system', content: '只输出 JSON' },
+              { role: 'user', content: [{ type: 'text', text: '评估这个资源' }] },
+            ],
+          },
+          truncated: false,
+        },
+        response: {
+          text: '{"summary":"过长的总结"}',
+          reasoning: '',
+          tool_calls: [],
+          finish_reason: 'stop',
+          truncated: false,
+        },
+      });
+    assert.equal(path, base + '/diagnostics');
+    return snapshot({
+      schema_version: 2,
+      captured_at: time,
+      watermark: 1,
+      event_gaps: [],
+      execution: {
+        id: 'exec-1',
+        owner_id: 'owner',
+        operation_id: 'resource-audit',
+        model_profile: 'primary',
+        status: 'failed',
+        revision: 2,
+        attempt: 1,
+        continuation: 0,
+        input: {},
+        result: null,
+        created_at: time,
+        updated_at: time,
+        deadline: Date.parse(time) + 60_000,
+        last_seq: 1,
+        message_text: '',
+        message_blocks: [],
+        usage: { requests: 1, tools: 0, input_tokens: 10, output_tokens: 20, unknown_requests: 0 },
+        error: {
+          code: 'AI_OUTPUT_INVALID',
+          message: '模型输出无效',
+          retryable: false,
+          call_id: 'call-1',
+        },
+      },
+      owner_display_name: '负责人',
+      workflow: {
+        workflow_id: 'resource-audit',
+        run_id: 'run',
+        definition_version: '1',
+        definition_digest: 'v',
+        model_digest: 'm',
+      },
+      events: [
+        {
+          schema_version: 1,
+          execution_id: 'exec-1',
+          audience: 'operator',
+          seq: 1,
+          type: 'step.failed',
+          attempt: 1,
+          continuation: 0,
+          occurred_at: time,
+          data: { step_id: 'assessment', code: 'AI_OUTPUT_INVALID' },
+        },
+      ],
+      model_calls: [
+        {
+          id: 'call-1',
+          started_at: time,
+          updated_at: time,
+          status: 'failed',
+          attempt: 1,
+          profile: 'primary',
+          input_tokens: 10,
+          output_tokens: 20,
+          duration_ms: 500,
+          error_code: 'AI_OUTPUT_INVALID',
+          diagnostics: {
+            agent_id: 'assessor',
+            step: { id: 'assessment', start_seq: 1 },
+            model: 'test-model',
+            format: 'openai',
+            request_timeout_ms: 1000,
+            max_output_tokens: 4096,
+            transport: {
+              http_status: 200,
+              request_bytes: 512,
+              received_bytes: 100,
+              text_chars: 20,
+              finish_reason: 'stop',
+              terminal_received: true,
+              request_timed_out: false,
+              input_tokens_reported: true,
+              output_tokens_reported: true,
+            },
+          },
+          output_check: {
+            status: 'rejected',
+            reason: 'schema_mismatch',
+            issues: [{ path: 'summary', code: 'too_big', limit: 200, actual: 340 }],
+          },
+          failure_reason: 'schema_mismatch',
+          exchange: 'available',
+        },
+      ],
+      traces: [],
+      interactions: [],
+      effects: [],
+      artifacts: [],
+      resources: [],
+    });
+  });
+  return { base, requested };
+}
+
+test('失败调用显示输出拒绝原因与字段问题，展开后才读取往返原文', async (t) => {
+  const user = userEvent.setup();
+  const { base, requested } = diagnosticApi(t, (report) => {
+    report.model_calls.push({
+      ...report.model_calls[0],
+      id: 'other-branch',
+      output_check: { status: 'rejected', reason: 'host_rejected' },
+      failure_reason: 'host_rejected',
+      exchange: 'none',
+    });
+    return Response.json(report);
+  });
+  render(createElement(ExecutionDiagnostics, { id: 'exec-1', liveWatermark: 1 }));
+  const calls = within(await screen.findByRole('region', { name: '模型请求' }));
+  assert(calls.getByText('输出被拒：字段不合 Schema'));
+  assert(calls.getByText('summary'));
+  assert(calls.getByText('超过上限 200（实际 340）'));
+  const ending = within(screen.getByRole('region', { name: '终止原因' }));
+  assert(ending.getByText('对照字段路径与规则，对齐提示词与 Schema。'));
+  await user.click(ending.getByRole('button', { name: '定位失败调用' }));
+  assert.equal(document.activeElement, calls.getByRole('row', { name: /call-1/ }));
+  assert.equal(screen.queryByRole('region', { name: '往返原文' }), null);
+  assert.deepEqual(requested, [base + '/diagnostics']);
+  const toggle = calls.getByRole('button', { name: '查看往返原文' });
+  await user.click(toggle);
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(document.activeElement, screen.getByRole('heading', { name: '往返原文' }));
+  const exchange = within(await screen.findByRole('region', { name: '响应' }));
+  assert(exchange.getByText('{"summary":"过长的总结"}'));
+  assert(within(screen.getByRole('region', { name: '#2 用户' })).getByText('评估这个资源'));
+  assert.deepEqual(requested, [base + '/diagnostics', base + '/calls/call-1/exchange']);
+  await user.tab();
+  assert.equal(document.activeElement, screen.getByRole('button', { name: '收起往返原文' }));
+  await user.keyboard('{Enter}');
+  assert.equal(document.activeElement, toggle);
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(screen.queryByRole('region', { name: '往返原文' }), null);
+});
+
+test('模型修复成功后发生业务冲突，只在历史中展示先前的失败调用', async (t) => {
+  diagnosticApi(t, (report) => {
+    report.execution.error = { code: 'AI_CONFLICT', message: '确认已失效', retryable: false };
+    report.model_calls.push({
+      ...report.model_calls[0],
+      id: 'repair',
+      status: 'succeeded',
+      error_code: null,
+      output_check: { status: 'accepted' },
+      failure_reason: undefined,
+    });
+    return Response.json(report);
+  });
+  render(createElement(ExecutionDiagnostics, { id: 'exec-1', liveWatermark: 1 }));
+  const ending = within(await screen.findByRole('region', { name: '终止原因' }));
+  assert(ending.getByText('确认已失效'));
+  assert(ending.getByText('本次终止未关联模型调用。'));
+  assert.equal(ending.queryByRole('button', { name: '定位失败调用' }), null);
+  assert.equal(ending.queryByText('输出被拒：字段不合 Schema'), null);
+  const history = within(screen.getByRole('region', { name: '模型请求' }));
+  assert(history.getByText('输出被拒：字段不合 Schema'));
+  assert(history.getByText('输出已采纳'));
+});
+
+for (const loss of ['withheld', 'none', '快照 403', '原文 403'] as const)
+  test(`刷新确认${loss}后清除已展开原文，恢复权限也不自动重开`, async (t) => {
+    const user = userEvent.setup();
+    let availability: 'available' | 'withheld' | 'none' | '快照 403' = 'available';
+    let denyExchange = false;
+    let text = '首次授权的响应正文';
+    const checking = deferred();
+    const forbidden = () =>
+      Response.json({ error: { code: 'FORBIDDEN', message: '无权查看' } }, { status: 403 });
+    diagnosticApi(
+      t,
+      async (report) => {
+        if (availability !== 'available' || denyExchange) await checking.promise;
+        if (availability === '快照 403') return forbidden();
+        report.execution.operation_id = 'resource-evaluation';
+        report.model_calls[0].exchange = availability;
+        return Response.json(report);
+      },
+      (value) => {
+        if (denyExchange) {
+          availability = 'withheld';
+          return forbidden();
+        }
+        assert(value.response);
+        value.response.text = text;
+        return Response.json(value);
+      },
+    );
+    render(createElement(ExecutionDiagnostics, { id: 'exec-1', liveWatermark: 1 }));
+    const open = { name: '查看往返原文' };
+    const panel = { name: '往返原文' };
+    const copy = { name: '复制响应正文' };
+    await user.click(await screen.findByRole('button', open));
+    assert(await screen.findByText(text));
+    assert(screen.getByRole('button', copy));
+
+    const refresh = screen.getByRole('button', { name: '刷新快照' });
+    if (loss === '原文 403') denyExchange = true;
+    else availability = loss;
+    await user.click(refresh);
+    assert.equal(screen.queryByRole('region', panel), null);
+    assert.equal(screen.queryByRole('button', copy), null);
+    await act(async () => checking.resolve());
+    if (loss === '快照 403') assert(await screen.findByText('无权查看'));
+    else if (loss === 'none') assert(await screen.findByText(/未留存原文/));
+    else assert(await screen.findByText(/仅有候选审核权或平台检查权/));
+    assert.equal(screen.queryByRole('button', open), null);
+    assert.equal(screen.queryByRole('button', copy), null);
+    assert.equal(screen.queryByText(text), null);
+
+    availability = 'available';
+    denyExchange = false;
+    text = '重新授权后读取的响应正文';
+    await user.click(refresh);
+    const restored = await screen.findByRole('button', open);
+    assert.equal(restored.getAttribute('aria-expanded'), 'false');
+    assert.equal(screen.queryByRole('region', panel), null);
+    assert.equal(screen.queryByRole('button', copy), null);
+    await user.click(restored);
+    assert(await screen.findByText(text));
+    assert.equal(screen.queryByText('首次授权的响应正文'), null);
+  });

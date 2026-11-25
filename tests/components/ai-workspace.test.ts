@@ -297,7 +297,7 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
     assert.equal(url, path);
     await reportReady.promise;
     return Response.json({
-      schema_version: 1,
+      schema_version: 2,
       captured_at: execution.created_at,
       watermark: 42,
       event_gaps: [],
@@ -323,6 +323,7 @@ test('诊断页按原事件序号定位并展示交接快照，导出链接只�
           output_tokens: 0,
           duration_ms: 1000,
           error_code: 'AI_PROVIDER_FAILED',
+          exchange: 'none',
           diagnostics: {
             agent_id: 'writer',
             step: { id: '检查', start_seq: 42 },

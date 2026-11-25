@@ -10,7 +10,7 @@ const phrase = z
   .max(64);
 const phrases = z.array(phrase).max(5);
 
-// 目录正文只在本次调用内存中流转；执行目录中的 Schema 只描述允许持久化的投影。
+// 执行目录中的 Schema 只描述允许持久化的投影；首页对话的目录正文不留存原文。
 const inlineDiscovery = {
   execution_mode: 'inline',
   version: '1',
@@ -19,12 +19,13 @@ const inlineDiscovery = {
   interactions: {},
 } as const;
 
-/** 从已通过可见性校验的目录卡片答复单次提问；正文不进入执行历史。 */
+/** 从已通过可见性校验的目录卡片答复单次提问；问题与回答不进入执行历史，也不留存往返原文。 */
 export const catalogDiscoveryOperation = {
   ...inlineDiscovery,
   id: 'catalog-discovery',
   title: '首页对话检索',
   description: '根据访问者可读的发布理解问题，并核对推荐的固定版本。',
+  retain_exchanges: false as const,
 };
 
 /** 同批提示的生成与预检共用执行，分别结算模型调用。 */

@@ -853,4 +853,5 @@ export {
   ai_calls,
   ai_traces,
   ai_artifacts,
+  ai_exchanges,
 } from './ai-schema.js';

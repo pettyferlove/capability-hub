@@ -1,6 +1,7 @@
 import type { AiQueries, AiRecordQuery } from '@capability-hub/ai/ports';
 import {
   callRecordSchema,
+  exchangeRecordSchema,
   executionStatusSchema,
   parseAiRecord,
   type AiTable,
@@ -11,10 +12,11 @@ import { aiSchema, ai_executions, executionExpiry } from './ai-schema.js';
 import { users } from './schema.js';
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy';
 import type { sqliteSchema } from './record-schema.js';
+import { expiredExchangeIds, readAiRecord, retainExchange } from '../ai/exchange-storage.js';
 
 type Session = Pick<
   SqliteRemoteDatabase<typeof sqliteSchema>,
-  'select' | 'insert' | 'update' | 'delete'
+  'select' | 'insert' | 'update' | 'delete' | 'run'
 >;
 
 /**
@@ -30,13 +32,14 @@ export class SqliteAiQueries implements AiQueries {
   async get<K extends AiTable>(table: K, id: string): Promise<AiRecordMap[K] | undefined> {
     const t = this.table(table);
     const [row] = await this.db.select({ data: t.data }).from(t).where(eq(t.id, id)).limit(1);
-    return row ? parseAiRecord(table, row.data) : undefined;
+    return row ? readAiRecord(table, row.data) : undefined;
   }
   async list<K extends AiTable>(table: K, query: AiRecordQuery): Promise<AiRecordMap[K][]> {
     if (!Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > 1000)
       throw new Error('AI query limit is invalid');
     const t = this.table(table);
     const conditions = [];
+    if (query.ids) conditions.push(inArray(t.id, query.ids));
     if (query.event_types) {
       if (table !== 'ai_events') throw new Error('Event types only apply to AI events');
       conditions.push(inArray(sql`json_extract(${t.data}, '$.payload.type')`, query.event_types));
@@ -60,7 +63,7 @@ export class SqliteAiQueries implements AiQueries {
       .where(and(...conditions))
       .orderBy(order(t.position), order(t.id))
       .limit(query.limit);
-    return rows.map((row) => parseAiRecord(table, row.data));
+    return rows.map((row) => readAiRecord(table, row.data));
   }
   async listDueExecutionIds(kind: 'waiting_input' | 'inline', through: number, limit: number) {
     const rows = await this.db
@@ -137,6 +140,37 @@ export class SqliteAiQueries implements AiQueries {
         ),
       )
       .groupBy(sql`bucket`, operation, profile, calls.owner_id, calls.status);
+  }
+  listExchangeRefs(executionId: string, callId?: string, capturedAfter?: number) {
+    const t = aiSchema.ai_exchanges;
+    const refs = exchangeRecordSchema.shape.payload.shape.resource_refs;
+    return this.db
+      .select({
+        id: t.id,
+        resource_refs: sql`json_extract(${t.data}, '$.payload.resource_refs')`.mapWith(
+          (text: string) => refs.parse(JSON.parse(text)),
+        ),
+      })
+      .from(t)
+      .where(
+        and(
+          eq(t.execution_id, executionId),
+          callId === undefined ? undefined : eq(t.id, callId),
+          capturedAfter === undefined ? undefined : gt(t.position, capturedAfter),
+        ),
+      );
+  }
+  retainExchange(record: AiRecordMap['ai_exchanges']) {
+    return retainExchange(record, (statement) => this.db.run(statement));
+  }
+  async removeExchangesBy(key: 'execution_id' | 'lookup_key', value: string) {
+    const t = aiSchema.ai_exchanges;
+    await this.db.delete(t).where(eq(t[key], value));
+  }
+  async purgeExpiredExchanges(through: number | null) {
+    const t = aiSchema.ai_exchanges;
+    const rows = await this.db.delete(t).where(expiredExchangeIds(through)).returning({ id: t.id });
+    return rows.length;
   }
   async insert<K extends AiTable>(table: K, record: AiRecordMap[K]): Promise<AiRecordMap[K]> {
     const value = parseAiRecord(table, record);

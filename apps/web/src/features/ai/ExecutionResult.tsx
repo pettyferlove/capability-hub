@@ -34,7 +34,9 @@ export function ExecutionResult({ view }: { view: AiExecutionViewResponse }) {
   if (view.execution.execution_mode === 'inline')
     return (
       <p className="p-6 text-muted-ink">
-        本次自动执行只记录运行状态、步骤和模型用量，不保存问题、资源内容或模型回复。
+        {view.execution.operation_id === 'catalog-discovery'
+          ? '首页对话只记录运行状态、步骤和模型用量，不保存问题、资源内容或模型回复。'
+          : '自动执行的成果保存在所属业务中，这里只显示运行信息；模型往返原文在运营中心的流程诊断中按权限查看。'}
       </p>
     );
   if (view.execution.operation_id === 'publication-review')

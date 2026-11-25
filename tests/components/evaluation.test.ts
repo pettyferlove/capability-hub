@@ -639,6 +639,7 @@ test('部分完成保留可用分数，维护者看到失败阶段、错误码�
     stages: [
       { id: 'static', state: 'succeeded' },
       { id: 'instructions', state: 'failed', failure_code: 'AI_OUTPUT_INVALID' },
+      { id: 'task-run-1', state: 'failed', failure_code: 'AI_NOT_FOUND' },
     ],
     dimensions: detail().dimensions.map((d) =>
       d.id === 'instructions'
@@ -657,6 +658,7 @@ test('部分完成保留可用分数，维护者看到失败阶段、错误码�
   render(intakePanel());
   await screen.findByText(/部分完成/);
   assert(screen.getAllByText(/AI_OUTPUT_INVALID/).length);
+  assert(screen.getByText(/纸面任务 1 · 评测所需的输入材料不可用（AI_NOT_FOUND）/));
   assert(screen.getByRole('button', { name: '重试失败阶段' }));
   assert(screen.getByRole('figure'));
 });

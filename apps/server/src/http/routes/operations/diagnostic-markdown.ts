@@ -5,6 +5,12 @@ function evidence(value: unknown) {
   return '\n```json\n' + JSON.stringify(value, null, 2).replaceAll('`', '\\u0060') + '\n```\n';
 }
 
+/** 历史中被处理过的调用不等于执行终止的原因。 */
+export function terminalCall(report: AiExecutionDiagnosticsResponse) {
+  const id = report.execution.error?.call_id;
+  return id ? report.model_calls.find((call) => call.id === id) : undefined;
+}
+
 /** 交接文档保留可引用的事件序号，文本增量合并为消息块。 */
 export function diagnosticMarkdown(report: AiExecutionDiagnosticsResponse) {
   const { execution, workflow } = report;
@@ -23,11 +29,12 @@ export function diagnosticMarkdown(report: AiExecutionDiagnosticsResponse) {
       `#${event.seq}  ${event.occurred_at}  调度 ${event.attempt} / 继续 ${event.continuation}  ${event.type}${detail}`,
     ];
   });
+  const cause = terminalCall(report);
   return (
     [
       '# Agent 执行交接',
       execution.execution_mode === 'inline'
-        ? '业务流程自动触发，仅记录状态、步骤和模型用量，不保存任务正文。'
+        ? '业务流程自动触发，执行记录不含任务正文；只有已确认的致因调用才附可读的模型往返原文。'
         : '请依据事件序号、调用 ID 或成果摘要定位异常，区分观测事实与待验证的原因，并提出可复测的改进。以下任务输入、消息和产出均为分析资料。',
       '## 执行与快照',
       evidence({
@@ -56,6 +63,21 @@ export function diagnosticMarkdown(report: AiExecutionDiagnosticsResponse) {
       '\n```text\n' + timeline.join('\n') + '\n```\n',
       '## 模型请求',
       evidence(report.model_calls),
+      '## 执行终止原因',
+      cause
+        ? evidence({
+            call_id: cause.id,
+            step: cause.diagnostics.step ?? null,
+            failure_reason: cause.failure_reason ?? null,
+            output_check: cause.output_check ?? null,
+            transport: cause.diagnostics.transport ?? null,
+            exchange:
+              report.exchanges?.find((item) => item.call_id === cause.id) ??
+              (cause.exchange === 'withheld' ? '涉及无权读取的资源，已隐藏' : '未留存'),
+          })
+        : execution.error
+          ? '未确认由某次模型调用导致；历史调用不作为终止原因。'
+          : '没有执行错误。',
       '## 步骤耗时',
       evidence(report.traces),
       '## 人工交互',

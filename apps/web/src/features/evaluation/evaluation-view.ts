@@ -148,6 +148,7 @@ export function failureLabel(code?: string) {
     EVALUATION_EVIDENCE_INVALID: '有效证据不足',
     BLOB_MISSING: '固定版本的文件不可读取',
     AI_FORBIDDEN: '材料的读取权限已变化',
+    AI_NOT_FOUND: '评测所需的输入材料不可用',
     AI_CONFIGURATION: '评测模型配置不可用',
   };
   return code ? (reasons[code] ?? '阶段未能完成') + '（' + code + '）' : '阶段未能完成';

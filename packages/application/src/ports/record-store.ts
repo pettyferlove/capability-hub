@@ -116,6 +116,8 @@ export interface RecordStore {
   evaluationSchedule(): Promise<RecordMap['evaluation_schedule'] | undefined>;
   listCancellationRequestedJobs(): Promise<RecordMap['jobs'][]>;
   listAiExecutionJobs(executionId: string): Promise<RecordMap['jobs'][]>;
+  /** 删除以该版本为主体的模型往返原文，与版本删除共用事务。 */
+  removeAiExchanges(subjectId: string): Promise<void>;
   listDueSources(now: number): Promise<GitSourceRecord[]>;
   /** 只读提示单例的调度列，不解析批次正文；单例不存在时返回 `undefined`。 */
   catalogPromptSchedule(): Promise<

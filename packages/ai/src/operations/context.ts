@@ -8,6 +8,7 @@ import { Mastra } from '@mastra/core/mastra';
 import type { MastraCompositeStore } from '@mastra/core/storage';
 import type {
   AiAuthorization,
+  AiExchangeRetention,
   AiResource,
   AiTelemetry,
   CredentialResolver,
@@ -15,12 +16,17 @@ import type {
 } from '../core/ports.js';
 import type { AiConfiguration, ModelProfile } from '../core/config.js';
 import { digest } from '../core/config.js';
-import { asJson, type Json } from '../core/records.js';
-import { AiError, aiFailure } from '../core/errors.js';
+import { asJson, type Json, type ModelOutputCheck } from '../core/records.js';
+import { AiError, OutputRejectedError, aiFailure } from '../core/errors.js';
 import { type AiEventService, AgentEventMapper } from '../execution/events.js';
+import { recordOutputCheck } from '../execution/model-calls.js';
 import { type ExecutionScope } from '../execution/scope.js';
 import { ManagedProvider } from '../integrations/provider.js';
-import { readStructured, ReportFormatError } from '../integrations/structured-output.js';
+import {
+  readStructured,
+  ReportFormatError,
+  structuredRejection,
+} from '../integrations/structured-output.js';
 import { withMcpTools } from '../integrations/mcp.js';
 
 /**
@@ -29,13 +35,15 @@ import { withMcpTools } from '../integrations/mcp.js';
  * 它是工具循环轮数上限，不是超时；
  * `memory: true` 时记忆仍限定在当前执行内。
  */
-export interface AgentInvocation {
+export interface AgentInvocation<T = { text: string }> {
   id: string;
   instructions: string;
   prompt: string;
   tools?: ToolsInput;
   memory?: boolean;
   max_steps?: number;
+  /** 验收本次最终响应；抛出 OutputRejectedError 会归到产生该结果的调用，不触发格式纠正。 */
+  accept?: (value: T) => void | Promise<void>;
 }
 
 /**
@@ -61,6 +69,8 @@ export interface RuntimeDependencies {
   credentials: CredentialResolver;
   resources: ResourceResolver;
   telemetry?: AiTelemetry;
+  /** 提供时留存模型往返原文；缺失时只记录结构化失败原因。 */
+  exchanges?: AiExchangeRetention;
 }
 
 /**
@@ -69,7 +79,6 @@ export interface RuntimeDependencies {
  * `AI_FORBIDDEN`、租约或期限失效抛 `AI_LEASE_LOST`/`AI_DEADLINE_EXCEEDED`。
  */
 export class OperationContext {
-  failure: AiError | undefined;
   private readonly governedTools = new WeakSet<object>();
   constructor(
     readonly scope: ExecutionScope,
@@ -79,6 +88,7 @@ export class OperationContext {
     private readonly config: AiConfiguration,
     private readonly profile: ModelProfile,
     private readonly operationId: string,
+    private readonly retainExchanges = true,
   ) {}
   get signal() {
     return this.scope.current().controller.signal;
@@ -125,11 +135,16 @@ export class OperationContext {
       return output;
     } catch (error) {
       const failure = aiFailure(error);
-      this.failure ??= failure;
       if (!this.signal.aborted)
         await this.events.emit('step.failed', { step_id: name, code: failure.code });
       throw failure;
     }
+  }
+  private async recordOutput(callId: string | undefined, check: ModelOutputCheck) {
+    if (callId)
+      await this.scope.write((execution) =>
+        recordOutputCheck(this.scope.store, execution, callId, check),
+      );
   }
   tool<I extends z.ZodType, O extends z.ZodType>(definition: ToolDefinition<I, O>) {
     // Mastra 的 InferSchema 条件类型无法保留未实例化的 Zod 泛型；校验与业务类型仍由 definition 负责。
@@ -207,8 +222,11 @@ export class OperationContext {
   async agent(options: AgentInvocation): Promise<{ text: string }> {
     return this.invoke(options, (text) => ({ text }));
   }
-  async structured<T extends z.ZodType>(options: AgentInvocation, schema: T): Promise<z.infer<T>> {
-    const run = async (invocation: AgentInvocation) => {
+  async structured<T extends z.ZodType>(
+    options: AgentInvocation<z.infer<T>>,
+    schema: T,
+  ): Promise<z.infer<T>> {
+    const run = async (invocation: AgentInvocation<z.infer<T>>) => {
       const object = await this.invoke(
         invocation,
         (_text, read, finishReason) => readStructured(read, schema, finishReason),
@@ -224,11 +242,8 @@ export class OperationContext {
         !(error instanceof ReportFormatError) ||
         options.memory ||
         Object.keys(options.tools ?? {}).length
-      ) {
-        const failure = aiFailure(error);
-        this.failure ??= failure;
-        throw failure;
-      }
+      )
+        throw aiFailure(error);
       return this.step(
         'repair-output',
         () =>
@@ -244,7 +259,7 @@ export class OperationContext {
     }
   }
   private async invoke<T>(
-    options: AgentInvocation,
+    options: AgentInvocation<T>,
     finish: (text: string, read: () => Promise<unknown>, finishReason?: string) => Promise<T> | T,
     schema?: z.ZodType,
   ) {
@@ -263,6 +278,7 @@ export class OperationContext {
       this.profile,
       options.id,
       this.operationId,
+      this.retainExchanges ? this.dependencies.exchanges : undefined,
     );
     const agent = new Agent({
       id: options.id,
@@ -316,13 +332,31 @@ export class OperationContext {
       await mapper.flush();
       provider.assertSuccess();
       const text = await stream.text;
-      if (!schema && !text.trim()) throw new AiError('AI_OUTPUT_INVALID', '模型未返回有效内容');
+      if (!schema && !text.trim()) {
+        await this.recordOutput(provider.lastCallId, {
+          status: 'rejected',
+          reason: 'empty_output',
+        });
+        const failure = new AiError('AI_OUTPUT_INVALID', '模型未返回有效内容');
+        failure.callId = provider.lastCallId;
+        throw failure;
+      }
       await this.authorize('execute');
-      return await finish(
-        text,
-        async () => stream.object,
-        schema ? await stream.finishReason : undefined,
-      );
+      const finishReason = schema ? await stream.finishReason : undefined;
+      try {
+        const value = await finish(text, async () => stream.object, finishReason);
+        if (options.accept) await options.accept(value);
+        await this.recordOutput(provider.lastCallId, { status: 'accepted' });
+        return value;
+      } catch (error) {
+        const rejection =
+          error instanceof OutputRejectedError ? error.outputCheck() : structuredRejection(error);
+        if (rejection && error instanceof AiError && !error.callId) {
+          await this.recordOutput(provider.lastCallId, rejection);
+          error.callId = provider.lastCallId;
+        }
+        throw error;
+      }
     } catch (error) {
       provider.assertSuccess();
       throw aiFailure(error);
@@ -405,8 +439,10 @@ export class OperationContext {
       reference,
       this.signal,
     );
-    if (resource.text.length > 128000 || !resource.version || !resource.digest)
-      throw new AiError('AI_OUTPUT_INVALID', '资源缺少版本或超过长度限制');
+    if (!resource.version || !resource.digest)
+      throw new AiError('AI_CONFIGURATION', '资源解析结果缺少版本或摘要');
+    if (resource.text.length > 128000)
+      throw new AiError('AI_BUDGET_EXCEEDED', '资源内容超过长度限制');
     await this.artifact(`resource:${digest(reference)}`, asJson(resource));
     return resource;
   }

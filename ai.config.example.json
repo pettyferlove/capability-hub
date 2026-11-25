@@ -6,6 +6,24 @@
       "format": "openai",
       "base_url": "https://api.deepseek.com",
       "model": "deepseek-flash",
+      "thinking_control": "effort_only",
+      "reasoning_effort": "low",
+      "request_timeout_ms_overrides": { "resource-evaluation/task-judge": 240000 },
+      "reasoning_effort_overrides": {
+        "resource-audit/resource-audit": "high",
+        "resource-audit/assessment": "medium",
+        "publication-review/publication-review": "medium",
+        "publication-review/assessment": "medium",
+        "feedback-triage/feedback-triage": "medium",
+        "resource-evaluation/trigger-cases": "medium",
+        "resource-evaluation/instructions": "medium",
+        "resource-evaluation/task-cases": "medium",
+        "resource-evaluation/task-without": "medium",
+        "resource-evaluation/task-with": "medium",
+        "resource-evaluation/task-judge": "medium",
+        "resource-evaluation/transparency": "medium",
+        "agent-lab/reviewer": "medium"
+      },
       "credential_ref": "HUB_AI_PRIMARY_KEY"
     },
     {
@@ -14,6 +32,24 @@
       "format": "anthropic",
       "base_url": "https://api.deepseek.com/anthropic/v1",
       "model": "deepseek-flash",
+      "thinking_control": "effort_only",
+      "reasoning_effort": "low",
+      "request_timeout_ms_overrides": { "resource-evaluation/task-judge": 240000 },
+      "reasoning_effort_overrides": {
+        "resource-audit/resource-audit": "high",
+        "resource-audit/assessment": "medium",
+        "publication-review/publication-review": "medium",
+        "publication-review/assessment": "medium",
+        "feedback-triage/feedback-triage": "medium",
+        "resource-evaluation/trigger-cases": "medium",
+        "resource-evaluation/instructions": "medium",
+        "resource-evaluation/task-cases": "medium",
+        "resource-evaluation/task-without": "medium",
+        "resource-evaluation/task-with": "medium",
+        "resource-evaluation/task-judge": "medium",
+        "resource-evaluation/transparency": "medium",
+        "agent-lab/reviewer": "medium"
+      },
       "credential_ref": "HUB_AI_PRIMARY_KEY"
     }
   ],

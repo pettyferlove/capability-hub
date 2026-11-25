@@ -10,6 +10,7 @@ import {
   evaluationModelHandler,
   evaluationModelInput,
   evaluationModelStep,
+  evaluationOutputSchema,
   evaluationTransparency as transparent,
   evaluationTriggerCases,
 } from '../support/evaluation-model.js';
@@ -1062,6 +1063,9 @@ test('作者用例优先，不能纸面核对的断言、越界行号与引用�
       { prompt: '第三个合格作者用例不占生成样本', files: [] },
     ],
   };
+  const profile = f.hub.ai.runtime.config.profiles[0];
+  profile.request_timeout_ms = 120_000;
+  profile.request_timeout_ms_overrides = { 'resource-evaluation/task-judge': 240_000 };
   const item = await receiveSkill(f, {
     files: [
       {
@@ -1116,6 +1120,39 @@ test('作者用例优先，不能纸面核对的断言、越界行号与引用�
     tasks.map((c) => c.assertions.length),
     [5, 4, 4, 4],
   );
+  for (const request of stub.requests) {
+    const { checks, assertions } = evaluationOutputSchema(request).properties;
+    if (checks) {
+      assert.partialDeepStrictEqual(checks.items?.properties?.id, {
+        type: 'string',
+        enum: evaluationInstructionChecks().map((item) => item.id),
+      });
+    }
+    if (assertions) {
+      const input = JSON.parse(evaluationModelInput(request)) as { assertions: string[] };
+      assert.deepEqual(
+        [assertions.minItems, assertions.maxItems],
+        [input.assertions.length, input.assertions.length],
+      );
+    }
+  }
+  const executionId = record.stages.find((stage) => stage.id === 'task-run-1')?.execution_id;
+  assert(executionId);
+  const taskCalls = await f.hub.ai.runtime.store.list('ai_calls', {
+    execution_id: executionId,
+    limit: 3,
+  });
+  assert.deepEqual(
+    taskCalls.map(({ payload: { diagnostics } }) => [
+      diagnostics.step?.id,
+      diagnostics.request_timeout_ms,
+    ]),
+    [
+      ['task-without', 120_000],
+      ['task-with', 120_000],
+      ['task-judge', 240_000],
+    ],
+  );
   assert(tasks[0].assertions.includes('交接编号有对应材料'));
   assert(!tasks[0].assertions.includes('联网检查交接服务'));
   assert(tasks.every((c) => !c.assertions.includes('在线执行并取得运行值')));
@@ -1159,6 +1196,41 @@ test('作者用例优先，不能纸面核对的断言、越界行号与引用�
   assert.equal(judgment?.with_skill.passed, false);
   assert.equal(judgment.with_skill.valid, false);
   assert.equal(judgment.without_skill.passed, true);
+});
+
+test('纸面推演前作者附件已不可读，报告输入材料错误且不产生模型请求', async (t) => {
+  const { f, stub } = await evaluationHub(t);
+  const path = 'evals/input.txt';
+  const item = await receiveSkill(f, {
+    files: [
+      { path: 'SKILL.md', bytes: skillDocument(), executable: false },
+      {
+        path: 'evals/evals.json',
+        bytes: Buffer.from(
+          JSON.stringify({ evals: [{ prompt: '核对附件中的交付编号', files: [path] }] }),
+        ),
+        executable: false,
+      },
+      { path, bytes: Buffer.from('交付编号 42'), executable: false },
+    ],
+  });
+  await f.hub.evaluationRunner.process(await claimEvaluation(f));
+  await submitPublication(f, item);
+  const job = await claimStage(f, 'task-run-1');
+  const version = await f.store.get('versions', item.version_id);
+  const ref = version?.files.find((file) => file.path === path)?.blob_ref;
+  assert(ref);
+  const read = f.blobs.read.bind(f.blobs);
+  t.mock.method(f.blobs, 'read', async (id: string) =>
+    id === ref ? Buffer.from([0, 255]) : read(id),
+  );
+  const sent = stub.requests.length;
+  assert.equal(await f.hub.evaluationRunner.process(job), 'failed');
+  const evaluation = await f.store.get('resource_evaluations', job.aggregate_id);
+  const stage = evaluation?.stages.find((s) => s.id === 'task-run-1');
+  assert.equal(stage?.failure_code, 'AI_NOT_FOUND');
+  assert.equal(stage.requests, 0);
+  assert.equal(stub.requests.length, sent);
 });
 
 test('过滤后正例或纸面任务不足时保持缺失分并继续完成其余维度', async (t) => {

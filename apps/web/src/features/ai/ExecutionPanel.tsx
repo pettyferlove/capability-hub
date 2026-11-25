@@ -337,9 +337,7 @@ export function ExecutionPanel({
             <ArrowRight size={13} />
           </button>
         ) : (
-          <span>
-            {execution.execution_mode === 'inline' ? '仅保存运行信息' : '任务记录自动保存'}
-          </span>
+          <span>{execution.execution_mode === 'inline' ? '自动执行记录' : '任务记录自动保存'}</span>
         )}
       </footer>
     </div>
