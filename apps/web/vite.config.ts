@@ -17,6 +17,18 @@ function registerPageRoutes({ middlewares }: { middlewares: Connect.Server }) {
   });
 }
 
+function normalizeOutputName(name: string): string {
+  return (
+    name
+      .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2')
+      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+      .replace(/[^a-z0-9.]+/gi, '-')
+      .replace(/^-|-$/g, '')
+      .toLowerCase() || 'asset'
+  );
+}
+
+const hashedAsset = 'assets/[name]-[hash:10]';
 const webBuild = crypto.randomUUID();
 
 // 开发服务器把后端路由整体代理到本地 API（4100），因此前端代码里的路径始终写成以 `/` 开头的绝对路径；
@@ -55,5 +67,17 @@ export default defineConfig({
       '/INSTALL.md': 'http://127.0.0.1:4100',
     },
   },
-  build: { target: 'es2022', emptyOutDir: true },
+  build: {
+    target: 'es2022',
+    emptyOutDir: true,
+    rolldownOptions: {
+      output: {
+        sanitizeFileName: normalizeOutputName,
+        hashCharacters: 'base36',
+        entryFileNames: `${hashedAsset}.js`,
+        chunkFileNames: `${hashedAsset}.js`,
+        assetFileNames: `${hashedAsset}[extname]`,
+      },
+    },
+  },
 });
