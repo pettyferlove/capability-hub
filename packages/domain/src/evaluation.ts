@@ -8,7 +8,7 @@ export {
 } from './evaluation-input.js';
 
 /** 权重、阈值或方法变化时使用新版本，使旧结果只与同标准比较。 */
-export const evaluationRubricVersion = '2026-11-25.1';
+export const evaluationRubricVersion = '2026-11-25.2';
 
 /** 调度准入按已启用的阶段合计调用数；每个阶段单独持有作业租约。 */
 export const evaluationStageRequests = {
@@ -23,6 +23,9 @@ export const evaluationStageRequests = {
   'task-run-4': 3,
   transparency: 1,
 } as const;
+
+/** 可选补发不占用常规阶段规划，整条评测共用此上限。 */
+export const evaluationMaxRecoveryRequests = 4;
 
 /** 为共享短调用的指令、声明和输出 Schema 保留空间。 */
 export const evaluationContentBudget = 20 * 1024;

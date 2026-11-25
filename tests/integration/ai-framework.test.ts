@@ -977,28 +977,48 @@ test('内联成功结算跨过期限时回滚宿主写入和成功事件，但�
   assert(!(await f.store.all('audit')).some((entry) => entry.action === 'test.inline-success'));
 });
 
-test('已配置的内联操作缺少凭据时可诊断为失败，但不把凭据错误计为模型请求', async (t) => {
-  const provider = await fixture('openai', 'json');
-  t.after(provider.close);
-  const { runtime, options, input } = await inlineFixture(t, provider.url, {
-    resolve: async () => {
-      throw new Error('private-credential-marker');
-    },
+for (const rollback of [false, true])
+  test(`内联操作${rollback ? '首笔预留回滚后' : '首次出站前'}缺少凭据时保留失败诊断，不计模型请求`, async (t) => {
+    const provider = await fixture('openai', 'json');
+    t.after(provider.close);
+    let hasCredential = rollback;
+    const { runtime, options, input } = await inlineFixture(t, provider.url, {
+      resolve: async () => {
+        if (hasCredential) return 'fixture-key';
+        throw new Error('private-credential-marker');
+      },
+    });
+    await assert.rejects(
+      runtime.runInline(options, async (run) => {
+        if (rollback)
+          await assert.rejects(
+            run.call('withdrawn', {
+              ...input,
+              reserve: () => {
+                hasCredential = false;
+                throw new AiError('AI_FORBIDDEN', '宿主拒绝预留');
+              },
+            }),
+            { code: 'AI_FORBIDDEN' },
+          );
+        return run.call('check', input);
+      }),
+      (error) => error instanceof ShortModelError && error.reason === 'configuration',
+    );
+    const [row] = await runtime.store.list('ai_executions', { limit: 10 });
+    assert.equal(row.status, 'failed');
+    assert.equal(row.payload.error?.code, 'AI_CONFIGURATION');
+    assert.equal(row.payload.usage.requests, 0);
+    const query = { execution_id: row.id, limit: 20 };
+    assert.deepEqual(await runtime.store.list('ai_calls', query), []);
+    const events = await runtime.store.list('ai_events', query);
+    assert.deepEqual(
+      events.filter((e) => e.payload.type === 'step.failed').map((e) => e.payload.data.step_id),
+      ['check'],
+    );
+    assert.doesNotMatch(JSON.stringify([row, events]), /private-/);
+    assert.equal(provider.requests.length, 0);
   });
-  await assert.rejects(
-    runtime.runInline(options, (run) => run.call('check', input)),
-    (error) => error instanceof ShortModelError && error.reason === 'configuration',
-  );
-  const [row] = await runtime.store.list('ai_executions', { limit: 10 });
-  assert.equal(row.status, 'failed');
-  assert.equal(row.payload.error?.code, 'AI_CONFIGURATION');
-  assert.equal(row.payload.usage.requests, 0);
-  const query = { execution_id: row.id, limit: 20 };
-  assert.deepEqual(await runtime.store.list('ai_calls', query), []);
-  const events = await runtime.store.list('ai_events', query);
-  assert.doesNotMatch(JSON.stringify([row, events]), /private-/);
-  assert.equal(provider.requests.length, 0);
-});
 
 test('内联模型已结算后宿主拒绝结果：保留真实用量，不落库异常原文或业务内容', async (t) => {
   const provider = await fixture('openai', 'json');

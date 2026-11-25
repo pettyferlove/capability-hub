@@ -1,13 +1,19 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
+import { setTimeout as waitDelay } from 'node:timers/promises';
 import type { z } from 'zod';
 import type { AiConfiguration, ModelProfile } from '../core/config.js';
 import { AiError, OutputRejectedError, type AiErrorCode } from '../core/errors.js';
 import type { CredentialResolver } from '../core/ports.js';
-import type { ExecutionRecord, ModelOutputCheck } from '../core/records.js';
+import type {
+  ExecutionRecord,
+  ModelCallRecoveryReason,
+  ModelOutputCheck,
+} from '../core/records.js';
 import { ModelExchangeCapture } from '../integrations/model-exchange.js';
 import {
   callShortModel,
   ShortModelError,
+  shortModelLimits,
   type ShortModelCall,
   type ShortModelResult,
 } from '../integrations/short-model.js';
@@ -24,6 +30,8 @@ import {
 export interface InlineCallOptions<T> {
   /** 通过 Schema 后再核对业务规则；抛出 `OutputRejectedError` 即判为该调用的输出被拒。 */
   accept?: (value: T) => void | Promise<void>;
+  /** 可选追加请求与调用账本共用预留事务；拒绝额度时保留初次失败。 */
+  recovery?: { deadline?: number; reserve: () => Promise<boolean> };
   /** 请求内容所属的主体版本，删除未发布版本时据此清理往返原文。 */
   subject?: string;
   /** 请求中出现其内容的其他固定版本；查看往返原文须能读取主体与全部这些版本。 */
@@ -39,6 +47,93 @@ export interface InlineExecution {
     input: Omit<ShortModelCall<S>, 'profile' | 'credentials' | 'observer' | 'capture'> &
       InlineCallOptions<z.infer<S>>,
   ): Promise<ShortModelResult<z.infer<S>>>;
+}
+
+/**
+ * 只有已收到的输出不合格才算单个样本失败；传输、超时、授权、期限、租约与额度问题
+ * 反映端点或运行环境状态，继续发送其余样本只会扩大消耗，须结束所在阶段。
+ */
+export function isModelSampleFailure(
+  error: unknown,
+): error is ShortModelError | OutputRejectedError {
+  if (error instanceof OutputRejectedError) return true;
+  return (
+    error instanceof ShortModelError &&
+    (error.reason === 'invalid_output' || error.reason === 'output_too_large') &&
+    error.code === 'AI_OUTPUT_INVALID'
+  );
+}
+
+interface CallRecovery {
+  reason: ModelCallRecoveryReason;
+  hint?: string;
+  delayMs: number;
+}
+
+const transientConnections: Record<string, true> = {
+  EAI_AGAIN: true,
+  ECONNREFUSED: true,
+  ECONNRESET: true,
+  EPIPE: true,
+  UND_ERR_SOCKET: true,
+};
+
+function planRecovery(error: AiError, rejection?: ModelOutputCheck): CallRecovery | undefined {
+  const details = error instanceof ShortModelError ? error.details : undefined;
+  const check = rejection ?? details?.check;
+  switch (check?.reason) {
+    case 'empty_output':
+    case 'invalid_json':
+      return { reason: check.reason, hint: '仅返回完整的 JSON 对象。', delayMs: 0 };
+    case 'output_limit':
+      return {
+        reason: check.reason,
+        hint: '输出紧凑 JSON，删除重复说明但保留必要事实。',
+        delayMs: 0,
+      };
+    case 'schema_mismatch': {
+      const rules = check.issues
+        ?.slice(0, 8)
+        .map(({ path, code, expected, limit }) => {
+          const requirement = expected ?? limit;
+          return `${path}: ${code}${requirement === undefined ? '' : ' ' + requirement}`;
+        })
+        .join('；');
+      return {
+        reason: check.reason,
+        hint: rules ? `按 Schema 修正这些字段：${rules}。` : '逐项核对 Schema 的字段和类型。',
+        delayMs: 0,
+      };
+    }
+    case 'host_rejected':
+      return {
+        reason: check.reason,
+        hint: check.message ?? '仅采用本次资料中的候选和证据，核对业务规则。',
+        delayMs: 0,
+      };
+    case 'content_filter':
+    case 'response_too_large':
+      return;
+  }
+  if (
+    error instanceof ShortModelError &&
+    (error.reason === 'provider' || error.reason === 'rate_limited')
+  ) {
+    const status = details?.httpStatus;
+    const reason =
+      status === 429
+        ? 'rate_limited'
+        : status === 500 || status === 502 || status === 503
+          ? 'http_error'
+          : status === undefined &&
+              details?.networkError &&
+              Object.hasOwn(transientConnections, details.networkError)
+            ? 'network'
+            : undefined;
+    const minimum = Math.max(2_000, details?.retryAfterMs ?? 0);
+    if (reason && minimum <= 8_000)
+      return { reason, delayMs: randomInt(minimum, Math.min(minimum + 1_000, 8_000) + 1) };
+  }
 }
 
 const errorMessages: Record<AiErrorCode, string> = {
@@ -148,6 +243,8 @@ export async function runInlineExecution<T>(
   const done = new AbortController();
   const runSignal = AbortSignal.any([signal, timeout, done.signal]);
   let executionId: string | undefined;
+  // 预留事务回滚时执行记录也随之撤销；只有提交过的执行才能在结束时核对和收尾。
+  let stored = false;
   let activeCalls = 0;
   const failures = new WeakMap<AiError, { code: AiErrorCode; step: string; callId?: string }>();
   const startExecution = async (id: string) => {
@@ -174,130 +271,192 @@ export async function runInlineExecution<T>(
       if (!/^[a-z][a-z0-9-]{0,63}$/.test(step))
         throw new AiError('AI_CONFIGURATION', '内联操作步骤标识无效');
       const callSignal = input.signal ? AbortSignal.any([input.signal, runSignal]) : runSignal;
-      let started: number | undefined;
-      let callId: string | undefined;
-      const endStep = async (code: AiErrorCode | null, check?: ModelOutputCheck) => {
-        if (!executionId || started === undefined) return;
-        const id = executionId;
-        const start = started;
-        const trace = await store.tx(async () => {
-          const execution = await store.get('ai_executions', id);
-          if (execution?.status !== 'running') {
-            if (!code)
-              throw execution?.status === 'timed_out'
-                ? expiredError()
-                : new ShortModelError('cancelled');
-            return;
-          }
-          if (check && callId) await recordOutputCheck(store, execution, callId, check);
-          if (code) {
-            await events.append(execution, 'step.failed', { step_id: step, code });
-            return;
-          }
-          const completed = await events.completeStep(execution, step, start);
-          assertActive(execution.payload.deadline);
-          if (callSignal.aborted) throw new ShortModelError('cancelled');
-          return completed;
-        });
-        if (trace) events.notifyTrace(trace);
-      };
-      activeCalls++;
-      const { reserve, release, accept, subject, resources, ...request } = input;
-      const capture = retainExchanges ? new ModelExchangeCapture(profile.format) : undefined;
-      let reserved = false;
-      let sent = false;
-      let received = false;
-      let rejection: ModelOutputCheck | undefined;
-      try {
-        const result = await callShortModel({
-          ...request,
-          release: () => {
-            if (reserved) release?.();
-          },
-          signal: callSignal,
-          profile,
-          credentials,
-          capture,
-          observer: {
-            async start(diagnostics) {
-              const id = (executionId ??= randomUUID());
-              const pendingId = await store.tx(async () => {
-                assertActive();
-                if (callSignal.aborted) throw new ShortModelError('cancelled');
-                const execution =
-                  (await store.get('ai_executions', id)) ?? (await startExecution(id));
-                if (execution.status !== 'running') throw new ShortModelError('cancelled');
-                const event = await events.append(execution, 'step.started', { step_id: step });
-                const pending = await reserveModelCall(
-                  store,
-                  execution,
-                  {
-                    ...diagnostics,
-                    agent_id: operationId,
-                    step: { id: step, start_seq: event.payload.seq },
-                  },
-                  config.max_requests,
-                );
-                // 宿主在同一写事务内授权实际出站内容；拒绝会回滚执行、步骤和调用预留。
-                await reserve?.();
-                reserved = true;
-                assertActive();
-                callSignal.throwIfAborted();
-                return pending;
-              });
-              callId = pendingId;
-              started = Date.now();
-              return {
-                executionId: id,
-                finish: (settlement) =>
-                  store.tx(async () => {
-                    sent = settlement !== 'not_sent';
-                    const execution = await store.get('ai_executions', id);
-                    if (execution?.status !== 'running') return;
-                    if (settlement === 'not_sent')
-                      await withdrawModelCall(store, execution, pendingId);
-                    else
-                      await settleModelCall(
-                        events,
-                        execution,
-                        pendingId,
-                        settlement,
-                        capture && {
-                          subject: subject ?? '',
-                          payload: capture.payload([
-                            ...(subject ? [subject] : []),
-                            ...(resources ?? []),
-                          ]),
-                        },
-                      );
-                  }),
-              };
-            },
-          },
-        });
-        received = true;
-        assertActive();
+      const { recovery, reserve, release, accept, subject, resources, ...request } = input;
+      let latestStart = 0;
+      let followup: CallRecovery | undefined;
+      const once = async (retry?: { plan: CallRecovery; firstError: unknown }) => {
+        let started: number | undefined;
+        let callId: string | undefined;
+        const endStep = async (code: AiErrorCode | null, check?: ModelOutputCheck) => {
+          if (!executionId || started === undefined) return;
+          const id = executionId;
+          const start = started;
+          const trace = await store.tx(async () => {
+            const execution = await store.get('ai_executions', id);
+            if (execution?.status !== 'running') {
+              if (!code)
+                throw execution?.status === 'timed_out'
+                  ? expiredError()
+                  : new ShortModelError('cancelled');
+              return;
+            }
+            if (check && callId) await recordOutputCheck(store, execution, callId, check);
+            if (code) {
+              await events.append(execution, 'step.failed', { step_id: step, code });
+              return;
+            }
+            const completed = await events.completeStep(execution, step, start);
+            assertActive(execution.payload.deadline);
+            if (callSignal.aborted) throw new ShortModelError('cancelled');
+            return completed;
+          });
+          if (trace) events.notifyTrace(trace);
+        };
+        const capture = retainExchanges ? new ModelExchangeCapture(profile.format) : undefined;
+        let reserved = false;
+        let sent = false;
+        let received = false;
+        let rejection: ModelOutputCheck | undefined;
         try {
-          await accept?.(result.value);
+          const result = await callShortModel({
+            ...request,
+            instructions: retry?.plan.hint
+              ? `${request.instructions}\n只根据本次资料与 Schema 纠正输出，不补造证据。${retry.plan.hint}`
+              : request.instructions,
+            release: () => {
+              if (reserved) release?.();
+            },
+            signal: callSignal,
+            profile,
+            credentials,
+            capture,
+            observer: {
+              async start(diagnostics, requestSignal) {
+                const id = (executionId ??= randomUUID());
+                const pendingId = await store.tx(async () => {
+                  assertActive();
+                  if (callSignal.aborted) throw new ShortModelError('cancelled');
+                  const execution =
+                    (await store.get('ai_executions', id)) ?? (await startExecution(id));
+                  if (execution.status !== 'running') throw new ShortModelError('cancelled');
+                  if (
+                    retry &&
+                    (Date.now() >= latestStart ||
+                      execution.payload.usage.requests >= config.max_requests)
+                  )
+                    throw retry.firstError;
+                  const event = await events.append(execution, 'step.started', { step_id: step });
+                  const pending = await reserveModelCall(
+                    store,
+                    execution,
+                    {
+                      ...diagnostics,
+                      agent_id: operationId,
+                      step: { id: step, start_seq: event.payload.seq },
+                      ...(retry && { recovery_reason: retry.plan.reason }),
+                    },
+                    config.max_requests,
+                  );
+                  // 宿主拒绝预留必须回滚同一事务内的步骤与账本，不能把可选重问写成任务延期。
+                  if (retry) {
+                    if (!(await recovery?.reserve())) throw retry.firstError;
+                    if (Date.now() >= latestStart) throw retry.firstError;
+                  } else await reserve?.();
+                  reserved = true;
+                  assertActive();
+                  callSignal.throwIfAborted();
+                  // 等锁期间单次请求可能已到时限，此时回滚预留，不让宿主额度记下不会出站的请求。
+                  requestSignal.throwIfAborted();
+                  return pending;
+                });
+                stored = true;
+                callId = pendingId;
+                started = Date.now();
+                return {
+                  executionId: id,
+                  finish: (settlement) =>
+                    store.tx(async () => {
+                      sent = settlement !== 'not_sent';
+                      const execution = await store.get('ai_executions', id);
+                      if (execution?.status !== 'running') return;
+                      if (settlement === 'not_sent')
+                        await withdrawModelCall(store, execution, pendingId);
+                      else
+                        await settleModelCall(
+                          events,
+                          execution,
+                          pendingId,
+                          settlement,
+                          capture && {
+                            subject: subject ?? '',
+                            payload: capture.payload([
+                              ...(subject ? [subject] : []),
+                              ...(resources ?? []),
+                            ]),
+                          },
+                        );
+                    }),
+                };
+              },
+            },
+          });
+          received = true;
+          assertActive();
+          try {
+            await accept?.(result.value);
+          } catch (error) {
+            if (error instanceof OutputRejectedError && !failures.has(error))
+              rejection = error.outputCheck();
+            throw error;
+          }
+          await endStep(null, { status: 'accepted' });
+          return result;
         } catch (error) {
-          if (error instanceof OutputRejectedError && !failures.has(error))
-            rejection = error.outputCheck();
+          // 追加请求没有出站时以原失败结束；执行已取消或到期时仍按执行状态收敛。
+          if (
+            retry &&
+            !sent &&
+            error instanceof ShortModelError &&
+            !callSignal.aborted &&
+            Date.now() < deadline
+          )
+            throw retry.firstError;
+          const requestFailure = sent && !received && error instanceof ShortModelError;
+          const prior = error instanceof AiError ? failures.get(error) : undefined;
+          const code =
+            prior?.code ?? failureCode(error, callSignal, timeout.aborted, requestFailure);
+          if (error instanceof AiError && !prior) {
+            const attributed =
+              (rejection && code === error.code) ||
+              (requestFailure && code !== 'AI_CANCELLED' && code !== 'AI_DEADLINE_EXCEEDED');
+            failures.set(error, { code, step, ...(attributed && callId && { callId }) });
+          }
+          await endStep(code, rejection);
+          if (
+            !retry &&
+            !prior &&
+            recovery &&
+            !request.onPartial &&
+            error instanceof AiError &&
+            (requestFailure || rejection)
+          )
+            followup = planRecovery(error, rejection);
           throw error;
         }
-        await endStep(null, { status: 'accepted' });
-        return result;
+      };
+      activeCalls++;
+      try {
+        return await once();
       } catch (error) {
-        const requestFailure = sent && !received && error instanceof ShortModelError;
-        const prior = error instanceof AiError ? failures.get(error) : undefined;
-        const code = prior?.code ?? failureCode(error, callSignal, timeout.aborted, requestFailure);
-        if (error instanceof AiError && !prior) {
-          const attributed =
-            (rejection && code === error.code) ||
-            (requestFailure && code !== 'AI_CANCELLED' && code !== 'AI_DEADLINE_EXCEEDED');
-          failures.set(error, { code, step, ...(attributed && callId && { callId }) });
+        const plan = followup;
+        if (!plan || callSignal.aborted) throw error;
+        latestStart =
+          Math.min(deadline, recovery?.deadline ?? deadline) -
+          shortModelLimits(profile, request.limits, request.operation).timeoutMs;
+        if (Date.now() + plan.delayMs >= latestStart) throw error;
+        if (plan.delayMs) {
+          try {
+            await waitDelay(plan.delayMs, undefined, { signal: callSignal });
+          } catch (failure) {
+            if (!callSignal.aborted) throw failure;
+            const code = failureCode(failure, callSignal, timeout.aborted);
+            throw code === 'AI_DEADLINE_EXCEEDED'
+              ? expiredError()
+              : new ShortModelError('cancelled');
+          }
+          if (Date.now() >= latestStart) throw error;
         }
-        await endStep(code, rejection);
-        throw error;
+        return await once({ plan, firstError: error });
       } finally {
         activeCalls--;
       }
@@ -307,15 +466,17 @@ export async function runInlineExecution<T>(
     const failure = error instanceof AiError ? failures.get(error) : undefined;
     const code = failure?.code ?? failureCode(error, signal, timeout.aborted);
     const message = failureMessage(error, code);
+    // 宿主提前退出时，并行调用的首笔预留可能仍在提交；这时须在事务内核对执行是否存在。
+    const existingId = stored || activeCalls > 0 ? executionId : undefined;
     const configStep =
-      !executionId &&
+      !existingId &&
       error instanceof ShortModelError &&
       error.reason === 'configuration' &&
       code === 'AI_CONFIGURATION'
         ? failure?.step
         : undefined;
-    if (!executionId && !configStep) return;
-    const id = executionId ?? randomUUID();
+    if (!existingId && !configStep) return;
+    const id = existingId ?? randomUUID();
     await store.tx(async () => {
       if (configStep) {
         // 配置阻断了已发起的操作，但网络请求尚不存在，不预留调用或推算用量。
@@ -338,10 +499,11 @@ export async function runInlineExecution<T>(
     assertActive();
     if (activeCalls) throw new AiError('AI_INTERNAL', '宿主未等待内联模型调用结束');
     done.abort();
-    if (executionId || onSuccess)
+    const id = stored ? executionId : undefined;
+    if (id || onSuccess)
       await store.tx(async () => {
-        const execution = executionId ? await store.get('ai_executions', executionId) : undefined;
-        if (executionId && execution?.status !== 'running')
+        const execution = id ? await store.get('ai_executions', id) : undefined;
+        if (id && execution?.status !== 'running')
           throw execution?.status === 'timed_out'
             ? expiredError()
             : new ShortModelError('cancelled');

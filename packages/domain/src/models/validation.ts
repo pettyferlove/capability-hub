@@ -556,7 +556,13 @@ const schemas = {
       ...jobBase,
       kind: z.literal('resource_evaluation'),
       input: z.strictObject({ evaluation_id: id, stage: id }),
-      evaluation_lease: z.strictObject({ epoch: revision, prior_requests: integer }).optional(),
+      evaluation_lease: z
+        .strictObject({
+          epoch: revision,
+          prior_requests: integer,
+          prior_recovery_requests: integer.optional(),
+        })
+        .optional(),
     }),
     z.strictObject({
       ...jobBase,

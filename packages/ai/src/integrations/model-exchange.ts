@@ -15,6 +15,36 @@ function label(value: unknown, limit: number) {
   return typeof value === 'string' && value ? value.slice(0, limit) : undefined;
 }
 
+function refusalReason(value: unknown) {
+  return value === 'refusal' || value === 'content_filter' ? value : undefined;
+}
+
+function openAiStop(choice: Record<string, unknown> | undefined, field: 'message' | 'delta') {
+  const refusal = object(choice?.[field])?.refusal;
+  return typeof refusal === 'string' && refusal ? 'refusal' : choice?.finish_reason;
+}
+
+/** 拒答时不能复制自由格式的响应 ID 或用量扩展；仅保留提供方明确给出的计数。 */
+function refusalUsage(usage: Record<string, unknown>) {
+  const kept: Record<string, Json> = {};
+  for (const key of [
+    'input_tokens',
+    'output_tokens',
+    'prompt_tokens',
+    'completion_tokens',
+    'total_tokens',
+    'cache_creation_input_tokens',
+    'cache_read_input_tokens',
+  ]) {
+    const count = usage[key];
+    if (typeof count === 'number' && Number.isSafeInteger(count) && count >= 0) kept[key] = count;
+  }
+  const reasoning = object(usage.completion_tokens_details)?.reasoning_tokens;
+  if (typeof reasoning === 'number' && Number.isSafeInteger(reasoning) && reasoning >= 0)
+    kept.completion_tokens_details = { reasoning_tokens: reasoning };
+  return kept;
+}
+
 /** 按 UTF-8 字节上限累积文本；超出部分整字符截去，并记下已截断。 */
 class BoundedText {
   value = '';
@@ -134,10 +164,20 @@ export class ModelExchangeCapture {
     this.received = true;
   }
 
+  private stop(reason: unknown) {
+    // 拒答可能先于正常停止帧到达；后续用量、错误或残帧不能让原文重新进入留存。
+    if (!refusalReason(this.finish)) this.finish = label(reason, 64) ?? this.finish;
+  }
+
   error(value: string | Record<string, unknown>, partial = false) {
     this.received = true;
     this.hasError = true;
     this.partial ||= partial;
+    if (typeof value !== 'string') {
+      const error = object(value.error) ?? value;
+      this.stop(refusalReason(error.code) ?? refusalReason(error.type));
+    }
+    if (refusalReason(this.finish)) return;
     this.errorBody.append(
       typeof value === 'string'
         ? this.privacy.errorPrefix(value, partial)
@@ -145,10 +185,16 @@ export class ModelExchangeCapture {
     );
   }
 
-  /** 端点返回了无法解析的响应体。 */
-  unparsed(text: string, partial = false) {
+  /** 保留不能交给 SDK 的样本，包括期待 SSE 时收到的非流式响应。 */
+  unparsed(text: string, partial = false, envelope?: Record<string, unknown>) {
     this.received = true;
     this.partial ||= partial;
+    if (envelope) {
+      const choice = object(Array.isArray(envelope.choices) ? envelope.choices[0] : undefined);
+      const stop = this.format === 'openai' ? openAiStop(choice, 'message') : envelope.stop_reason;
+      this.stop(refusalReason(stop));
+    }
+    if (refusalReason(this.finish)) return;
     this.raw.append(this.privacy.text(text, partial));
   }
 
@@ -179,7 +225,7 @@ export class ModelExchangeCapture {
     this.responseId ??= label(item.id, 200);
     if (Array.isArray(item.content))
       for (const [index, block] of item.content.entries()) this.startBlock(index, object(block));
-    this.finish = label(item.stop_reason, 64) ?? this.finish;
+    this.stop(item.stop_reason);
     this.mergeUsage(item.usage);
   }
 
@@ -219,7 +265,7 @@ export class ModelExchangeCapture {
           this.tools.append(key, fn?.arguments);
         }
     }
-    this.finish = label(choice?.finish_reason, 64) ?? this.finish;
+    this.stop(openAiStop(choice, field));
     if (object(item.usage)) this.usage = object(item.usage);
   }
 
@@ -239,7 +285,7 @@ export class ModelExchangeCapture {
       else if (delta?.type === 'input_json_delta' && kind === 'tool')
         this.tools.append(String(index), delta.partial_json);
     } else if (item.type === 'message_delta') {
-      this.finish = label(object(item.delta)?.stop_reason, 64) ?? this.finish;
+      this.stop(object(item.delta)?.stop_reason);
       this.mergeUsage(item.usage);
     }
   }
@@ -267,23 +313,28 @@ export class ModelExchangeCapture {
   }
 
   payload(resourceRefs: readonly string[]): ModelExchangePayload {
+    const refused = refusalReason(this.finish);
     const response: ExchangeResponse | null = this.received
       ? {
-          ...(this.responseId && {
-            response_id: this.privacy.text(this.responseId, this.responseId.length === 200),
-          }),
-          text: this.privacy.text(this.text.value, this.text.truncated || this.partial),
-          reasoning: this.privacy.text(
-            this.reasoning.value,
-            this.reasoning.truncated || this.partial,
-          ),
-          tool_calls: this.tools.list(this.privacy, this.partial),
+          ...(!refused &&
+            this.responseId && {
+              response_id: this.privacy.text(this.responseId, this.responseId.length === 200),
+            }),
+          text: refused
+            ? ''
+            : this.privacy.text(this.text.value, this.text.truncated || this.partial),
+          reasoning: refused
+            ? ''
+            : this.privacy.text(this.reasoning.value, this.reasoning.truncated || this.partial),
+          tool_calls: refused ? [] : this.tools.list(this.privacy, this.partial),
           ...(this.finish && {
             finish_reason: this.privacy.text(this.finish, this.finish.length === 64),
           }),
-          ...(this.usage && { usage: this.privacy.json(this.usage as Json) }),
-          ...(this.hasError && { error_body: this.errorBody.value }),
-          ...(this.raw.value && { raw: this.raw.value }),
+          ...(this.usage && {
+            usage: refused ? refusalUsage(this.usage) : this.privacy.json(this.usage as Json),
+          }),
+          ...(!refused && this.hasError && { error_body: this.errorBody.value }),
+          ...(!refused && this.raw.value && { raw: this.raw.value }),
           truncated:
             this.partial ||
             this.errorBody.truncated ||

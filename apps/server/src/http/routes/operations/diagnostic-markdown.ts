@@ -68,6 +68,7 @@ export function diagnosticMarkdown(report: AiExecutionDiagnosticsResponse) {
         ? evidence({
             call_id: cause.id,
             step: cause.diagnostics.step ?? null,
+            recovery_reason: cause.diagnostics.recovery_reason ?? null,
             failure_reason: cause.failure_reason ?? null,
             output_check: cause.output_check ?? null,
             transport: cause.diagnostics.transport ?? null,

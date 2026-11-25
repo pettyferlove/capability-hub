@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { z } from 'zod';
 import type { ModelProfile } from '@capability-hub/ai';
+import { isModelSampleFailure } from '../../packages/ai/src/execution/inline.js';
 import {
   callShortModel,
   ShortModelError,
@@ -250,6 +251,57 @@ for (const { name, reply, reason } of replyFailures) {
     assert.equal(stub.requests.length, 1);
   });
 }
+
+test('HTTP 200 的错误信封、错误页和损坏的协议消息不计为模型样本', async (t) => {
+  const stub = await serveModelStub(t);
+  const chat = openAiJson({ answer: 'ok' });
+  const badChoice = { ...chat.choices[0], message: { role: 'assistant', content: 37 } };
+  const chunk = { choices: [{ index: 0, delta: { content: 37 }, finish_reason: 'stop' }] };
+  const replies: [ModelProfile['format'], StubReply, stream?: boolean][] = [
+    ['openai', { json: { error: { type: 'server_error', code: '500' } } }],
+    ['anthropic', { json: { type: 'error', error: { type: 'overloaded_error' } } }],
+    ['openai', { headers: { 'content-type': 'text/html' }, body: '<html>Bad Gateway</html>' }],
+    ['openai', { headers: { 'content-type': 'application/json' }, body: '{"choices":[' }],
+    ['openai', { json: { ...chat, choices: [badChoice] } }],
+    ['anthropic', { json: { ...anthropicJson({}), content: [{ type: 'text', text: 37 }] } }],
+    [
+      'openai',
+      {
+        headers: { 'content-type': 'text/event-stream' },
+        body: `data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`,
+      },
+      true,
+    ],
+  ];
+  for (const [format, reply, stream = false] of replies) {
+    stub.setHandler(() => reply);
+    const ledger = recordCalls();
+    await assert.rejects(
+      callShortModel(
+        call(stub.profile(format), {
+          observer: ledger.observer,
+          ...(stream && { onPartial: () => assert.fail('损坏的帧不能产生模型输出') }),
+        }),
+      ),
+      (error: unknown) => {
+        assert(error instanceof ShortModelError);
+        assert.equal(error.reason, 'provider');
+        assert.equal(error.code, 'AI_PROVIDER_FAILED');
+        assert.equal(isModelSampleFailure(error), false);
+        return true;
+      },
+    );
+    assert.partialDeepStrictEqual(ledger.finishes, [
+      {
+        complete: false,
+        errorCode: 'AI_PROVIDER_FAILED',
+        transport: { http_status: 200, terminal_received: stream },
+      },
+    ]);
+    const [result] = ledger.finishes;
+    assert(result && typeof result === 'object' && !('outputCheck' in result));
+  }
+});
 
 test('流式短调用逐步回调部分结果，最终结果仍整体校验并只释放一次', async (t) => {
   const stub = await serveModelStub(t, () => {
@@ -703,6 +755,46 @@ test('HTTP 限流不被延迟错误正文触发的请求时限覆盖', async (t)
       },
     ]);
     if (capture) assert.equal(capture.payload([]).response?.truncated, true);
+  }
+});
+
+test('HTTP 限流区分缺失、合法和不可用的 Retry-After，不将非法值当作零等待', async (t) => {
+  const now = Date.UTC(2026, 0, 1);
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const stub = await serveModelStub(t);
+  const cases: [string | undefined, number | undefined][] = [
+    [undefined, undefined],
+    ['0', 0],
+    ['8', 8_000],
+    [new Date(now - 1_000).toUTCString(), 0],
+    [new Date(now + 8_000).toUTCString(), 8_000],
+    [new Date(now + 9_000).toUTCString(), 9_000],
+    ['Thursday, 01-Jan-26 00:00:03 GMT', 3_000],
+    ['Saturday, 01-Jan-50 00:00:00 GMT', Date.UTC(2050, 0, 1) - now],
+    ['Friday, 02-Jan-76 00:00:00 GMT', 0],
+    ['Thu Jan  1 00:00:04 2026', 4_000],
+    ['60, 60', Infinity],
+    [`${new Date(now).toUTCString()}, 1`, Infinity],
+    ['', Infinity],
+    ['10.5', Infinity],
+    ['-5', Infinity],
+    ['60s', Infinity],
+    ['bogus', Infinity],
+    ['2026-01-01T00:00:03Z', Infinity],
+    ['Thu, 31 Feb 2026 00:00:00 GMT', Infinity],
+    ['9'.repeat(400), Infinity],
+  ];
+  for (const [value, delay] of cases) {
+    stub.setHandler(() => ({
+      status: 429,
+      headers: value === undefined ? undefined : { 'retry-after': value },
+    }));
+    await assert.rejects(callShortModel(call(stub.profile('openai'))), (error: unknown) => {
+      assert(error instanceof ShortModelError);
+      assert.equal(error.reason, 'rate_limited');
+      assert.equal(error.details?.retryAfterMs, delay, value);
+      return true;
+    });
   }
 });
 

@@ -46,8 +46,8 @@ interface JobBase {
   run_after: EpochMilliseconds;
   /** 租约代次，每次领取 `+1`；写回结果前必须与当前值一致，否则 409 `LEASE_LOST`。 */
   lease_epoch: number;
-  /** 评测重领时记录该阶段旧租约累计派发数，预算只扣除本租约已派发的部分。 */
-  evaluation_lease?: { epoch: number; prior_requests: number };
+  /** 评测重领保留旧租约计数，待用额度只扣除本租约派发的常规调用。 */
+  evaluation_lease?: { epoch: number; prior_requests: number; prior_recovery_requests?: number };
   /** 租约到期时刻 epoch 毫秒，领取时设为「当前 + 60 秒」；超时可被其他 worker 抢占。 */
   lease_until: EpochMilliseconds;
   /** 当前持有租约的 worker 标识，与 `lease_epoch` 一起校验归属。 */

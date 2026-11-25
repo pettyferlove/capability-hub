@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { aiConfigurationSchema } from '@capability-hub/ai';
-import { openAiJson, serveModelStub } from '../support/model-provider-stub.js';
+import { openAiJson, serveModelStub, type StubHandler } from '../support/model-provider-stub.js';
 import {
   evaluationCheck as modelCheck,
   evaluationCitation as citation,
@@ -293,7 +293,7 @@ test('单个纸面任务失败时依然按其余任务的有效断言计分并�
   }
 });
 
-test('模型返回无法存入 JSONB 的文本时阶段终止且只派发一次', async (t) => {
+test('模型两次返回无法存入 JSONB 的文本时，阶段只补发一次且不接纳结果', async (t) => {
   const { f, stub } = await evaluationHub(t, {
     transparency: () => ({ json: openAiJson({ ...transparent, summary: '无效\0文本' }) }),
   });
@@ -304,7 +304,8 @@ test('模型返回无法存入 JSONB 的文本时阶段终止且只派发一次'
   const row = (await f.store.get('resource_evaluations', job.aggregate_id))!;
   assert.equal(row.state, 'partial');
   assert.equal(row.stages.at(-1)?.failure_code, 'AI_OUTPUT_INVALID');
-  assert.equal(stub.requests.filter((r) => evaluationModelStep(r) === 'transparency').length, 1);
+  assert.equal(stub.requests.filter((r) => evaluationModelStep(r) === 'transparency').length, 2);
+  assert.equal(row.recovery_requests, 1);
   assert.equal((await f.store.get('jobs', job.id))?.state, 'failed');
   for (const invalid of ['\0', '\ud800']) {
     await assert.rejects(
@@ -710,6 +711,7 @@ test('格式 3 往返保留评测终态和调度单例，兼容旧 SQLite 文本
   const historical = structuredClone(original);
   historical.id = randomUUID();
   historical.rubric_version = '2026-11-24.4';
+  delete historical.recovery_requests;
   historical.dimensions[0].summary = '证\0据\ud800😀\\u0000';
   await assert.rejects(f.store.insert('resource_evaluations', historical));
   const sqlite = new DatabaseSync(join(f.directory, 'hub.sqlite'));
@@ -1017,6 +1019,291 @@ test('提交和批准各自随业务回滚，批准沿用提交评测，公开�
   assert(JSON.stringify(history.body).includes('私有评测总结'));
 });
 
+test('四次补发跨阶段共享，评分保留有效路由和单份指令样本，沿用证据不继承额度', async (t) => {
+  freezeUtcDay(t);
+  const dropped = evaluationTriggerCases[0].query.normalize('NFKC');
+  const repaired = evaluationTriggerCases[1].query.normalize('NFKC');
+  const routeSamples = new Map<string, number>();
+  const standard = evaluationModelHandler();
+  let instructions = 0;
+  let judges = 0;
+  const invalid = { json: openAiJson({ invalid: true }) };
+  const { f, stub } = await evaluationHub(t, {
+    'trigger-routing': (request, index) => {
+      const { query } = JSON.parse(evaluationModelInput(request)) as { query: string };
+      const key = query.normalize('NFKC');
+      const count = (routeSamples.get(key) ?? 0) + 1;
+      routeSamples.set(key, count);
+      if (key === dropped || (key === repaired && count === 1))
+        return { json: openAiJson({ choice: 'not-a-candidate', reason: '候选错误' }) };
+      return standard(request, index);
+    },
+    instructions: (request, index) => (++instructions <= 2 ? invalid : standard(request, index)),
+    'task-judge': (request, index) => (++judges === 1 ? invalid : standard(request, index)),
+    transparency: () => invalid,
+  });
+  const intake = await receiveSkill(f);
+  await f.hub.evaluations.manual(f.admin, intake.version_id, randomUUID());
+  const final = await claimStage(f, 'transparency');
+  assert.equal(await f.hub.evaluationRunner.process(final), 'failed');
+  const row = (await f.store.get('resource_evaluations', final.aggregate_id))!;
+  assert.equal(row.state, 'partial');
+  assert.equal(row.recovery_requests, 4);
+  assert.deepEqual(
+    row.stages
+      .filter((stage) => stage.recovery_requests)
+      .map((stage) => [stage.id, stage.requests, stage.recovery_requests]),
+    [
+      ['trigger-routing', 18, 2],
+      ['instructions', 3, 1],
+      ['task-run-1', 4, 1],
+    ],
+  );
+  assert.partialDeepStrictEqual(
+    row.dimensions.find((d) => d.id === 'triggering'),
+    {
+      status: 'scored',
+      score: 80,
+      confidence: 'low',
+      flags: ['coverage_limited'],
+      metrics: { should_hit: 6, should_total: 7, near_miss_avoided: 6, near_miss_total: 8 },
+    },
+  );
+  assert.partialDeepStrictEqual(
+    row.dimensions.find((d) => d.id === 'instructions'),
+    {
+      status: 'scored',
+      score: 100,
+      confidence: 'low',
+      flags: ['coverage_limited'],
+    },
+  );
+  assert.equal(row.dimensions.find((d) => d.id === 'effectiveness')?.score, 100);
+  assert.partialDeepStrictEqual(row.stages.at(-1), {
+    requests: 1,
+    failure_code: 'AI_OUTPUT_INVALID',
+  });
+  assert.equal(stub.requests.length, 37);
+  assert.equal((await f.store.evaluationSchedule())?.reserved, 37);
+  const owner = await signIn(f);
+  const history = await owner
+    .get('/api/management/versions/' + intake.version_id + '/evaluations')
+    .expect(200);
+  const evaluation = managementEvaluationsResponseSchema
+    .parse(history.body)
+    .items.find((item) => item.id === row.id);
+  assert(evaluation);
+  assert.equal(evaluation.stages.find((stage) => stage.id === 'trigger-routing')?.requests, 18);
+  const manual = await f.hub.evaluations.manual(f.admin, intake.version_id, randomUUID());
+  assert.equal(manual.evaluation.reused_from, row.id);
+  const queued = await f.store.get('resource_evaluations', manual.evaluation.id);
+  assert.equal(queued?.recovery_requests, 0);
+  assert.deepEqual(queued.stages.slice(0, -1), row.stages.slice(0, -1));
+  const retry = await claimEvaluation(f);
+  let transparency = 0;
+  stub.setHandler(
+    evaluationModelHandler({
+      transparency: () => (++transparency === 1 ? invalid : { json: openAiJson(transparent) }),
+    }),
+  );
+  assert.equal(await f.hub.evaluationRunner.process(retry), 'succeeded');
+  const result = await f.store.get('resource_evaluations', retry.aggregate_id);
+  assert.equal(result?.recovery_requests, 1);
+  assert.equal((await f.store.evaluationSchedule())?.reserved, 39);
+});
+
+test('并行评测只争用正常计划外的一次补发，常规调用在原 UTC 窗口全部完成', async (t) => {
+  freezeUtcDay(t);
+  const failedQueries = new Set(
+    evaluationTriggerCases.slice(0, 2).map(({ query }) => query.normalize('NFKC')),
+  );
+  const { f, stub } = await evaluationHub(
+    t,
+    {
+      'trigger-routing': (request) => {
+        const { query } = JSON.parse(evaluationModelInput(request)) as { query: string };
+        return {
+          json: openAiJson({
+            choice: failedQueries.has(query.normalize('NFKC')) ? 'not-a-candidate' : null,
+            reason: '测试候选',
+          }),
+        };
+      },
+    },
+    67,
+    2,
+  );
+  const routing = async (slug: string) => {
+    const item = await receiveSkill(f, { slug });
+    await f.hub.evaluationRunner.process(await claimEvaluation(f));
+    await submitPublication(f, item);
+    return claimStage(f, 'trigger-routing');
+  };
+  const first = await routing('first-skill');
+  const second = await routing('second-skill');
+  assert.deepEqual(
+    await Promise.all([first, second].map((job) => f.hub.evaluationRunner.process(job))),
+    ['succeeded', 'succeeded'],
+  );
+  assert.equal((await f.store.evaluationSchedule())?.reserved, 35);
+  for (let i = 0; i < 14; i++) {
+    const job = await claimEvaluation(f);
+    assert.equal(await f.hub.evaluationRunner.process(job), 'succeeded');
+  }
+  const rows = await Promise.all(
+    [first, second].map((job) => f.store.get('resource_evaluations', job.aggregate_id)),
+  );
+  assert.deepEqual(rows.map((row) => row?.recovery_requests).sort(), [0, 1]);
+  for (const row of rows) {
+    assert.equal(row?.state, 'succeeded');
+    assert.partialDeepStrictEqual(
+      row.dimensions.find((dim) => dim.id === 'triggering'),
+      {
+        status: 'scored',
+        score: 50,
+        confidence: 'low',
+        flags: ['coverage_limited'],
+        metrics: { should_hit: 0, should_total: 6, near_miss_avoided: 8, near_miss_total: 8 },
+      },
+    );
+  }
+  // 第二次接收会推进首次接收排入的流式资源审计；这里只有非流式评测进入额度。
+  const modelRequests = stub.requests.filter(
+    ({ body }) => !(body && typeof body === 'object' && 'stream' in body && body.stream === true),
+  );
+  assert.equal(modelRequests.length, 67);
+  assert.equal((await f.store.evaluationSchedule())?.reserved, 67);
+});
+
+test('UTC 日额度或执行上限刚好容纳常规调用时，路由失败不补发也不挤占余下计划', async (t) => {
+  freezeUtcDay(t);
+  const dropped = evaluationTriggerCases[0].query.normalize('NFKC');
+  const standard = evaluationModelHandler();
+  for (const [daily, executionLimit] of [
+    [33, 96],
+    [300, 16],
+  ]) {
+    const { f, stub } = await evaluationHub(
+      t,
+      {
+        'trigger-routing': (request, index) => {
+          const { query } = JSON.parse(evaluationModelInput(request)) as { query: string };
+          return query.normalize('NFKC') === dropped
+            ? { json: openAiJson({ invalid: true }) }
+            : standard(request, index);
+        },
+      },
+      daily,
+    );
+    f.hub.ai.runtime.config.max_requests = executionLimit;
+    const item = await receiveSkill(f);
+    await f.hub.evaluations.manual(f.admin, item.version_id, randomUUID());
+    const final = await claimStage(f, 'transparency');
+    assert.equal(await f.hub.evaluationRunner.process(final), 'succeeded');
+    const row = await f.store.get('resource_evaluations', final.aggregate_id);
+    assert.equal(row?.state, 'succeeded');
+    assert.equal(row.recovery_requests, 0);
+    assert.partialDeepStrictEqual(
+      row.dimensions.find((d) => d.id === 'triggering'),
+      {
+        status: 'scored',
+        confidence: 'low',
+        metrics: { should_total: 7, near_miss_total: 8 },
+      },
+    );
+    assert.equal(stub.requests.length, 33);
+    assert.equal((await f.store.evaluationSchedule())?.reserved, 33);
+  }
+});
+
+test('路由中的一次鉴权失败、200 错误信封或非法限流头立即终止阶段，不补发或按缺样本计分', async (t) => {
+  const standard = evaluationModelHandler();
+  for (const failure of [
+    { status: 401, json: {} },
+    { status: 200, json: { error: { type: 'server_error', code: '500' } } },
+    { status: 429, headers: { 'retry-after': '60, 60' } },
+  ]) {
+    let sentFailure = false;
+    const { f, stub } = await evaluationHub(t, {
+      'trigger-routing': (request, index) => {
+        if (sentFailure) return standard(request, index);
+        sentFailure = true;
+        return failure;
+      },
+    });
+    const item = await receiveSkill(f);
+    await f.hub.evaluations.manual(f.admin, item.version_id, randomUUID());
+    const routing = await claimStage(f, 'trigger-routing');
+    assert.equal(await f.hub.evaluationRunner.process(routing), 'failed');
+    const row = await f.store.get('resource_evaluations', routing.aggregate_id);
+    assert.equal(row?.recovery_requests, 0);
+    assert.equal(row.dimensions.find((dim) => dim.id === 'triggering')?.status, 'failed');
+    const stage = row.stages.find((s) => s.id === 'trigger-routing');
+    assert.equal(stage?.failure_code, 'AI_PROVIDER_FAILED');
+    assert(stage.execution_id);
+    const calls = await f.hub.ai.runtime.store.list('ai_calls', {
+      execution_id: stage.execution_id,
+      limit: 2,
+    });
+    const failed = calls.filter((c) => c.status === 'failed');
+    assert.equal(failed.length, 1);
+    assert.equal(failed[0].payload.output_check, undefined);
+    assert.equal(failed[0].payload.diagnostics.transport?.http_status, failure.status);
+    assert.equal(
+      stub.requests.filter((r) => evaluationModelStep(r) === 'trigger-routing').length,
+      2,
+    );
+  }
+});
+
+test('路由失败使任一类不足六条时阶段记失败以便补跑，持续 503 每问只重发一次即停止', async (t) => {
+  freezeUtcDay(t);
+  const positives = new Set(
+    evaluationTriggerCases
+      .filter(({ kind }) => kind === 'should_trigger')
+      .slice(0, 3)
+      .map(({ query }) => query.normalize('NFKC')),
+  );
+  const standard = evaluationModelHandler();
+  const outcomes = [
+    {
+      route: ((request, index) => {
+        const { query } = JSON.parse(evaluationModelInput(request)) as { query: string };
+        return positives.has(query.normalize('NFKC'))
+          ? { json: openAiJson({ choice: 'not-a-candidate', reason: '候选错误' }) }
+          : standard(request, index);
+      }) satisfies StubHandler,
+      code: 'AI_OUTPUT_INVALID',
+      requests: 7,
+      recoveries: 3,
+    },
+    {
+      route: (() => ({ status: 503, json: {} })) satisfies StubHandler,
+      code: 'AI_PROVIDER_FAILED',
+      requests: 4,
+      recoveries: 2,
+    },
+  ];
+  for (const { route, code, requests, recoveries } of outcomes) {
+    const { f, stub } = await evaluationHub(t, { 'trigger-routing': route });
+    const item = await receiveSkill(f);
+    await f.hub.evaluations.manual(f.admin, item.version_id, randomUUID());
+    const routing = await claimStage(f, 'trigger-routing');
+    assert.equal(await f.hub.evaluationRunner.process(routing), 'failed');
+    const row = await f.store.get('resource_evaluations', routing.aggregate_id);
+    assert(row);
+    assert.partialDeepStrictEqual(
+      row.stages.find((stage) => stage.id === 'trigger-routing'),
+      { state: 'failed', failure_code: code, requests, recovery_requests: recoveries },
+    );
+    assert.equal(row.dimensions.find((dim) => dim.id === 'triggering')?.status, 'failed');
+    assert.equal(
+      stub.requests.filter((request) => evaluationModelStep(request) === 'trigger-routing').length,
+      requests,
+    );
+  }
+});
+
 test('作者用例优先，不能纸面核对的断言、越界行号与引用另一份交付物的通过判定均不计分', async (t) => {
   let sample = 0;
   const firstAuthor = '按交接任务单整理输入条件';
@@ -1297,11 +1584,12 @@ test('盲评仍拒绝断言条数不符、缺侧、引文类型错误和不可�
   await f.hub.evaluationRunner.process(last);
   const row = await f.store.get('resource_evaluations', last.aggregate_id);
   assert.equal(row?.state, 'partial');
+  assert.equal(row.recovery_requests, 4);
   assert.deepEqual(
     row.stages
       .filter((stage) => stage.id.startsWith('task-run-'))
-      .map((stage) => [stage.state, stage.failure_code, stage.assertion_results]),
-    Array.from({ length: 4 }, () => ['failed', 'AI_OUTPUT_INVALID', undefined]),
+      .map((stage) => [stage.state, stage.failure_code, stage.assertion_results, stage.requests]),
+    Array.from({ length: 4 }, () => ['failed', 'AI_OUTPUT_INVALID', undefined, 4]),
   );
 });
 
@@ -1581,7 +1869,7 @@ test('首轮评测耗尽手动次数后仍向获授权会话展示匹配发布�
   assert.equal(failed.next_window_at, undefined);
 });
 
-test('供应方错误或非法输出保留结构分，只能手动重跑失败的模型阶段', async (t) => {
+test('供应方错误或非法输出在可选补发仍失败时保留结构分，只能手动重跑失败的模型阶段', async (t) => {
   freezeUtcDay(t);
   const { f, stub } = await evaluationHub(t, { transparency: () => ({ status: 503, json: {} }) });
   const intake = await receiveSkill(f);
@@ -1596,7 +1884,8 @@ test('供应方错误或非法输出保留结构分，只能手动重跑失败�
   await approveEvaluationCandidate(f, request);
   await f.hub.evaluations.schedule();
   assert.equal(await f.hub.jobs.claim('idle', ['resource_evaluation']), undefined);
-  assert.equal(stub.requests.length, 33);
+  assert.equal(stub.requests.length, 34);
+  assert.equal(first.recovery_requests, 1);
   const retry = await f.hub.evaluations.manual(f.admin, intake.version_id, randomUUID());
   assert(!retry.reused);
   assert.equal(retry.evaluation.reused_from, first.id);
@@ -1608,7 +1897,8 @@ test('供应方错误或非法输出保留结构分，只能手动重跑失败�
   assert.deepEqual(second.stages.slice(0, -1), first.stages.slice(0, -1));
   assert.equal(second.stages.at(-1)?.failure_code, 'AI_OUTPUT_INVALID');
   assert.equal(second.state, 'partial');
-  assert.equal((await f.store.evaluationSchedule())?.reserved, 34);
+  assert.equal(second.recovery_requests, 1);
+  assert.equal((await f.store.evaluationSchedule())?.reserved, 36);
 });
 
 test('当日余额不足一整轮但够补跑失败阶段时，仍可手动重试并立即调度', async (t) => {
@@ -1671,7 +1961,7 @@ test('同主体的另一版本在排队前后均能沿用部分结果，只派�
   assert.deepEqual(finished.stages.slice(0, -1), source.stages.slice(0, -1));
   assert.equal((await f.store.listVersionEvaluations(later.version.id))[0].state, 'succeeded');
   assert.deepEqual(await f.store.where('jobs', 'aggregate_id', later.evaluation.id), []);
-  assert.equal((await f.store.evaluationSchedule())?.reserved, 34);
+  assert.equal((await f.store.evaluationSchedule())?.reserved, 35);
 });
 
 test('多条部分结果均可沿用时取成功阶段最多的一条，而非最近登记的一条', async (t) => {
@@ -1723,6 +2013,17 @@ test('跨版本沿用已完成的边界透明阶段时保留来源的扫描规�
     const source = (await f.store.get('resource_evaluations', final.aggregate_id))!;
     assert.equal(source.stages.find((s) => s.id === 'transparency')?.state, 'succeeded');
     assert.equal(source.scan_ruleset, request.ruleset_version);
+    if ('instructions' in overrides) {
+      assert.partialDeepStrictEqual(
+        source.stages.find((s) => s.id === 'instructions'),
+        {
+          state: 'failed',
+          failure_code: 'AI_PROVIDER_FAILED',
+          requests: 2,
+          recovery_requests: 1,
+        },
+      );
+    }
     const upgraded = { ...request, ruleset_version: '2099-01-01.1' };
     const { evaluation } = await queueEvaluationCopy(f, upgraded, '1.1.0');
     assert.equal(evaluation.reused_from, source.id);
@@ -2143,13 +2444,30 @@ test('重领阶段按新租约实际派发数为其他请求留足额度', async
   await stages.prepare(first);
   await stages.reserve(first, randomUUID());
   await stages.reserve(first, randomUUID());
+  assert.equal(await stages.reserveRecovery(first, randomUUID(), 96), true);
   await f.store.put('jobs', { ...first, lease_until: 0 });
   const takeover = await claimEvaluation(f);
   assert.equal(takeover.id, first.id);
   await stages.prepare(takeover);
   const execution = randomUUID();
   for (let i = 0; i < 3; i++) await stages.reserve(takeover, execution);
+  assert.equal(await stages.reserveRecovery(takeover, execution, 96), true);
+  const row = await f.store.get('resource_evaluations', first.aggregate_id);
+  assert.equal(row?.recovery_requests, 2);
+  assert.partialDeepStrictEqual(
+    row.stages.find((stage) => stage.id === 'trigger-routing'),
+    {
+      requests: 7,
+      recovery_requests: 2,
+      execution_id: execution,
+    },
+  );
   const window = (await f.store.evaluationSchedule())!;
+  await f.store.put('evaluation_schedule', { ...window, reserved: 207 });
+  assert.equal(
+    await f.hub.evaluations.admissionWindow(f.hub.evaluations.evaluatorDigest!),
+    'next_window',
+  );
   await f.store.put('evaluation_schedule', { ...window, reserved: 206 });
   assert.equal(
     await f.hub.evaluations.admissionWindow(f.hub.evaluations.evaluatorDigest!),

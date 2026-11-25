@@ -94,11 +94,10 @@ function decode(value: string): unknown {
   }
 }
 
-function validate<T extends z.ZodType>(schema: T, candidate: unknown): z.infer<T> {
-  const parsed = schema.safeParse(candidate);
-  if (parsed.success) return parsed.data;
-  // 仅按 Schema 明确指出的类型还原无歧义的 JSON 表示，不补字段、丢字段或猜枚举值。
-  for (const issue of parsed.error.issues) {
+/** 只还原 Schema 报出的无歧义类型，不补字段、丢字段或猜枚举值。 */
+export function restoreStructuredTypes(candidate: unknown, issues: z.ZodError['issues']): boolean {
+  let changed = false;
+  for (const issue of issues) {
     if (issue.code !== 'invalid_type' || !issue.path.length) continue;
     let node: unknown = candidate;
     for (const key of issue.path.slice(0, -1)) {
@@ -124,10 +123,20 @@ function validate<T extends z.ZodType>(schema: T, candidate: unknown): z.infer<T
         value !== null &&
         typeof value === 'object' &&
         !Array.isArray(value))
-    )
+    ) {
       fields[key] = value;
+      changed = true;
+    }
   }
-  const checked = schema.safeParse(candidate);
+  return changed;
+}
+
+function validate<T extends z.ZodType>(schema: T, candidate: unknown): z.infer<T> {
+  const parsed = schema.safeParse(candidate);
+  if (parsed.success) return parsed.data;
+  const checked = restoreStructuredTypes(candidate, parsed.error.issues)
+    ? schema.safeParse(candidate)
+    : parsed;
   if (checked.success) return checked.data;
   const hint = checked.error.issues
     .slice(0, 8)

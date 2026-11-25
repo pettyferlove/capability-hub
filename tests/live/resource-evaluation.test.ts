@@ -5,6 +5,7 @@ import { aiConfigurationSchema } from '@capability-hub/ai';
 import { hasInAnyScope } from '@capability-hub/domain/rbac';
 import {
   evaluationDimensions,
+  evaluationMaxRecoveryRequests,
   evaluationRubricVersion,
   evaluationStageRequests,
 } from '@capability-hub/domain/evaluation';
@@ -21,7 +22,9 @@ import {
 } from '../support/evaluation-calibration.js';
 
 const stages = Object.keys(evaluationStageRequests);
-const maxRequests = Object.values(evaluationStageRequests).reduce<number>((sum, n) => sum + n, 0);
+const maxRequests =
+  evaluationMaxRecoveryRequests +
+  Object.values(evaluationStageRequests).reduce<number>((sum, n) => sum + n, 0);
 
 async function liveConfiguration() {
   const path = process.env.AI_LIVE_CONFIG;

@@ -60,6 +60,7 @@ const stage = z.strictObject({
     .optional(),
   coverage_limited: z.boolean().optional(),
   requests: count.optional(),
+  recovery_requests: count.optional(),
   finished_at: date.optional(),
   failure_code: id.optional(),
 });
@@ -109,6 +110,7 @@ export const resourceEvaluationSchema = z
       .max(8)
       .optional(),
     stages: z.array(stage),
+    recovery_requests: count.optional(),
     dimensions: z.array(dimension),
     state: z.enum(['queued', 'running', 'succeeded', 'partial', 'failed', 'cancelled']),
     active_job_id: id.nullable(),

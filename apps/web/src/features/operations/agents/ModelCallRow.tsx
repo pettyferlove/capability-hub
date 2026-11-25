@@ -91,6 +91,11 @@ export function ModelCallRow({
             {stepLabels[step.id] ?? step.id} · #{step.start_seq}
           </button>
         )}
+        {diagnostics.recovery_reason && (
+          <small className="block">
+            追加请求 · {callFailures[diagnostics.recovery_reason].label}
+          </small>
+        )}
       </td>
       <td>{callStatus[call.status]}</td>
       <td>

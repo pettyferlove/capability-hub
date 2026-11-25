@@ -1,5 +1,6 @@
 import {
   effectivenessResult,
+  evaluationMaxRecoveryRequests,
   evaluationRubricVersion,
   evaluationStageRequests,
   evaluationThresholds,
@@ -16,6 +17,10 @@ import type { RecordStore } from '../ports/index.js';
 type EvaluationJob = Extract<JobRecord, { kind: 'resource_evaluation' }>;
 type Evaluation = ResourceEvaluationRecord;
 const maxStageRequests = Math.max(...Object.values(evaluationStageRequests));
+const maxEvaluationRequests = Object.values(evaluationStageRequests).reduce<number>(
+  (sum, count) => sum + count,
+  0,
+);
 
 /** 一次阶段提交只携带新生成的紧凑证据，完整模型输出不进入评测记录。 */
 export interface EvaluationStageResult {
@@ -61,9 +66,12 @@ function dispatchedInLease(job: JobRecord | undefined, stage: Evaluation['stages
     job.lease_until <= Date.now()
   )
     return 0;
-  if (job.lease_epoch === 1) return stage.requests ?? 0;
+  const normal = (stage.requests ?? 0) - (stage.recovery_requests ?? 0);
+  if (job.lease_epoch === 1) return normal;
   if (job.evaluation_lease?.epoch !== job.lease_epoch) return 0;
-  return Math.max(0, (stage.requests ?? 0) - job.evaluation_lease.prior_requests);
+  const priorNormal =
+    job.evaluation_lease.prior_requests - (job.evaluation_lease.prior_recovery_requests ?? 0);
+  return Math.max(0, normal - priorNormal);
 }
 
 /** 续领时整阶段重做；只有当前租约确实已派发的调用才可从待用额度中扣除。 */
@@ -211,7 +219,11 @@ export class EvaluationStages {
         const stage = row.stages.find((item) => item.id === job.input.stage)!;
         await this.store.put('jobs', {
           ...current,
-          evaluation_lease: { epoch: current.lease_epoch, prior_requests: stage.requests ?? 0 },
+          evaluation_lease: {
+            epoch: current.lease_epoch,
+            prior_requests: stage.requests ?? 0,
+            prior_recovery_requests: stage.recovery_requests ?? 0,
+          },
         });
         if (!stage.execution_id) return row;
         // 旧执行的已派发次数保留，待本租约首次出站后再关联新的执行账本。
@@ -322,31 +334,80 @@ export class EvaluationStages {
     return needed;
   }
 
+  private async hasRecoveryRoom(row: Evaluation, current: JobRecord, available: number) {
+    let spare = available - pendingCalls(row, current);
+    if (spare <= 0) return false;
+    // 先用轻量投影确定需求上界；仅接近配额时读取其他评测的完整证据。
+    const running = await this.store.listRunningEvaluationSubjects();
+    if (spare > maxEvaluationRequests * (running.length - 1)) return true;
+    for (const other of await this.store.listRunningEvaluations()) {
+      if (other.id === row.id || other.scope !== 'full') continue;
+      spare -= pendingCalls(other, await this.store.get('jobs', other.active_job_id));
+      if (spare <= 0) return false;
+    }
+    return true;
+  }
+
   /** 由 inline 的出站预留钩子调用，账本与 UTC 窗口任一写入失败均不会发出请求。 */
   async reserve(
     job: EvaluationJob,
     executionId: string | undefined,
     authorize?: () => Promise<void>,
   ) {
-    await this.jobs.withLease(job, async (current) => {
+    await this.reserveRequest(job, executionId, authorize);
+  }
+
+  /** 补发额度不足只跳过补发，不推迟阶段；出站资格仍按常规请求逐次重验。 */
+  reserveRecovery(
+    job: EvaluationJob,
+    executionId: string | undefined,
+    stageLimit: number,
+    authorize?: () => Promise<void>,
+  ) {
+    return this.reserveRequest(job, executionId, authorize, stageLimit);
+  }
+
+  private reserveRequest(
+    job: EvaluationJob,
+    executionId: string | undefined,
+    authorize: (() => Promise<void>) | undefined,
+    stageLimit?: number,
+  ) {
+    return this.jobs.withLease(job, async (current) => {
       const row = await this.active(job);
       const reason = await this.unavailable(row);
       if (reason) fail(409, reason, '资源或评测器已变化');
       await authorize?.();
+      const recovery = stageLimit !== undefined;
+      const recoveryRequests = row.recovery_requests ?? 0;
+      if (recovery && recoveryRequests >= evaluationMaxRecoveryRequests) return false;
       const start = utcWindow();
       const window = await this.store.evaluationSchedule();
       const reserved = window?.window_start === start ? window.reserved : 0;
       const stage = row.stages.find((s) => s.id === job.input.stage)!;
-      const inThisLease = dispatchedInLease(current, stage);
-      const required = Math.max(1, plannedCalls(row, stage.id) - inThisLease);
-      let available = this.settings.evaluationDailyRequests - reserved;
-      if (
-        inThisLease === 0 &&
-        this.settings.evaluationConcurrency > 1 &&
-        available < required + maxStageRequests * (this.settings.evaluationConcurrency - 1)
-      )
-        available -= await this.otherStageDemand(job.id);
-      if (available < required) fail(429, 'EVALUATION_WINDOW_EXHAUSTED', '等待下一 UTC 额度窗口');
+      const available = this.settings.evaluationDailyRequests - reserved;
+      if (recovery) {
+        const prior =
+          current.lease_epoch === 1 ? 0 : (current.evaluation_lease?.prior_requests ?? 0);
+        const sent = (stage.requests ?? 0) - prior;
+        const pending = Math.max(
+          0,
+          plannedCalls(row, stage.id) - dispatchedInLease(current, stage),
+        );
+        if (sent + pending >= stageLimit) return false;
+        if (!(await this.hasRecoveryRoom(row, current, available))) return false;
+      } else {
+        const inThisLease = dispatchedInLease(current, stage);
+        const required = Math.max(1, plannedCalls(row, stage.id) - inThisLease);
+        const otherDemand =
+          inThisLease === 0 &&
+          this.settings.evaluationConcurrency > 1 &&
+          available < required + maxStageRequests * (this.settings.evaluationConcurrency - 1)
+            ? await this.otherStageDemand(job.id)
+            : 0;
+        if (available - otherDemand < required)
+          fail(429, 'EVALUATION_WINDOW_EXHAUSTED', '等待下一 UTC 额度窗口');
+      }
       const updated = {
         id: 'resource-evaluations' as const,
         window_start: start,
@@ -357,13 +418,20 @@ export class EvaluationStages {
       else await this.store.insert('evaluation_schedule', updated);
       await this.store.put('resource_evaluations', {
         ...row,
+        ...(recovery && { recovery_requests: recoveryRequests + 1 }),
         revision: row.revision + 1,
         stages: row.stages.map((stage) =>
           stage.id === job.input.stage
-            ? { ...stage, requests: (stage.requests ?? 0) + 1, execution_id: executionId }
+            ? {
+                ...stage,
+                requests: (stage.requests ?? 0) + 1,
+                ...(recovery && { recovery_requests: (stage.recovery_requests ?? 0) + 1 }),
+                execution_id: executionId,
+              }
             : stage,
         ),
       });
+      return true;
     });
   }
 

@@ -294,6 +294,20 @@ export type ModelOutputCheck = z.infer<typeof outputCheckSchema>;
 /** 单个字段问题。 */
 export type ModelOutputIssue = z.infer<typeof outputIssueSchema>;
 
+const modelCallRecoveryReasons = [
+  'empty_output',
+  'invalid_json',
+  'schema_mismatch',
+  'output_limit',
+  'host_rejected',
+  'rate_limited',
+  'http_error',
+  'network',
+] as const;
+
+/** 追加请求的原因；初次请求不带此字段。 */
+export type ModelCallRecoveryReason = (typeof modelCallRecoveryReasons)[number];
+
 const callDiagnosticsSchema = z.strictObject({
   agent_id: id,
   step: z.strictObject({ id, start_seq: z.number().int().positive() }).optional(),
@@ -302,6 +316,7 @@ const callDiagnosticsSchema = z.strictObject({
   request_timeout_ms: z.number().int().positive(),
   max_output_tokens: z.number().int().positive(),
   reasoning_effort: reasoningEffortSchema.or(z.literal('none')).optional(),
+  recovery_reason: z.enum(modelCallRecoveryReasons).optional(),
   transport: z
     .strictObject({
       http_status: z.number().int().min(100).max(599).optional(),

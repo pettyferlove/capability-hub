@@ -105,7 +105,7 @@ export async function observeModelHttpError(
   }
   if (!response.ok) capture?.error(envelope ?? text, partial);
   else if (envelope?.error || envelope?.type === 'error') capture?.error(envelope);
-  else capture?.unparsed(text, partial);
+  else capture?.unparsed(text, partial, envelope);
   if (json && envelope) observeErrorIdentifiers(transport, envelope, privacy);
 }
 
@@ -156,13 +156,17 @@ function observeModelFrame(
   let text: unknown;
   let stop: unknown;
   let otherOutput = false;
+  let refused = false;
   if (format === 'openai') {
     const choice = object(Array.isArray(frame.choices) ? frame.choices[0] : undefined);
     const delta = object(choice?.delta);
     const content = delta && openAiContent(delta);
     text = content?.text;
     stop = choice?.finish_reason;
+    // 兼容端点可能以正常停止加 refusal 字段表示拒答；只记分类，不保存拒答原文。
+    refused = hasText(delta?.refusal);
     otherOutput =
+      refused ||
       hasText(content?.reasoning) ||
       (Array.isArray(delta?.tool_calls) && delta.tool_calls.length > 0) ||
       !!object(delta?.function_call);
@@ -182,7 +186,8 @@ function observeModelFrame(
     transport.first_output_ms ??= elapsed;
     transport.last_output_ms = elapsed;
   }
-  if (typeof stop === 'string' && stop)
+  if (refused) transport.finish_reason = 'content_filter';
+  else if (typeof stop === 'string' && stop && transport.finish_reason !== 'content_filter')
     transport.finish_reason = finishReasons.get(stop) ?? 'other';
 }
 

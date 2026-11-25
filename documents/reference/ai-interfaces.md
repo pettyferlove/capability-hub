@@ -20,7 +20,7 @@
 
 运营列表的 `q` 匹配标题、执行 ID、Agent、负责人或错误码。诊断快照汇集 `watermark` 以内的事件、调用、耗时、决定、回执和成果；`event_gaps` 标出缺失的闭区间。调用的 `diagnostics` 指明模型、协议和本次限额，`reasoning_effort` 为 `none` 表示请求关闭思考，缺省表示未记录。`step.start_seq` 指向步骤开始事件。`transport` 给出收发字节、响应头与首末输出耗时、停止原因及用量；可附 `network_error`、`upstream_error_code` 和 `upstream_request_id`。错误正文只随往返原文提供。
 
-诊断快照与 JSON 导出使用 `schema_version: 2`。新版可读 v1 文件，旧调用没有 `exchange` 时视为 `none`；旧 Web 与服务端须一同更新。调用分别记录 `output_check` 和 `failure_reason`。只有 `execution.error.call_id` 指向引发终止的调用，已处理的失败只进调用历史。
+诊断快照与 JSON 导出使用 `schema_version: 2`。新版可读 v1 文件，旧调用没有 `exchange` 时视为 `none`；旧 Web 与服务端须一同更新。追加请求拥有独立调用 ID、步骤起始序号和用量，`diagnostics.recovery_reason` 记录原因。`output_check` 和 `failure_reason` 描述本次尝试；只有 `execution.error.call_id` 标识终止执行的调用。
 
 快照只给原文状态 `available`、`withheld`、`none`。展开和导出重新检查授权与留存期。JSON 附全部可读原文；Markdown 只附已确认致因的可读原文，`view=handoff` 返回 `{markdown, watermark}`。单份导出上限 8 MiB，超出返回 413，请改用快照和逐调用接口。
 

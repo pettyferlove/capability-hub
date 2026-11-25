@@ -100,6 +100,18 @@ const callDiagnosticsSchema = z.strictObject({
   request_timeout_ms: z.number().int().positive(),
   max_output_tokens: z.number().int().positive(),
   reasoning_effort: z.enum(['none', 'low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  recovery_reason: z
+    .enum([
+      'empty_output',
+      'invalid_json',
+      'schema_mismatch',
+      'output_limit',
+      'host_rejected',
+      'rate_limited',
+      'http_error',
+      'network',
+    ])
+    .optional(),
   transport: z
     .strictObject({
       http_status: z.number().int().min(100).max(599).optional(),

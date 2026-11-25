@@ -1,5 +1,5 @@
 export { AiRuntime } from './execution/runtime.js';
-export type { InlineExecution } from './execution/inline.js';
+export { isModelSampleFailure, type InlineExecution } from './execution/inline.js';
 export { OperationRegistry, type OperationDefinition } from './operations/registry.js';
 export {
   OperationContext,

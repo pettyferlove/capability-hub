@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   aiConfigurationSchema,
   AiRuntime,
@@ -16,7 +17,12 @@ import { createTestHub, publishSkill, receiveSkill } from '../support/applicatio
 import { fixture as providerFixture } from '../support/ai-provider.js';
 import { signIn } from '../support/http.js';
 import { deferred } from '../support/store.js';
-import { serveModelStub, type StubHandler } from '../support/model-provider-stub.js';
+import {
+  anthropicJson,
+  openAiJson,
+  serveModelStub,
+  type StubHandler,
+} from '../support/model-provider-stub.js';
 import {
   aiCatalogResponseSchema,
   aiExecutionLedgerResponseSchema,
@@ -799,9 +805,13 @@ test('AI 调度检查失败时停机仍中断活跃模型并等待收敛', { tim
   assert.equal(hub.worker.busy, false);
 });
 
-async function inlineHub(t: TestContext, reply?: StubHandler) {
+async function inlineHub(
+  t: TestContext,
+  reply?: StubHandler,
+  format: 'openai' | 'anthropic' = 'openai',
+) {
   const stub = await serveModelStub(t, reply);
-  const profile = stub.profile('openai');
+  const profile = stub.profile(format);
   const f = await createTestHub(t, {
     ai: aiConfigurationSchema.parse({ profiles: [profile], default_profile: profile.id }),
   });
@@ -811,8 +821,389 @@ async function inlineHub(t: TestContext, reply?: StubHandler) {
     profileId: profile.id,
     signal: new AbortController().signal,
   };
-  return { f, options };
+  return { f, options, stub };
 }
+
+test('内联调用只本地还原无歧义类型，不因表示差异追加模型请求', async (t) => {
+  const content = { accepted: 'true', count: '2', items: '[1,2]' };
+  for (const format of ['openai', 'anthropic'] as const) {
+    const { f, options, stub } = await inlineHub(
+      t,
+      (request) => ({
+        json:
+          format === 'openai'
+            ? openAiJson('```json\n' + JSON.stringify(content) + '\n```')
+            : anthropicJson(content, { request }),
+      }),
+      format,
+    );
+    const result = await f.hub.ai.runtime.runInline(options, (run) =>
+      run.call('check', {
+        operation: 'resource-evaluation/check',
+        instructions: '严格返回 JSON',
+        input: '{}',
+        schema: z.strictObject({
+          accepted: z.boolean(),
+          count: z.int(),
+          items: z.array(z.int()),
+        }),
+      }),
+    );
+    assert.deepEqual(result.value, { accepted: true, count: 2, items: [1, 2] });
+    assert.equal(stub.requests.length, 1);
+  }
+});
+
+test('后台内联调用按 Schema 提示重问，不回传坏输出，追加调用单独记账', async (t) => {
+  const privateOutput = '本次无效回答中的内容不应再次传给模型';
+  const { f, options, stub } = await inlineHub(t, (_request, index) => ({
+    json: openAiJson(index === 0 ? { count: privateOutput } : { count: 7 }),
+  }));
+  const runtime = f.hub.ai.runtime;
+  const result = await runtime.runInline(options, (run) =>
+    run.call('check', {
+      operation: 'resource-evaluation/check',
+      instructions: '返回计数。',
+      input: '{"case":"same-input"}',
+      schema: z.strictObject({ count: z.int() }),
+      recovery: { reserve: async () => true },
+    }),
+  );
+  assert.deepEqual(result.value, { count: 7 });
+  assert.equal(stub.requests.length, 2);
+  const bodies = stub.requests.map(
+    ({ body }) => body as { messages: { role: string; content: string }[] },
+  );
+  assert.deepEqual(bodies[0].messages[1], bodies[1].messages[1]);
+  const correction = bodies[1].messages[0].content;
+  assert.match(correction, /count: invalid_type/);
+  assert(!correction.includes(privateOutput));
+
+  const [execution] = await runtime.store.list('ai_executions', {
+    lookup_key: options.operationId,
+    limit: 2,
+  });
+  const operator = await signIn(f);
+  const report = aiExecutionDiagnosticsResponseSchema.parse(
+    (
+      await operator
+        .get(`/api/admin/operations/agents/executions/${execution.id}/diagnostics`)
+        .expect(200)
+    ).body,
+  );
+  assert.equal(report.execution.status, 'succeeded');
+  assert.equal(report.execution.error, null);
+  assert.deepEqual(report.execution.usage, {
+    requests: 2,
+    tools: 0,
+    input_tokens: 22,
+    output_tokens: 14,
+    unknown_requests: 0,
+  });
+  assert.deepEqual(
+    report.model_calls.map(({ output_check, diagnostics }) => [
+      output_check?.status,
+      diagnostics.recovery_reason,
+    ]),
+    [
+      ['rejected', undefined],
+      ['accepted', 'schema_mismatch'],
+    ],
+  );
+  assert.notEqual(report.model_calls[0].id, report.model_calls[1].id);
+});
+
+test('后台内联调用把没有正文的完整响应当作空输出重问一次', async (t) => {
+  const { f, options, stub } = await inlineHub(t, (_request, index) => {
+    const json = openAiJson(index === 0 ? '' : { count: 7 });
+    if (index > 0) return { json };
+    const [choice] = json.choices;
+    return { json: { ...json, choices: [{ ...choice, finish_reason: null }] } };
+  });
+  const runtime = f.hub.ai.runtime;
+  const result = await runtime.runInline(options, (run) =>
+    run.call('check', {
+      operation: 'resource-evaluation/check',
+      schema: z.strictObject({ count: z.int() }),
+      instructions: '返回计数。',
+      input: '{}',
+      recovery: { reserve: async () => true },
+    }),
+  );
+  assert.deepEqual(result.value, { count: 7 });
+  assert.equal(stub.requests.length, 2);
+  const [execution] = await runtime.store.list('ai_executions', {
+    lookup_key: options.operationId,
+    limit: 1,
+  });
+  const calls = await runtime.store.list('ai_calls', { execution_id: execution.id, limit: 3 });
+  assert.deepEqual(
+    calls.map(({ payload }) => [payload.output_check?.reason, payload.diagnostics.recovery_reason]),
+    [
+      ['empty_output', undefined],
+      [undefined, 'empty_output'],
+    ],
+  );
+});
+
+test('追加请求在预留期间超过单次时限时回滚预留，不出站并保留原失败', async (t) => {
+  const { f, options, stub } = await inlineHub(t, () => ({ json: openAiJson({ count: 'x' }) }));
+  const runtime = f.hub.ai.runtime;
+  let reservations = 0;
+  await assert.rejects(
+    runtime.runInline(options, (run) =>
+      run.call('check', {
+        operation: 'resource-evaluation/check',
+        schema: z.strictObject({ count: z.int() }),
+        instructions: '返回计数。',
+        input: '{}',
+        limits: { timeoutMs: 1_000 },
+        recovery: {
+          reserve: async () => {
+            reservations++;
+            // 单次请求时限由平台的 AbortSignal.timeout 计时，模拟计时器无法推进，只能真实越过它。
+            await delay(1_200);
+            return true;
+          },
+        },
+      }),
+    ),
+    (error) => error instanceof ShortModelError && error.reason === 'invalid_output',
+  );
+  assert.equal(reservations, 1);
+  assert.equal(stub.requests.length, 1);
+  const [execution] = await runtime.store.list('ai_executions', {
+    lookup_key: options.operationId,
+    limit: 1,
+  });
+  assert.equal(execution.payload.usage.requests, 1);
+  const events = await runtime.store.list('ai_events', { execution_id: execution.id, limit: 20 });
+  assert.equal(events.filter(({ payload }) => payload.type === 'step.started').length, 1);
+});
+
+test('后台内联调用遇到短暂 503 可以重发，但失败后的纠正不形成第三次请求', async (t) => {
+  const { f, options, stub } = await inlineHub(t, (_request, index) =>
+    index === 0 ? { status: 503, json: {} } : { json: openAiJson('{"count":') },
+  );
+  const runtime = f.hub.ai.runtime;
+  await assert.rejects(
+    runtime.runInline(options, (run) =>
+      run.call('check', {
+        operation: 'resource-evaluation/check',
+        schema: z.strictObject({ count: z.int() }),
+        instructions: '返回计数。',
+        input: '{}',
+        recovery: { reserve: async () => true },
+      }),
+    ),
+    (error) => error instanceof ShortModelError && error.reason === 'invalid_output',
+  );
+  assert.equal(stub.requests.length, 2);
+  assert.deepEqual(stub.requests[1].body, stub.requests[0].body);
+  const [execution] = await runtime.store.list('ai_executions', {
+    lookup_key: options.operationId,
+    limit: 2,
+  });
+  const calls = await runtime.store.list('ai_calls', { execution_id: execution.id, limit: 3 });
+  assert.equal(calls[0].payload.diagnostics.transport?.http_status, 503);
+  assert.equal(calls[1].payload.diagnostics.recovery_reason, 'http_error');
+  assert.equal(execution.payload.error?.call_id, calls[1].id);
+  const operator = await signIn(f);
+  const markdown = await operator
+    .get(`/api/admin/operations/agents/executions/${execution.id}/diagnostics?download=markdown`)
+    .expect(200);
+  const block = markdown.text.split('\n## 执行终止原因\n')[1]?.split('\n## ')[0];
+  const evidence = block?.match(/```json\n([\s\S]*?)\n```/u);
+  assert(evidence);
+  assert.partialDeepStrictEqual(JSON.parse(evidence[1]), {
+    call_id: calls[1].id,
+    recovery_reason: 'http_error',
+  });
+});
+
+test('后台内联调用在无恢复额度或剩余时限不足时保留原错误，不留追加调用', async (t) => {
+  const { f, options, stub } = await inlineHub(t, () => ({ json: openAiJson('{"count":') }));
+  const runtime = f.hub.ai.runtime;
+  for (const recovery of [
+    { reserve: async () => false },
+    { deadline: Date.now(), reserve: async () => true },
+  ]) {
+    await assert.rejects(
+      runtime.runInline(options, (run) =>
+        run.call('check', {
+          operation: 'resource-evaluation/check',
+          schema: z.strictObject({ count: z.int() }),
+          instructions: '返回计数。',
+          input: '{}',
+          recovery,
+        }),
+      ),
+      (error) => error instanceof ShortModelError && error.reason === 'invalid_output',
+    );
+  }
+  assert.equal(stub.requests.length, 2);
+  const executions = await runtime.store.list('ai_executions', {
+    lookup_key: options.operationId,
+    limit: 2,
+  });
+  for (const execution of executions) {
+    const calls = await runtime.store.list('ai_calls', { execution_id: execution.id, limit: 3 });
+    assert.equal(calls.length, 1);
+    assert.equal(execution.payload.error?.call_id, calls[0].id);
+    assert.equal(execution.payload.usage.requests, 1);
+  }
+});
+
+test('后台内联调用不重问内容过滤，也不重发请求超时、鉴权失败或超长 Retry-After', async (t) => {
+  const cases = [
+    () => {
+      const json = openAiJson({ count: 7 });
+      const [choice] = json.choices;
+      return { json: { ...json, choices: [{ ...choice, finish_reason: 'content_filter' }] } };
+    },
+    () => {
+      const json = openAiJson({ count: 7 });
+      const [choice] = json.choices;
+      const message = { role: 'assistant', content: null, refusal: '无法协助' };
+      return { json: { ...json, choices: [{ ...choice, message }] } };
+    },
+    () => ({ hang: true }),
+    () => ({ status: 401, json: {} }),
+    () => ({ status: 429, headers: { 'Retry-After': '60' }, json: {} }),
+  ] satisfies StubHandler[];
+  let reply: StubHandler = cases[0];
+  const { f, options, stub } = await inlineHub(t, (request, index) => reply(request, index));
+  for (const [index, candidate] of cases.entries()) {
+    reply = candidate;
+    await assert.rejects(
+      f.hub.ai.runtime.runInline(options, (run) =>
+        run.call('check', {
+          operation: 'resource-evaluation/check',
+          schema: z.strictObject({ count: z.int() }),
+          instructions: '返回计数。',
+          input: '{}',
+          limits: { timeoutMs: 1_000 },
+          recovery: { reserve: async () => true },
+        }),
+      ),
+      (error) =>
+        error instanceof ShortModelError &&
+        error.reason ===
+          (['invalid_output', 'invalid_output', 'timeout', 'provider', 'rate_limited'] as const)[
+            index
+          ],
+    );
+    assert.equal(stub.requests.length, index + 1);
+  }
+});
+
+for (const format of ['openai', 'anthropic'] as const)
+  test(`后台 ${format} 拒答只留存停止原因与用量，不保存输出或重问`, async (t) => {
+    const marker = 'private-refusal-content';
+    const text = JSON.stringify({ verdict: marker });
+    const chat = openAiJson(text);
+    const [choice] = chat.choices;
+    const message = { ...choice.message, refusal: marker, reasoning_content: marker };
+    const messages = anthropicJson(text);
+    const json =
+      format === 'openai'
+        ? { ...chat, choices: [{ ...choice, message }] }
+        : {
+            ...messages,
+            content: [
+              { type: 'thinking', thinking: marker, signature: 'sig' },
+              ...messages.content,
+              { type: 'tool_use', id: 'toolu_stub', name: 'json', input: { verdict: marker } },
+            ],
+            stop_reason: 'refusal',
+          };
+    const { f, options, stub } = await inlineHub(
+      t,
+      () => ({ json: { ...json, id: marker, usage: { ...json.usage, provider_detail: marker } } }),
+      format,
+    );
+    const runtime = f.hub.ai.runtime;
+    await assert.rejects(
+      runtime.runInline(options, (run) =>
+        run.call('check', {
+          operation: 'resource-evaluation/check',
+          instructions: '返回结论。',
+          input: '{}',
+          schema: z.strictObject({ verdict: z.string() }),
+          recovery: { reserve: async () => true },
+        }),
+      ),
+      (error) => error instanceof ShortModelError && error.reason === 'invalid_output',
+    );
+    assert.equal(stub.requests.length, 1);
+    const [call] = await runtime.store.list('ai_calls', { limit: 1 });
+    assert.equal(call.payload.output_check?.reason, 'content_filter');
+    assert.equal(call.payload.diagnostics.transport?.finish_reason, 'content_filter');
+    assert.equal(call.payload.input_tokens, 11);
+    assert.equal(call.payload.output_tokens, 7);
+    const exchange = await runtime.store.get('ai_exchanges', call.id);
+    const response = exchange?.payload.response;
+    assert(response);
+    assert.equal(response.finish_reason, 'refusal');
+    assert.deepEqual(response.usage, json.usage);
+    assert.equal(response.text, '');
+    assert.equal(response.reasoning, '');
+    assert.deepEqual(response.tool_calls, []);
+    assert(!JSON.stringify([exchange, call]).includes(marker));
+  });
+
+test('流式拒答后的错误帧、残帧或错发的 JSON 不得以原始样本绕过留存限制', async (t) => {
+  const marker = 'private-refusal-fragment';
+  const frame = (item: object) => `data: ${JSON.stringify(item)}\n\n`;
+  const delta = frame({ choices: [{ index: 0, delta: { refusal: marker, content: marker } }] });
+  const stop = frame({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] });
+  const headers = { 'content-type': 'text/event-stream' };
+  const cases = [
+    {
+      format: 'anthropic',
+      reply: {
+        headers,
+        body:
+          frame({ type: 'message_delta', delta: { stop_reason: 'refusal' } }) +
+          frame({ type: 'error', error: { type: 'api_error', message: marker } }),
+      },
+    },
+    {
+      format: 'openai',
+      reply: { headers, body: delta + stop + `data: {"text":"${marker}"\n\n` },
+    },
+    {
+      format: 'anthropic',
+      reply: { json: { ...anthropicJson(marker), stop_reason: 'refusal' } },
+    },
+    {
+      format: 'openai',
+      reply: { status: 400, json: { error: { code: 'content_filter', message: marker } } },
+    },
+  ] as const;
+  for (const { format, reply } of cases) {
+    const { f, options, stub } = await inlineHub(t, () => reply, format);
+    const runtime = f.hub.ai.runtime;
+    await assert.rejects(
+      runtime.runInline(options, (run) =>
+        run.call('check', {
+          operation: 'resource-evaluation/check',
+          schema: z.strictObject({ verdict: z.string() }),
+          instructions: '返回结论。',
+          input: '{}',
+          onPartial: () => assert.fail('未收到可用的结构化片段'),
+        }),
+      ),
+      (error) => error instanceof ShortModelError && error.reason === 'provider',
+    );
+    assert.equal(stub.requests.length, 1);
+    const [call] = await runtime.store.list('ai_calls', { limit: 1 });
+    const exchange = await runtime.store.get('ai_exchanges', call.id);
+    assert(exchange?.payload.response);
+    assert.match(exchange.payload.response.finish_reason ?? '', /^(?:refusal|content_filter)$/u);
+    assert(!JSON.stringify([exchange, call]).includes(marker));
+  }
+});
 
 for (const reason of ['cancelled', 'execution_timeout'] as const)
   test(`诊断保留宿主的 ${reason} 原因，不误报网络或单请求超时`, async (t) => {

@@ -1,6 +1,8 @@
 import {
   generateText,
+  JSONParseError,
   NoObjectGeneratedError,
+  NoOutputGeneratedError,
   Output,
   streamText,
   TypeValidationError,
@@ -8,7 +10,7 @@ import {
   type LanguageModelUsage,
 } from 'ai';
 import { randomUUID } from 'node:crypto';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { ModelProfile } from '../core/config.js';
 import { AiError, type AiErrorCode } from '../core/errors.js';
 import type { CredentialResolver } from '../core/ports.js';
@@ -27,7 +29,7 @@ import {
   networkErrorCode,
   observeModelHttpError,
 } from './provider-diagnostics.js';
-import { outputIssues } from './structured-output.js';
+import { outputIssues, restoreStructuredTypes } from './structured-output.js';
 import { WirePrivacy } from './wire-content.js';
 
 /** 短调用失败的环节，供宿主区分超时、限流、无效输出等状态。 */
@@ -105,6 +107,13 @@ interface OutputDiagnostic {
   reasoning: number | null;
 }
 
+interface ShortModelFailureDetails {
+  httpStatus?: number;
+  retryAfterMs?: number;
+  networkError?: string;
+  check?: ModelOutputCheck;
+}
+
 /** 短调用失败。消息固定，不含供应商响应、SDK 原文、模型输出或凭据。 */
 export class ShortModelError extends AiError {
   constructor(
@@ -112,6 +121,7 @@ export class ShortModelError extends AiError {
     retryable = reason === 'timeout' || reason === 'rate_limited',
     readonly output?: OutputDiagnostic,
     code: AiErrorCode = failures[reason].code,
+    readonly details?: ShortModelFailureDetails,
   ) {
     super(code, output ? outputFailures[output.issue] : failures[reason].message, retryable);
     this.name = 'ShortModelError';
@@ -135,6 +145,8 @@ interface ShortModelReservation {
 interface ShortModelObserver {
   start(
     diagnostics: Omit<ModelCallDiagnostics, 'agent_id' | 'step' | 'transport'>,
+    /** 含单次请求时限；预留提交前须据此放弃，避免记下不会出站的请求。 */
+    signal: AbortSignal,
   ): Promise<ShortModelReservation>;
 }
 
@@ -182,13 +194,6 @@ export function shortModelLimits(
   };
 }
 
-const outputErrors = new Set([
-  'AI_NoObjectGeneratedError',
-  'AI_NoOutputGeneratedError',
-  'AI_JSONParseError',
-  'AI_TypeValidationError',
-]);
-
 function findError(error: unknown, match: (value: unknown) => boolean): unknown {
   const seen = new Set<unknown>();
   let current = error;
@@ -205,6 +210,39 @@ function requestBytes(body: RequestInit['body']): number {
   if (typeof body === 'string') return Buffer.byteLength(body, 'utf8');
   if (body instanceof Uint8Array) return body.byteLength;
   throw new ShortModelError('provider');
+}
+
+function retryAfterMs(headers: Headers) {
+  let value = headers.get('retry-after');
+  if (value === null) return;
+  if (/^\d+$/u.test(value)) return Number(value) * 1000;
+
+  // Retry-After 是单值字段。只接受完整的 HTTP-date，不能把重复头或非法秒数当作过去的日期。
+  const now = Date.now();
+  const rfc850 =
+    /^(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday), (\d{2})-([A-Z][a-z]{2})-(\d{2}) (\d{2}:\d{2}:\d{2}) GMT$/u.exec(
+      value,
+    );
+  if (rfc850) {
+    const [, weekday, day, month, shortYear, time] = rfc850;
+    const latest = new Date(now);
+    latest.setUTCFullYear(latest.getUTCFullYear() + 50);
+    const year = latest.getUTCFullYear() - ((latest.getUTCFullYear() - Number(shortYear)) % 100);
+    const format = (y: number) => `${weekday.slice(0, 3)}, ${day} ${month} ${y} ${time} GMT`;
+    value = format(year);
+    if (Date.parse(value) > latest.getTime()) value = format(year - 100);
+  } else {
+    const asctime =
+      /^([A-Z][a-z]{2}) ([A-Z][a-z]{2}) ( \d|\d{2}) (\d{2}:\d{2}:\d{2}) (\d{4})$/u.exec(value);
+    if (asctime) {
+      const [, weekday, month, day, time, year] = asctime;
+      value = `${weekday}, ${day.trim().padStart(2, '0')} ${month} ${year} ${time} GMT`;
+    }
+  }
+  const date = new Date(value);
+  return value.length === 29 && date.toUTCString() === value
+    ? Math.max(0, date.getTime() - now)
+    : Infinity;
 }
 
 async function readLimited(
@@ -270,17 +308,26 @@ export async function callShortModel<T extends z.ZodType>(
     details: Partial<ModelOutputCheck> = {},
   ) => {
     outputCheck = { ...details, status: 'rejected', reason: issueReasons[issue] };
-    return new ShortModelError('invalid_output', false, {
-      issue,
-      limit: limits.maxOutputTokens,
-      used: wire.outputTokens,
-      // 兼容端点未报告推理用量时 SDK 也会填 0，不据此断言模型没有推理。
-      reasoning: usage?.outputTokenDetails.reasoningTokens || null,
-    });
+    return new ShortModelError(
+      'invalid_output',
+      false,
+      {
+        issue,
+        limit: limits.maxOutputTokens,
+        used: wire.outputTokens,
+        // 兼容端点未报告推理用量时 SDK 也会填 0，不据此断言模型没有推理。
+        reasoning: usage?.outputTokenDetails.reasoningTokens || null,
+      },
+      'AI_OUTPUT_INVALID',
+      { check: outputCheck },
+    );
   };
   const checkFinish = (reason: FinishReason | undefined, usage?: LanguageModelUsage) => {
-    if (reason === 'length') throw invalid('truncated', usage);
-    if (reason === 'content-filter') throw invalid('filtered', usage);
+    if (!complete) throw new ShortModelError('provider');
+    if (reason === 'content-filter' || transport.finish_reason === 'content_filter')
+      throw invalid('filtered', usage);
+    if (reason === 'length' || transport.finish_reason === 'length')
+      throw invalid('truncated', usage);
   };
   let apiKey: string;
   try {
@@ -326,13 +373,16 @@ export async function callShortModel<T extends z.ZodType>(
       await call.reserve?.();
       reserved = true;
       signal.throwIfAborted();
-      reservation = await call.observer?.start({
-        model: profile.model,
-        format: profile.format,
-        request_timeout_ms: limits.timeoutMs,
-        max_output_tokens: limits.maxOutputTokens,
-        ...(effort && { reasoning_effort: effort }),
-      });
+      reservation = await call.observer?.start(
+        {
+          model: profile.model,
+          format: profile.format,
+          request_timeout_ms: limits.timeoutMs,
+          max_output_tokens: limits.maxOutputTokens,
+          ...(effort && { reasoning_effort: effort }),
+        },
+        signal,
+      );
     } catch (error) {
       if (!signal.aborted || signal.reason !== error) reserveError = error;
       throw error;
@@ -365,16 +415,26 @@ export async function callShortModel<T extends z.ZodType>(
       if (signal.aborted) throw error;
       const code = networkErrorCode(error, privacy);
       if (code) transport.network_error = code;
-      throw new ShortModelError('provider');
+      throw new ShortModelError(
+        'provider',
+        false,
+        undefined,
+        'AI_PROVIDER_FAILED',
+        code ? { networkError: code } : undefined,
+      );
     }
     transport.headers_ms = elapsed();
     transport.http_status = response.status;
     call.capture?.responded();
     if (!response.ok) {
-      wireFailure =
-        response.status === 429
-          ? new ShortModelError('rate_limited')
-          : new ShortModelError('provider', response.status >= 500);
+      const status = response.status;
+      wireFailure = new ShortModelError(
+        status === 429 ? 'rate_limited' : 'provider',
+        status === 429 || status >= 500,
+        undefined,
+        'AI_PROVIDER_FAILED',
+        { httpStatus: status, retryAfterMs: retryAfterMs(response.headers) },
+      );
       await observeModelHttpError(transport, response, privacy, call.capture);
       throw wireFailure;
     }
@@ -486,22 +546,40 @@ export async function callShortModel<T extends z.ZodType>(
   try {
     const typed = Output.object({ schema: call.schema });
     let instructions = call.instructions;
-    let output = typed;
+    let responseFormat = typed.responseFormat;
     if (profile.format === 'openai') {
       // 兼容端点的 json_object 只约束语法；把同一份 Schema 交给模型，最终仍由 SDK 按原 Schema 校验。
       const format = await typed.responseFormat;
       if (format?.type !== 'json' || !format.schema) throw new ShortModelError('configuration');
       instructions += `\n输出 JSON 遵循以下 JSON Schema，只填写本次需要的可选字段：\n${JSON.stringify(format.schema)}`;
-      output = {
-        ...typed,
-        responseFormat: Output.json().responseFormat,
-        parseCompleteOutput({ text }, context) {
-          // 仅剥掉包住整段 JSON 的代码围栏；不截取散文中的对象，也不补全残缺的 JSON。
-          const fence = /^```(?:json)?[ \t]*\r?\n([\s\S]*)\r?\n```$/i.exec(text.trim());
-          return typed.parseCompleteOutput({ text: fence?.[1] ?? text }, context);
-        },
-      };
+      responseFormat = Output.json().responseFormat;
     }
+    const output: typeof typed = {
+      ...typed,
+      responseFormat,
+      async parseCompleteOutput({ text }, context) {
+        const fence = jsonFence.exec(text.trim());
+        try {
+          return await typed.parseCompleteOutput({ text: fence?.[1] ?? text }, context);
+        } catch (error) {
+          if (
+            !NoObjectGeneratedError.isInstance(error) ||
+            !TypeValidationError.isInstance(error.cause)
+          )
+            throw error;
+          const candidate: unknown = error.cause.value;
+          const issues = error.cause.cause;
+          if (
+            issues instanceof z.core.$ZodError &&
+            restoreStructuredTypes(candidate, issues.issues)
+          ) {
+            const restored = await call.schema.safeParseAsync(candidate);
+            if (restored.success) return restored.data;
+          }
+          throw error;
+        }
+      },
+    };
     const options = {
       model: createEndpointModel(profile, apiKey, guardedFetch),
       instructions,
@@ -534,7 +612,6 @@ export async function callShortModel<T extends z.ZodType>(
       checkFinish(result.finishReason, usage);
       value = result.output as z.infer<T>;
     }
-    if (!complete) throw new ShortModelError('provider');
     return {
       value,
       usage: {
@@ -560,22 +637,30 @@ export async function callShortModel<T extends z.ZodType>(
       if (!complete && transport.http_status !== undefined) call.capture?.incomplete();
       throw failure;
     }
-    const objectError = findError(error, (value) => NoObjectGeneratedError.isInstance(value));
-    if (NoObjectGeneratedError.isInstance(objectError)) {
-      checkFinish(objectError.finishReason, objectError.usage);
-      const text = objectError.text ?? '';
-      if (!text.trim()) throw invalid('empty', objectError.usage);
-      if (TypeValidationError.isInstance(objectError.cause))
-        throw invalid('schema', objectError.usage, schemaFailure(call.schema, text));
-      throw invalid('json', objectError.usage, jsonFailure(text));
+    const sdkError = findError(
+      error,
+      (value) =>
+        NoObjectGeneratedError.isInstance(value) ||
+        NoOutputGeneratedError.isInstance(value) ||
+        JSONParseError.isInstance(value) ||
+        TypeValidationError.isInstance(value),
+    );
+    if (NoObjectGeneratedError.isInstance(sdkError)) {
+      checkFinish(sdkError.finishReason, sdkError.usage);
+      const text = sdkError.text ?? '';
+      if (!text.trim()) throw invalid('empty', sdkError.usage);
+      if (TypeValidationError.isInstance(sdkError.cause))
+        throw invalid('schema', sdkError.usage, schemaFailure(call.schema, text));
+      throw invalid('json', sdkError.usage, jsonFailure(text));
     }
-    const outputError = findError(error, (value) => outputErrors.has((value as Error).name));
-    if (outputError) {
-      outputCheck = {
-        status: 'rejected',
-        reason: TypeValidationError.isInstance(outputError) ? 'schema_mismatch' : 'invalid_json',
-      };
-      throw new ShortModelError('invalid_output');
+    if (NoOutputGeneratedError.isInstance(sdkError)) {
+      checkFinish(undefined);
+      throw invalid('empty');
+    }
+    if (sdkError && complete) {
+      // SDK 未解码出模型消息，不能把信封或事件的字段错误算作回答错误。SSE 的终止帧仍是观测事实。
+      complete = false;
+      if (!call.onPartial) transport.terminal_received = false;
     }
     throw new ShortModelError('provider');
   } finally {

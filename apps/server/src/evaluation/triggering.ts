@@ -1,4 +1,4 @@
-import { AiError, OutputRejectedError } from '@capability-hub/ai';
+import { AiError, OutputRejectedError, isModelSampleFailure } from '@capability-hub/ai';
 import type { EvaluationPool, EvaluationStageResult } from '@capability-hub/application';
 import type { RecordStore } from '@capability-hub/application/ports';
 import { sha256 } from '@capability-hub/domain/canonical';
@@ -142,6 +142,7 @@ export async function routeCases(
   row: ResourceEvaluationRecord,
   version: VersionRecord,
   description: (version: VersionRecord) => Promise<string>,
+  signal: AbortSignal,
 ): Promise<EvaluationStageResult> {
   const cases = row.cases?.trigger ?? [];
   if (
@@ -176,12 +177,18 @@ export async function routeCases(
     row.stages.some((stage) => stage.id === 'trigger-cases' && stage.coverage_limited) ||
     options.some((option, index) => option.description !== snapshot.options[index].description);
   const resources = options.flatMap((option) => (option.version ? [option.version.id] : []));
+  let positive = 0;
+  let negative = 0;
   let hit = 0;
   let avoided = 0;
   const confusions: NonNullable<ResourceEvaluationRecord['confusions']> = [];
+  // 出题时两类已各有足够问句；失败使任一类无法凑足时立即结束，记为阶段失败以便补跑而非沿用。
+  const attainable = { should_trigger: 0, near_miss: 0 };
+  for (const item of cases) attainable[item.kind]++;
   for (let start = 0; start < cases.length; start += 2) {
+    const pair = cases.slice(start, start + 2);
     const results = await Promise.allSettled(
-      cases.slice(start, start + 2).map(async (item, offset) => {
+      pair.map(async (item, offset) => {
         const seed = sha256(row.id + '|' + (start + offset));
         const request = routingInput(item.query, options, seed);
         const result = await call(
@@ -204,22 +211,29 @@ export async function routeCases(
         return { item, picked, limited: request.limited };
       }),
     );
-    for (const result of results) {
-      if (result.status === 'rejected') throw result.reason;
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'rejected') {
+        signal.throwIfAborted();
+        if (!isModelSampleFailure(result.reason)) throw result.reason;
+        if (--attainable[pair[index].kind] < limits.minPerKind) throw result.reason;
+        limited = true;
+        continue;
+      }
       const { item, picked } = result.value;
       limited ||= result.value.limited;
       if (item.kind === 'should_trigger') {
+        positive++;
         if (picked?.name === version.metadata.name) hit++;
         else if (picked?.releaseId)
           confusions.push({ case_id: item.id, release_id: picked.releaseId });
-      } else if (picked?.name !== version.metadata.name) {
-        avoided++;
+      } else {
+        negative++;
+        if (picked?.name !== version.metadata.name) avoided++;
       }
     }
   }
-  const positive = cases.filter((item) => item.kind === 'should_trigger').length;
   return {
-    dimension: triggeringResult(hit, positive, avoided, cases.length - positive, limited),
+    dimension: triggeringResult(hit, positive, avoided, negative, limited),
     confusions,
     coverageLimited: limited,
     ...(row.context && { context: { ...row.context, distractor_release_ids: selected } }),

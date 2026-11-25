@@ -288,6 +288,7 @@ export class EvaluationService {
       context: null,
       cases: null,
       active_job_id: null,
+      recovery_requests: 0,
       requested_at: now,
       revision: 1,
       reused_from: null,

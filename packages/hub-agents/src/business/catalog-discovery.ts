@@ -14,7 +14,6 @@ const phrases = z.array(phrase).max(5);
 // 执行目录中的 Schema 只描述允许持久化的投影；首页对话的目录正文不留存原文。
 const inlineDiscovery = {
   execution_mode: 'inline',
-  version: '2',
   input: z.strictObject({}),
   output: z.null(),
   interactions: {},
@@ -24,6 +23,7 @@ const inlineDiscovery = {
 export const catalogDiscoveryOperation = {
   ...inlineDiscovery,
   id: 'catalog-discovery',
+  version: '3',
   title: '首页对话检索',
   description: '根据访问者可读的发布理解问题，并核对推荐的固定版本。',
   retain_exchanges: false as const,
@@ -33,6 +33,7 @@ export const catalogDiscoveryOperation = {
 export const catalogPromptsOperation = {
   ...inlineDiscovery,
   id: 'catalog-prompts',
+  version: '3',
   title: '开场提示生成',
   description: '按受众从已发布资源生成开场提问，并逐项预检可回答性。',
 };
@@ -144,6 +145,9 @@ reply 用一两句话直接回答用户（不超过 240 字）：说明推荐了
 条件规则：keywords 是召回用的检索词，可加同义词或中英文名称，至多 5 个；requirements 是用户明确要求、资源必须具备的能力，至多 5 条，尽量沿用用户原词；已确认的必需项会自动保留，只有用户明确说不再需要时才写进 drop_requirements；kind、category、has_scripts、audience 只在用户明确提到时填写；scenario 只能写 catalog 里出现过的场景名；不填写排序。
 goal 用一句话概括用户想完成的事（不超过 200 字），只用用户自己的说法，不写卡片里的内容；refer 时可留空。全部用简体中文。`;
 
+/** 每批开场提问的候选上限，也用于估算刷新窗口的计划请求数。 */
+export const promptCandidateLimit = 4;
+
 /** 后台生成开场提问的结构；安全筛选与可回答预检由服务端完成。 */
 export const promptCandidatesSchema = z.strictObject({
   prompts: z
@@ -153,7 +157,7 @@ export const promptCandidatesSchema = z.strictObject({
         text: z.string().trim().min(1).max(200),
       }),
     )
-    .max(4),
+    .max(promptCandidateLimit),
 });
 
 /** 生成输入只含白名单字段：类型、简介、标签和场景。 */

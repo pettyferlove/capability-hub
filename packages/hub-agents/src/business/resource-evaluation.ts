@@ -7,7 +7,7 @@ const text = z.string().refine(isEvaluationText);
 export const resourceEvaluationOperation = {
   id: 'resource-evaluation',
   execution_mode: 'inline',
-  version: '6',
+  version: '7',
   title: '资源质量评测',
   description: '系统按固定版本评测 Skill 的触发准确、指令质量、纸面任务效果与边界透明。',
   input: z.strictObject({}),

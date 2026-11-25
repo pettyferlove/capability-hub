@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   AiError,
   digest as profileDigest,
+  isModelSampleFailure,
   shortModelLimits,
   ShortModelError,
   type AiRuntime,
@@ -35,6 +36,7 @@ import {
   catalogPromptsOperation,
   discoveryDecisionSchema,
   discoveryInstructions,
+  promptCandidateLimit,
   promptCandidatesSchema,
   promptGenerationInstructions,
   type DiscoveryDecision,
@@ -75,9 +77,34 @@ interface PlannedBatch {
   input: PromptGenerationInput;
 }
 
+interface BatchWork {
+  job: PromptJob;
+  batch: PlannedBatch;
+  view: SourceView;
+  deadline: number;
+  signal: AbortSignal;
+  maxRequestBytes: number;
+  /** 后续批次按生成与全部候选预检估算的常规请求数。 */
+  later: number;
+  /** 当前请求之后本批仍要发出的常规请求数。 */
+  pending: number;
+}
+
+/** 中止预留事务；变更的批次与触及窗口硬上限的批次沿用各自的结算路径。 */
+class PromptReservationStop extends AiError {
+  constructor(readonly kind: 'changed' | 'stopped' | 'model_changed') {
+    super('AI_CONFLICT', '开场提示刷新无法继续预留');
+  }
+}
+
+type WindowCap = 'stopped' | 'budget';
+
+type BatchResult =
+  { kind: 'batch'; batch: CatalogPromptBatch; cap?: WindowCap } | { kind: 'stopped' | 'changed' };
+
 /** 每批只提交已完成预检的结果；受限批次提交时一并推进游标。 */
 interface Outcome {
-  batch?: CatalogPromptBatch;
+  batch?: { planned: PlannedBatch; record: CatalogPromptBatch };
   cursor?: string;
   failure?: string;
 }
@@ -204,7 +231,7 @@ export class CatalogPromptService {
     canonical({
       generation: promptGenerationInstructions,
       preflight: discoveryInstructions,
-      version: 2,
+      version: catalogPromptsOperation.version,
     }),
   );
   constructor(
@@ -336,54 +363,94 @@ export class CatalogPromptService {
         await this.refreshSources(view);
         return {
           kind: 'ready' as const,
-          profileId: profile.id,
+          profile,
+          deadline: state.window!.deadline,
           ...this.plan(state, view, profile),
         };
       });
       if (signal.aborted) return;
       if (plan.kind === 'stale') return await this.settleStale(job);
       if (plan.kind === 'failed') return await this.settle(job, { failure: plan.code }, null, view);
+      const deadline = Math.min(
+        plan.deadline ??
+          Date.now() +
+            Math.min(this.config.ai.active_timeout_ms, this.config.ai.execution_timeout_ms),
+        nextWindow(job.input.window_start),
+      );
+      const windowTimeout = AbortSignal.timeout(Math.max(0, deadline - Date.now()));
       try {
         if (!plan.generate.length) return await this.settle(job, {}, plan.keys, view);
         const options = {
           operationId: catalogPromptsOperation.id,
           ownerId: 'system',
-          profileId: plan.profileId,
-          signal,
+          profileId: plan.profile.id,
+          signal: AbortSignal.any([signal, windowTimeout]),
         };
+        const maxRequestBytes = shortModelLimits(plan.profile).maxRequestBytes;
         for (const [index, batch] of plan.generate.entries()) {
+          const work: BatchWork = {
+            job,
+            batch,
+            view,
+            deadline,
+            signal: options.signal,
+            maxRequestBytes,
+            later: (plan.generate.length - index - 1) * (promptCandidateLimit + 1),
+            pending: 0,
+          };
           const result = await this.runtime.runInline(
             options,
-            (run) => this.generate(run, job, batch, signal, view),
+            async (run): Promise<BatchResult> => {
+              try {
+                return await this.generate(run, work);
+              } catch (error) {
+                if (!(error instanceof PromptReservationStop) || error.kind === 'model_changed')
+                  throw error;
+                return { kind: error.kind };
+              }
+            },
             (result) =>
               this.settle(
                 job,
                 {
-                  batch: result.kind === 'batch' ? result.batch : undefined,
+                  batch:
+                    result.kind === 'batch' ? { planned: batch, record: result.batch } : undefined,
                   cursor:
                     result.kind !== 'stopped' && batch.audience === 'restricted'
                       ? batch.key
                       : undefined,
+                  failure:
+                    result.kind === 'batch' && result.cap === 'budget'
+                      ? 'PROMPT_BUDGET_EXCEEDED'
+                      : undefined,
                 },
                 plan.keys,
                 view,
-                result.kind === 'stopped' || index === plan.generate.length - 1,
+                result.kind === 'stopped' ||
+                  (result.kind === 'batch' && result.cap !== undefined) ||
+                  index === plan.generate.length - 1,
               ),
           );
-          if (result.kind === 'stopped') break;
+          if (result.kind === 'stopped' || (result.kind === 'batch' && result.cap)) break;
         }
       } catch (error) {
         // 停机或失去租约由接管者处理，不能把未完成的批次写成成功。
         if (signal.aborted) return;
-        if (!(error instanceof AiError)) throw error;
-        const reason = error instanceof ShortModelError ? error.reason : error.code;
+        const timedOut = windowTimeout.aborted || Date.now() >= deadline;
+        const aiError = error instanceof AiError ? error : undefined;
+        if (!aiError && !(windowTimeout.aborted && error === windowTimeout.reason)) throw error;
+        const reason = error instanceof ShortModelError ? error.reason : aiError?.code;
         this.logs.logger.warn({ event: 'catalog_prompts.call_failed', reason });
         const failure =
-          reason === 'timeout' || reason === 'AI_DEADLINE_EXCEEDED'
+          timedOut || reason === 'timeout' || reason === 'AI_DEADLINE_EXCEEDED'
             ? 'PROMPT_PROVIDER_TIMEOUT'
-            : error.code === 'AI_BUDGET_EXCEEDED'
+            : aiError?.code === 'AI_BUDGET_EXCEEDED'
               ? 'PROMPT_BUDGET_EXCEEDED'
-              : 'PROMPT_PROVIDER_FAILED';
+              : aiError?.code === 'AI_OUTPUT_INVALID'
+                ? 'PROMPT_OUTPUT_INVALID'
+                : error instanceof PromptReservationStop && error.kind === 'model_changed'
+                  ? 'PROMPT_MODEL_CHANGED'
+                  : 'PROMPT_PROVIDER_FAILED';
         await this.settle(job, { failure }, plan.keys, view);
       }
     } catch (error) {
@@ -394,9 +461,12 @@ export class CatalogPromptService {
 
   private async activeState(job: PromptJob) {
     const state = await this.store.get('catalog_prompts', catalogPromptStateId);
-    return state?.active_job_id === job.id && state.window?.start === job.input.window_start
-      ? state
-      : undefined;
+    if (
+      state?.active_job_id === job.id &&
+      state.window?.job_id === job.id &&
+      state.window.start === job.input.window_start
+    )
+      return state;
   }
 
   /** 每次在租约事务内核对目录修订；没有目录写入时复用本作业快照，不为每个预检遍历目录。 */
@@ -530,41 +600,26 @@ export class CatalogPromptService {
    * 出站前的租约事务：核对原租约与取消、活动作业与窗口、模型配置以及整批来源，
    * 全部通过才预占一次窗口额度。所有批次共用执行时限和请求次数，不得跨 UTC 窗口。
    */
-  private async reserve(job: PromptJob, batch: PlannedBatch, view: SourceView) {
+  private async reserve(work: BatchWork, recovery: boolean) {
+    const { job, batch, view, signal } = work;
     return await this.jobs.withLease(job, async () => {
       const state = await this.activeState(job);
-      if (!state || !this.profile || profileDigest(this.profile) !== job.input.profile_digest)
-        return { kind: 'stopped' as const };
+      if (!state) throw new AiError('AI_CANCELLED', '提示刷新窗口已结束');
+      this.assertModel(job);
       const window = state.window!;
-      if (window.reserved >= callLimit) return { kind: 'stopped' as const };
-      if (window.reserved >= this.config.ai.max_requests)
-        throw new AiError('AI_BUDGET_EXCEEDED', '提示刷新已达到模型请求次数上限');
+      const deadline = Math.min(work.deadline, window.deadline ?? work.deadline);
+      this.assertWindow(signal, window.start, deadline);
       await this.refreshSources(view);
-      if (
-        !batch.sources.every((planned) => {
-          const current = view.sources.get(planned.version.id);
-          return (
-            current === planned ||
-            (current?.asset.id === planned.asset.id &&
-              current.release.id === planned.release.id &&
-              current.resolvedReleaseId === planned.resolvedReleaseId &&
-              current.scenarios.length === planned.scenarios.length &&
-              current.scenarios.every(
-                (scenario, i) =>
-                  scenario.id === planned.scenarios[i].id &&
-                  scenario.name === planned.scenarios[i].name,
-              ))
-          );
-        })
-      )
-        return { kind: 'changed' as const };
+      if (!this.sourcesUnchanged(batch, view)) throw new PromptReservationStop('changed');
+      this.assertWindow(signal, window.start, deadline);
+      const limit = Math.min(callLimit, this.config.ai.max_requests);
+      // 追加请求只用本窗计划外的余量，不能挤掉本批其余候选和后续批次的常规请求。
+      if (recovery && window.reserved + work.pending + work.later >= limit) return false;
+      if (window.reserved >= limit) {
+        if (window.reserved >= callLimit) throw new PromptReservationStop('stopped');
+        throw new AiError('AI_BUDGET_EXCEEDED', '提示刷新已达到模型请求次数上限');
+      }
       const now = Date.now();
-      const deadline = Math.min(
-        window.deadline ??
-          now + Math.min(this.config.ai.active_timeout_ms, this.config.ai.execution_timeout_ms),
-        nextWindow(window.start),
-      );
-      if (now < window.start || now >= deadline) throw new ShortModelError('timeout');
       await this.store.put(
         'catalog_prompts',
         parseRecord('catalog_prompts', {
@@ -573,8 +628,53 @@ export class CatalogPromptService {
           updated_at: new Date(now).toISOString(),
         }),
       );
-      if (Date.now() >= deadline) throw new ShortModelError('timeout');
-      return { kind: 'reserved' as const, deadline };
+      this.assertWindow(signal, window.start, deadline);
+      return true;
+    });
+  }
+
+  private assertModel(job: PromptJob) {
+    const profile = this.profile;
+    if (!profile || profileDigest(profile) !== job.input.profile_digest)
+      throw new PromptReservationStop('model_changed');
+  }
+
+  private assertWindow(signal: AbortSignal, start: number, deadline: number) {
+    const now = Date.now();
+    const reason: unknown = signal.reason;
+    if (
+      now < start ||
+      now >= deadline ||
+      (reason instanceof Error && reason.name === 'TimeoutError')
+    )
+      throw new ShortModelError('timeout', true, undefined, 'AI_DEADLINE_EXCEEDED');
+    signal.throwIfAborted();
+  }
+
+  private sourcesUnchanged(batch: PlannedBatch, view: SourceView) {
+    return batch.sources.every((planned) => {
+      const current = view.sources.get(planned.version.id);
+      return (
+        current === planned ||
+        (current?.asset.id === planned.asset.id &&
+          current.asset.kind === planned.asset.kind &&
+          current.asset.slug === planned.asset.slug &&
+          current.version.metadata.description === planned.version.metadata.description &&
+          current.version.metadata.has_scripts === planned.version.metadata.has_scripts &&
+          current.release.id === planned.release.id &&
+          current.release.category === planned.release.category &&
+          current.resolvedReleaseId === planned.resolvedReleaseId &&
+          current.publicReadable === planned.publicReadable &&
+          current.audienceSignature === planned.audienceSignature &&
+          current.tags.length === planned.tags.length &&
+          current.tags.every((tag, i) => tag === planned.tags[i]) &&
+          current.scenarios.length === planned.scenarios.length &&
+          current.scenarios.every(
+            (scenario, i) =>
+              scenario.id === planned.scenarios[i].id &&
+              scenario.name === planned.scenarios[i].name,
+          ))
+      );
     });
   }
 
@@ -593,56 +693,71 @@ export class CatalogPromptService {
     schema: S,
     instructions: string,
     input: string,
-    signal: AbortSignal,
-    deadline: number,
+    work: BatchWork,
     resources: readonly string[],
   ): Promise<z.infer<S>> {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new ShortModelError('timeout');
     const result = await run.call(step, {
       operation: `${catalogPromptsOperation.id}/${step}`,
       instructions,
       input,
       schema,
-      signal: AbortSignal.any([signal, AbortSignal.timeout(remaining)]),
+      reserve: async () => {
+        await this.reserve(work, false);
+      },
+      recovery: {
+        deadline: work.deadline,
+        reserve: () => this.reserve(work, true),
+      },
       resources,
     });
     return result.value;
   }
 
-  /** 一批至多一次生成和四次预检；任一来源变化即放弃整批，不再就该批发出请求。 */
-  private async generate(
-    run: InlineExecution,
-    job: PromptJob,
-    batch: PlannedBatch,
-    signal: AbortSignal,
-    view: SourceView,
-  ): Promise<
-    { kind: 'batch'; batch: CatalogPromptBatch } | { kind: 'stopped' } | { kind: 'changed' }
-  > {
-    const generation = await this.reserve(job, batch, view);
-    if (generation.kind !== 'reserved') return generation;
-    // 两个步骤的输入都依赖整批来源；同版重发不会改变原请求中的标签和场景。
+  /** 只降级请求次数耗尽，不把输入体积、事件存储等其它预算错误写成可交付的批次。 */
+  private async preflightCap(error: unknown, work: BatchWork): Promise<WindowCap | undefined> {
+    if (error instanceof PromptReservationStop && error.kind === 'stopped') return 'stopped';
+    if (
+      !(error instanceof AiError) ||
+      error instanceof ShortModelError ||
+      error.code !== 'AI_BUDGET_EXCEEDED'
+    )
+      return;
+    return await this.jobs.withLease(work.job, async () => {
+      const state = await this.activeState(work.job);
+      if (!state) throw new AiError('AI_CANCELLED', '提示刷新窗口已结束');
+      this.assertModel(work.job);
+      if (state.window!.reserved >= callLimit) return 'stopped';
+      if (state.window!.reserved >= this.config.ai.max_requests) return 'budget';
+    });
+  }
+
+  /** 一批至多一个生成与四个预检步骤；任一来源变化即放弃整批。 */
+  private async generate(run: InlineExecution, work: BatchWork): Promise<BatchResult> {
+    const { batch, job, view, signal, deadline, maxRequestBytes } = work;
     const resources = batch.sources.map(
       ({ version, release, resolvedReleaseId }) =>
         `catalog-release:${version.id}:${release.id}:${resolvedReleaseId}`,
     );
+    work.pending = promptCandidateLimit;
     const { prompts: candidates } = await this.call(
       run,
       'generate',
       promptCandidatesSchema,
       promptGenerationInstructions,
       JSON.stringify(batch.input),
-      signal,
-      generation.deadline,
+      work,
       resources,
     );
     const prompts: CatalogPromptItem[] = [];
-    for (const candidate of candidates) {
-      // 先判断能否安全展示：不安全的候选不进入预检、存储或展示。
-      if (unsafePrompt(candidate) || prompts.some((item) => item.text === candidate.text)) continue;
-      const preflight = await this.reserve(job, batch, view);
-      if (preflight.kind !== 'reserved') return preflight;
+    let failedPreflight: AiError | undefined;
+    let cap: WindowCap | undefined;
+    const eligible: typeof candidates = [];
+    // 先判断能否安全展示：不安全的候选不进入预检、存储或展示。
+    for (const candidate of candidates)
+      if (!unsafePrompt(candidate) && !eligible.some(({ text }) => text === candidate.text))
+        eligible.push(candidate);
+    for (const [index, candidate] of eligible.entries()) {
+      work.pending = eligible.length - index - 1;
       const input: DiscoveryModelInput = {
         message: candidate.text,
         goal: null,
@@ -665,20 +780,33 @@ export class CatalogPromptService {
       const deck = catalogCards(
         batch.sources,
         candidate.text,
-        cardBudget(shortModelLimits(this.profile!).maxRequestBytes, discoveryInstructions, input),
+        cardBudget(maxRequestBytes, discoveryInstructions, input),
       );
       input.catalog = deck.cards;
       input.catalog_complete = deck.complete;
-      const decision = await this.call(
-        run,
-        'preflight',
-        discoveryDecisionSchema,
-        discoveryInstructions,
-        JSON.stringify(input),
-        signal,
-        preflight.deadline,
-        resources,
-      );
+      let decision: DiscoveryDecision;
+      try {
+        decision = await this.call(
+          run,
+          'preflight',
+          discoveryDecisionSchema,
+          discoveryInstructions,
+          JSON.stringify(input),
+          work,
+          resources,
+        );
+      } catch (error) {
+        if (isModelSampleFailure(error)) {
+          this.assertWindow(signal, job.input.window_start, deadline);
+          failedPreflight = error;
+          continue;
+        }
+        if (!failedPreflight && !prompts.length) throw error;
+        cap = await this.preflightCap(error, work);
+        if (!cap) throw error;
+        this.assertWindow(signal, job.input.window_start, deadline);
+        break;
+      }
       const name = decision.patch.scenario;
       const id = name ? view.scenarios.get(scenarioKey(name)) : null;
       const scenario = id ? await this.store.get('scenarios', id) : null;
@@ -696,13 +824,19 @@ export class CatalogPromptService {
           basis,
         });
     }
+    if (!prompts.length && failedPreflight) throw failedPreflight;
     return {
       kind: 'batch',
+      cap,
       batch: {
         id: randomUUID(),
         audience: batch.audience,
         audience_signature: batch.key,
-        input_digest: batch.inputDigest,
+        // 额度用完或有候选预检失败时，已通过的提示可以交付，但不能当作已完整处理的输入复用。
+        input_digest:
+          cap || failedPreflight
+            ? sha256(canonical({ input: batch.inputDigest, incomplete: true }))
+            : batch.inputDigest,
         policy_digest: this.policyDigest,
         sources: this.sourceRefs(batch),
         generated_at: new Date().toISOString(),
@@ -723,7 +857,8 @@ export class CatalogPromptService {
       const state = await this.activeState(job);
       const now = Date.now();
       if (!state) {
-        if (!outcome.failure) throw new AiError('AI_CANCELLED', '提示刷新窗口已结束');
+        if (!outcome.failure || outcome.batch)
+          throw new AiError('AI_CANCELLED', '提示刷新窗口已结束');
         return await this.settleStale(job);
       }
       const deadline = Math.min(
@@ -732,8 +867,8 @@ export class CatalogPromptService {
       );
       await this.refreshSources(view);
       const batch = outcome.batch;
-      const fresh =
-        batch && CatalogPromptService.unchanged(batch.sources, view.sources) ? batch : null;
+      if (batch) this.assertModel(job);
+      const fresh = batch && this.sourcesUnchanged(batch.planned, view) ? batch.record : null;
       const batches = state.batches.filter(
         (item) =>
           item.audience_signature !== fresh?.audience_signature &&
@@ -766,7 +901,8 @@ export class CatalogPromptService {
           finished_at: new Date(now).toISOString(),
           lease_until: 0,
         });
-      if (!outcome.failure && Date.now() >= deadline) throw new ShortModelError('timeout');
+      if ((!outcome.failure || batch) && Date.now() >= deadline)
+        throw new ShortModelError('timeout');
     });
   }
 

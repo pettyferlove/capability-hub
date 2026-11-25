@@ -2,6 +2,7 @@ import {
   AiError,
   OutputRejectedError,
   digest as profileDigest,
+  isModelSampleFailure,
   type AiRuntime,
 } from '@capability-hub/ai';
 import {
@@ -19,6 +20,7 @@ import { canonical, digest } from '@capability-hub/domain/canonical';
 import {
   evaluationRubricVersion,
   evaluationRubric,
+  evaluationThresholds,
   instructionResult,
 } from '@capability-hub/domain/evaluation';
 import { fail, HubError } from '@capability-hub/domain/errors';
@@ -127,10 +129,17 @@ export class EvaluationRunner {
     stage: string,
     row: ResourceEvaluationRecord,
     version: VersionRecord,
+    signal: AbortSignal,
   ): Promise<EvaluationStageResult> {
     if (stage === 'trigger-routing')
-      return routeCases(call, this.pool, this.store, row, version, (option) =>
-        this.routingDescription(option),
+      return routeCases(
+        call,
+        this.pool,
+        this.store,
+        row,
+        version,
+        (option) => this.routingDescription(option),
+        signal,
       );
     const scans = await this.store.where('scans', 'version_id', version.id);
     const findings =
@@ -165,29 +174,40 @@ export class EvaluationRunner {
         packed.material +
         '</材料>';
       const samples = [];
-      for (let i = 0; i < 2; i++) {
-        const result = await call(
-          'instructions',
-          instructionReviewInstructions,
-          input,
-          instructionReviewSchema,
-          {
-            // 未知 ID 已由 Schema 枚举拒绝，这里只剩重复项导致的缺项。
-            accept: ({ checks }) => {
-              const ids = new Set(checks.map((c) => c.id));
-              if (ids.size !== criteria.length)
-                throw new OutputRejectedError('rubric-ids', '指令质量检查项不完整', {
-                  expected: criteria.length,
-                  distinct: ids.size,
-                });
+      let coverageLimited = packed.limited;
+      const total = evaluationThresholds.instructions.samples;
+      for (let i = 0; i < total; i++) {
+        try {
+          const result = await call(
+            'instructions',
+            instructionReviewInstructions,
+            input,
+            instructionReviewSchema,
+            {
+              // 未知 ID 已由 Schema 枚举拒绝，这里只剩重复项导致的缺项。
+              accept: ({ checks }) => {
+                const ids = new Set(checks.map((c) => c.id));
+                if (ids.size !== criteria.length)
+                  throw new OutputRejectedError('rubric-ids', '指令质量检查项不完整', {
+                    expected: criteria.length,
+                    distinct: ids.size,
+                  });
+              },
             },
-          },
-        );
-        samples.push(
-          result.checks.map((c) => ({ ...c, evidence: sentEvidence(c.evidence, packed.ranges) })),
-        );
+          );
+          samples.push(
+            result.checks.map((c) => ({ ...c, evidence: sentEvidence(c.evidence, packed.ranges) })),
+          );
+        } catch (error) {
+          signal.throwIfAborted();
+          if (!isModelSampleFailure(error) || (i === total - 1 && !samples.length)) throw error;
+          coverageLimited = true;
+        }
       }
-      return { dimension: instructionResult(samples, packed.limited, scriptCount) };
+      return {
+        dimension: instructionResult(samples, coverageLimited, scriptCount),
+        coverageLimited,
+      };
     }
     if (stage === 'task-cases' || /^task-run-[1-4]$/.test(stage)) {
       const materialDigests = new Set(
@@ -260,13 +280,22 @@ export class EvaluationRunner {
               schema,
               signal,
               reserve: () => stages.reserve(job, run.executionId, options.authorize),
+              recovery: {
+                reserve: () =>
+                  stages.reserveRecovery(
+                    job,
+                    run.executionId,
+                    this.runtime.config.max_requests,
+                    options.authorize,
+                  ),
+              },
               accept: options.accept,
               subject: version.id,
               resources: options.resources,
             });
             return result.value;
           };
-          return this.modelStage(call, job.input.stage, row, version);
+          return this.modelStage(call, job.input.stage, row, version, signal);
         },
         async (result) => {
           outcome = await stages.complete(job, result);

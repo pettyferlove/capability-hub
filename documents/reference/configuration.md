@@ -31,7 +31,7 @@
 | CAPABILITY_HUB_MINIO_ACCESS_KEY / SECRET_KEY  | 非空应用身份，不使用管理身份                                         |
 | CAPABILITY_HUB_MINIO_BUCKET / REGION / PREFIX | capability-hub / us-east-1 / blobs/；桶必须预先存在且私有            |
 
-全新完整评测在已配置默认模型且当前 UTC 窗口至少剩余 33 次调用额度时启动。提供方会收到候选或受限 Skill 的内容，以及同一受众等级可读的干扰项名称与描述，须获准处理这些数据。
+全新完整评测需要默认模型和至少 33 次可用的 UTC 日调用额度；纠正和重发计入同一额度，详见[质量评测](../design/content-lifecycle.md#质量评测)。提供方须获准处理候选或受限 Skill 的内容及同受众的干扰项名称和描述。
 
 布尔开关在环境变量中使用小写字符串 true/false，加载后转换为 boolean；未设置时使用默认值，空字符串、0/1 或其他值均报错。未知驱动或不合法配置立即失败。相对实例路径以工作区/部署包解析，不随进程工作目录变化。
 
@@ -58,7 +58,7 @@ HUB_AI_PRIMARY_KEY=<实际凭据>
 
 配置 `default_profile` 即启用首页对话，无需额外 AI 角色；未配置时仅匹配关键词。模型出站请求限 32 KiB、响应限 512 KiB。开场提示生成和预检使用档案的 `max_output_tokens`（含推理）和 `request_timeout_ms`；前台提问另限 4096 token、60 秒。
 
-启用 Worker 后按 UTC 六小时窗口刷新：同受众每批至多 12 项，每窗最多 4 批、`min(20, max_requests)` 次出站，共用 `active_timeout_ms` 与 `execution_timeout_ms` 中较短的时限，不跨窗。成功批次可复用，后续失败不撤回。生成发送类型、简介、标签和场景；预检发送候选问题及本批卡片。前台每轮最多一次出站，每分钟每主体 8 次、每进程 30 次，最多 3 个在途；发送问题、对话条件与可见卡片（引用号、slug、类型、分类、场景、标签及简介开头）。提供方须获准处理这些数据，包括受限发布。
+启用 Worker 后按 UTC 六小时窗口刷新：同受众每批至多 12 项，每窗最多 4 批、`min(20, max_requests)` 次出站；追加请求只用本窗计划外的余量。各批共用 `active_timeout_ms` 与 `execution_timeout_ms` 中较短的时限，不跨窗。成功批次可复用，后续失败不撤回。生成发送类型、简介、标签和场景；预检发送候选问题及本批卡片。前台每轮最多一次出站，每分钟每主体 8 次、每进程 30 次，最多 3 个在途；发送问题、对话条件与可见卡片。提供方须获准处理这些数据，包括受限发布。
 
 两种协议均支持 `request_headers`。值可为非敏感的单行 ASCII 字符串，或 `{"from":"execution_id","prefix":"ses_"}`（前缀可省略，续跑保留同一执行 ID）。头名不区分大小写，不可重复或覆盖鉴权、Host、报文传输等保留头。[OpenCode Go](https://opencode.ai/docs/console/go/#where-can-i-use-it) 用固定 `User-Agent: capability-hub` 和动态 `x-opencode-session`。
 

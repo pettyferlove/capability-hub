@@ -89,14 +89,20 @@ function summary(row: Evaluation, version: VersionRecord) {
 }
 
 function detail(
-  { row, version }: VersionResult,
+  { row: { recovery_requests: _recoveryRequests, ...row }, version }: VersionResult,
   names: ReadonlyMap<string, string>,
   reusedFrom: string | null,
 ) {
-  const stages =
-    row.reused_from && !reusedFrom
-      ? row.stages.map(({ execution_id: _executionId, ...stage }) => stage)
-      : row.stages;
+  const hideExecution = row.reused_from && !reusedFrom;
+  const stages = row.stages.map((stage) => {
+    if (hideExecution) {
+      const { execution_id: _executionId, recovery_requests: _stageRecovery, ...evidence } = stage;
+      return evidence;
+    }
+    if (!Object.hasOwn(stage, 'recovery_requests')) return stage;
+    const { recovery_requests: _stageRecovery, ...evidence } = stage;
+    return evidence;
+  });
   return {
     ...row,
     ...summary(row, version),
