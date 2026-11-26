@@ -2,6 +2,7 @@ import type { Applicability, ContentMetadata, InstallationOption, Manifest } fro
 import type { AuditActorSnapshot } from '../audit.js';
 import type { ReleaseResponse } from './publication.js';
 import type { Policy } from '../policy.js';
+import type { EvaluationSummaryResponse } from './evaluation.js';
 
 /**
  * 目录条目，出现在检索结果、资产详情与推荐位；详情与搜索结果同形，只是后者额外带命中原因。
@@ -32,6 +33,8 @@ export interface AssetResponse {
     published_at: string;
     has_scripts: boolean;
     has_archives?: boolean;
+    /** 目录卡片上的可读评测摘要；无现行评分时省略。 */
+    evaluation?: EvaluationSummaryResponse;
   };
   content_digest: string;
   artifact_digest: string;

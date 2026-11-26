@@ -654,7 +654,7 @@ test('雷达保留缺分的轴，按原轴顺序判断闭合边是否跨过缺�
 });
 
 test('雷达不足三个有效顶点时返回空，有三个顶点时零分也计入', () => {
-  for (const size of ['full', 'glyph'] as const) {
+  for (const size of ['full', 'glyph', 'card'] as const) {
     for (const scores of [[], [0, 100], [null, 70, null, 90], [NaN, 30, 90], [110, 30, 90]]) {
       assert.equal(radarGeometry(radarAxes(scores), size), null);
     }

@@ -1,4 +1,5 @@
 import type {
+  EvaluationDimensionResult,
   GitSourceRecord,
   HubFeedbackArea,
   HubFeedbackAttachmentRecord,
@@ -27,6 +28,16 @@ export type EvaluationQueueCursor = Pick<
   RecordMap['resource_evaluations'],
   'priority' | 'requested_at' | 'id'
 >;
+
+/** 发布卡片只携带已出分的维度，不含证据、题目或运行标识。 */
+export interface EvaluationSummary {
+  dimensions: {
+    id: EvaluationDimensionResult['id'];
+    score: number;
+    confidence: EvaluationDimensionResult['confidence'];
+    band: 'excellent' | 'good' | 'fair' | 'weak' | null;
+  }[];
+}
 
 /** 北京时间的日桶只返回计数，审计明细和反馈正文留在各自读取边界内。 */
 export interface ResourceActivityBucket {
@@ -101,6 +112,10 @@ export interface RecordStore {
   ): Promise<RecordMap['resource_evaluations'][]>;
   listRunningEvaluationSubjects(): Promise<string[]>;
   listVersionEvaluations(versionId: string): Promise<RecordMap['resource_evaluations'][]>;
+  listEvaluationSummaries(
+    releaseIds: readonly string[],
+    rubric: string,
+  ): Promise<Map<string, EvaluationSummary>>;
   listRunningEvaluations(): Promise<RecordMap['resource_evaluations'][]>;
   countManualEvaluations(assetId: string, since: string): Promise<number>;
   nextEvaluationBackfill(

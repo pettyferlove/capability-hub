@@ -54,6 +54,8 @@ HTTP 契约在 packages/contracts/src；http/ 目录按业务划分 Response，�
 
 Skill 的上传与提交审核请求均可携带布尔字段 `requires_api_key`；MCP 不接受此字段。接收详情返回 `proposed_requires_api_key`，提交时可明确修正，省略时沿用本次接收声明或资产当前声明。审核申请将其纳入 `canonical_policy_json` 与 `policy_digest`，审核响应和发布记录保留提交时的值；通过后将该声明用于资产标签。已有资产上传新版本不会提前修改当前目录标签。
 
+`GET /api/assets` 的 `current_release.evaluation` 与首页发现结果的 `evaluation` 均按卡片的固定发布读取，只含已评分维度的 `id`、`score`、`band`、`confidence`。无现行标准结果、无评分或非 Skill 时省略该字段。
+
 `GET /api/assets/:id/versions/:versionId/evaluation` 按固定发布的受众和冻结声明取结果，支持匿名访问与个人只读令牌。无结果时 `evaluation` 为 null。已有结果可在更新期间继续展示，附扫描规则版本 `scan_ruleset`。能查看证据的会话可获得匹配的尝试 `latest_attempt_id`，等待额度时还会返回 `next_window_at`。上一发布可读且双方使用同一现行标准与评测器时返回 `baseline`。版本不可读返回 404。
 
 `GET /api/management/versions/:versionId/evaluations` 返回 `items` 历史列表、阶段进度、失败原因和逐项依据。资产维护者可读全部版本，审核者可读其审核范围内申请对应的候选版本，已发布版本还须可读。维护与审核响应均说明模型是否启用、能否手动发起及等待额度的下一窗口。

@@ -15,6 +15,7 @@ import type {
   GitSourceRecord,
   JobRecord,
   PublicationRequestRecord,
+  ResourceEvaluationRecord,
 } from '@capability-hub/domain/models';
 import type { HubFeedbackDetailResponse, OperationsResponse } from '@capability-hub/contracts/http';
 import { createTestHub, publishSkill, receiveSkill } from '../support/application.js';
@@ -113,6 +114,88 @@ test('PostgreSQL 通过评测生成列调度，同一空摘要仅允许一条在
       assert.equal(await f.store.revision(), revision);
     } finally {
       await sql.end();
+      await f.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
+
+test('PostgreSQL 卡片按冻结声明选同标准评测，保留零分但不带证据', async (context) => {
+  const database = await externalDatabase();
+  try {
+    const f = await createTestHub(context, {
+      database: { driver: 'postgresql', url: database.url, poolSize: 2 },
+    });
+    try {
+      const { intake } = await publishSkill(f);
+      const [release] = await f.store.where('releases', 'version_id', intake.version_id);
+      const [base] = await f.store.listVersionEvaluations(intake.version_id);
+      const result: ResourceEvaluationRecord = {
+        ...base,
+        id: randomUUID(),
+        scope: 'full',
+        state: 'partial',
+        evaluator_digest: 'sha256:' + sha256('model'),
+        audience_class: 'public',
+        requires_api_key: false,
+        dimensions: [
+          { id: 'structure', status: 'scored', score: 91, confidence: 'high', checks: [] },
+          { id: 'triggering', status: 'insufficient', score: null, confidence: null, checks: [] },
+          {
+            id: 'instructions',
+            status: 'scored',
+            score: 0,
+            confidence: 'medium',
+            checks: [],
+            summary: '评测证据不应进入列表',
+          },
+        ],
+      };
+      await f.store.insert('resource_evaluations', result);
+      const newer = new Date(Date.parse(result.requested_at) + 1000).toISOString();
+      const alternatives: Partial<ResourceEvaluationRecord>[] = [
+        { scope: 'static' },
+        { requires_api_key: null },
+        { requires_api_key: true },
+        { audience_class: 'signed_in' },
+        { evaluator_digest: null },
+        { rubric_version: 'other-rubric' },
+        { content_digest: 'sha256:' + sha256('other-content') },
+        { state: 'failed' },
+      ];
+      for (const other of alternatives) {
+        await f.store.insert('resource_evaluations', {
+          ...result,
+          id: randomUUID(),
+          requested_at: newer,
+          dimensions: [],
+          ...other,
+        });
+      }
+      assert.deepEqual(
+        await f.store.listEvaluationSummaries([release.id, randomUUID()], result.rubric_version),
+        new Map([
+          [
+            release.id,
+            {
+              dimensions: [
+                { id: 'structure', score: 91, confidence: 'high', band: 'excellent' },
+                { id: 'instructions', score: 0, confidence: 'medium', band: 'weak' },
+              ],
+            },
+          ],
+        ]),
+      );
+      await f.store.insert('resource_evaluations', {
+        ...result,
+        id: randomUUID(),
+        requested_at: newer,
+        dimensions: [],
+      });
+      const empty = await f.store.listEvaluationSummaries([release.id], result.rubric_version);
+      assert.equal(empty.size, 0);
+    } finally {
       await f.close();
     }
   } finally {

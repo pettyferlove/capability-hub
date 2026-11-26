@@ -8,6 +8,7 @@ import { aiTables } from '@capability-hub/ai/records';
 import {
   aiExecutionDiagnosticsResponseSchema,
   aiExecutionLedgerResponseSchema,
+  evaluationResponseSchema,
   operationsAgentApi,
   tokenUsageResponseSchema,
 } from '@capability-hub/contracts';
@@ -169,6 +170,17 @@ async function publish(
   return intake;
 }
 
+async function scoredSummary(client: Agent, version: { asset_id: string; version_id: string }) {
+  const path = `/api/assets/${version.asset_id}/versions/${version.version_id}/evaluation`;
+  const { evaluation } = evaluationResponseSchema.parse((await client.get(path).expect(200)).body);
+  assert(evaluation);
+  const dimensions = evaluation.dimensions.flatMap(({ id, score, confidence, band }) =>
+    score === null ? [] : [{ id, score, confidence, band }],
+  );
+  assert(dimensions.length > 0);
+  return { dimensions };
+}
+
 async function entry(client: Agent) {
   const response = await client.get('/api/catalog/discovery').expect(200);
   const value: DiscoveryEntryResponse = response.body;
@@ -229,6 +241,32 @@ const regressionSearch = (input: ModelInput): Decision => ({
   picks: picks(input, ['http-regression-kit'], quotes),
 });
 
+test('关键词卡片只携带可读发布的已出分摘要，尚未评测的卡片不带该字段', async (context) => {
+  const fixture = await createTestHub(context);
+  const restricted = await publish(fixture, 'team-audit', '检查团队鉴权。', [
+    `group:${fixture.teamId}`,
+  ]);
+  await fixture.worker.tick();
+  await publish(fixture, 'public-audit', '检查公开鉴权。');
+  const anonymous = httpClient(fixture);
+  const owner = await signIn(fixture);
+  const expected = await scoredSummary(owner, restricted);
+  const search = async (client: Agent) => {
+    const { viewer_key } = await entry(client);
+    const response = await client
+      .post('/api/catalog/discovery/turn')
+      .send({ action: 'message', text: 'audit', viewer_key, expected_mode: 'keywords' })
+      .expect(200);
+    const value: DiscoveryTurnResponse = response.body;
+    assert(value.mode === 'keywords');
+    return Object.fromEntries(
+      value.items.map((item) => [item.slug, 'evaluation' in item ? item.evaluation : false]),
+    );
+  };
+  assert.deepEqual(await search(anonymous), { 'public-audit': false });
+  assert.deepEqual(await search(owner), { 'public-audit': false, 'team-audit': expected });
+});
+
 test('模糊的发版担忧经两轮澄清找到有接口回归证据的固定版本，每轮只出站一次', async (context) => {
   const { fixture, decisions, calls } = await discoveryHub(context);
   await publish(fixture, 'release-notes', releaseNotes);
@@ -287,6 +325,7 @@ test('模糊的发版担忧经两轮澄清找到有接口回归证据的固定�
 
 test('只有发布记录工具的目录说明缺少接口回归依据，不拿相近资源凑数', async (context) => {
   const { fixture, decisions } = await discoveryHub(context);
+  fixture.config.evaluationDailyRequests = 0;
   const notes = await publish(fixture, 'release-notes', releaseNotes);
   await publish(fixture, 'gateway-tools', '为网关配置证书、路由与限流。');
   await fixture.worker.waitForIdle();
@@ -301,6 +340,7 @@ test('只有发布记录工具的目录说明缺少接口回归依据，不拿�
     first.items.map((item) => item.version_id),
     [notes.version_id],
   );
+  assert.deepEqual(first.items[0].evaluation, await scoredSummary(client, notes));
 
   decisions.push(unsureGuide);
   const second = await turn(
@@ -329,8 +369,9 @@ test('只有发布记录工具的目录说明缺少接口回归依据，不拿�
 
 test('按条件筛选时必需项只认整句或标签证据，召回词也不命中否定描述', async (context) => {
   const { fixture, decisions } = await discoveryHub(context);
+  fixture.config.evaluationDailyRequests = 0;
   await publish(fixture, 'junit-basics', '为 Spring Boot 项目生成 JUnit 测试骨架。');
-  await publish(fixture, 'auth-negated', 'JUnit 5 测试模板，不支持鉴权测试。');
+  const partial = await publish(fixture, 'auth-negated', 'JUnit 5 测试模板，不支持鉴权测试。');
   const authTests = await publish(
     fixture,
     'auth-tests',
@@ -371,6 +412,12 @@ test('按条件筛选时必需项只认整句或标签证据，召回词也不�
     proven.partial.map((item) => [item.slug, item.unverified]),
     [['auth-negated', ['鉴权测试']]],
   );
+  assert(!('evaluation' in proven.items[0]));
+  await fixture.worker.tick();
+  const rescored = await filter({});
+  assert.equal(rescored.context, proven.context);
+  assert.deepEqual(rescored.items[0].evaluation, await scoredSummary(client, authTests));
+  assert.deepEqual(rescored.partial[0].evaluation, await scoredSummary(client, partial));
   decisions.push({ action: 'refer', index: 2 });
   const second = await turn(
     client,
@@ -454,9 +501,10 @@ test('匿名、团队甲与团队乙送模的卡片与看到的方向、依据�
 
 test('结果的指代按上一轮原序解析：上新不换版，越界请用户指明，只采用评对那一项的模型判断', async (context) => {
   const { fixture, decisions, calls } = await discoveryHub(context);
+  fixture.config.evaluationDailyRequests = 0;
   const first = await publish(fixture, 'auth-tests', '编写接口鉴权测试。');
   const second = await publish(fixture, 'auth-review', '审查接口鉴权测试的覆盖情况。');
-  await fixture.worker.waitForIdle();
+  await fixture.worker.tick();
   const client = httpClient(fixture);
   const { viewer_key } = await entry(client);
   const base = { action: 'message', expected_mode: 'dialogue', viewer_key };
@@ -469,6 +517,9 @@ test('结果的指代按上一轮原序解析：上新不换版，越界请用�
   const list = await turn(client, { ...base, text: '鉴权测试' }, 'matches');
   const order = list.items.map((item) => item.version_id);
   assert.deepEqual(order, [first.version_id, second.version_id]);
+  const expected = await scoredSummary(client, second);
+  assert.deepEqual(list.items[1].evaluation, expected);
+  assert.doesNotMatch(JSON.stringify(modelInput(calls().at(-1)?.body)), /"evaluation"|"score"/);
 
   // 第二项发布新版本会改变当前目录，但「第二个」仍指上一轮展示的那个固定版本。
   await publishSkill(fixture, {
@@ -491,6 +542,7 @@ test('结果的指代按上一轮原序解析：上新不换版，越界请用�
     'reference',
   );
   assert.equal(refer.item?.version_id, order[1]);
+  assert.deepEqual(refer.item?.evaluation, expected);
   assert.match(refer.reply, /「覆盖报告」：发布信息未说明/);
   assert.equal(refer.item?.judgment, undefined);
   decisions.push({ action: 'refer', index: 1 });
@@ -649,6 +701,7 @@ test('模型只能挑本轮送出的可见卡片：越界引用号被丢弃，�
 
 test('选方向直接列出模型为该方向挑出的版本，不再出站；方向依据撤回后不再展开', async (context) => {
   const { fixture, decisions, calls } = await discoveryHub(context);
+  fixture.config.evaluationDailyRequests = 0;
   const notes = await publish(fixture, 'release-notes', releaseNotes);
   const kit = await publish(fixture, 'http-regression-kit', regression);
   await fixture.worker.waitForIdle();
@@ -679,6 +732,7 @@ test('选方向直接列出模型为该方向挑出的版本，不再出站；�
     chosen.items.map((item) => [item.version_id, item.judgment?.quote]),
     [[kit.version_id, '对关键 HTTP 接口做回归测试']],
   );
+  assert.deepEqual(chosen.items[0].evaluation, await scoredSummary(client, kit));
   assert.deepEqual(chosen.criteria.requirements, ['接口回归测试']);
   const missing = await rejected(
     client,

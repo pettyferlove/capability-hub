@@ -1,5 +1,6 @@
 import type {
   EvaluationQueueCursor,
+  EvaluationSummary,
   HubFeedbackEventPage,
   HubFeedbackRecordQuery,
   ReadyJobsQuery,
@@ -33,6 +34,7 @@ import {
 import { alias } from 'drizzle-orm/pg-core';
 import type { RecordQueries } from '../record-driver.js';
 import { evaluationBackfillCandidates } from '../evaluation-backfill-query.js';
+import { evaluationSummaryQuery, parseEvaluationSummaries } from '../evaluation-summary-query.js';
 import { resourceActivityQuery } from '../resource-activity-query.js';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pgRevision, type pgSchema, pgTableFor } from './record-schema.js';
@@ -200,6 +202,16 @@ export class PgQueries implements RecordQueries {
       .where(eq(t.version_id, versionId))
       .orderBy(desc(t.requested_at), desc(t.id));
     return rows.map(({ data }) => parseRecord('resource_evaluations', data));
+  }
+  async listEvaluationSummaries(releaseIds: readonly string[], rubric: string) {
+    if (!releaseIds.length) return new Map<string, EvaluationSummary>();
+    const query = evaluationSummaryQuery('postgresql', releaseIds, rubric);
+    const rows = await this.db
+      .select(query.fields)
+      .from(query.source)
+      .where(query.filter)
+      .orderBy(query.position);
+    return parseEvaluationSummaries(rows);
   }
   async countManualEvaluations(assetId: string, since: string) {
     const [row] = await this.db

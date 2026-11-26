@@ -1,4 +1,8 @@
-import type { EvaluationResponse, ManagementEvaluationsResponse } from '@capability-hub/contracts';
+import type {
+  EvaluationResponse,
+  EvaluationSummaryResponse,
+  ManagementEvaluationsResponse,
+} from '@capability-hub/contracts';
 
 /** 雷达与清单共用固定轴序；早期结果缺失的轴保留空值。 */
 export type Evaluation = NonNullable<EvaluationResponse['evaluation']>;
@@ -16,6 +20,7 @@ const axisNames = {
   effectiveness: '任务效果',
   transparency: '边界透明',
 } as const;
+const axisOrder = Object.keys(axisNames) as (keyof typeof axisNames)[];
 
 /** 服务端返回的等级、置信度和状态直接映射为可读词汇。 */
 export const labels = {
@@ -43,7 +48,7 @@ export const labels = {
 
 /** 按协议枚举补全五维，分数与分级保留服务端结果。 */
 export function evaluationDimensions(data: Evaluation): Dimension[] {
-  return (Object.keys(axisNames) as (keyof typeof axisNames)[]).map(
+  return axisOrder.map(
     (id) =>
       data.dimensions.find((dimension) => dimension.id === id) ?? {
         id,
@@ -55,6 +60,47 @@ export function evaluationDimensions(data: Evaluation): Dimension[] {
         checks: [],
       },
   );
+}
+
+/** 卡片与详情共用五个轴位，只统计实际出分的维度。 */
+export function evaluationCoverage(data: EvaluationSummaryResponse | Evaluation) {
+  let count = 0;
+  const axes = axisOrder.map((id) => {
+    const dimension = data.dimensions.find((d) => d.id === id);
+    const status = dimension && 'status' in dimension ? dimension.status : undefined;
+    const score = !status || status === 'scored' ? (dimension?.score ?? null) : null;
+    if (score !== null) count++;
+    return {
+      id,
+      label: dimension && 'label' in dimension ? dimension.label : axisNames[id],
+      score,
+      band: dimension?.band ?? null,
+      confidence: dimension?.confidence ?? null,
+      statusLabel: status && status !== 'scored' ? labels[status] : score === null ? '未评估' : '',
+    };
+  });
+  return { axes, count };
+}
+
+/** 仅详情展示最低项；并列时采用固定轴序。 */
+export function evaluationReadings(data: Evaluation) {
+  const { axes, count } = evaluationCoverage(data);
+  let lowest: (typeof axes)[number] | undefined;
+  for (const axis of axes) {
+    if (axis.score === null) continue;
+    if (axis.score < (lowest?.score ?? Infinity)) lowest = axis;
+  }
+  const headline = lowest
+    ? `${count > 1 ? `${count} 项评测 · 最低 ` : ''}${lowest.label} ${lowest.score} 分`
+    : '';
+  return { axes, count, lowest, headline };
+}
+
+/** 低置信度的纸面判断展示读数，但不作为警示。 */
+export function warningBand({ band, confidence }: Pick<Dimension, 'band' | 'confidence'>) {
+  return (confidence === 'medium' || confidence === 'high') && (band === 'fair' || band === 'weak')
+    ? band
+    : null;
 }
 
 /** 每个维度只摘出最能解释该次测量的实际计数或判断。 */
@@ -152,9 +198,4 @@ export function failureLabel(code?: string) {
     AI_CONFIGURATION: '评测模型配置不可用',
   };
   return code ? (reasons[code] ?? '阶段未能完成') + '（' + code + '）' : '阶段未能完成';
-}
-
-/** 固定版本可使用自动 Git 标签，保留服务端返回的版本标识。 */
-export function versionLabel(version: string) {
-  return /^\d+\.\d+\.\d+/.test(version) ? 'v' + version : version;
 }

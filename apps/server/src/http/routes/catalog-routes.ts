@@ -83,6 +83,7 @@ export function registerCatalogRoutes(app: Express, { hub, security }: HttpConte
         await hub.catalog.search(
           res.locals.viewer ?? null,
           catalogSearchQuerySchema.parse(req.query),
+          { includeEvaluations: true },
         ),
     ),
   );

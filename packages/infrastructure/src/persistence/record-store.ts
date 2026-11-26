@@ -72,6 +72,9 @@ class DrizzleStore implements RecordStore {
   listVersionEvaluations(versionId: string) {
     return this.execute((queries) => queries.listVersionEvaluations(versionId));
   }
+  listEvaluationSummaries(releaseIds: readonly string[], rubric: string) {
+    return this.execute((queries) => queries.listEvaluationSummaries(releaseIds, rubric));
+  }
   reusableEvaluation(subjectDigest: string, rubric: string, evaluator: string | null) {
     return this.execute((queries) => queries.reusableEvaluation(subjectDigest, rubric, evaluator));
   }

@@ -34,6 +34,7 @@ import { CardGridSkeleton } from '../../shared/components/Skeleton.js';
 import { QueryRegion } from '../../shared/components/QueryRegion.js';
 import { useHub } from '../../shared/context/HubContext.js';
 import { categoryLabel } from '../../shared/format/labels.js';
+import { EvaluationCardSummary } from '../evaluation/EvaluationCardSummary.js';
 import { CatalogMotionItem } from './CatalogMotionItem.js';
 import { ApiKeyBadge } from './ApiKeyBadge.js';
 import { CatalogEmptyState } from './CatalogEmptyState.js';
@@ -47,7 +48,7 @@ import { SpotlightCard } from '../../shared/components/react-bits/SpotlightCard.
 import { useDiscovery } from './use-discovery.js';
 import { TaskComposer, TaskPanel } from './TaskDiscovery.js';
 import {
-  cardBottomStyles,
+  cardIndicatorsStyles,
   cardFeatureTagStyles,
   cardFootItemStyles,
   cardFootStyles,
@@ -573,8 +574,10 @@ function AssetCard({ asset }: { asset: AssetResponse }) {
           </span>
         </div>
       )}
-      <p title={asset.description}>{asset.description}</p>
-      <div className={cardBottomStyles}>
+      <p className="mb-auto" title={asset.description}>
+        {asset.description}
+      </p>
+      <div className={cn(cardIndicatorsStyles, 'min-h-[30px]')}>
         {(release.has_scripts || needsKey || keywords.length > 0) && (
           <div className={cardTagRowStyles}>
             {release.has_scripts && (
@@ -591,20 +594,21 @@ function AssetCard({ asset }: { asset: AssetResponse }) {
             ))}
           </div>
         )}
-        <div className={cardFootStyles}>
-          <span className={cardFootItemStyles} title={asset.owner.name}>
-            <Building2 size={11} aria-hidden="true" />
-            <span className="truncate">{asset.owner.name}</span>
-          </span>
-          <span
-            className={cn(cardFootItemStyles, 'max-w-full justify-self-end')}
-            title={'可见范围：' + release.visibility_label}
-          >
-            <AudienceIcon size={11} aria-hidden="true" />
-            <span className="sr-only">可见范围：</span>
-            <span className="truncate">{ownerOnly ? '团队可见' : release.visibility_label}</span>
-          </span>
-        </div>
+        {asset.kind === 'skill' && <EvaluationCardSummary evaluation={release.evaluation} />}
+      </div>
+      <div className={cardFootStyles}>
+        <span className={cardFootItemStyles} title={asset.owner.name}>
+          <Building2 size={11} aria-hidden="true" />
+          <span className="truncate">{asset.owner.name}</span>
+        </span>
+        <span
+          className={cn(cardFootItemStyles, 'max-w-full justify-self-end')}
+          title={'可见范围：' + release.visibility_label}
+        >
+          <AudienceIcon size={11} aria-hidden="true" />
+          <span className="sr-only">可见范围：</span>
+          <span className="truncate">{ownerOnly ? '团队可见' : release.visibility_label}</span>
+        </span>
       </div>
     </SpotlightCard>
   );

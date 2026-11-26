@@ -11,8 +11,9 @@ import { consumableInstallationOptions } from '@capability-hub/domain/content';
 import { z } from 'zod';
 import { canonical, digest, sha256 } from '@capability-hub/domain/canonical';
 import { fail, notFound } from '@capability-hub/domain/errors';
+import { evaluationRubricVersion } from '@capability-hub/domain/evaluation';
 import { has } from '@capability-hub/domain/rbac';
-import type { CatalogCursorCodec } from '../ports/index.js';
+import type { CatalogCursorCodec, EvaluationSummary } from '../ports/index.js';
 import type { ApplicationContext } from '../shared/application-context.js';
 import type { AssetAccessService } from './asset-access-service.js';
 import { sharedKeysForOption } from '../credentials/mcp-shared-key-service.js';
@@ -41,6 +42,7 @@ export class CatalogService {
     release: ReleaseRecord,
     p: Principal | null,
     scenarios?: CatalogScenario[],
+    evaluation?: EvaluationSummary,
   ) {
     const s = (await this.context.store.get('sources', release.policy_source_id))!;
     const group = await this.context.store.get('groups', asset.owner_group_id);
@@ -71,6 +73,7 @@ export class CatalogService {
         published_at: release.published_at,
         has_scripts: version.metadata.has_scripts ?? false,
         has_archives: version.metadata.has_archives ?? false,
+        ...(evaluation && { evaluation }),
       },
       content_digest: version.content_digest,
       artifact_digest: version.artifact_digest,
@@ -299,8 +302,12 @@ export class CatalogService {
    * groups 与 bindings 的摘要以及 `store.revision()`。因此期间内容或授权变化会让
    * 旧游标失效（抛 400/`CURSOR_EXPIRED`），而不是静默翻到错位的数据。
    */
-  search(p: Principal | null, input: CatalogSearchQuery) {
-    return this.context.store.tx(() => this.searchSnapshot(p, input));
+  search(
+    p: Principal | null,
+    input: CatalogSearchQuery,
+    { includeEvaluations = false }: { includeEvaluations?: boolean } = {},
+  ) {
+    return this.context.store.tx(() => this.searchSnapshot(p, input, includeEvaluations));
   }
   /**
    * 检索实现细节，必须在 {@link CatalogService.search} 的事务内调用。
@@ -310,7 +317,11 @@ export class CatalogService {
    * `limit` 缺省 20；`counts` 在 `category` 过滤之前统计，`total` 是过滤之后的总数，
    * 两者不能互推。游标过期或与当前参数不匹配时报 400/`CURSOR_EXPIRED`。
    */
-  private async searchSnapshot(p: Principal | null, input: CatalogSearchQuery) {
+  private async searchSnapshot(
+    p: Principal | null,
+    input: CatalogSearchQuery,
+    includeEvaluations: boolean,
+  ) {
     const q = { ...input, q: input.q ?? '', limit: input.limit ?? 20 };
     const query = q.q.normalize('NFKC').toLowerCase();
     const words = searchTerms(query);
@@ -355,6 +366,7 @@ export class CatalogService {
         asset: a,
         version: v,
         release: r,
+        resolvedReleaseId: row.resolved.id,
         displayScenarios: row.displayScenarios,
         score,
         match_reasons: [...new Set(reasons)],
@@ -399,15 +411,24 @@ export class CatalogService {
           })
         : null;
 
+    const page = results.slice(offset, offset + q.limit);
+    // 只为已通过两重受众校验的当页 Skill 读摘要，不参与候选缓存、打分或游标。
+    const summaries = includeEvaluations
+      ? await this.context.store.listEvaluationSummaries(
+          page.flatMap((row) => (row.asset.kind === 'skill' ? [row.resolvedReleaseId] : [])),
+          evaluationRubricVersion,
+        )
+      : undefined;
     return {
       items: await Promise.all(
-        results.slice(offset, offset + q.limit).map(async (row) => ({
+        page.map(async (row) => ({
           ...(await this.describeAsset(
             row.asset,
             row.version,
             row.release,
             p,
             row.displayScenarios,
+            summaries?.get(row.resolvedReleaseId),
           )),
           score: row.score,
           match_reasons: row.match_reasons,
@@ -565,6 +586,7 @@ interface CatalogMatch {
   asset: AssetRecord;
   version: VersionRecord;
   release: ReleaseRecord;
+  resolvedReleaseId: string;
   displayScenarios: CatalogEntry['displayScenarios'];
   score: number;
   match_reasons: string[];

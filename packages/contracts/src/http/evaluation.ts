@@ -187,6 +187,13 @@ export const managementEvaluationsResponseSchema = z.strictObject({
 /** 基线与当前结果分别表达缺失，调用方无需补零。 */
 export type EvaluationResponse = z.infer<typeof evaluationResponseSchema>;
 
+/** 卡片只交付现行标准下有读数的维度，不含检查项、模型文字或跨版本基线。 */
+export interface EvaluationSummaryResponse {
+  dimensions: (Pick<z.infer<typeof publicDimension>, 'id' | 'band' | 'confidence'> & {
+    score: number;
+  })[];
+}
+
 /** 每个历史条目保留自身标准版本和修订号。 */
 export type ManagementEvaluationsResponse = z.infer<typeof managementEvaluationsResponseSchema>;
 

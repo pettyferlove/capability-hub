@@ -32,3 +32,11 @@ export const evaluationNoteStyles =
 export const evaluationDetailsStyles = 'min-w-0 text-label [overflow-wrap:anywhere]';
 export const evaluationPopoverStyles =
   'z-100 max-h-[75vh] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-paper p-4 text-ink [box-shadow:var(--shadow-floating)]';
+export const evaluationStripStyles =
+  'relative mb-4 grid min-w-0 items-center gap-x-3 gap-y-1.5 rounded-xl border border-line bg-page px-3 py-2.5 text-ink transition-colors hover:border-brand-line sm:px-4 sm:py-3';
+export const evaluationStripActionStyles = cn(
+  'col-end-[-1] row-start-1 inline-flex min-h-8 items-center gap-1 text-label font-medium whitespace-nowrap text-brand outline-none',
+  'after:absolute after:inset-0 after:rounded-xl focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-brand',
+);
+export const evaluationStripReadingsStyles =
+  'col-span-full row-start-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-label leading-5 sm:col-span-1 sm:col-end-[-2]';

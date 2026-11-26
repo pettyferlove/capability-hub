@@ -14,10 +14,13 @@ import {
 import { userEvent } from '@testing-library/user-event';
 import type {
   EvaluationResponse,
+  EvaluationSummaryResponse,
   ManagementEvaluationsResponse,
   ReviewEvaluationResponse,
 } from '@capability-hub/contracts';
+import { EvaluationCardSummary } from '../../apps/web/src/features/evaluation/EvaluationCardSummary.js';
 import { EvaluationPanel } from '../../apps/web/src/features/evaluation/EvaluationPanel.js';
+import { EvaluationStrip } from '../../apps/web/src/features/evaluation/EvaluationStrip.js';
 import { deferred } from '../support/store.js';
 
 afterEach(cleanup);
@@ -178,6 +181,54 @@ function intakePanel() {
   return createElement(EvaluationPanel, { kind: 'intake', versionId });
 }
 
+test('卡片只画现行评分雷达，保留零分和缺轴，不显示项数或占位说明', () => {
+  const card = (dimensions: EvaluationSummaryResponse['dimensions']) =>
+    createElement(EvaluationCardSummary, { evaluation: { dimensions } });
+  const structure = { id: 'structure', score: 96, band: 'excellent', confidence: 'high' } as const;
+  const instructions = { id: 'instructions', score: 0, band: 'weak', confidence: 'high' } as const;
+  const view = render(createElement(EvaluationCardSummary, {}));
+  assert.equal(view.container.firstElementChild, null);
+  view.rerender(card([instructions, structure]));
+  assert.equal(view.container.firstElementChild, null);
+  view.rerender(card([{ ...instructions, id: 'transparency' }, instructions, structure]));
+  const chart = screen.getByRole('img', {
+    name: /质量评测雷达图：结构规范 96 分.*触发准确无评分.*指令质量 0 分/,
+  });
+  assert.equal(view.container.textContent, '');
+  assert(chart.querySelector('svg line[stroke-dasharray]'));
+  assert(!screen.queryByRole('button'));
+  assert(!screen.queryByRole('link'));
+});
+
+test('摘要条区分缺项、不适用和样本不足，同时标明部分完成与评测时间', () => {
+  const data = result(5, {
+    state: 'partial',
+    dimensions: [
+      dimensions[3],
+      { ...dimensions[0], status: 'not_applicable', score: null, band: null, confidence: null },
+      { ...dimensions[2], status: 'insufficient', score: null, band: null, confidence: null },
+    ],
+  });
+  render(createElement(EvaluationStrip, { published: publicView(data), onOpen: () => {} }));
+  const strip = within(screen.getByRole('region', { name: '质量评测摘要' }));
+  assert(strip.getByText('部分完成'));
+  assert(strip.getByText('2026-11-24'));
+  const list = strip.getByLabelText('五维读数');
+  assert.deepEqual(
+    [...list.querySelectorAll('dt')].map((term) => [
+      term.textContent,
+      term.nextElementSibling?.textContent,
+    ]),
+    [
+      ['结构规范', '不适用'],
+      ['触发准确', '未评估'],
+      ['指令质量', '样本不足'],
+      ['任务效果', '37 分薄弱低置信度'],
+      ['边界透明', '未评估'],
+    ],
+  );
+});
+
 test('公开结果不足三项时清单保留分数和缺失状态，达到三项才出现带文字摘要的雷达', async () => {
   const view = render(publicPanel(publicView(result(2))));
   const structure = await screen.findByRole('button', { name: /结构规范.*91.*优秀/ });
@@ -247,6 +298,71 @@ test('任务效果收起时可见增益和置信度，展开后可对照两组�
   await user.keyboard('{Enter}');
   assert.equal(row.getAttribute('aria-expanded'), 'false');
   assert(!screen.queryByText('带 Skill 通过率'));
+});
+
+test('同一 Git 版本的评分一致时不叠两条曲线，完整标识按需展开', async () => {
+  const version = `git.${'7e1ca32e'.repeat(5)}.sed7ecb10-7234-478c-b602-2b955c69b336.r5`;
+  const data = result(5, { version_label: version });
+  const published = publicView(data, {
+    comparison_status: 'available',
+    baseline: {
+      version_label: version,
+      dimensions: data.dimensions.map(({ id, score }) => ({ id, score })).reverse(),
+    },
+  });
+  render(publicPanel(published));
+  const comparison = within(await screen.findByRole('figure'));
+  assert(comparison.getByText('与上一发布评分一致'));
+  assert(!comparison.queryByRole('button', { name: /对比/ }));
+  assert(!screen.queryByText(/^对比版本 /));
+  const summary = screen.getByText('Git 7e1ca32e · r5', { selector: 'summary' });
+  const disclosure = summary.closest('details');
+  assert(disclosure && !disclosure.open);
+  await userEvent.setup().click(summary);
+  assert(disclosure.open);
+  assert(within(disclosure).getByText(version, { selector: 'code' }));
+});
+
+test('同一版本标签仍能比较不同读数，新增评分与原来的零分分别展示', async () => {
+  const data = result(4);
+  const published = publicView(data, {
+    comparison_status: 'available',
+    baseline: {
+      version_label: data.version_label,
+      dimensions: [
+        { id: 'structure', score: 0 },
+        { id: 'triggering', score: 88 },
+        { id: 'effectiveness', score: 37 },
+        { id: 'transparency', score: 72 },
+      ],
+    },
+  });
+  render(publicPanel(published));
+  const toggle = await screen.findByRole('button', { name: '对比上一发布', pressed: true });
+  assert(screen.getByText('对比版本 0 分'));
+  assert(screen.getByText('对比版本无评分'));
+  assert(screen.getByText('对比版本 72 分'));
+  assert(!screen.queryByText('对比版本 88 分'));
+  const user = userEvent.setup();
+  await user.click(toggle);
+  assert(!screen.queryByText(/^对比版本/));
+  await user.click(toggle);
+  assert(screen.getByText('对比版本 0 分'));
+});
+
+test('提交缩写和修订相同但来源不同的 Git 版本仍能分别识别', () => {
+  const version = `git.${'a'.repeat(64)}.s11111111-7234-478c-b602-2b955c69b336.r5`;
+  const data = result(1, { version_label: version });
+  const published = publicView(data, {
+    comparison_status: 'available',
+    baseline: {
+      version_label: version.replace('s11111111', 's22222222'),
+      dimensions: [{ id: 'structure', score: 91 }],
+    },
+  });
+  render(publicPanel(published));
+  assert(screen.getByText('Git aaaaaaaa · s11111111 · r5', { selector: 'summary' }));
+  assert(screen.getByText('Git aaaaaaaa · s22222222 · r5', { selector: 'summary' }));
 });
 
 test('旧结果在更新期间仍可读，旧标准与不可比较的原因用文字显示', async () => {
@@ -762,7 +878,8 @@ test('审核区按潜在提升排列建议，展开授权用例并将真实文�
   }
   render(createElement(ReviewWithFiles));
   const tips = await screen.findByRole('button', { name: /改进建议/ });
-  assert(screen.getByRole('button', { name: /对比提交时发布 v1\.9\.0/ }));
+  assert(screen.getByRole('button', { name: '对比提交时发布', pressed: true }));
+  assert(screen.getByText('v1.9.0'));
   assert(screen.getByText(/扫描规则 2026-11-24\.1/));
   assert(screen.getAllByText(/回归|下降/).length);
   assert(screen.getAllByText(/15\s*分|下降\s*15/).length);

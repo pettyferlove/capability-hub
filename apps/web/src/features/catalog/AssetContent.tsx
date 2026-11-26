@@ -40,7 +40,6 @@ import {
   Terminal,
 } from '../../shared/icons/lucide.js';
 import { useId, useLayoutEffect, useReducer, useRef, useState } from 'react';
-import { Button } from 'react-aria-components';
 import { useQuery } from '../../shared/api/use-query.js';
 import { CodeBlock } from '../../shared/components/CodeBlock.js';
 import { Empty } from '../../shared/components/Empty.js';
@@ -52,11 +51,8 @@ import { CodeSkeleton, ListSkeleton } from '../../shared/components/Skeleton.js'
 import { useHub } from '../../shared/context/HubContext.js';
 import { bytesLabel, dateLabel, stateLabel } from '../../shared/format/labels.js';
 import { AssetCommunity } from './AssetCommunity.js';
-import {
-  EvaluationGlyph,
-  EvaluationPanel,
-  usePublishedEvaluation,
-} from '../evaluation/EvaluationPanel.js';
+import { EvaluationPanel, usePublishedEvaluation } from '../evaluation/EvaluationPanel.js';
+import { EvaluationStrip } from '../evaluation/EvaluationStrip.js';
 import { ResourceInstallation } from './ResourceInstallation.js';
 import { SnapshotFileBrowser } from './SnapshotFileBrowser.js';
 import { SnapshotMarkdown } from './SnapshotMarkdown.js';
@@ -202,6 +198,12 @@ export function AssetContent({ view: assetView, tab }: { view: AssetView; tab?: 
   const fileDownload = `/api/versions/${versionId}/files?path=`;
   return (
     <div className={assetContentStyles}>
+      {evaluation && (
+        <EvaluationStrip
+          published={evaluation}
+          onOpen={() => open({ tab: 'evaluation', path: entry }, true, 'start')}
+        />
+      )}
       <div className={detailActionsStyles}>
         <button
           type="button"
@@ -223,15 +225,6 @@ export function AssetContent({ view: assetView, tab }: { view: AssetView; tab?: 
           <MessageSquare size={16} />
           问题与建议
         </button>
-        {evaluation && (
-          <Button
-            className={btnStyles}
-            onPress={() => open({ tab: 'evaluation', path: entry }, true, 'start')}
-          >
-            <EvaluationGlyph evaluation={evaluation.evaluation} />
-            质量评测
-          </Button>
-        )}
         <span className={subtleStyles}>
           {asset.files.length} 个文件 ·{' '}
           {bytesLabel(asset.files.reduce((size, file) => size + file.size, 0))}

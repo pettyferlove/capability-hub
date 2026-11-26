@@ -25,6 +25,7 @@ import { contentScanRuleset } from '@capability-hub/domain/content';
 import { sha256 } from '@capability-hub/domain/canonical';
 import { evaluationRubricVersion } from '@capability-hub/domain/evaluation';
 import { HubError } from '@capability-hub/domain/errors';
+import type { SearchResultResponse } from '@capability-hub/contracts/http';
 import {
   evaluationResponseSchema,
   managementEvaluationsResponseSchema,
@@ -497,6 +498,12 @@ test('候选、公开、受限和历史版本分别按审核范围与发布受�
   assert.equal(evaluation.dimensions[0].checks.length, 9);
   assert.equal(evaluation.dimensions[0].confidence, 'high');
   assert.equal(evaluation.dimensions[0].band, 'good');
+  const directory = (await anonymous.get('/api/assets').expect(200)).body as SearchResultResponse;
+  assert.deepEqual(directory.items[0].current_release.evaluation, {
+    dimensions: [
+      { id: 'structure', score: evaluation.dimensions[0].score, band: 'good', confidence: 'high' },
+    ],
+  });
   assert.deepEqual(Object.keys(evaluation.dimensions[0].checks[0]).sort(), [
     'id',
     'label',
@@ -529,6 +536,8 @@ test('候选、公开、受限和历史版本分别按审核范围与发布受�
   await f.worker.tick();
   const restricted =
     '/api/assets/' + intake.asset_id + '/versions/' + next.intake.version_id + '/evaluation';
+  const hidden = (await anonymous.get('/api/assets').expect(200)).body as SearchResultResponse;
+  assert.deepEqual(hidden.items, []);
   for (const path of [publicPath, restricted]) {
     await anonymous.get(path).expect(404);
     await limited.get(path).expect(404);
@@ -2944,6 +2953,11 @@ test('旧标准只展示符合发布冻结声明的结果，当前评测进展�
   const reviewer = await signIn(f, 'reviewer');
   const reader = await signIn(f, 'reader');
   const historyUrl = '/api/management/versions/' + intake.version_id + '/evaluations';
+  async function card() {
+    const list = (await anonymous.get('/api/assets').expect(200)).body as SearchResultResponse;
+    assert.equal(list.items[0].current_release.version_id, intake.version_id);
+    return list.items[0].current_release.evaluation;
+  }
   await f.store.remove('resource_evaluations', completed.id);
   const historical = {
     ...completed,
@@ -2960,12 +2974,14 @@ test('旧标准只展示符合发布冻结声明的结果，当前评测进展�
     { audience_class: 'signed_in' as const, requires_api_key: false },
     { audience_class: 'public' as const, requires_api_key: true },
   ])
-    await f.store.insert('resource_evaluations', {
-      ...historical,
-      ...frozen,
-      id: randomUUID(),
-      subject_digest: 'sha256:' + sha256(JSON.stringify(frozen)),
-    });
+    for (const rubric_version of [historical.rubric_version, completed.rubric_version])
+      await f.store.insert('resource_evaluations', {
+        ...historical,
+        ...frozen,
+        id: randomUUID(),
+        rubric_version,
+        subject_digest: 'sha256:' + sha256(JSON.stringify(frozen)),
+      });
   const missing = evaluationResponseSchema.parse((await anonymous.get(url).expect(200)).body);
   assert.equal(missing.evaluation, null);
   assert.equal(missing.updating, false);
@@ -2979,6 +2995,7 @@ test('旧标准只展示符合发布冻结声明的结果，当前评测进展�
   assert.equal(legacy.comparison_status, 'none');
   assert.equal(legacy.baseline, null);
   assert.equal(legacy.updating, false);
+  assert.equal(await card(), undefined);
   const disabled = managementEvaluationsResponseSchema.parse(
     (await owner.get(historyUrl).expect(200)).body,
   );
@@ -2995,6 +3012,7 @@ test('旧标准只展示符合发布冻结声明的结果，当前评测进展�
   assert.equal(before.updating, true);
   assert.equal(before.can_request, false);
   assert.equal(before.can_view_details, false);
+  assert.equal(await card(), undefined);
   for (const [client, details, action] of [
     [owner, true, true],
     [reviewer, true, false],
@@ -3012,6 +3030,11 @@ test('旧标准只展示符合发布冻结声明的结果，当前评测进展�
   );
   assert.equal(after.evaluation?.id, current.id);
   assert.equal(after.updating, false);
+  assert.deepEqual(await card(), {
+    dimensions: after.evaluation.dimensions
+      .filter((d) => d.score !== null)
+      .map(({ id, score, band, confidence }) => ({ id, score, band, confidence })),
+  });
 });
 
 test('展示权限与 UTC 排队状态按读者、待办作业及资产手动次数即时更新', async (t) => {

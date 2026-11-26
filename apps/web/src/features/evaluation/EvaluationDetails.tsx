@@ -9,6 +9,7 @@ import {
   failureLabel,
   labels,
   suggestions,
+  warningBand,
   type Evaluation,
   type EvaluationDetail,
 } from './evaluation-view.js';
@@ -136,9 +137,9 @@ function DimensionRow({
           )}
         </span>
         {summary && <span className={cn('mt-0.5 block', evaluationNoteStyles)}>{summary}</span>}
-        {typeof previous === 'number' && (
+        {previous !== undefined && previous !== data.score && (
           <span className={cn('block tabular-nums', evaluationNoteStyles)}>
-            对比版本 {previous} 分
+            {previous === null ? '对比版本无评分' : `对比版本 ${previous} 分`}
           </span>
         )}
       </span>
@@ -160,7 +161,7 @@ function DimensionRow({
           <span
             className={cn(
               'block text-caption leading-tight text-muted-ink',
-              data.band === 'weak' && 'text-warning',
+              warningBand(data) && 'text-warning',
             )}
           >
             {labels[data.band]}
@@ -276,7 +277,7 @@ export function DimensionList({
   const rows = evaluationDimensions(data).map((dimension, order) => ({
     data: dimension,
     detail: detail?.dimensions.find((item) => item.id === dimension.id),
-    previous: previous?.get(dimension.id),
+    previous: previous ? (previous.get(dimension.id) ?? null) : undefined,
     order,
   }));
   const pending = rows.filter(

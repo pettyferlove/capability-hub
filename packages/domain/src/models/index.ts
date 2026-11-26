@@ -9,6 +9,7 @@ export type * from './audit.js';
 export type * from './hub-feedback.js';
 export type * from './idempotency.js';
 export type * from './evaluation.js';
+export { evaluationScoredDimensionSchema } from './evaluation.js';
 export type * from './catalog-prompt.js';
 export { catalogPromptStateId, isCatalogPromptText } from './catalog-prompt.js';
 export type * from './record-map.js';

@@ -14,7 +14,6 @@ import {
   passesHardFilters,
   proveRequirement,
   type AssetAccessService,
-  type CandidateMatch,
   type CatalogDiscoveryService,
   type CatalogService,
   type DiscoveryCandidate,
@@ -34,8 +33,10 @@ import type {
   DiscoveryJudgment,
   DiscoveryResultResponse,
   DiscoveryTurnResponse,
+  EvaluationSummaryResponse,
 } from '@capability-hub/contracts/http';
 import { fail, HubError } from '@capability-hub/domain/errors';
+import { evaluationRubricVersion } from '@capability-hub/domain/evaluation';
 import type { Principal } from '@capability-hub/domain/identity';
 import {
   catalogDiscoveryOperation,
@@ -72,6 +73,13 @@ interface DiscoveryTurnScope {
 interface Judged {
   candidate: DiscoveryCandidate;
   judgment: DiscoveryJudgment;
+}
+
+interface ResultItem {
+  candidate: DiscoveryCandidate;
+  reasons?: EvidenceReason[];
+  unverified?: string[];
+  judgment?: DiscoveryJudgment;
 }
 
 interface Direction extends Omit<DiscoveryUse, 'field'> {
@@ -250,7 +258,11 @@ export class DiscoveryService {
     viewer: Principal | null,
     text: string,
   ): Promise<DiscoveryTurnResponse> {
-    const result = await this.catalog.search(viewer, { q: text, limit: 8 });
+    const result = await this.catalog.search(
+      viewer,
+      { q: text, limit: 8 },
+      { includeEvaluations: true },
+    );
     return {
       mode: 'keywords',
       type: 'matches',
@@ -272,6 +284,7 @@ export class DiscoveryService {
           published_at: item.current_release.published_at,
           description: item.description,
           has_scripts: item.current_release.has_scripts,
+          ...(item.current_release.evaluation && { evaluation: item.current_release.evaluation }),
           match_reasons: item.match_reasons.map((reason) => ({
             field: reason.startsWith('名称')
               ? ('name' as const)
@@ -699,7 +712,9 @@ export class DiscoveryService {
     const proofs = (use.patch.requirements ?? []).flatMap(
       (requirement) => proveRequirement(use.representative, requirement) ?? [],
     );
-    const item = await this.describe(use.representative, proofs, [], use.picks?.[0]?.judgment);
+    const [item] = await this.describeAll([
+      { candidate: use.representative, reasons: proofs, judgment: use.picks?.[0]?.judgment },
+    ]);
     const context: DiscoveryContext = {
       ...this.baseContext(state),
       shown: {
@@ -806,9 +821,7 @@ export class DiscoveryService {
       goal: state.goal,
       criteria: state.criteria,
       total: picks.length,
-      items: await Promise.all(
-        picks.map(({ candidate, judgment }) => this.describe(candidate, [], [], judgment)),
-      ),
+      items: await this.describeAll(picks),
       partial: [],
       missing: picks.length ? [] : requirements,
       context: this.signer.sign(context, 'dialogue', state.viewerKey),
@@ -902,11 +915,8 @@ export class DiscoveryService {
           ? '下面的资源只证实了部分要求，仍需核对。'
           : '可以放宽条件，或浏览资源目录。');
     else reply = '当前条件下没有找到资源。可以放宽类型、分类、场景或关键词，或浏览资源目录。';
-    const describeAll = (matches: CandidateMatch[]) =>
-      Promise.all(
-        matches.map((match) => this.describe(match.candidate, match.reasons, match.unverified)),
-      );
     const shownItems = [...items, ...pending];
+    const cards = await this.describeAll(shownItems);
     const context: DiscoveryContext = {
       ...this.baseContext(state),
       shown: shownItems.length
@@ -926,8 +936,8 @@ export class DiscoveryService {
       goal: state.goal,
       criteria: state.criteria,
       total: verified.length,
-      items: await describeAll(items),
-      partial: await describeAll(pending),
+      items: cards.slice(0, items.length),
+      partial: cards.slice(items.length),
       missing: items.length ? [] : unproven,
       context: this.signer.sign(context, 'dialogue', state.viewerKey),
     };
@@ -992,12 +1002,14 @@ export class DiscoveryService {
       reason: pick.reason,
       quote: (pick.quote && locateQuote(candidate, pick.quote)?.text) || null,
     };
-    const item = await this.describe(
-      candidate,
-      proofs.flatMap(({ proof }) => (proof ? [proof] : [])),
-      proofs.flatMap(({ check, proof }) => (proof ? [] : [check])),
-      judgment,
-    );
+    const [item] = await this.describeAll([
+      {
+        candidate,
+        reasons: proofs.flatMap(({ proof }) => (proof ? [proof] : [])),
+        unverified: proofs.flatMap(({ check, proof }) => (proof ? [] : [check])),
+        judgment,
+      },
+    ]);
     return {
       mode: 'dialogue',
       type: 'reference',
@@ -1032,11 +1044,22 @@ export class DiscoveryService {
     };
   }
 
+  /** 只为最终展示且已复核的固定发布读取评测；候选、模型输入与签名上下文都不带分数。 */
+  private async describeAll(items: ResultItem[]) {
+    const ids = new Set<string>();
+    for (const { candidate } of items)
+      if (candidate.asset.kind === 'skill') ids.add(candidate.resolvedReleaseId);
+    const evaluations = ids.size
+      ? await this.store.listEvaluationSummaries([...ids], evaluationRubricVersion)
+      : undefined;
+    return Promise.all(
+      items.map((item) => this.describe(item, evaluations?.get(item.candidate.resolvedReleaseId))),
+    );
+  }
+
   private async describe(
-    candidate: DiscoveryCandidate,
-    reasons: EvidenceReason[],
-    unverified: string[],
-    judgment?: DiscoveryJudgment,
+    { candidate, reasons = [], unverified = [], judgment }: ResultItem,
+    evaluation?: EvaluationSummaryResponse,
   ): Promise<DiscoveryResultResponse> {
     const { asset, version, release } = candidate;
     const audience = release.distribution.audience;
@@ -1058,6 +1081,7 @@ export class DiscoveryService {
       match_reasons: reasons.map((reason) => ({ ...reason })),
       unverified,
       ...(judgment && { judgment }),
+      ...(evaluation && { evaluation }),
     };
   }
 }

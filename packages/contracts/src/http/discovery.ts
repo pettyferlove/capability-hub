@@ -1,5 +1,6 @@
 import type { DiscoveryCriteria } from '../discovery.js';
 import type { Policy } from '../policy.js';
+import type { EvaluationSummaryResponse } from './evaluation.js';
 
 /** 一条已通过整批复核、当前访客可见的开场提问；`suggestion_ref` 只定位提示，不授予读取权限。 */
 export interface DiscoverySuggestionResponse {
@@ -54,6 +55,8 @@ export interface DiscoveryResultResponse {
   match_reasons: DiscoveryMatchReason[];
   unverified: string[];
   judgment?: DiscoveryJudgment;
+  /** 只用于展示，不作为模型输入或挑选候选的依据。 */
+  evaluation?: EvaluationSummaryResponse;
 }
 
 /**

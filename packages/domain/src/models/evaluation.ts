@@ -44,6 +44,14 @@ const dimension = z
     failure_code: id.optional(),
   })
   .refine((row) => (row.status === 'scored') === (row.score !== null));
+
+/** 列表读取只校验已出分的公开字段，不需要载入同一维度的评测证据。 */
+export const evaluationScoredDimensionSchema = z.strictObject({
+  id: dimension.shape.id,
+  score: dimension.shape.score.unwrap(),
+  confidence: dimension.shape.confidence,
+});
+
 const verdictEvidence = z.strictObject({
   passed: z.boolean(),
   valid: z.boolean(),

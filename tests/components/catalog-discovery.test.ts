@@ -848,6 +848,75 @@ test('快捷追问只填入，发送时沿用上轮上下文；顶部重新查�
   assert.equal(Object.hasOwn(posted[2].body, 'context'), false);
 });
 
+test('同一资源目录卡显示当前版本的摘要，发现结果只使用所选固定版本的摘要', async (context) => {
+  const fixture = await createTestHub(context);
+  await publishSkill(fixture, { slug: result.slug });
+  await publishSkill(fixture, { slug: secondSkill.slug });
+  const catalog = await fixture.hub.catalog.search(null, {});
+  const currentScores = [
+    { id: 'structure', score: 93, confidence: 'high', band: 'excellent' },
+    { id: 'instructions', score: 68, confidence: 'medium', band: 'fair' },
+    { id: 'transparency', score: 80, confidence: 'low', band: 'good' },
+  ];
+  const { mock } = mockApi({ mode: 'keywords', viewer_key: 'anonymous' }, [
+    {
+      mode: 'keywords',
+      type: 'matches',
+      total: 3,
+      items: [
+        {
+          ...result,
+          evaluation: {
+            dimensions: [
+              { id: 'instructions', score: 58, confidence: 'medium', band: 'fair' },
+              { id: 'structure', score: 80, confidence: 'high', band: 'good' },
+              { id: 'triggering', score: 88, confidence: 'medium', band: 'excellent' },
+            ],
+          },
+        },
+        secondSkill,
+        mcp,
+      ],
+    },
+  ]);
+  const requests: string[] = [];
+  context.mock.method(globalThis, 'fetch', async (path: string, options?: RequestInit) => {
+    requests.push(path);
+    if (path.startsWith('/api/assets?'))
+      return Response.json({
+        ...catalog,
+        items: catalog.items.map((item) => ({
+          ...item,
+          current_release: {
+            ...item.current_release,
+            evaluation: item.slug === result.slug ? { dimensions: currentScores } : undefined,
+          },
+        })),
+      });
+    return mock(path, options);
+  });
+  render(page(createElement(DiscoverPage)));
+  const directory = within(screen.getByRole('region', { name: '资源目录' }));
+  const card = within(await directory.findByRole('link', { name: /http-regression-kit/ }));
+  assert(card.getByRole('img', { name: /质量评测雷达图：结构规范 93 分/ }));
+  const unscored = within(directory.getByRole('link', { name: /release-notes/ }));
+  assert(!unscored.queryByRole('img', { name: /质量评测/ }));
+  assert(!unscored.queryByText(/暂无现行评分/));
+  assert(!card.queryByRole('button'));
+  const user = userEvent.setup();
+  await user.type(screen.getByRole('textbox', { name: '你想完成什么？' }), '接口回归');
+  await user.click(screen.getByRole('button', { name: '搜索' }));
+  const pinned = within(await screen.findByRole('article', { name: result.slug }));
+  assert(pinned.getByRole('img', { name: /质量评测雷达图：结构规范 80 分/ }));
+  assert(!pinned.queryByText(/已评测|已测|待改进/));
+  for (const slug of [secondSkill.slug, mcp.slug]) {
+    const item = within(screen.getByRole('article', { name: slug }));
+    assert(!item.queryByRole('img', { name: /质量评测/ }));
+    assert(!item.queryByText(/暂无现行评分/));
+  }
+  assert(!requests.some((path) => path.includes('/evaluation')));
+});
+
 test('目录卡只为声明需密钥的 Skill 显示 API Key 提示', async (context) => {
   const fixture = await createTestHub(context);
   const { intake } = await publishSkill(fixture, { slug: 'keyed-skill' });

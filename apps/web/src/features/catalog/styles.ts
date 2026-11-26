@@ -771,6 +771,9 @@ export const directoryCardStyles = cn(
   'focus-visible:border-[color:var(--brand)] focus-visible:[outline:2px_solid_var(--brand)]',
   'focus-visible:[outline-offset:2px] motion-safe:hover:-translate-y-0.5',
   'motion-reduce:transition-none',
+  "after:pointer-events-none after:absolute after:top-0 after:right-0 after:-z-10 after:h-24 after:w-1/2 after:max-w-44 after:content-['']",
+  'after:bg-top-right after:opacity-60 after:[background-image:radial-gradient(var(--dot)_1px,transparent_1.2px)]',
+  'after:[background-size:var(--space-3)_var(--space-3)] after:[mask-image:radial-gradient(ellipse_100%_100%_at_top_right,var(--mask-solid),transparent)] forced-colors:after:hidden',
   '[&_h3]:line-clamp-2 [&_h3]:[overflow-wrap:anywhere] [&_h3]:font-mono [&_h3]:text-[length:13px] [&_h3]:leading-[18px]',
   '[&_h3]:font-semibold [&_h3]:text-ink',
   '[&>p]:line-clamp-3 [&>p]:text-body [&>p]:leading-[19px] [&>p]:text-muted-ink',
@@ -811,7 +814,7 @@ export const cardScenarioStyles = cn(
 export const cardOpenIconStyles =
   'mt-0.5 shrink-0 text-muted-ink [transition:color_150ms_ease] group-hover/card:text-brand';
 
-export const cardBottomStyles = 'mt-auto grid min-w-0 gap-2.5';
+export const cardIndicatorsStyles = 'flex min-w-0 items-center gap-2 empty:hidden';
 
 export const cardTagRowStyles = cn(
   'flex min-w-0 flex-wrap items-center gap-1.5 [&>span]:min-w-0 [&>span]:max-w-full',
@@ -962,7 +965,8 @@ export const resultGlyphStyles = cn(
 // 正文至少保留 240px，放不下时操作列换到下一行并与正文对齐。
 export const resultBodyStyles = 'flex min-w-0 flex-1 basis-[240px] flex-col gap-[5px]';
 
-export const resultNameRowStyles = 'flex flex-wrap items-center gap-[7px]';
+export const resultNameRowStyles =
+  'flex min-w-0 flex-wrap items-center gap-[7px] [overflow-wrap:anywhere]';
 
 export const resultNameStyles =
   'min-w-0 font-mono text-[length:13px] font-semibold text-ink [overflow-wrap:anywhere]';

@@ -19,16 +19,15 @@ import { ApiError } from '../../shared/api/client.js';
 import { useQuery } from '../../shared/api/use-query.js';
 import { RadarChart } from '../../shared/components/RadarChart.js';
 import { HubCtx } from '../../shared/context/HubContext.js';
+import { shortVersion } from '../../shared/format/version-label.js';
 import { Info, X } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import { useAiCommand } from '../ai/use-ai-command.js';
 import { DimensionList, PrivateEvidence } from './EvaluationDetails.js';
 import {
-  evaluationDimensions,
+  evaluationReadings,
   failureLabel,
-  labels,
   stageLabel,
-  versionLabel,
   type Evaluation,
   type EvaluationDetail,
 } from './evaluation-view.js';
@@ -145,20 +144,6 @@ export function usePublishedEvaluation(
   };
 }
 
-function chartAxes(data: Evaluation) {
-  return evaluationDimensions(data).map((dimension) => ({
-    label: dimension.label,
-    score: dimension.score,
-    confidence: dimension.confidence,
-    statusLabel: dimension.status === 'scored' ? undefined : labels[dimension.status],
-  }));
-}
-
-/** 入口与面板使用同一套轴序，只有三个以上可用分值才生成图形。 */
-export function EvaluationGlyph({ evaluation }: { evaluation: Evaluation | null }) {
-  return evaluation && <RadarChart size="glyph" axes={chartAxes(evaluation)} />;
-}
-
 function Methods() {
   return (
     <DialogTrigger>
@@ -194,6 +179,31 @@ function Methods() {
   );
 }
 
+function EvaluationVersion({ value, other }: { value: string; other?: string }) {
+  const short = shortVersion(value);
+  if (short === value)
+    return (
+      <span className="min-w-0 max-w-full [overflow-wrap:anywhere]">
+        {/^\d+\.\d+\.\d+/.test(value) ? `v${value}` : value}
+      </span>
+    );
+  const label =
+    other && other !== value && shortVersion(other) === short ? shortVersion(value, true) : short;
+  return (
+    <details className="min-w-0 max-w-full text-start">
+      <summary
+        title={value}
+        className="cursor-pointer rounded-sm font-mono hover:text-brand focus-visible:outline-2 focus-visible:outline-brand"
+      >
+        {label}
+      </summary>
+      <code className="mt-1 block select-all text-caption text-ink [overflow-wrap:anywhere]">
+        {value}
+      </code>
+    </details>
+  );
+}
+
 function Results({
   data,
   detail,
@@ -209,43 +219,67 @@ function Results({
 }) {
   const [compare, setCompare] = useState(true);
   const [highlight, setHighlight] = useState<string | null>(null);
-  const dimensions = evaluationDimensions(data);
-  const scored = dimensions.flatMap((d) =>
-    d.score === null ? [] : [{ label: d.label, score: d.score }],
-  );
-  const lowest = scored.reduce<(typeof scored)[number] | undefined>(
-    (prior, d) => (!prior || d.score < prior.score ? d : prior),
-    undefined,
-  );
-  const coverageLimited = dimensions.filter((d) => d.flags?.includes('coverage_limited')).length;
-  const previous =
-    baseline && compare ? new Map(baseline.dimensions.map((d) => [d.id, d.score])) : undefined;
-  const baselineName = baseline
-    ? (review ? '提交时发布 ' : '上一发布 ') + versionLabel(baseline.version_label)
-    : '';
-  const compareButton = baseline && (
-    <Button
-      className={evaluationActionStyles}
-      aria-pressed={compare}
-      onPress={() => setCompare(!compare)}
+  const { axes, count, lowest } = evaluationReadings(data);
+  const coverageLimited = data.dimensions.filter((d) =>
+    d.flags?.includes('coverage_limited'),
+  ).length;
+  const reference = baseline ? new Map(baseline.dimensions.map((d) => [d.id, d.score])) : undefined;
+  const sameScores =
+    reference && axes.every((axis) => axis.score === (reference.get(axis.id) ?? null));
+  const previous = compare && !sameScores ? reference : undefined;
+  const overlay =
+    previous && count >= 3 ? axes.map((axis) => previous.get(axis.id) ?? null) : undefined;
+  const drawOverlay =
+    overlay && overlay.reduce<number>((n, score) => n + Number(score !== null), 0) >= 3;
+  const target = review ? '提交时发布' : '上一发布';
+  const comparison = baseline && (
+    <div
+      className={cn(
+        'mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-ink',
+        count >= 3 && 'justify-center',
+      )}
     >
-      对比{baselineName}
-    </Button>
+      {sameScores ? (
+        <span>{count ? `与${target}评分一致` : '两次评测均无评分'}</span>
+      ) : (
+        <>
+          {drawOverlay && (
+            <span className="inline-flex items-center gap-1">
+              <span aria-hidden="true" className="w-4 border-t-2 border-brand" />
+              {review ? '候选版本' : '本版本'}
+            </span>
+          )}
+          <Button
+            className={cn(evaluationActionStyles, 'gap-1.5 aria-pressed:border-brand-line')}
+            aria-pressed={compare}
+            onPress={() => setCompare(!compare)}
+          >
+            {drawOverlay && (
+              <span aria-hidden="true" className="w-4 border-t-2 border-dashed border-muted-ink" />
+            )}
+            对比{target}
+          </Button>
+        </>
+      )}
+      {data.version_label !== baseline.version_label && (
+        <EvaluationVersion value={baseline.version_label} other={data.version_label} />
+      )}
+    </div>
   );
   return (
-    <div className={scored.length >= 3 ? evaluationLayoutStyles : 'min-w-0'}>
-      {scored.length >= 3 && (
+    <div className={count >= 3 ? evaluationLayoutStyles : 'min-w-0'}>
+      {count >= 3 && (
         <figure className="min-w-0 rounded-lg bg-page px-2 py-3 text-center">
           <div className="mx-auto max-w-[320px]">
             <RadarChart
-              axes={chartAxes(data)}
-              baseline={previous && dimensions.map((d) => previous.get(d.id) ?? null)}
-              highlight={highlight ? dimensions.findIndex((d) => d.id === highlight) : null}
+              axes={axes}
+              baseline={drawOverlay ? overlay : undefined}
+              highlight={highlight ? axes.findIndex((d) => d.id === highlight) : null}
             />
           </div>
           <figcaption>
             <p className="text-label text-ink">
-              {scored.length} 项已评测，最低为
+              {count} 项已评测，最低为
               <strong className="font-semibold">
                 {lowest?.label} {lowest?.score} 分
               </strong>
@@ -253,27 +287,7 @@ function Results({
             {coverageLimited > 0 && (
               <p className={evaluationNoteStyles}>{coverageLimited} 个维度材料覆盖受限</p>
             )}
-            {baseline && (
-              <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-                {previous && (
-                  <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-caption text-muted-ink">
-                    <span className="inline-flex items-center gap-1">
-                      <span aria-hidden="true" className="w-4 border-t-2 border-brand" />
-                      {review ? '候选版本 ' : '本版本 '}
-                      {versionLabel(data.version_label)}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <span
-                        aria-hidden="true"
-                        className="w-4 border-t-2 border-dashed border-muted-ink"
-                      />
-                      {baselineName}
-                    </span>
-                  </div>
-                )}
-                {compareButton}
-              </div>
-            )}
+            {comparison}
           </figcaption>
         </figure>
       )}
@@ -282,9 +296,9 @@ function Results({
         detail={detail}
         previous={previous}
         onEvidence={onEvidence}
-        onHighlight={scored.length >= 3 ? setHighlight : undefined}
+        onHighlight={count >= 3 ? setHighlight : undefined}
       />
-      {scored.length < 3 && compareButton}
+      {count < 3 && comparison}
     </div>
   );
 }
@@ -564,9 +578,9 @@ function PanelBody(props: PanelProps) {
                   : '质量评测'}
             </h3>
             {data && (
-              <span className="text-label text-muted-ink [overflow-wrap:anywhere]">
-                {versionLabel(data.version_label)}
-              </span>
+              <div className="min-w-0 max-w-full text-label text-muted-ink">
+                <EvaluationVersion value={data.version_label} other={baseline?.version_label} />
+              </div>
             )}
           </div>
           {data && (

@@ -24,10 +24,12 @@ import {
 } from '../../shared/icons/lucide.js';
 import { categoryLabel } from '../../shared/format/labels.js';
 import { SkeletonBlock } from '../../shared/components/Skeleton.js';
+import { EvaluationCardSummary } from '../evaluation/EvaluationCardSummary.js';
 import {
   answerStyles,
   browseEntryCountStyles,
   browseEntryStyles,
+  cardIndicatorsStyles,
   directionExampleStyles,
   directionIndexStyles,
   directionIntentStyles,
@@ -439,22 +441,27 @@ function ResultCard({ item, index }: { item: DiscoveryResultResponse; index?: nu
         {item.kind === 'mcp' ? <Plug size={16} /> : <Blocks size={16} />}
       </span>
       <div className={resultBodyStyles}>
-        <div className={resultNameRowStyles}>
-          {index !== undefined && <span className={directionIndexStyles}>{index + 1}</span>}
-          <h3 className={resultNameStyles}>{item.slug}</h3>
-          <span className={item.kind === 'mcp' ? resultKindMcpStyles : resultKindStyles}>
-            {item.kind === 'skill' ? 'SKILL' : 'MCP'}
-          </span>
-          {item.judgment && (
-            <span
-              className={item.judgment.fit === 'direct' ? resultKindStyles : resultVisibilityStyles}
-            >
-              {item.judgment.fit === 'direct' ? '直接相关' : '部分相关'}
+        <div className={cardIndicatorsStyles}>
+          <div className={resultNameRowStyles}>
+            {index !== undefined && <span className={directionIndexStyles}>{index + 1}</span>}
+            <h3 className={resultNameStyles}>{item.slug}</h3>
+            <span className={item.kind === 'mcp' ? resultKindMcpStyles : resultKindStyles}>
+              {item.kind === 'skill' ? 'SKILL' : 'MCP'}
             </span>
-          )}
-          {!!item.unverified.length && (
-            <span className={resultVisibilityStyles}>仍需核对：{item.unverified.join('、')}</span>
-          )}
+            {item.judgment && (
+              <span
+                className={
+                  item.judgment.fit === 'direct' ? resultKindStyles : resultVisibilityStyles
+                }
+              >
+                {item.judgment.fit === 'direct' ? '直接相关' : '部分相关'}
+              </span>
+            )}
+            {!!item.unverified.length && (
+              <span className={resultVisibilityStyles}>仍需核对：{item.unverified.join('、')}</span>
+            )}
+          </div>
+          {item.kind === 'skill' && <EvaluationCardSummary evaluation={item.evaluation} />}
         </div>
         <p className={resultMetaStyles}>
           {categoryLabel(item.category)} · v{item.version_label} · {item.owner_name}

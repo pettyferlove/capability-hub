@@ -19,6 +19,7 @@ export type RecordQueries = Pick<
   | 'countManualEvaluations'
   | 'nextEvaluationBackfill'
   | 'listVersionEvaluations'
+  | 'listEvaluationSummaries'
   | 'reusableEvaluation'
   | 'listCancellationRequestedJobs'
   | 'listAiExecutionJobs'

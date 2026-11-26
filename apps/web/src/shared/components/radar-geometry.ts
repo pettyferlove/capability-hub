@@ -6,8 +6,8 @@ export interface RadarAxis {
   statusLabel?: string;
 }
 
-/** 紧凑尺寸只留外圈和本系列，不叠加对比系列。 */
-export type RadarSize = 'full' | 'glyph';
+/** 卡片小图保留半径参考圈，两种紧凑尺寸都不叠加对比系列。 */
+export type RadarSize = 'full' | 'glyph' | 'card';
 
 /** 缺分轴仍占据角度，闭合边是否跨过缺口由原轴序号决定。 */
 export function radarGeometry(
@@ -15,9 +15,9 @@ export function radarGeometry(
   size: RadarSize = 'full',
   baseline?: readonly (number | null)[],
 ) {
-  const glyph = size === 'glyph';
-  const center = glyph ? { x: 10, y: 10 } : { x: 180, y: 150 };
-  const radius = glyph ? 8.5 : 96;
+  const compact = size !== 'full';
+  const center = compact ? { x: 10, y: 10 } : { x: 180, y: 150 };
+  const radius = compact ? 8.5 : 96;
   const directions = axes.map((_, index) => {
     const angle = (2 * Math.PI * index) / axes.length - Math.PI / 2;
     return { x: Math.cos(angle), y: Math.sin(angle) };
@@ -36,9 +36,8 @@ export function radarGeometry(
   const vertices = verticesFor(scores);
   if (vertices.length < 3) return null;
 
-  const rings = (glyph ? [1] : [0.25, 0.5, 0.75, 1]).map((scale) =>
-    directions.map((_, index) => point(index, radius * scale)),
-  );
+  const scales = size === 'full' ? [0.25, 0.5, 0.75, 1] : size === 'card' ? [0.5, 1] : [1];
+  const rings = scales.map((scale) => directions.map((_, index) => point(index, radius * scale)));
   const spokes = directions.map((direction, index) => {
     const label = point(index, radius + 16);
     label.y += direction.y < -0.5 ? -9 : direction.y > 0.5 ? 8 : -2;
@@ -50,7 +49,7 @@ export function radarGeometry(
     return { from, to, acrossGap: (from.index + 1) % axes.length !== to.index };
   });
   const comparison =
-    !glyph && baseline?.length === axes.length ? verticesFor(baseline.map(validScore)) : [];
+    !compact && baseline?.length === axes.length ? verticesFor(baseline.map(validScore)) : [];
   return {
     center,
     rings,

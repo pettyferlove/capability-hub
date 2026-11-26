@@ -33,8 +33,9 @@ function polygonPoints(points: readonly { x: number; y: number }[]) {
 export function RadarChart({ axes, baseline, size = 'full', highlight = null }: RadarChartProps) {
   const chart = radarGeometry(axes, size, baseline);
   if (!chart) return null;
-  const glyph = size === 'glyph';
-  const stroke = glyph ? 1.25 : 2;
+  const compact = size !== 'full';
+  const compactSize = size === 'card' ? 30 : 20;
+  const stroke = size === 'card' ? 1 : compact ? 1.25 : 2;
   const series = chart.complete ? (
     <polygon
       points={polygonPoints(chart.vertices)}
@@ -50,7 +51,7 @@ export function RadarChart({ axes, baseline, size = 'full', highlight = null }: 
           y1={from.y}
           x2={to.x}
           y2={to.y}
-          strokeDasharray={acrossGap ? (glyph ? '2 1' : '4 3') : undefined}
+          strokeDasharray={acrossGap ? (compact ? '2 1' : '4 3') : undefined}
         />
       ))}
     </g>
@@ -59,17 +60,20 @@ export function RadarChart({ axes, baseline, size = 'full', highlight = null }: 
     <svg
       aria-hidden="true"
       focusable="false"
-      viewBox={glyph ? '0 0 20 20' : '0 0 360 300'}
-      width={glyph ? 20 : 360}
-      height={glyph ? 20 : 300}
-      className={glyph ? 'block size-5 shrink-0' : 'block h-auto w-full max-w-[360px]'}
+      viewBox={compact ? '0 0 20 20' : '0 0 360 300'}
+      width={compact ? compactSize : 360}
+      height={compact ? compactSize : 300}
+      className={cn(
+        compact ? 'block shrink-0' : 'block h-auto w-full max-w-[360px]',
+        size === 'glyph' && 'size-5',
+      )}
       strokeLinejoin="round"
     >
-      <g className="fill-none stroke-line">
+      <g className="fill-none stroke-line" strokeWidth={size === 'card' ? 0.5 : undefined}>
         {chart.rings.map((ring, index) => (
           <polygon key={index} points={polygonPoints(ring)} />
         ))}
-        {!glyph &&
+        {size !== 'glyph' &&
           chart.spokes.map(({ tip }, index) => (
             <line
               key={index}
@@ -81,7 +85,7 @@ export function RadarChart({ axes, baseline, size = 'full', highlight = null }: 
             />
           ))}
       </g>
-      {glyph ? (
+      {compact ? (
         series
       ) : (
         // 本系列从中心展开，各轴顶点按轴序落位，与右侧维度清单的分数同节奏出现。
@@ -116,7 +120,7 @@ export function RadarChart({ axes, baseline, size = 'full', highlight = null }: 
           ))}
         </g>
       )}
-      {!glyph &&
+      {!compact &&
         chart.spokes.map(({ label, anchor, score }, index) => (
           <text key={index} x={label.x} y={label.y} textAnchor={anchor}>
             <tspan
