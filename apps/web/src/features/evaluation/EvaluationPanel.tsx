@@ -20,7 +20,7 @@ import { useQuery } from '../../shared/api/use-query.js';
 import { RadarChart } from '../../shared/components/RadarChart.js';
 import { HubCtx } from '../../shared/context/HubContext.js';
 import { shortVersion } from '../../shared/format/version-label.js';
-import { Info, X } from '../../shared/icons/lucide.js';
+import { Download, Info, X } from '../../shared/icons/lucide.js';
 import { cn } from '../../shared/styles/cn.js';
 import { useAiCommand } from '../ai/use-ai-command.js';
 import { DimensionList, PrivateEvidence } from './EvaluationDetails.js';
@@ -468,6 +468,18 @@ function PanelBody(props: PanelProps) {
   const data = acceptedPublic ?? publishedRun ?? candidate ?? intake?.data;
   const detail =
     data && (props.kind === 'review' ? candidate : items.find((item) => item.id === data.id));
+  const downloadPath =
+    detail && (detail.state === 'succeeded' || detail.state === 'partial')
+      ? managementPath +
+        '/' +
+        encodeURIComponent(detail.id) +
+        '/iteration.zip' +
+        (props.kind === 'review'
+          ? '?publication_request_id=' + encodeURIComponent(props.requestId)
+          : props.kind === 'asset'
+            ? '?view=published'
+            : '')
+      : null;
   const old = !!data && !!currentRubric && data.rubric_version !== currentRubric;
   const current = review.data?.current;
   const canCompare =
@@ -596,14 +608,24 @@ function PanelBody(props: PanelProps) {
             </p>
           )}
         </div>
-        {canRequest && (
-          <Button
-            className={evaluationActionStyles}
-            isDisabled={request.busy || (!!receipt && loading)}
-            onPress={() => void requestEvaluation()}
-          >
-            {action}
-          </Button>
+        {(downloadPath || canRequest) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {downloadPath && (
+              <a className={cn(evaluationActionStyles, 'gap-1.5')} href={downloadPath} download>
+                <Download size={14} aria-hidden="true" />
+                下载迭代包
+              </a>
+            )}
+            {canRequest && (
+              <Button
+                className={evaluationActionStyles}
+                isDisabled={request.busy || (!!receipt && loading)}
+                onPress={() => void requestEvaluation()}
+              >
+                {action}
+              </Button>
+            )}
+          </div>
         )}
       </header>
       {notice && (

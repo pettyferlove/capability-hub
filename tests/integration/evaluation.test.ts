@@ -20,7 +20,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
-import { archive } from '@capability-hub/infrastructure/content';
+import { archive, unzip } from '@capability-hub/infrastructure/content';
+import type { Test } from 'supertest';
 import { contentScanRuleset } from '@capability-hub/domain/content';
 import { sha256 } from '@capability-hub/domain/canonical';
 import { evaluationRubricVersion } from '@capability-hub/domain/evaluation';
@@ -436,6 +437,90 @@ test('固定文件存储故障按 30、120 秒退避，第三次失败同时结�
       assert.equal(row.active_job_id, null);
     }
   }
+});
+
+function iterationPath(versionId: string, evaluationId: string) {
+  return `/api/management/versions/${versionId}/evaluations/${evaluationId}/iteration.zip`;
+}
+
+async function iterationFiles(request: Test, evaluationId: string) {
+  const response = await request
+    .buffer(true)
+    .parse((res, done) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('error', (error: Error) => done(error, undefined));
+      res.on('end', () => done(null, Buffer.concat(chunks)));
+    })
+    .expect('Content-Type', 'application/zip')
+    .expect('Cache-Control', 'private, no-store')
+    .expect('X-Content-Type-Options', 'nosniff')
+    .expect(200);
+  assert(Buffer.isBuffer(response.body));
+  const disposition = String(response.headers['content-disposition']);
+  const filename = /^attachment;\s*filename=("?)([\w.-]+\.zip)\1$/i.exec(disposition)?.[2];
+  assert.equal(filename, `sample-skill-iteration-${evaluationId}.zip`);
+  return unzip(response.body);
+}
+
+test('迭代包只向当前会话按入口交付已完成的固定记录，不复用审核或公开入口的授权', async (t) => {
+  const f = await createTestHub(t);
+  const owner = await signIn(f);
+  const reviewer = await signIn(f, 'reviewer');
+  const reader = await signIn(f, 'reader');
+  const intake = await receiveSkill(f);
+  const [row] = await f.store.listVersionEvaluations(intake.version_id);
+  const path = iterationPath(intake.version_id, row.id);
+  await owner.get(path).expect(404);
+  await f.worker.tick();
+  const request = await submitPublication(f, intake, {
+    mode: 'approved_audience',
+    audience: ['principal:' + f.reader.id],
+  });
+  const review = `${path}?publication_request_id=${request.id}`;
+  const published = `${path}?view=published`;
+  await httpClient(f).get(path).expect(401);
+  const token = await f.hub.tokens.issue(f.admin, { name: '私有迭代包', scope: 'hub:read' });
+  await httpClient(f)
+    .get(review)
+    .set('Authorization', 'Bearer ' + token.token)
+    .expect(403);
+  await reviewer.get(path).expect(403);
+  await reader.get(review).expect(403);
+  await owner.get(published).expect(404);
+  await owner.get(`${path}?publication_request_id=${randomUUID()}`).expect(404);
+  for (const invalid of [
+    'publication_request_id=',
+    'view=intake',
+    'view=published&view=published',
+    `view=published&publication_request_id=${request.id}`,
+    'typo=published',
+  ])
+    await owner.get(`${path}?${invalid}`).expect(422);
+  const jobs = await f.store.where('jobs', 'aggregate_id', row.id);
+  const ownerFiles = await iterationFiles(owner.get(path), row.id);
+  assert.deepEqual(
+    ownerFiles.map((file) => file.path),
+    ['report.md'],
+  );
+  assert.deepEqual(await iterationFiles(reviewer.get(review), row.id), ownerFiles);
+  assert.deepEqual(await f.store.where('jobs', 'aggregate_id', row.id), jobs);
+  assert.equal(await f.store.evaluationSchedule(), undefined);
+  const completed = await f.store.get('resource_evaluations', row.id);
+  assert(completed);
+  const stale = await f.store.insert('resource_evaluations', {
+    ...completed,
+    id: randomUUID(),
+    content_digest: 'sha256:' + sha256('不是此版本的内容'),
+  });
+  const stalePath = iterationPath(intake.version_id, stale.id);
+  await owner.get(stalePath).expect(404);
+  await reviewer.get(`${stalePath}?publication_request_id=${request.id}`).expect(404);
+  await approveEvaluationCandidate(f, request);
+  await reviewer.get(review).expect(404);
+  await reader.get(published).expect(403);
+  await owner.get(published).expect(404);
+  await owner.get(review).expect(200);
 });
 
 test('候选、公开、受限和历史版本分别按审核范围与发布受众投影', async (t) => {
@@ -1799,6 +1884,12 @@ test('审核重试沿用申请声明和幂等回执，不能复用已发布的�
   assert.equal(before.candidate?.state, 'partial');
   assert.equal(before.candidate.requires_api_key, true);
 
+  const reviewQuery = `?publication_request_id=${candidate.id}`;
+  const partialZip = iterationPath(intake.version_id, before.candidate.id);
+  const releasedZip = iterationPath(intake.version_id, released.id);
+  await owner.get(releasedZip + reviewQuery).expect(404);
+  await owner.get(releasedZip + '?view=published').expect(200);
+  await owner.get(partialZip + '?view=published').expect(404);
   const retried = await owner.post(path).set('Idempotency-Key', 'review').send(body).expect(202);
   assert.equal(retried.body.evaluation.reused_from, before.candidate.id);
   const replay = await owner.post(path).set('Idempotency-Key', 'review').send(body).expect(202);
@@ -1811,6 +1902,8 @@ test('审核重试沿用申请声明和幂等回执，不能复用已发布的�
   assert(after.candidate);
   assert.equal(after.candidate.id, retried.body.evaluation.id);
   assert.equal(after.candidate.stages.find((s) => s.id === 'transparency')?.state, 'pending');
+  await owner.get(partialZip + reviewQuery).expect(200);
+  await owner.get(iterationPath(intake.version_id, after.candidate.id) + reviewQuery).expect(404);
   const reuse = await owner.post(path).set('Idempotency-Key', 'release').send({}).expect(200);
   assert.equal(reuse.body.evaluation.id, released.id);
   const next = await receiveSkill(f, { assetId: intake.asset_id, version: '2.0.0' });
@@ -1819,6 +1912,9 @@ test('审核重试沿用申请声明和幂等回执，不能复用已发布的�
     .set('Idempotency-Key', 'other-version')
     .send(body)
     .expect(404);
+  await owner.get(iterationPath(next.version_id, before.candidate.id)).expect(404);
+  const [nextEvaluation] = await f.store.listVersionEvaluations(next.version_id);
+  await owner.get(iterationPath(next.version_id, nextEvaluation.id) + reviewQuery).expect(404);
   assert.equal((await f.store.where('audit', 'action', 'evaluation.requested')).length, 2);
 });
 
@@ -2634,6 +2730,22 @@ test('正式路由按冻结受众选干扰项，受众收窄后同一申请的�
     assert(text.includes('另一项资源'));
     assert(!text.includes('near-skill') && !text.includes(original.id));
   }
+  const zip = iterationPath(item.version_id, full.id) + '?publication_request_id=' + request.id;
+  for (const [client, allowed] of [
+    [owner, true],
+    [reviewer, false],
+  ] as const) {
+    const files = await iterationFiles(client.get(zip), full.id);
+    assert.deepEqual(files.map((file) => file.path).sort(), [
+      'evals/evals.json',
+      'report.md',
+      'trigger-cases.json',
+    ]);
+    const texts = files.map((file) => file.bytes.toString('utf8')).join('\n');
+    assert.equal(texts.includes('near-skill'), allowed);
+    assert(!texts.includes(original.id));
+    if (!allowed) assert(texts.includes('另一项资源'));
+  }
 });
 
 test('公开基线只取紧邻上一发布，须同时满足其原受众与资产当前受众', async (t) => {
@@ -3030,6 +3142,12 @@ test('旧标准只展示符合发布冻结声明的结果，当前评测进展�
   );
   assert.equal(after.evaluation?.id, current.id);
   assert.equal(after.updating, false);
+  const files = await iterationFiles(
+    reviewer.get(iterationPath(intake.version_id, historical.id) + '?view=published'),
+    historical.id,
+  );
+  const report = files.find((file) => file.path === 'report.md');
+  assert(report?.bytes.toString('utf8').includes(historical.rubric_version));
   assert.deepEqual(await card(), {
     dimensions: after.evaluation.dimensions
       .filter((d) => d.score !== null)
@@ -3145,6 +3263,9 @@ test('审核详情的评测入口跟随候选权限与发布受众，提交身�
   const compare = publicRequest + '/evaluation';
   const reviewer = await signIn(f, 'reviewer');
   const submitter = await signIn(f, 'reader');
+  await f.worker.tick();
+  const [row] = await f.store.listVersionEvaluations(item.version_id);
+  const zip = iterationPath(item.version_id, row.id) + '?publication_request_id=' + request.id;
   for (const client of [reviewer, submitter]) {
     assert.equal((await client.get(publicRequest).expect(200)).body.can_read_evaluation, true);
     await client.get(compare).expect(200);
@@ -3156,7 +3277,9 @@ test('审核详情的评测入口跟随候选权限与发布受众，提交身�
   assert.equal((await reviewer.get(publicRequest).expect(200)).body.can_read_evaluation, false);
   await reviewer.get(compare).expect(404);
   assert.equal((await submitter.get(publicRequest).expect(200)).body.can_read_evaluation, true);
+  await submitter.get(zip).expect(200);
   await f.hub.administration.removeGrant(f.admin, 'role_bindings', grant.id);
   assert.equal((await submitter.get(publicRequest).expect(200)).body.can_read_evaluation, false);
   await submitter.get(compare).expect(403);
+  await submitter.get(zip).expect(403);
 });

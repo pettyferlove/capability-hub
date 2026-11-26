@@ -62,6 +62,8 @@ Skill 的上传与提交审核请求均可携带布尔字段 `requires_api_key`�
 
 `GET /api/publication-requests/:id/evaluation` 向审核者和资产维护者返回候选评测及申请提交时冻结的发布基线。标准和评测器一致、双方置信度均为中或高时，维度下降至少 10 分列为回归。混淆对象名称按读者当前权限裁剪。
 
+`GET /api/management/versions/:versionId/evaluations/:evaluationId/iteration.zip` 只接受浏览器会话，按指定版本和评测交付[迭代包](../getting-started/workflows.md#发布与审核)。不带参数限资产维护者；`view=published` 核对固定发布的读权、明细权限和冻结声明；`publication_request_id` 按该申请授权并匹配候选声明。三种用法互斥，不回退至其他评测。
+
 `POST /api/management/versions/:versionId/evaluations` 要求资产维护与 AI 执行权限、幂等键及会话 CSRF。传 `publication_request_id` 时按该申请的固定版本与冻结声明登记。新登记的记录返回 202，包括从其他版本复制全部或部分结果的记录；同一版本已有相同主体的评测时返回 200。每个资产每 UTC 日合计最多受理三次手动请求，复用结果也计次；同一用户在 24 小时幂等有效期内重放同一请求只计一次。超限返回 429，MCP 返回 422，撤销或封禁返回 409。
 
 ## Hub MCP

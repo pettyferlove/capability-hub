@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { evaluationIterationBundle } from '../../apps/server/src/evaluation/iteration-bundle.js';
 import { fitJsonFields } from '../../apps/server/src/evaluation/model-input.js';
 import { packSkill } from '../../apps/server/src/evaluation/skill-packing.js';
 import { scoreTransparency } from '../../apps/server/src/evaluation/transparency.js';
@@ -18,9 +19,10 @@ import {
   scoreChecks,
   triggeringResult,
 } from '@capability-hub/domain/evaluation';
+import type { ManagementEvaluationsResponse } from '@capability-hub/contracts';
 import type { EvaluationCheckResult } from '@capability-hub/domain/models';
 import type { ContentFile } from '@capability-hub/domain/content';
-import { analyzeSkillStructure, inspect } from '@capability-hub/infrastructure/content';
+import { analyzeSkillStructure, inspect, unzip } from '@capability-hub/infrastructure/content';
 import { loadServerConfig } from '@capability-hub/server/config';
 import { calibrationSamples } from '../fixtures/evaluation/samples.js';
 import {
@@ -515,6 +517,195 @@ test('作者用例保留可用的 Unicode 断言，逐条排除数据库无法�
       },
     ],
   );
+});
+
+type IterationDetail = ManagementEvaluationsResponse['items'][number];
+const iterationDigest = 'sha256:' + 'a'.repeat(64);
+const iterationDetail: IterationDetail = {
+  id: 'evaluation-17',
+  version_id: 'version-36',
+  version_label: '2026.11.26-' + 'f'.repeat(40),
+  rubric_version: '2026-11-24.1',
+  scan_ruleset: null,
+  comparable_key: iterationDigest,
+  state: 'succeeded',
+  evaluated_at: '2026-11-26T09:00:00.000Z',
+  dimensions: [],
+  limitations: ['static_only'],
+  asset_id: 'private-asset',
+  content_digest: iterationDigest,
+  scope: 'static',
+  trigger: 'intake_ready',
+  requested_by: 'private-requester',
+  priority: 100,
+  evaluator_digest: null,
+  subject_digest: iterationDigest,
+  audience_class: 'signed_in',
+  requires_api_key: true,
+  context: null,
+  cases: null,
+  stages: [],
+  active_job_id: 'private-job',
+  reused_from: 'private-history',
+  requested_at: '2026-11-26T08:59:00.000Z',
+  revision: 1,
+};
+
+test('迭代包的任务可由原生解析器按序复用，触发用例只携带已投影的名称', async () => {
+  const prompt = '核对𠮷\r\n# 伪标题\n\n````\r<img src=x>\n![跟踪](https://invalid.test)';
+  const files = ['资料/\n## 路径.md'];
+  const assertions = ['给出依据', '列出差异', '标注范围'];
+  const tasks: NonNullable<IterationDetail['cases']>['tasks'] = [
+    { id: 't4', origin: 'author', prompt, expected: '保留𠮷', assertions, files },
+    { id: 't1', origin: 'generated', prompt: '检查第二组', expected: '', assertions },
+  ];
+  const trigger = [
+    { id: 'q5', kind: 'near_miss', language: 'zh', query: '请解释这几类需求的差别' },
+    { id: 'q2', kind: 'should_trigger', language: 'en', query: 'Compare the examples' },
+  ] satisfies NonNullable<IterationDetail['cases']>['trigger'];
+  const detail: IterationDetail = {
+    ...iterationDetail,
+    state: 'partial',
+    scope: 'full',
+    limitations: ['paper_run_only'],
+    cases: { tasks, trigger },
+    confusions: [
+      { case_id: 'q5', name: '已公开的近似项' },
+      { case_id: 'q8', name: 'private-unrelated-confusion' },
+    ],
+    dimensions: [
+      {
+        id: 'instructions',
+        label: '指令质量',
+        status: 'scored',
+        score: 0,
+        band: 'weak',
+        confidence: 'medium',
+        checks: [
+          {
+            id: 'instructions.concrete_examples',
+            label: '具体示例',
+            verdict: 'fail',
+            note: '示例缺项',
+            suggestion: prompt,
+            evidence: [{ path: files[0], start_line: 18, end_line: 21 }],
+          },
+        ],
+      },
+      {
+        id: 'triggering',
+        label: '触发准确',
+        status: 'insufficient',
+        score: null,
+        band: null,
+        confidence: null,
+        checks: [],
+      },
+    ],
+    stages: [
+      {
+        id: 'task-run-2',
+        state: 'succeeded',
+        execution_id: 'private-execution',
+        assertion_results: [
+          {
+            with_skill: { valid: true, passed: false, quote: '只列范围' },
+            without_skill: { valid: false, passed: false, quote: 'private-invalid-quote' },
+          },
+          {
+            with_skill: { valid: true, passed: true, quote: '已有差异' },
+            without_skill: { valid: true, passed: false, quote: '缺少比较' },
+          },
+        ],
+      },
+    ],
+  };
+  const entries = await unzip(await evaluationIterationBundle('sample-skill', detail));
+  assert.deepEqual(
+    entries.map((entry) => [entry.path, entry.executable]),
+    [
+      ['evals/evals.json', false],
+      ['report.md', false],
+      ['trigger-cases.json', false],
+    ],
+  );
+  const [suite, report, routes] = entries.map((entry) =>
+    new TextDecoder('utf-8', { fatal: true }).decode(entry.bytes),
+  );
+  const evals = tasks.map((task) => ({
+    prompt: task.prompt,
+    expected_output: task.expected,
+    files: task.files ?? [],
+    assertions,
+  }));
+  const json: unknown = JSON.parse(suite);
+  assert.deepEqual(json, { evals });
+  assert.deepEqual(
+    [...parseEvaluationAuthorCases(json)],
+    evals.map((item) => ({
+      ...item,
+      assertions: assertions.map((text) => ({ text, requires_execution: false })),
+    })),
+  );
+  assert.deepEqual(JSON.parse(routes), {
+    cases: [{ ...trigger[0], confusion_name: '已公开的近似项' }, trigger[1]],
+  });
+  assert.doesNotMatch(report + suite + routes, /private-/);
+  for (const text of [
+    'sample-skill',
+    detail.version_label,
+    detail.version_id,
+    detail.id,
+    detail.rubric_version,
+    iterationDigest,
+    '2026-11-26T09:00:00.000Z',
+    '纸面推演',
+    '结果状态：部分完成',
+    '评分：0 分',
+    '评分：缺分',
+    '状态：样本不足',
+    '置信度：中',
+    '判定：未满足',
+    '理由：示例缺项',
+    '改进建议：核对𠮷\r\n    # 伪标题\n    \n    ````\r    <img',
+    '证据位置：资料/\n    ## 路径.md:18-21',
+    '不要覆盖原文件',
+    't4',
+    '作者用例',
+    '评测生成',
+    'q5',
+  ]) {
+    assert.ok(report.includes(text), text);
+  }
+  assert.doesNotMatch(report, /(?:^|[\r\n]) {0,3}(?:# 伪标题|## 路径|`{4}|<img|!\[)/);
+  const [first, second] = report.split('### 任务 2');
+  assert.match(first, /带 Skill：缺少判定\n {4}无 Skill：缺少判定/);
+  assert.doesNotMatch(first, /只列范围/);
+  assert.match(second, /带 Skill：未通过；引文：只列范围\n {4}无 Skill：无有效引文，无法判定/);
+  assert.match(second, /带 Skill：通过；引文：已有差异\n {4}无 Skill：未通过；引文：缺少比较/);
+});
+
+test('没有用例和建议的静态旧标准记录仅导出如实说明缺项的报告', async () => {
+  const entries = await unzip(await evaluationIterationBundle('结构示例', iterationDetail));
+  assert.deepEqual(
+    entries.map((entry) => entry.path),
+    ['report.md'],
+  );
+  const report = entries[0].bytes.toString('utf8');
+  assert.match(report, /范围：静态检查/);
+  assert.match(report, /没有记录具体改进建议/);
+  assert.match(report, /没有记录纸面任务/);
+  assert.match(report, /没有记录触发用例/);
+  assert.doesNotMatch(report, /评分：0/);
+});
+
+test('迭代包按 UTF-8 字节而非字符限制大小，支持取消', async () => {
+  await assert.rejects(evaluationIterationBundle('界'.repeat(360 * 1024), iterationDetail), {
+    code: 'PACKAGE_LIMIT',
+  });
+  await assert.rejects(evaluationIterationBundle('示例', iterationDetail, AbortSignal.abort()), {
+    name: 'AbortError',
+  });
 });
 
 test('评测并发默认一席，Worker 只有一席时仍可运行', async (context) => {

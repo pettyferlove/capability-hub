@@ -25,6 +25,7 @@ import { dayMs, pendingCalls, utcWindow } from './evaluation-stages.js';
 type Evaluation = ResourceEvaluationRecord;
 type Declaration = Pick<PublicationRequestRecord, 'distribution' | 'requires_api_key'>;
 type VersionResult = { row: Evaluation; version: VersionRecord };
+type IterationView = { view: 'published' } | { publication_request_id?: string };
 
 type Comparison = { status: 'none' | 'available' | 'incomparable'; result: VersionResult | null };
 
@@ -34,6 +35,20 @@ function finished(row: Evaluation) {
 
 function active(row: Evaluation) {
   return row.state === 'queued' || row.state === 'running';
+}
+
+function matchesVersion(row: Evaluation, version: VersionRecord, policy?: Declaration) {
+  return (
+    row.version_id === version.id &&
+    row.asset_id === version.asset_id &&
+    row.content_digest === version.content_digest &&
+    (!policy ||
+      row.scope === 'static' ||
+      (row.evaluator_digest !== null &&
+        row.requires_api_key === (policy.requires_api_key === true) &&
+        row.audience_class ===
+          (policy.distribution.audience.includes('public') ? 'public' : 'signed_in')))
+  );
 }
 
 function latest(rows: Evaluation[]) {
@@ -176,15 +191,47 @@ export class EvaluationQueries {
   ) {}
 
   private async matching(version: VersionRecord, policy: Declaration) {
-    const audience = policy.distribution.audience.includes('public') ? 'public' : 'signed_in';
-    return (await this.store.listVersionEvaluations(version.id)).filter(
-      (row) =>
-        row.content_digest === version.content_digest &&
-        (row.scope === 'static' ||
-          (row.evaluator_digest !== null &&
-            row.requires_api_key === (policy.requires_api_key === true) &&
-            row.audience_class === audience)),
+    return (await this.store.listVersionEvaluations(version.id)).filter((row) =>
+      matchesVersion(row, version, policy),
     );
+  }
+
+  private async subject(versionId: string, assetId?: string) {
+    const version = await this.store.get('versions', versionId);
+    if (!version) notFound();
+    const asset = await this.access.getAsset(assetId ?? version.asset_id);
+    if (version.asset_id !== asset.id) notFound();
+    return { asset, version };
+  }
+
+  private async readableRelease(
+    principal: Principal | null,
+    asset: AssetRecord,
+    version: VersionRecord,
+  ) {
+    if (!(await this.access.canRead(principal, asset, version))) notFound();
+    const release = await this.access.latestReleaseForVersion(version);
+    if (!release || release.asset_id !== asset.id) notFound();
+    return release;
+  }
+
+  private async reviewAccess(
+    principal: Principal,
+    asset: AssetRecord,
+    version: VersionRecord,
+    request: PublicationRequestRecord,
+  ) {
+    if (request.asset_id !== asset.id || request.version_id !== version.id) notFound();
+    const maintains = this.access.canMaintain(principal, asset);
+    if (!maintains && !(await this.access.canReview(principal, request)))
+      fail(403, 'FORBIDDEN', '无对应申请审核权限');
+    if (
+      !maintains &&
+      version.availability !== 'unreleased' &&
+      !(await this.access.canRead(principal, asset, version))
+    )
+      notFound();
+    return maintains;
   }
 
   private async canViewDetails(
@@ -195,8 +242,9 @@ export class EvaluationQueries {
     if (!principal) return false;
     if (this.access.canMaintain(principal, asset)) return true;
     if (!hasInAnyScope(principal, 'review:decide')) return false;
-    return someAsync(await this.store.where('requests', 'version_id', version.id), (request) =>
-      this.access.canReview(principal, request),
+    return someAsync(
+      await this.store.where('requests', 'version_id', version.id),
+      async (request) => request.asset_id === asset.id && this.access.canReview(principal, request),
     );
   }
 
@@ -296,10 +344,8 @@ export class EvaluationQueries {
     webSession: boolean,
   ) {
     return this.store.tx(async () => {
-      const asset = await this.access.getAsset(assetId);
-      const version = await this.access.requireReadableVersion(principal, versionId);
-      if (version.asset_id !== asset.id) notFound();
-      const release = await this.access.latestReleaseForVersion(version);
+      const { asset, version } = await this.subject(versionId, assetId);
+      const release = await this.readableRelease(principal, asset, version);
       const rows = await this.matching(version, release);
       const row = latest(rows.filter(finished));
       const comparison = row ? await this.baseline(principal, asset, release, row) : null;
@@ -393,14 +439,8 @@ export class EvaluationQueries {
     return this.store.tx(async () => {
       const request = await this.store.get('requests', id);
       if (!request) notFound();
-      const asset = await this.access.getAsset(request.asset_id);
-      const maintains = this.access.canMaintain(principal, asset);
-      if (!maintains && !(await this.access.canReview(principal, request)))
-        fail(403, 'FORBIDDEN', '无对应申请审核权限');
-      const version = await this.store.get('versions', request.version_id);
-      if (!version) notFound();
-      if (!maintains && version.availability !== 'unreleased')
-        await this.access.requireReadableVersion(principal, version.id);
+      const { asset, version } = await this.subject(request.version_id, request.asset_id);
+      const maintains = await this.reviewAccess(principal, asset, version, request);
       const rows = await this.matching(version, request);
       const candidateRow = latest(rows);
       const state = await this.controls(
@@ -437,11 +477,40 @@ export class EvaluationQueries {
     });
   }
 
+  /** 会话、入口权限和混淆项名称在同一读取事务内解析，不以最新结果代替指定记录。 */
+  async iteration(
+    readPrincipal: () => Promise<Principal>,
+    versionId: string,
+    evaluationId: string,
+    query: IterationView,
+  ) {
+    return this.store.tx(async () => {
+      const principal = await readPrincipal();
+      const { asset, version } = await this.subject(versionId);
+      let policy: Declaration | undefined;
+      if ('view' in query) {
+        policy = await this.readableRelease(principal, asset, version);
+        if (!(await this.canViewDetails(principal, asset, version)))
+          fail(403, 'FORBIDDEN', '无候选内容审查权限');
+      } else if (query.publication_request_id !== undefined) {
+        const request = await this.store.get('requests', query.publication_request_id);
+        if (!request) notFound();
+        await this.reviewAccess(principal, asset, version, request);
+        policy = request;
+      } else {
+        this.access.requireMaintenance(principal, asset);
+      }
+      const row = await this.store.get('resource_evaluations', evaluationId);
+      if (asset.kind !== 'skill' || !row || !finished(row) || !matchesVersion(row, version, policy))
+        notFound();
+      const [item] = await this.describe(principal, [{ row, version }]);
+      return { slug: asset.slug, item };
+    });
+  }
+
   async history(principal: Principal, versionId: string) {
     return this.store.tx(async () => {
-      const version = await this.store.get('versions', versionId);
-      if (!version) notFound();
-      const asset = await this.access.getAsset(version.asset_id);
+      const { asset, version } = await this.subject(versionId);
       if (!this.access.canMaintain(principal, asset)) {
         if (!(await this.canViewDetails(principal, asset, version)))
           fail(403, 'FORBIDDEN', '无候选内容审查权限');

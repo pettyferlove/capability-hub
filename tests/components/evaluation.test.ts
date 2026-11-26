@@ -252,6 +252,7 @@ test('公开读者能读到低置信度和方法局限，不能展开维护者�
   );
   assert(!screen.queryByRole('button', { name: /评测此版本|重试失败阶段|按新标准评测/ }));
   assert(!screen.queryByRole('button', { name: /改进建议|评测用例/ }));
+  assert(!screen.queryByRole('link', { name: '下载迭代包' }));
   await user.click(screen.getByRole('button', { name: '评测方法与局限' }));
   const note = await screen.findByRole('dialog');
   for (const statement of [
@@ -412,24 +413,31 @@ test('读者失去维护明细权限后，已展开的私有用例随当前权�
   const user = userEvent.setup();
   await user.click(await screen.findByRole('button', { name: /评测用例/ }));
   assert(screen.getByText(/整理内部交接清单/));
+  assert.equal(
+    screen.getByRole('link', { name: '下载迭代包' }).getAttribute('href'),
+    managementPath + '/result/iteration.zip?view=published',
+  );
   permission = 'denied';
   view.rerender(
     createElement(EvaluationPanel, { kind: 'asset', versionId, published, refresh: 1 }),
   );
   assert(await screen.findByRole('alert'));
   assert(!screen.queryByRole('button', { name: /评测用例/ }));
+  assert(!screen.queryByRole('link', { name: '下载迭代包' }));
   permission = 'pending';
   view.rerender(
     createElement(EvaluationPanel, { kind: 'asset', versionId, published, refresh: 2 }),
   );
   assert(!screen.queryByText(/整理内部交接清单/));
   assert(!screen.queryByRole('button', { name: /评测用例/ }));
+  assert(!screen.queryByRole('link', { name: '下载迭代包' }));
   await act(async () => resume.resolve(Response.json(history([privateResult]))));
   await user.click(await screen.findByRole('button', { name: /评测用例/ }));
   assert(screen.getByText(/整理内部交接清单/));
   view.rerender(publicPanel(publicView(result(), { can_view_details: false })));
   await waitFor(() => assert(!screen.queryByText(/整理内部交接清单/)));
   assert(!screen.queryByRole('button', { name: /评测用例/ }));
+  assert(!screen.queryByRole('link', { name: '下载迭代包' }));
   assert(screen.getByRole('figure'));
 });
 
@@ -455,6 +463,7 @@ test('发布页只显示服务器选定的评测与最近尝试，首轮失败�
   const first = { ...published, can_request: false, latest_attempt_id: pending.id, updating: true };
   view.rerender(publicPanel(first));
   assert(await screen.findByText('评测中'));
+  assert(!screen.queryByRole('link', { name: '下载迭代包' }));
   assert(!screen.queryByRole('figure'));
   assert(!screen.queryByText(/下一额度窗口/));
   view.rerender(publicPanel({ ...first, next_window_at: nextWindow }));
@@ -470,6 +479,7 @@ test('发布页只显示服务器选定的评测与最近尝试，首轮失败�
   );
   await screen.findByText(/评测失败.*BLOB_MISSING/);
   assert(!screen.queryByRole('figure'));
+  assert(!screen.queryByRole('link', { name: '下载迭代包' }));
 });
 
 test('审核重试携带候选申请，响应丢失后复用同一个幂等键', async (t) => {
@@ -544,6 +554,10 @@ test('新登记的静态结果保留同标准已完成的完整评测，即使�
   assert(await screen.findByRole('figure'));
   assert(screen.getByText('部分完成'));
   assert(screen.getByRole('button', { name: '重试失败阶段' }));
+  assert.equal(
+    screen.getByRole('link', { name: '下载迭代包' }).getAttribute('href'),
+    managementPath + '/result/iteration.zip',
+  );
 });
 
 test('慢速进度读取不会被轮询中止，暂时失败后仍取得完成结果', async (t) => {
@@ -878,6 +892,10 @@ test('审核区按潜在提升排列建议，展开授权用例并将真实文�
   }
   render(createElement(ReviewWithFiles));
   const tips = await screen.findByRole('button', { name: /改进建议/ });
+  assert.equal(
+    screen.getByRole('link', { name: '下载迭代包' }).getAttribute('href'),
+    managementPath + '/result/iteration.zip?publication_request_id=approval',
+  );
   assert(screen.getByRole('button', { name: '对比提交时发布', pressed: true }));
   assert(screen.getByText('v1.9.0'));
   assert(screen.getByText(/扫描规则 2026-11-24\.1/));
