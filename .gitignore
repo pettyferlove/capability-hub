@@ -51,6 +51,7 @@ CLAUDE.local.md
 # Agent Skills
 .agents/*
 !.agents/skills/
+!.agents/agents/
 !.agents/plugins/
 
 # Cursor
