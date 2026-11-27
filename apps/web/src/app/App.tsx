@@ -22,7 +22,6 @@ import type {
   ReviewResponse,
 } from '@capability-hub/contracts/http';
 import { Suspense, useCallback, useEffect, useState } from 'react';
-import Login from '../features/auth/LoginPage.js';
 import Discover from '../features/catalog/DiscoverPage.js';
 import { useQuery } from '../shared/api/use-query.js';
 import { PageSkeleton } from '../shared/components/Skeleton.js';
@@ -36,8 +35,6 @@ import { useAppRoute } from './use-app-route.js';
 import { useSession } from './use-session.js';
 import { useTheme } from './theme.js';
 import { AppHeader } from './AppHeader.js';
-import OperationsCenter from '../features/operations/OperationsCenter.js';
-import { CommandPalette } from './CommandPalette.js';
 import { PageBoundary } from './PageBoundary.js';
 import { NotFoundPage } from './NotFoundPage.js';
 import { WebUpdateNotice } from './WebUpdateNotice.js';
@@ -51,6 +48,9 @@ const Review = lazyView(() => import('../features/review/ReviewPage.js'));
 const Connect = lazyView(() => import('../features/connect/ConnectPage.js'));
 const Account = lazyView(() => import('../features/identity/AccountPage.js'));
 const HubFeedbackAssistant = lazyView(() => import('../features/feedback/HubFeedbackAssistant.js'));
+const Login = lazyView(() => import('../features/auth/LoginPage.js'));
+const OperationsCenter = lazyView(() => import('../features/operations/OperationsCenter.js'));
+const CommandPalette = lazyView(() => import('./CommandPalette.js'));
 const pagePlaceholders = {
   discover: { title: '资源目录', variant: 'cards' },
   publish: { title: '分享 Skill 与 MCP', variant: 'publish' },
@@ -58,6 +58,7 @@ const pagePlaceholders = {
   connect: { title: '安装与接入', variant: 'connect' },
   account: { title: '个人中心', variant: 'profile' },
   login: { title: '登录', variant: 'profile' },
+  operations: { title: '运营中心', variant: 'cards' },
 } as const;
 
 /**
@@ -84,6 +85,7 @@ export default function App() {
     useSession(refresh);
   const theme = useTheme();
   const reload = useCallback(() => setRefresh((value) => value + 1), []);
+  const closePalette = useCallback(() => setPalette(false), []);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (
@@ -161,10 +163,7 @@ export default function App() {
     if (me && view.page === 'login') navigate(loginReturnPath(view.query), { replace: true });
   }, [me, view.page, view.query]);
   const accountTab = new URLSearchParams(view.query).get('tab') ?? 'profile';
-  const placeholder =
-    view.page === 'operations' || view.page === 'not-found'
-      ? undefined
-      : pagePlaceholders[view.page];
+  const placeholder = view.page === 'not-found' ? undefined : pagePlaceholders[view.page];
   let content;
   if (loading) {
     content = <Loading variant="page" label="正在连接能力共享中心…" />;
@@ -179,12 +178,16 @@ export default function App() {
     (view.page === 'login' || ['publish', 'review', 'account', 'operations'].includes(view.page))
   ) {
     content = (
-      <Login
-        initialized={initialized}
-        setupRequired={setupRequired}
-        ldapEnabled={ldapEnabled}
-        onLogin={load}
-      />
+      <PageBoundary key={view.page}>
+        <Suspense fallback={<Loading variant="page" label="正在载入登录…" />}>
+          <Login
+            initialized={initialized}
+            setupRequired={setupRequired}
+            ldapEnabled={ldapEnabled}
+            onLogin={load}
+          />
+        </Suspense>
+      </PageBoundary>
     );
   } else {
     content = (
@@ -286,7 +289,13 @@ export default function App() {
             </Suspense>
           </div>
         </Overlay>
-        <CommandPalette open={palette} onClose={() => setPalette(false)} />
+        <Overlay open={palette} onClose={closePalette} label="搜索与快速导航" variant="palette">
+          <PageBoundary>
+            <Suspense fallback={<Loading label="正在加载命令面板…" />}>
+              <CommandPalette onClose={closePalette} />
+            </Suspense>
+          </PageBoundary>
+        </Overlay>
       </>
     );
   }

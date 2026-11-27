@@ -17,9 +17,9 @@ import {
   ShieldCheck,
   UploadCloud,
 } from '../shared/icons/lucide.js';
+import { useIsPresent } from 'motion/react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../shared/api/client.js';
-import { Overlay } from '../shared/components/Overlay.js';
 import { assetHref } from '../shared/navigation/history-route.js';
 import { navigate } from '../shared/navigation/history-navigation.js';
 import { useHub } from '../shared/context/HubContext.js';
@@ -38,7 +38,9 @@ interface PaletteLink {
  * 只有它与当前关键词一致才渲染，迟到的响应不会覆盖更新的一次搜索。
  * 输入法组合期间的回车只用于确认候选，不触发展开结果。
  */
-export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function CommandPalette({ onClose }: { onClose: () => void }) {
+  // 退出动效期间仍会挂载，关闭时立即取消查询。
+  const open = useIsPresent();
   const { me } = useHub();
   const [q, setQ] = useState(''),
     [index, setIndex] = useState(0),
@@ -110,7 +112,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     else openHubFeedback();
   }
   return (
-    <Overlay open={open} onClose={onClose} label="搜索与快速导航" variant="palette">
+    <>
       <div className={paletteSearchStyles}>
         <Search size={21} />
         <input
@@ -198,6 +200,6 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       <div className={paletteFooterStyles}>
         ↑ ↓ 选择 ↵ 打开 <span>只搜索你有权读取的能力</span>
       </div>
-    </Overlay>
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -68,6 +68,36 @@ test('有效页面返回入口，浏览器打开未知地址得到 404 入口，
     assert(response.headers['x-request-id']);
     assert.equal(response.body.error.code, 'NOT_FOUND');
   }
+});
+
+test('只长期缓存带内容哈希的构建资产，页面与固定文件名仍须重新验证', async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), 'hub-web-cache-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(join(directory, 'assets'));
+  const hashed = '/assets/index-a1b2c3d4e5.js';
+  const fixed = ['/index.html', '/assets/index.js', '/manual-a1b2c3d4e5.js'];
+  await Promise.all([hashed, ...fixed].map((path) => writeFile(join(directory, path), 'asset')));
+  const client = httpClient(await createTestHub(context, { webDirectory: directory }));
+  const asset = await client
+    .get(hashed)
+    .expect('Cache-Control', 'public, max-age=31536000, immutable')
+    .expect(200);
+  await client
+    .get(hashed)
+    .set('If-None-Match', String(asset.headers.etag))
+    .expect('Cache-Control', 'public, max-age=31536000, immutable')
+    .expect(304);
+  await client
+    .get(hashed)
+    .set('If-Match', '"previous-representation"')
+    .expect((response) => assert(response.status >= 400))
+    .expect('Cache-Control', 'no-store');
+  for (const path of ['/discover', ...fixed])
+    await client
+      .get(path)
+      .set('Accept', 'text/html')
+      .expect('Cache-Control', 'no-cache')
+      .expect(200);
 });
 
 test('服务运行期间重建网页后，构建号响应头随之更新，不让新页面持续提示已更新', async (context) => {

@@ -7,9 +7,11 @@
 import type { AssetResponse, KeywordSuggestionsResponse } from '@capability-hub/contracts/http';
 import type { ScenarioResponse } from '@capability-hub/contracts/http';
 import { AnimatePresence } from 'motion/react';
-import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { Suspense, memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { PageBoundary } from '../../app/PageBoundary.js';
 import { cn } from '../../shared/styles/cn.js';
 import { assetHref } from '../../shared/navigation/history-route.js';
+import { lazyView } from '../../shared/navigation/lazy-view.js';
 import {
   ArrowRight,
   ArrowUpRight,
@@ -46,7 +48,7 @@ import { DotGrid, type DotGridHandle } from '../../shared/components/react-bits/
 import { LogoLoop } from '../../shared/components/react-bits/LogoLoop.js';
 import { SpotlightCard } from '../../shared/components/react-bits/SpotlightCard.js';
 import { useDiscovery } from './use-discovery.js';
-import { TaskComposer, TaskPanel } from './TaskDiscovery.js';
+import { TaskComposer } from './TaskComposer.js';
 import {
   cardIndicatorsStyles,
   cardFeatureTagStyles,
@@ -98,6 +100,7 @@ import {
   paginationStyles,
   scenarioActiveStyles,
   scenarioSelectStyles,
+  taskStateStyles,
   tickerGlyphStyles,
   tickerLinkStyles,
   typeSegmentedIndicatorStyles,
@@ -105,6 +108,8 @@ import {
   typeSegmentedStyles,
 } from './styles.js';
 import { btnStyles } from '../../shared/styles/recipes.js';
+
+const TaskPanel = lazyView(() => import('./TaskPanel.js'));
 
 /** 发现页正文：任务提问在上，独立的资源目录在下；目录筛选变化即重置游标。 */
 export default function DiscoverPage() {
@@ -118,6 +123,7 @@ export default function DiscoverPage() {
     [cat, setCat] = useState('all'),
     [scenario, setScenario] = useState(''),
     [cursor, setCursor] = useState('');
+  const [taskPanelFailed, setTaskPanelFailed] = useState(false);
   const { refresh, reload } = useHub();
   const discovery = useDiscovery(refresh);
   useEffect(() => {
@@ -187,7 +193,8 @@ export default function DiscoverPage() {
   const empty = browsing && !isPreviousData && data?.total === 0;
   const directoryTotal = data?.total;
   const busy = discovery.status === 'thinking';
-  const engaged = !!discovery.task || busy || !!discovery.error || !!discovery.notice;
+  const engaged =
+    taskPanelFailed || !!discovery.task || busy || !!discovery.error || !!discovery.notice;
   const tickerAssets = useMemo(() => data?.items.slice(0, 12) ?? [], [data]);
   const { data: topics } = useQuery<KeywordSuggestionsResponse>(
     discovery.entry && !discovery.entry.suggestions.length && data && !empty
@@ -243,6 +250,7 @@ export default function DiscoverPage() {
             entry={discovery.entry}
             draft={discovery.draft}
             busy={busy}
+            submitDisabled={taskPanelFailed}
             total={directoryTotal}
             onDraft={discovery.setDraft}
             onSubmit={discovery.submit}
@@ -270,21 +278,37 @@ export default function DiscoverPage() {
         </section>
         <AnimatePresence>
           {engaged && (
-            <TaskPanel
+            <PageBoundary
               key="task"
-              state={discovery}
-              scenarios={scenarios?.map(({ id, name }) => ({ id, name })) ?? []}
-              onPick={discovery.pick}
-              onFilter={discovery.applyFilter}
-              onFollow={discovery.followUp}
-              onFollowChange={discovery.setFollow}
-              onRetry={discovery.retry}
-              onEditQuestion={(question) => {
-                discovery.setDraft(question, null);
-                composer.current?.focus();
+              fallback={<ErrorState message="发现结果暂时无法载入。可继续查目录，或刷新重试。" />}
+              onError={() => {
+                setTaskPanelFailed(true);
+                if (busy) discovery.stop();
               }}
-              onBrowse={browse}
-            />
+            >
+              <Suspense
+                fallback={
+                  <p className={taskStateStyles} role="status">
+                    {discovery.notice || (busy ? '正在按条件查找…' : '正在加载结果…')}
+                  </p>
+                }
+              >
+                <TaskPanel
+                  state={discovery}
+                  scenarios={scenarios?.map(({ id, name }) => ({ id, name })) ?? []}
+                  onPick={discovery.pick}
+                  onFilter={discovery.applyFilter}
+                  onFollow={discovery.followUp}
+                  onFollowChange={discovery.setFollow}
+                  onRetry={discovery.retry}
+                  onEditQuestion={(question) => {
+                    discovery.setDraft(question, null);
+                    composer.current?.focus();
+                  }}
+                  onBrowse={browse}
+                />
+              </Suspense>
+            </PageBoundary>
           )}
         </AnimatePresence>
       </div>

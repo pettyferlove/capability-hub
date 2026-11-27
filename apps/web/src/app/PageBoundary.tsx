@@ -12,10 +12,13 @@ import { openHubFeedback, type HubFeedbackSeed } from '../shared/hub-feedback-ev
 import { Component, type ReactNode } from 'react';
 
 /**
- * 页面级错误边界：捕获子树渲染异常后上报 `react.error` 并换成可刷新的兜底页，
- * 不尝试保留任何局部状态。只覆盖渲染期错误，事件处理器与异步回调里的异常仍需各自上报。
+ * 捕获子树渲染异常并上报 `react.error`；未指定区块占位时显示可刷新的兜底页。
+ * 不覆盖事件处理器和异步回调中的异常。
  */
-export class PageBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+export class PageBoundary extends Component<
+  { children: ReactNode; fallback?: ReactNode; onError?: () => void },
+  { failed: boolean }
+> {
   state = { failed: false };
   private feedbackError: HubFeedbackSeed['pageError'];
   static getDerivedStateFromError() {
@@ -28,9 +31,11 @@ export class PageBoundary extends Component<{ children: ReactNode }, { failed: b
       type: entry?.error?.type || 'Error',
       stack: entry?.error?.stack?.slice(0, 2000),
     };
+    this.props.onError?.();
   }
   render() {
-    if (this.state.failed)
+    if (this.state.failed) {
+      if (this.props.fallback !== undefined) return this.props.fallback;
       return (
         <section className={pageResourceErrorStyles}>
           <div
@@ -66,6 +71,7 @@ export class PageBoundary extends Component<{ children: ReactNode }, { failed: b
           </div>
         </section>
       );
+    }
     return this.props.children;
   }
 }

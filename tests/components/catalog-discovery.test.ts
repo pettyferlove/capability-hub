@@ -1,10 +1,12 @@
 import '../support/dom.js';
 import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
 import { afterEach, test } from 'node:test';
 import { act, createElement } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import type { DiscoveryTurnResponse } from '@capability-hub/contracts/http';
+import { PageBoundary } from '../../apps/web/src/app/PageBoundary.js';
 import DiscoverPage from '../../apps/web/src/features/catalog/DiscoverPage.js';
 import { HubCtx } from '../../apps/web/src/shared/context/HubContext.js';
 import { createTestHub, publishSkill } from '../support/application.js';
@@ -361,6 +363,58 @@ test('键盘查找与停止共用同一个焦点，停止后丢弃迟到的结�
   await act(async () => late.resolve(streamResult(guide)));
   await waitFor(() => assert.match(screen.getByText(/已停止本轮/).textContent ?? '', /已停止/));
   assert.equal(screen.queryByText(guide.reply), null);
+});
+
+test('结果分块不可用时保留发现草稿和目录筛选，停止查询且不再发送', async (context) => {
+  const url = new URL(
+    '../../apps/web/src/features/catalog/DiscoverPage.tsx?result-chunk-failure',
+    import.meta.url,
+  );
+  const failure = new Error('Result chunk unavailable');
+  const hooks = registerHooks({
+    resolve(specifier, options, nextResolve) {
+      if (options.parentURL === url.href && specifier === './TaskPanel.js') throw failure;
+      return nextResolve(specifier, options);
+    },
+  });
+  context.after(() => hooks.deregister());
+  const { default: IsolatedDiscoverPage } = (await import(url.href)) as {
+    default: typeof DiscoverPage;
+  };
+  const turn = deferred<Response>();
+  const { mock, posted } = mockApi({ mode: 'keywords', viewer_key: 'anonymous' }, [turn.promise], {
+    total: 1,
+    keywords: [],
+  });
+  let signal: AbortSignal | null | undefined;
+  context.mock.method(globalThis, 'fetch', async (path: string, options?: RequestInit) => {
+    if (path === '/api/catalog/discovery/turn') signal = options?.signal;
+    return mock(path, options);
+  });
+  const user = userEvent.setup();
+  render(page(createElement(PageBoundary, null, createElement(IsolatedDiscoverPage))), {
+    onCaughtError: (error) => assert.equal(error, failure),
+  });
+  const input = await screen.findByRole<HTMLTextAreaElement>('textbox', { name: '你想完成什么？' });
+  const filter = await screen.findByRole<HTMLInputElement>('searchbox', {
+    name: '按关键词搜索目录',
+  });
+  await user.type(filter, 'Git');
+  await user.type(input, '接口回归测试');
+  await user.click(screen.getByRole('button', { name: '搜索' }));
+
+  assert.match((await screen.findByRole('alert')).textContent ?? '', /发现结果暂时无法载入/);
+  assert.equal(screen.getByRole('textbox', { name: '你想完成什么？' }), input);
+  assert.equal(input.value, '接口回归测试');
+  assert.equal(screen.getByRole('searchbox', { name: '按关键词搜索目录' }), filter);
+  assert.equal(filter.value, 'Git');
+  assert.equal(signal?.aborted, true);
+  assert(screen.getByRole<HTMLButtonElement>('button', { name: '搜索' }).disabled);
+  fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true });
+  assert.equal(posted.length, 1);
+  await act(async () =>
+    turn.resolve(Response.json({ mode: 'keywords', type: 'matches', total: 0, items: [] })),
+  );
 });
 
 test('入口换成另一访客会取消在途提问，迟到的结果不显示给新访客', async (context) => {
