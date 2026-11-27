@@ -12,11 +12,11 @@
   "dependencies": {
     "@capability-hub/contracts": "workspace:*",
     "@capability-hub/logging": "workspace:*",
-    "@iconify-icons/devicon-plain": "^2.0.8",
-    "@iconify-icons/lucide": "^2.0.25",
-    "@iconify-icons/simple-icons": "^2.0.8",
-    "@iconify-icons/thesvg-color": "2.0.21",
-    "@iconify/react": "^6.0.3",
+    "@iconify-icons/devicon-plain": "^2.0.18",
+    "@iconify-icons/lucide": "^2.0.35",
+    "@iconify-icons/simple-icons": "^2.0.11",
+    "@iconify-icons/thesvg-color": "2.0.28",
+    "@iconify/react": "^6.0.4",
     "@internationalized/date": "^3.12.4",
     "clsx": "^2.1.1",
     "diff": "^8.0.4",
@@ -27,16 +27,16 @@
     "react-dom": "catalog:",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.5",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "@vitejs/plugin-react": "^6.1.2",
-    "tailwindcss": "^4.3.3",
+    "@vitejs/plugin-react": "^6.3.0",
+    "tailwindcss": "^4.3.5",
     "typescript": "catalog:",
-    "vite": "^8.3.5"
+    "vite": "^8.3.8"
   },
   "engines": {
     "node": ">=24.22.0"

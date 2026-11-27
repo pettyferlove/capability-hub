@@ -23,7 +23,7 @@
     "zod": "catalog:",
     "@capability-hub/logging": "workspace:*",
     "@capability-hub/application": "workspace:*",
-    "bowser": "^2.15.0",
+    "bowser": "^2.15.1",
     "@capability-hub/ai": "workspace:*",
     "@capability-hub/hub-agents": "workspace:*"
   },
